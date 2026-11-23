@@ -146,12 +146,17 @@ Ready to merge, lane **merge now**, when all of these hold at the tick:
    repository sets one), completed and neither failed nor was skipped; any
    other check the app published on the head does not count; where the
    repository names none, a person's approving review stands on the head.
-   One route keeps an earlier witness: when the head differs from the
-   verified one only by a clean merge of the base, and the same app's check
-   completed green on the earlier head, the earlier witness stands, provided
-   the head's commit and its checks were read and none of them failed. The
-   proof is made again under the live rules by each caller, never taken on a
-   caller's word.
+   One route keeps an earlier witness: after a clean merge of the base the
+   drive verifies the live head and records the earlier reviewed commit
+   apart from it. That earlier witness stands when the live head is the
+   verified one, the verified head is that earlier commit plus only a clean
+   merge of the base, and the same app's check completed green on the
+   earlier commit. Where the app has attempts on the live head, the latest
+   of each must be successful or neutral, so a running or skipped
+   replacement blocks the witness, and attempts whose order cannot be read
+   block it too. The head's commit and its checks must have been read whole.
+   The proof is made again under the live rules by each caller, never taken
+   on a caller's word.
 4. The forge reports it mergeable with its base (`mergeable` is
    `MERGEABLE`).
 5. It is not a draft.
@@ -209,8 +214,9 @@ nothing else already satisfies, and kept between ticks by head and base
 commit. The listings are fetched by pull request number, not by an
 immutable revision; the read brackets them with metadata reads and refuses
 when the head, the base or a count differs before and after, so the
-evidence establishes that nothing moved across the read, not that the
-forge froze the listing.
+evidence establishes that the head, base and counts agreed at the two
+reads, not that the forge froze the listing: a change made and restored
+between them would go undetected.
 
 `announce-merge-ready.ts` posts only when the predicate says merge now or
 approve first, and words the second as "an approval is still required".

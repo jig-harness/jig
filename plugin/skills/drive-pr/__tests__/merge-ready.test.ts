@@ -551,6 +551,75 @@ describe("the forge's facts", () => {
     expect(pull?.partial).toContain("not read");
   });
 
+  it("withholds merge now when the head commit node is missing, though a carried witness stands", () => {
+    const whole = parseAnswer(
+      {
+        data: {
+          repository: {
+            pr12: {
+              number: 12,
+              headRefOid: HEAD,
+              commits: {
+                nodes: [
+                  {
+                    commit: {
+                      oid: HEAD,
+                      statusCheckRollup: { contexts: { nodes: [] } },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      [12],
+    ).pulls.get(12);
+    expect(whole?.partial).toBeNull();
+    const missing = parseAnswer(
+      {
+        data: {
+          repository: { pr12: { number: 12, headRefOid: HEAD, commits: {} } },
+        },
+      },
+      [12],
+    ).pulls.get(12);
+    expect(missing?.partial).toContain("head commit's checks were not read");
+    const r = at({
+      reviewCarriedFrom: OTHER,
+      checks: [],
+      partial: missing?.partial ?? null,
+    });
+    expect(r.lane).not.toBe("merge-now");
+  });
+
+  it("reads a check rollup without its check page as partial, and a null rollup as no checks", () => {
+    const pull = (rollup: unknown) =>
+      parseAnswer(
+        {
+          data: {
+            repository: {
+              pr12: {
+                number: 12,
+                headRefOid: HEAD,
+                commits: {
+                  nodes: [{ commit: { oid: HEAD, statusCheckRollup: rollup } }],
+                },
+              },
+            },
+          },
+        },
+        [12],
+      ).pulls.get(12);
+    expect(pull({})?.partial).toContain("did not read as a page");
+    expect(pull({ contexts: { nodes: "x" } })?.partial).toContain(
+      "did not read as a page",
+    );
+    expect(pull("x")?.partial).toContain("did not read");
+    expect(pull(null)?.partial).toBeNull();
+    expect(pull({ contexts: { nodes: [] } })?.partial).toBeNull();
+  });
+
   it("reads check runs and commit statuses with their app and state", () => {
     const node = {
       number: 12,

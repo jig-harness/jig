@@ -42,11 +42,12 @@ export async function commitPages(
   sha: string,
   listing: "check-runs" | "statuses",
   read: PagedRead = "fresh",
+  env?: Record<string, string | undefined>,
 ): Promise<unknown[] | null> {
   const r = await slurpPages(
     `repos/${owner}/${repo}/commits/${sha}/${listing}?per_page=100`,
     read,
-    { stderr: "pipe" },
+    env === undefined ? { stderr: "pipe" } : { stderr: "pipe", env },
   );
   return r.code === 0 ? parsePages(r.stdout) : null;
 }
@@ -87,14 +88,19 @@ export async function checkRunsFor(
   repo: string,
   sha: string,
   read: PagedRead = "fresh",
+  env?: Record<string, string | undefined>,
 ): Promise<CheckRun[] | null> {
-  const pages = await commitPages(owner, repo, sha, "check-runs", read);
+  const pages = await commitPages(owner, repo, sha, "check-runs", read, env);
   if (pages === null) return null;
-  return pages.flatMap((page) =>
-    (
-      ((page as { check_runs?: unknown[] } | null)?.check_runs ?? []) as Array<
-        Record<string, unknown>
-      >
-    ).map(checkRunOf),
-  );
+  const runs: CheckRun[] = [];
+  for (const page of pages) {
+    const list = (page as { check_runs?: unknown } | null)?.check_runs ?? [];
+    // A list that is not one, or entries that are not records, is not a read.
+    if (!Array.isArray(list)) return null;
+    for (const c of list) {
+      if (typeof c !== "object" || c === null) return null;
+      runs.push(checkRunOf(c as Record<string, unknown>));
+    }
+  }
+  return runs;
 }

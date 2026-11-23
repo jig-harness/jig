@@ -220,28 +220,34 @@ export async function announceReady(
     ghCallTimeoutSeconds(),
     runCache,
   );
-  // The caller's historical SHA is a claim: prove it again under these live
+  const ask = (carried: Awaited<ReturnType<typeof confirmCarriedReview>>) =>
+    readiness(
+      {
+        ...facts,
+        slug: "",
+        converged: true,
+        verifiedSha: head,
+        ...carried,
+        held: facts.labels.includes(hold),
+        ...(automation === undefined ? {} : { automation }),
+      },
+      rules,
+    );
+  let answer = ask({});
+  // The caller's historical SHA is a claim, read only when the head's own
+  // evidence does not place the pull request: prove it again under these live
   // rules, as the board does, before it can stand in for a check on the head.
-  const carried = await confirmCarriedReview(
-    process.cwd(),
-    null,
-    reviewCarriedFrom,
-    head,
-    facts.base,
-    rules,
-  );
-  const answer = readiness(
-    {
-      ...facts,
-      slug: "",
-      converged: true,
-      verifiedSha: head,
-      ...carried,
-      held: facts.labels.includes(hold),
-      ...(automation === undefined ? {} : { automation }),
-    },
-    rules,
-  );
+  if (rcOf(answer) !== 0 && reviewCarriedFrom !== undefined) {
+    const carried = await confirmCarriedReview(
+      process.cwd(),
+      null,
+      reviewCarriedFrom,
+      head,
+      facts.base,
+      rules,
+    );
+    if (Object.keys(carried).length > 0) answer = ask(carried);
+  }
   return { rc: rcOf(answer), lane: answer.lane, says: answer.says };
 }
 

@@ -1,4 +1,5 @@
 /** Confirm historical reviewer evidence independently of a drive ledger. */
+import { ghRepoEnvFor } from "../../../../shared/gh-repo-env.ts";
 import { OVERLAY_RELPATH } from "../../../../shared/config-layers.ts";
 import { proveBaseMerge } from "./base-merge-proof.ts";
 import { isGitSha } from "./cli.ts";
@@ -53,7 +54,15 @@ export async function witnessedReview(
   if (!isGitSha(hash) || rules.reviewerApp === null) return false;
   const [owner, repo] = slug?.split("/") ?? ["{owner}", "{repo}"];
   if (owner === undefined || repo === undefined) return false;
-  const runs = await checkRunsFor(owner, repo, hash, "observed");
+  // The placeholders resolve from the checkout, as the facts read does: an
+  // inherited GH_REPO never redirects the read to another repository.
+  const runs = await checkRunsFor(
+    owner,
+    repo,
+    hash,
+    "observed",
+    ghRepoEnvFor(slug),
+  );
   if (runs === null) return false;
   const latest = latestReviewerRuns(runs, rules);
   if (latest === null) return false;
