@@ -194,9 +194,9 @@ describe("readPrSnapshot", () => {
     };
     const r = await readPrSnapshot("acme", "widgets", "7", "snapshot", failing);
     expect(r.ok).toBe(false);
-    expect(!r.ok && r.reason).toContain("HTTP 503");
-    expect(!r.ok && r.reason).toContain("then the full read");
-    expect(!r.ok && r.reason).toContain("HTTP 502");
+    expect(!r.ok && r.reason).toBe(
+      "gh api: HTTP 503; then the full read: gh api: HTTP 502",
+    );
   });
 
   it("names the conditional failure too when the full read answers something that is not a pull document", async () => {
@@ -215,9 +215,9 @@ describe("readPrSnapshot", () => {
     wire.answer = "502";
     const r = await readPrSnapshot("acme", "widgets", "7", "snapshot", html);
     expect(r.ok).toBe(false);
-    expect(!r.ok && r.reason).toContain("then the full read");
-    expect(!r.ok && r.reason).toContain("not a pull document");
-    expect(!r.ok && r.reason).toContain("HTTP 502");
+    expect(!r.ok && r.reason).toMatch(
+      /^[^;]*HTTP 502[^;]*; then the full read: .*not a pull document/,
+    );
   });
 
   it("sends no second request for a pull request that is not there", async () => {

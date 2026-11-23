@@ -201,7 +201,7 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
     required: true,
     identifies: false,
     description:
-      "The code drive-status.ts exits with when it reports this state; null when it reports no such state. A startup refusal that names no state (UNSUPPORTED_CLI's exit 2 from drive-status.ts) is not a report, so it stays null. Not part of identity: a withdrawn code keeps its row with this null.",
+      "The code drive-status.ts exits with when it reports this state; null when it reports no such state. A class label (NOT_SETTLED) is never itself reported: its row holds the exit its member states share. A startup refusal that names no state (UNSUPPORTED_CLI's exit 2 from drive-status.ts) is not a report, so it stays null. Not part of identity: a withdrawn code keeps its row with this null.",
   },
   driveExit: {
     type: "integer",
