@@ -31,7 +31,7 @@ import { type NeedRow, type NeedView, needRows } from "./needs-view.ts";
 import { OptionText } from "./option-text.tsx";
 import { NoSend } from "./send.tsx";
 import { SendSettings, SendSettingsToggle } from "./send-settings.tsx";
-import { useKeptTokens } from "./forge-token.ts";
+import { storedListUntrusted, useKeptTokens } from "./forge-token.ts";
 import { usePicking } from "./use-picking.ts";
 import type { Clock, SlotView } from "./view.ts";
 
@@ -520,7 +520,7 @@ function sendableRepos(rows: NeedRow[]): string[] {
   return [...new Set(repos)].sort((a, b) => a.localeCompare(b));
 }
 
-/** Send's settings: the toggle in the panel's head, shown while a card can send or a token is kept, and the panel it opens. */
+/** Send's settings: the toggle in the panel's head, shown while a card can send, a token is kept or a stored list was refused, and the panel it opens. */
 function useSendSettings(rows: NeedRow[]): {
   toggle: ReactNode;
   panel: ReactNode;
@@ -532,7 +532,9 @@ function useSendSettings(rows: NeedRow[]): {
   const id = useId();
   return {
     toggle:
-      sendable.length === 0 && tokens.length === 0 ? null : (
+      sendable.length === 0 &&
+      tokens.length === 0 &&
+      !storedListUntrusted() ? null : (
         <SendSettingsToggle
           open={open}
           onToggle={() => setOpen(!open)}

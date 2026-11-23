@@ -181,10 +181,16 @@ export function credentialFor(repo: string): string {
   return credentialOf(tokenForRepo(repo));
 }
 
+/** A random stamp that differs between writes; getRandomValues, unlike randomUUID, also works on a page that is not a secure context. */
+function newStamp(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 /** Keeps `tokens` in place of those kept; whether this browser stored them rather than holding them only while the page is open. */
 export function keepTokens(tokens: KeptToken[]): boolean {
   writes++;
-  writeKept(STAMP_KEY, crypto.randomUUID());
+  writeKept(STAMP_KEY, newStamp());
   const saved = writeKept(
     KEY,
     tokens.length === 0 ? null : JSON.stringify({ tokens }),
