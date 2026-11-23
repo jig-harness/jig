@@ -248,7 +248,7 @@ describe("keeping a run's transcript copy", () => {
     const config = join(root, "config");
     claudeTranscript(config, [
       { type: "assistant", message: { content: [] }, keep: "one" },
-      { type: "assistant", message: { content: [] }, ["\nfixture-text"]: 1 },
+      { type: "assistant", message: { content: [] }, "\nfixture-text": 1 },
     ]);
     holdCredential(ID, "\\nfixture-text");
     try {
