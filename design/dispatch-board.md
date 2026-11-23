@@ -159,9 +159,12 @@ Ready to merge, lane **merge now**, when all of these hold at the tick:
    `pull_requests.trusted_automation` lists, whose head is in the
    repository, whose commits are all the bot's own or a listed
    committer's (each signed for its account unless the entry says
-   `signed: false`), whose changed files are all within the entry's paths, and,
-   where the entry names update types, whose manifest diff shows one of
-   them.
+   `signed: false`), whose changed files are all within the entry's paths,
+   and, where the entry names update types, whose manifest diff shows only
+   listed types (a grouped minor-plus-patch change needs both listed). The
+   exception applies only where the repository names a reviewer app: with
+   none, a person's approval is the review witness and the commits and
+   files are not read.
 9. It carries neither the `hold` label nor the
    [CI hold](../GLOSSARY.md) label (`ci.hold_label`), under which its
    required checks fail on purpose.
