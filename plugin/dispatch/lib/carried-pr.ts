@@ -100,6 +100,22 @@ export type Carriage =
   /** A pull request links it, but no drive carries it, or what carries it could not be told: the stall need says which. */
   | { kind: "stall"; note: string };
 
+/** A pull request with no drive among the tick's: none where its ledgers read, unread otherwise. */
+function noLedger(
+  pr: number,
+  read: ReadonlySet<number>,
+  inScope: ReadonlySet<number> | undefined,
+): CarrierDrive {
+  if (read.has(pr)) return { kind: "none", why: "it has no drive" };
+  return {
+    kind: "unread",
+    why:
+      inScope !== undefined && !inScope.has(pr)
+        ? "it carries no dispatch label, so its drive is not read (dispatch.labels.only_labeled)"
+        : "its drive was not read this tick",
+  };
+}
+
 /** The drive of a pull request among `drives`, the ones `read` holds the ledgers of, `inScope` those `only_labeled` keeps. */
 function carrierDrive(
   pr: number,
@@ -108,16 +124,7 @@ function carrierDrive(
   inScope: ReadonlySet<number> | undefined,
 ): CarrierDrive {
   const drive = drives.find((d) => d.number === pr);
-  if (drive === undefined) {
-    if (read.has(pr)) return { kind: "none", why: "it has no drive" };
-    return {
-      kind: "unread",
-      why:
-        inScope !== undefined && !inScope.has(pr)
-          ? "it carries no dispatch label, so its drive is not read (dispatch.labels.only_labeled)"
-          : "its drive was not read this tick",
-    };
-  }
+  if (drive === undefined) return noLedger(pr, read, inScope);
   const why = `${drive.class}${drive.why === "" ? "" : `: ${drive.why}`}`;
   // Asked for and not yet armed: carried work waiting for a slot, unlike a pull request nothing asks a drive for. The label projection gives both no state.
   if (drive.class === "unarmed") return { kind: "unarmed", why };
