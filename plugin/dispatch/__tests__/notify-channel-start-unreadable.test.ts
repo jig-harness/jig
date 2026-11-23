@@ -8,6 +8,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Delivery, NotificationChannel } from "../../chat/channel.ts";
+import type { Cause } from "../lib/actions/notify.ts";
 import type { ApplyState } from "../lib/actions/launch.ts";
 import type { SessionRuntime, Workspace } from "../lib/runtime/port.ts";
 import { closeStateDb } from "../lib/state.ts";
@@ -21,13 +22,6 @@ mock.module("../lib/notice-records.ts", () => ({
   },
 }));
 const { applyNotices } = await import("../lib/actions/notify.ts");
-type Cause =
-  Parameters<
-    typeof applyNotices
-  >[4]["channels"][number] extends NotificationChannel<infer C>
-    ? C
-    : never;
-
 const SLUG = "example-org/example-repo";
 const roots: string[] = [];
 afterEach(() => {
