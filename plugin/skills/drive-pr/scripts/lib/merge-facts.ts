@@ -51,8 +51,8 @@ function pullFields(n: number): string {
       latestReviews(first: ${REVIEWS}) { pageInfo { hasNextPage } nodes { state authorAssociation author { __typename login } commit { oid } } }
       commits(last: 1) { nodes { commit { oid statusCheckRollup { contexts(first: ${CHECKS}) { pageInfo { hasNextPage } nodes {
         __typename
-        ... on CheckRun { databaseId name status conclusion startedAt completedAt isRequired(pullRequestNumber: ${n}) checkSuite { app { slug } } }
-        ... on StatusContext { context state isRequired(pullRequestNumber: ${n}) }
+        ... on CheckRun { id databaseId name status conclusion startedAt completedAt isRequired(pullRequestNumber: ${n}) checkSuite { app { slug } } }
+        ... on StatusContext { id context state isRequired(pullRequestNumber: ${n}) }
       } } } } } }
     }`;
 }
@@ -143,6 +143,8 @@ function wellFormedCheck(node: unknown): boolean {
   if (typeof node.isRequired !== "boolean") return false;
   if (node.__typename === "StatusContext")
     return (
+      typeof node.id === "string" &&
+      node.id !== "" &&
       typeof node.context === "string" &&
       node.context !== "" &&
       STATUS_STATES.has(node.state as string)
@@ -160,11 +162,14 @@ function wellFormedCheck(node: unknown): boolean {
     node.name !== "" &&
     (node.databaseId === null ||
       (typeof node.databaseId === "number" &&
-        Number.isSafeInteger(node.databaseId))) &&
+        Number.isSafeInteger(node.databaseId) &&
+        node.databaseId > 0)) &&
+    typeof node.id === "string" &&
+    node.id !== "" &&
     RUN_STATUSES.has(node.status as string) &&
     (node.status === "COMPLETED"
       ? RUN_CONCLUSIONS.has(node.conclusion as string)
-      : node.conclusion === null || node.conclusion === undefined)
+      : node.conclusion === null)
   );
 }
 
@@ -309,21 +314,27 @@ function partialOf(
       why.push("its checks did not read as a page");
     else if (page.some((c) => !wellFormedCheck(c) || checkOf(c) === null))
       why.push("a check on its head could not be classified");
-    else if (hasDuplicateRunId(page))
-      why.push("a check run on its head was listed twice");
+    else if (hasDuplicateNode(page))
+      why.push("a check on its head was listed twice");
   } else if (at(commit, "commit", "statusCheckRollup") !== null)
     why.push("its checks did not read");
   return why.length === 0 ? null : why.join("; ");
 }
 
-/** Whether two check runs on one page carry the same identity. */
-function hasDuplicateRunId(page: unknown[]): boolean {
-  const seen = new Set<number>();
+/** Whether two checks on one page carry the same forge node identity, or two runs the same run identity. */
+function hasDuplicateNode(page: unknown[]): boolean {
+  const nodeIds = new Set<string>();
+  const runIds = new Set<number>();
   for (const c of page) {
+    const node = at(c, "id");
+    if (typeof node === "string") {
+      if (nodeIds.has(node)) return true;
+      nodeIds.add(node);
+    }
     const id = at(c, "databaseId");
     if (typeof id !== "number") continue;
-    if (seen.has(id)) return true;
-    seen.add(id);
+    if (runIds.has(id)) return true;
+    runIds.add(id);
   }
   return false;
 }

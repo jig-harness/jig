@@ -102,6 +102,7 @@ function boardAnswer(
                     ? [
                         {
                           __typename: "CheckRun",
+                          id: "CR_106",
                           databaseId: 106,
                           name: "AI review",
                           status: "COMPLETED",
@@ -117,6 +118,7 @@ function boardAnswer(
                     : [
                         {
                           __typename: "CheckRun",
+                          id: "CR_107",
                           databaseId: 107,
                           name: "test",
                           status:

@@ -54,6 +54,8 @@ function board(
       : [
           {
             __typename: "CheckRun",
+            id: "CR_review",
+            databaseId: 11,
             name: "AI review",
             status: "COMPLETED",
             conclusion: "SUCCESS",

@@ -642,7 +642,14 @@ describe("the forge's facts", () => {
     expect(
       pull({
         contexts: {
-          nodes: [{ __typename: "CheckRun", name: "gates", databaseId: 1 }],
+          nodes: [
+            {
+              __typename: "CheckRun",
+              id: "CR_1",
+              name: "gates",
+              databaseId: 1,
+            },
+          ],
           pageInfo: { hasNextPage: false },
         },
       })?.partial,
@@ -650,6 +657,7 @@ describe("the forge's facts", () => {
     // One evidence field varied at a time: each leaves the page partial.
     const good = {
       __typename: "CheckRun",
+      id: "CR_1",
       name: "gates",
       databaseId: 1,
       status: "COMPLETED",
@@ -673,6 +681,11 @@ describe("the forge's facts", () => {
       { isRequired: "true" },
       { status: undefined },
       { databaseId: undefined },
+      { databaseId: 0 },
+      { databaseId: -3 },
+      { id: undefined },
+      { id: "" },
+      { status: "QUEUED", conclusion: undefined },
       { databaseId: "1" },
       { status: "ODD" },
       { conclusion: null },
@@ -692,8 +705,35 @@ describe("the forge's facts", () => {
     })?.partial;
     expect(dup).toContain("listed twice");
     // A commit status is read by its own variant.
+    // Two rows with distinct run ids but one node identity are one entry
+    // listed twice; two with the same node identity of a null run id too.
+    for (const rows of [
+      [good, { ...good, databaseId: 2 }],
+      [
+        { ...good, databaseId: null },
+        { ...good, databaseId: null },
+      ],
+    ])
+      expect(
+        pull({
+          contexts: { nodes: rows, pageInfo: { hasNextPage: false } },
+        })?.partial,
+      ).toContain("listed twice");
+    // Distinct node identities with distinct run ids stay whole, as do two
+    // attempts with one name and app.
+    expect(
+      pull({
+        contexts: {
+          nodes: [good, { ...good, id: "CR_2", databaseId: 2 }],
+          pageInfo: { hasNextPage: false },
+        },
+      })?.partial,
+    ).toBeNull();
+    // A queued run carries an explicit null conclusion.
+    expect(partial({ ...good, status: "QUEUED", conclusion: null })).toBeNull();
     const status = {
       __typename: "StatusContext",
+      id: "SC_deploy",
       context: "deploy",
       state: "SUCCESS",
       isRequired: false,
@@ -725,6 +765,8 @@ describe("the forge's facts", () => {
                   nodes: [
                     {
                       __typename: "CheckRun",
+                      id: "CR_review",
+                      databaseId: 11,
                       name: "AI review",
                       status: "COMPLETED",
                       conclusion: "NEUTRAL",
@@ -734,12 +776,16 @@ describe("the forge's facts", () => {
                     },
                     {
                       __typename: "CheckRun",
+                      id: "CR_test",
+                      databaseId: 12,
                       name: "test",
                       status: "IN_PROGRESS",
+                      conclusion: null,
                       isRequired: true,
                     },
                     {
                       __typename: "StatusContext",
+                      id: "SC_deploy",
                       context: "deploy",
                       state: "ERROR",
                       isRequired: false,

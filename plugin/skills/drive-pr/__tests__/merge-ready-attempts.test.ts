@@ -13,6 +13,7 @@ const RULES: ReadyRules = {
   ciHoldLabel: null,
 };
 
+let seq = 0;
 function run(
   conclusion: string,
   startedAt: string | null,
@@ -20,9 +21,11 @@ function run(
 ) {
   return {
     __typename: "CheckRun",
+    id: `CR_${++seq}`,
+    databaseId: seq,
     name: "gates",
     status: conclusion === "PENDING" ? "IN_PROGRESS" : "COMPLETED",
-    conclusion,
+    conclusion: conclusion === "PENDING" ? null : conclusion,
     startedAt,
     completedAt,
     isRequired: true,
@@ -53,7 +56,9 @@ function place(runs: ReturnType<typeof run>[], mergeStateStatus = "CLEAN") {
           {
             commit: {
               oid: HEAD,
-              statusCheckRollup: { contexts: { nodes: runs } },
+              statusCheckRollup: {
+                contexts: { nodes: runs, pageInfo: { hasNextPage: false } },
+              },
             },
           },
         ],
