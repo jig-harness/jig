@@ -541,6 +541,19 @@ describe("the forge's facts", () => {
     expect(pull?.partial).toContain("another commit");
   });
 
+  it("does not treat a null check rollup without its commit ID as complete", () => {
+    const node = {
+      number: 12,
+      headRefOid: HEAD,
+      commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
+    };
+    const pull = parseAnswer(
+      { data: { repository: { pr12: node } } },
+      [12],
+    ).pulls.get(12);
+    expect(pull?.partial).toContain("not read on the head commit");
+  });
+
   it("reads check runs and commit statuses with their app and state", () => {
     const node = {
       number: 12,
