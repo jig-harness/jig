@@ -66,7 +66,6 @@ import type { WaitFor } from "./wait-for.ts";
 import * as startups from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
-import { HARNESS_VENDOR, type Harness } from "./provider-environment.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import {
@@ -449,24 +448,7 @@ export function isLaunchRecord(value: unknown): value is LaunchRecord {
     isWorkspace(value.workspace) &&
     Array.isArray(value.attempts) &&
     value.attempts.every(isAttempt) &&
-    optionalLaunchFields(value) &&
-    optionalProvider(value)
-  );
-}
-
-/** Whether `provider` is absent, or a complete record whose harness is the record's vendor's own. */
-function optionalProvider(value: Record<string, unknown>): boolean {
-  const p = value.provider;
-  if (p === undefined) return true;
-  if (!isMapping(p)) return false;
-  const harness = p.harness;
-  return (
-    typeof harness === "string" &&
-    Object.hasOwn(HARNESS_VENDOR, harness) &&
-    HARNESS_VENDOR[harness as Harness] === value.vendor &&
-    typeof p.provider === "string" &&
-    typeof p.identity === "string" &&
-    (p.baseUrl === null || typeof p.baseUrl === "string")
+    optionalLaunchFields(value)
   );
 }
 

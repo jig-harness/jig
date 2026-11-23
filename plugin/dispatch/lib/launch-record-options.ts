@@ -2,6 +2,7 @@
 import { isMapping } from "../../shared/config-layers.ts";
 import { isStandingAnswer } from "./routine-questions.ts";
 import { isCarriedAnswer } from "./station-answer-store.ts";
+import { HARNESS_VENDOR, type Harness } from "./provider-environment.ts";
 import { parseMs } from "../../shared/time.ts";
 
 function optionalText(value: unknown): boolean {
@@ -39,6 +40,7 @@ function optionalStrings(value: unknown): boolean {
 /** The fields a later version added, each absent or of its type. */
 export function optionalLaunchFields(value: Record<string, unknown>): boolean {
   return (
+    optionalProvider(value) &&
     [
       "agentId",
       "model",
@@ -164,5 +166,21 @@ function optionalBooleans(
 ): boolean {
   return keys.every(
     (key) => value[key] === undefined || typeof value[key] === "boolean",
+  );
+}
+
+/** Whether `provider` is absent, or a complete record whose harness is the record's vendor's own. */
+function optionalProvider(value: Record<string, unknown>): boolean {
+  const p = value.provider;
+  if (p === undefined) return true;
+  if (!isMapping(p)) return false;
+  const harness = p.harness;
+  return (
+    typeof harness === "string" &&
+    Object.hasOwn(HARNESS_VENDOR, harness) &&
+    HARNESS_VENDOR[harness as Harness] === value.vendor &&
+    typeof p.provider === "string" &&
+    typeof p.identity === "string" &&
+    (p.baseUrl === null || typeof p.baseUrl === "string")
   );
 }
