@@ -29,8 +29,9 @@ import { Mark } from "./marks.tsx";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { type NeedRow, type NeedView, needRows } from "./needs-view.ts";
 import { OptionText } from "./option-text.tsx";
-import { NoSend, SendSettings, SendSettingsToggle } from "./send.tsx";
-import { useKeptToken } from "./forge-token.ts";
+import { NoSend } from "./send.tsx";
+import { SendSettings, SendSettingsToggle } from "./send-settings.tsx";
+import { useKeptTokens } from "./forge-token.ts";
 import { usePicking } from "./use-picking.ts";
 import type { Clock, SlotView } from "./view.ts";
 
@@ -511,7 +512,7 @@ function NeedGroup({
   );
 }
 
-/** The repositories of the cards that can send, for the token's scope. */
+/** The repositories of the cards that can send, for the tokens' scope. */
 function sendableRepos(rows: NeedRow[]): string[] {
   const repos = rows.flatMap((row) =>
     row.type === "need" && "to" in row.need.send ? [row.need.send.to.repo] : [],
@@ -524,14 +525,14 @@ function useSendSettings(rows: NeedRow[]): {
   toggle: ReactNode;
   panel: ReactNode;
 } {
-  // Every card the line holds, whoever it waits on: the token covers them all.
+  // Every card the line holds, whoever it waits on: the tokens cover them all.
   const sendable = sendableRepos(rows);
-  const { kept } = useKeptToken();
+  const { tokens } = useKeptTokens();
   const [open, setOpen] = useState(false);
   const id = useId();
   return {
     toggle:
-      sendable.length === 0 && kept === null ? null : (
+      sendable.length === 0 && tokens.length === 0 ? null : (
         <SendSettingsToggle
           open={open}
           onToggle={() => setOpen(!open)}

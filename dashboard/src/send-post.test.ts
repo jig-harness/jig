@@ -71,7 +71,7 @@ describe("posting a card's comments", () => {
       return was;
     });
     expect(spy).toHaveBeenCalledTimes(1);
-    expect(out.refused).toContain("forgotten or replaced");
+    expect(out.refused).toContain("forgotten, replaced");
     expect(out.refused).toContain("b, c");
   });
 });

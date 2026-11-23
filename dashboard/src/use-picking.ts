@@ -9,7 +9,7 @@
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { answerId, currentAnswers, useAnswers } from "./answers.ts";
 import { confirmationSignature, needsConfirmation } from "./confirmation.ts";
-import { tokenGeneration, useKeptToken } from "./forge-token.ts";
+import { credentialFor, useKeptTokens } from "./forge-token.ts";
 import { announce, copyText } from "./copy.tsx";
 import { CARD_COMMIT, CARD_KEY, type CardKey, PALETTE_DONE } from "./keys.ts";
 import type { NeedView } from "./needs-view.ts";
@@ -64,6 +64,11 @@ function placeOf(need: NeedView, index: number): string {
   return total > 1 ? `decision ${index + 1} of ${total}` : need.target;
 }
 
+/** Which token the card's Send would post with now; a card with no Send has none. */
+function sendCredential(need: NeedView): string {
+  return "to" in need.send ? credentialFor(need.send.to.repo) : "";
+}
+
 /** A commit's first step: for which answers it showed the guarded picks, and which commit it was. */
 interface Armed {
   sign: string;
@@ -74,7 +79,7 @@ export function usePicking(
   need: NeedView,
   card: RefObject<HTMLElement | null>,
 ): Picking {
-  useKeptToken();
+  useKeptTokens();
   const ids = need.rows.map((row) => answerId(need.repo, need.target, row.key));
   const [kept, change, saved] = useAnswers(ids);
   const answers = need.rows.map((row, i) => rowAnswer(row, kept[i] ?? null));
@@ -96,7 +101,7 @@ export function usePicking(
     setArmedState(to);
   };
   const current = currentIndex(need.rows, answers, held);
-  const signature = confirmationSignature(need, answers, tokenGeneration());
+  const signature = confirmationSignature(need, answers, sendCredential(need));
   const confirming =
     armed !== null &&
     armed.sign === signature &&
@@ -187,7 +192,7 @@ export function usePicking(
       );
       return null;
     }
-    const sign = confirmationSignature(need, fresh, tokenGeneration());
+    const sign = confirmationSignature(need, fresh, sendCredential(need));
     const held = armedNow.current;
     if (
       needsConfirmation(how, now.guarded.length) &&

@@ -158,7 +158,7 @@ test("an option card without a token explains how to paste one", () => {
   expect(
     renderToStaticMarkup(
       <NoSendReason
-        hasToken={false}
+        tokens={[]}
         fault={null}
         need={{
           ...need,
@@ -229,18 +229,18 @@ test("confirmation changes with the note, destination, or credential", () => {
   const row = n.rows[0];
   assert(row);
   const answer = rowAnswer(row, null);
-  const before = confirmationSignature(n, [answer], 0);
+  const before = confirmationSignature(n, [answer], "");
   expect(
-    confirmationSignature(n, [{ ...answer, note: "Only after review" }], 0),
+    confirmationSignature(n, [{ ...answer, note: "Only after review" }], ""),
   ).not.toBe(before);
   expect(
     confirmationSignature(
       { ...n, send: { to: { repo: "example-org/other", number: 17 } } },
       [answer],
-      0,
+      "",
     ),
   ).not.toBe(before);
-  expect(confirmationSignature(n, [answer], 1)).not.toBe(before);
+  expect(confirmationSignature(n, [answer], "maintainer-a 1")).not.toBe(before);
 });
 
 test("an issue destination is checked against its configured tracker repository", () => {

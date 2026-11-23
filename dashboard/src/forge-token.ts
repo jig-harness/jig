@@ -1,42 +1,78 @@
 /**
- * The GitHub token a person pastes so the page can send their answers
- * (`send.tsx`), kept in this browser alone with the login GitHub named for it
- * when it was tested. It never reaches the dashboard's server: the page sends
- * it only in the `Authorization` header of its own calls to GitHub
- * (`github.ts`). A browser that refuses storage keeps it while the page stays
- * open, and the settings panel says so.
+ * The GitHub tokens a person pastes so the page can send their answers
+ * (`send.tsx`): one per GitHub account, each with the login GitHub named for
+ * it when it was tested and the repository owners it answers for
+ * (`token-owners.ts`). They are kept in this browser alone and never reach the
+ * dashboard's server: the page sends a token only in the `Authorization`
+ * header of its own calls to GitHub (`github.ts`). A browser that refuses
+ * storage keeps them while the page stays open, and the settings panel says
+ * so.
+ *
+ * They are kept as one list under `github-tokens`. A browser that kept the
+ * single token of the earlier shape under `github-token` reads it as a token
+ * that names no owner, so it answers for every owner as before; the first
+ * change the person makes writes the list and removes the earlier key.
  */
 import { useSyncExternalStore } from "react";
+import { isRecord } from "../../plugin/shared/guards.ts";
 import { readKeptRecord, writeKept } from "./kept.ts";
+import {
+  credentialOf,
+  type KeptToken,
+  ownerOf,
+  tokenFor,
+} from "./token-owners.ts";
 
-const KEY = "github-token";
+export type { KeptToken } from "./token-owners.ts";
 
-/** A tested token, and who it signs in as. */
-export interface KeptToken {
-  token: string;
-  login: string;
-  /** When it was tested, in milliseconds. */
-  at: number;
-}
+const KEY = "github-tokens";
+/** Where a browser kept its one token before it could keep several. */
+const EARLIER_KEY = "github-token";
 
 const isText = (v: unknown): v is string => typeof v === "string" && v !== "";
 
-/** The token kept in storage, when what is there is one. */
-function storedToken(): KeptToken | null {
-  const value = readKeptRecord(KEY);
-  const { token, login, at } = value ?? {};
-  return isText(token) && isText(login) && typeof at === "number"
-    ? { token, login, at }
-    : null;
+/** One stored token, when what is there is one; `owners` absent reads as none. */
+function storedToken(value: unknown): KeptToken | null {
+  if (!isRecord(value)) return null;
+  const { token, login, at, owners } = value;
+  if (!isText(token) || !isText(login) || typeof at !== "number") return null;
+  return {
+    token,
+    login,
+    at,
+    owners: Array.isArray(owners) ? owners.filter(isText) : [],
+  };
+}
+
+/** The tokens what storage holds stands for: the list, else the earlier single token, each account once. */
+export function tokensFrom(
+  list: Record<string, unknown> | null,
+  earlier: Record<string, unknown> | null,
+): KeptToken[] {
+  const read =
+    list !== null && Array.isArray(list.tokens)
+      ? list.tokens.map(storedToken)
+      : [storedToken(earlier)];
+  const tokens: KeptToken[] = [];
+  for (const token of read)
+    if (
+      token !== null &&
+      !tokens.some((t) => t.login.toLowerCase() === token.login.toLowerCase())
+    )
+      tokens.push(token);
+  return tokens;
 }
 
 // What this page holds: read from storage once, then whatever the person kept or forgot.
-let held: { kept: KeptToken | null; saved: boolean } | null = null;
+let held: { tokens: KeptToken[]; saved: boolean } | null = null;
 const listeners = new Set<() => void>();
 let revision = 0;
 
-function now(): { kept: KeptToken | null; saved: boolean } {
-  held ??= { kept: storedToken(), saved: true };
+function now(): { tokens: KeptToken[]; saved: boolean } {
+  held ??= {
+    tokens: tokensFrom(readKeptRecord(KEY), readKeptRecord(EARLIER_KEY)),
+    saved: true,
+  };
   return held;
 }
 
@@ -45,33 +81,48 @@ function changed(): void {
   for (const listener of listeners) listener();
 }
 
-/** The token kept now, or `null`. */
-export function keptToken(): KeptToken | null {
-  return now().kept;
+/** The tokens kept now. */
+export function keptTokens(): KeptToken[] {
+  return now().tokens;
 }
 
-/** Changes whenever this page or another tab replaces or forgets the token. */
-export function tokenGeneration(): number {
-  return revision;
+/** The token kept now that answers for `repo`'s owner, or `null`. */
+export function tokenForRepo(repo: string): KeptToken | null {
+  return tokenFor(keptTokens(), ownerOf(repo));
 }
 
-/** Keeps a tested token, or forgets the one kept when `null`; whether this browser stored it rather than holding it only while the page is open. */
-export function keepToken(kept: KeptToken | null): boolean {
-  const saved = writeKept(KEY, kept === null ? null : JSON.stringify(kept));
+/** Which token a card sending to `repo` would send with now, for its confirmation. */
+export function credentialFor(repo: string): string {
+  return credentialOf(tokenForRepo(repo));
+}
+
+/** Keeps `tokens` in place of those kept; whether this browser stored them rather than holding them only while the page is open. */
+export function keepTokens(tokens: KeptToken[]): boolean {
+  const saved = writeKept(
+    KEY,
+    tokens.length === 0 ? null : JSON.stringify({ tokens }),
+  );
+  // Neither key may revive older tokens once this write is refused.
   if (!saved) writeKept(KEY, null);
-  held = { kept, saved: kept === null || saved };
+  writeKept(EARLIER_KEY, null);
+  held = { tokens, saved: tokens.length === 0 || saved };
   changed();
   return saved;
 }
 
-/** The token kept now, followed as it changes, and whether storage holds it. */
-export function useKeptToken(): { kept: KeptToken | null; saved: boolean } {
+/** The tokens kept now, followed as they change, and whether storage holds them. */
+export function useKeptTokens(): { tokens: KeptToken[]; saved: boolean } {
   useSyncExternalStore(
     (listener) => {
       listeners.add(listener);
-      // A token kept or forgotten in another tab of this page is read again.
+      // Tokens kept or forgotten in another tab of this page are read again.
       const fromOtherTab = (event: StorageEvent) => {
-        if (event.key !== null && !event.key.endsWith(`:${KEY}`)) return;
+        if (
+          event.key !== null &&
+          !event.key.endsWith(`:${KEY}`) &&
+          !event.key.endsWith(`:${EARLIER_KEY}`)
+        )
+          return;
         held = null;
         changed();
       };

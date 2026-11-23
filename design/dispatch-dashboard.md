@@ -458,18 +458,33 @@ host is `dashboard (browser)` since a browser has no machine name to
 digest. One comment per decision, as `jig send` answers one key per
 comment, since a comment carries one record. The page posts each through
 GitHub's REST API (`POST /repos/{owner}/{repo}/issues/{n}/comments`) itself,
-from the browser, with a fine-grained token the person pastes once per
-browser
+from the browser, with the fine-grained token the person pasted in that
+browser for the target repository's owner
 ([ADR-0019](../docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md)). So:
 
-- **Who writes, and with what.** The person, with their own token. The
-  page's settings panel tests a pasted token by asking GitHub who it signs
-  in as (`GET /user`), names that login, keeps the token in the browser's
-  local storage alone (for the page's own origin; a browser that refuses
-  storage keeps it while the page stays open) and forgets it on request. A
-  card names the login it sends as where the park names another person; the
-  drive counts any author its rule for answers trusts, so this informs and
-  never blocks.
+- **Who writes, and with what.** The person, with their own tokens, one per
+  GitHub account they answer as. The page's settings panel tests each
+  pasted token by asking GitHub who it signs in as (`GET /user`), names
+  that login, keeps the token in the browser's local storage alone (for the
+  page's own origin; a browser that refuses storage keeps it while the page
+  stays open) with the repository owners it answers for, and forgets each
+  on request, leaving the others kept. A card names the login it sends as
+  where the park names another person; the drive counts any author its rule
+  for answers trusts, so this informs and never blocks.
+- **Which token a card sends with.** The token that names the card's target
+  repository's owner (`example-org` covers every `example-org/*`
+  repository, compared without case), or else the one token that names no
+  owner, which answers for every owner no other token names. A card whose
+  owner no token answers for has no Send, names that owner and points at
+  the settings; Copy still works. One owner maps to one token, one token at
+  most names no owner, and one account keeps one token: the panel refuses a
+  token or a mapping that would break these, naming the token that holds
+  the owner, rather than choosing. The panel also names the owners of the
+  cards that can send that no token answers for. A browser that kept the
+  single token of the earlier storage shape keeps it as the token that
+  names no owner. Tokens are chosen by owner, not by repository, because an
+  owner's repositories are reached by one account
+  ([ADR-0019](../docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md#which-token-a-card-sends-with)).
 - **What the host never does.** The dashboard's server has no route that
   writes and never receives the token, the comment or GitHub's answer. The
   dispatcher never relays an answer, and no pass sees one before the forge
@@ -492,7 +507,9 @@ browser
 - **Every send is confirmed.** Send first shows the target, the login it
   sends as and the exact answer, and Confirm send posts. The confirmation
   holds for what it showed alone: a change to the target, the decision's
-  framing, the answer's text or the token asks for a new one. A guarded pick
+  framing, the answer's text or the token the card sends with (replaced,
+  forgotten, or another token now answering for its owner) asks for a new
+  one, and a change to another token leaves it standing. A guarded pick
   (under a class the acts table does not list as Decide, or of an option
   that cannot be undone) also takes this second step to copy.
 - **Only where an answer comment is read.** Send is offered where the
@@ -509,7 +526,7 @@ browser
   every card says why it has no Send and the settings panel takes no
   token, since someone on the path who can change the page could read it.
 - **What comes back.** After GitHub answers 201 for each comment, the card
-  links them, in this browser alone, and the page reads the line every 3
+  links them with the login that sent them, in this browser alone, and the page reads the line every 3
   seconds for up to 90 seconds, stopping sooner once the tick records the
   answer's outcome. The card then shows whether the step was carried out,
   refused with its reason, or held: an answered hold leaves the list and is
@@ -522,10 +539,10 @@ browser
   A call with no answer says the comment may or may not be posted and to
   check the linked issue or pull request before sending again.
 
-**The token's scope.** A fine-grained personal access token, limited to the
-repositories the dashboard shows, with Issues and Pull requests set to read
-and write, and a short expiry. The settings panel says so and lists the
-repositories whose cards can send. A token with wider rights works but
+**The tokens' scope.** Each a fine-grained personal access token, limited to
+the repositories the dashboard shows of the owners it answers for, with
+Issues and Pull requests set to read and write, and a short expiry. The
+settings panel says so and lists the repositories whose cards can send. A token with wider rights works but
 risks more if it leaks.
 
 **Threat model.** The token is as safe as the page's origin and the browser

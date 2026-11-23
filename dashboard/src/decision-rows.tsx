@@ -4,8 +4,8 @@
  * recommended option and the pick. The other options fold under the row. On
  * a phone each option is a row to tap and no number is shown; with keys, the
  * number picks it (`use-picking.ts`). Below the rows: how many are picked,
- * Copy and, where a token is kept, Send (`send.tsx`), each taking a second
- * step for a guarded pick, and Undo.
+ * Copy and, where a kept token answers for the card's owner, Send
+ * (`send.tsx`), each taking a second step for a guarded pick, and Undo.
  */
 import { CopyButton } from "./copy.tsx";
 import { InlineDecisionText } from "./decision-text.tsx";
