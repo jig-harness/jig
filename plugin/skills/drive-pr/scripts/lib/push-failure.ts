@@ -288,7 +288,8 @@ export function outputTail(): {
 export function pushFailureKind(output: string): PushFailureKind {
   if (/^\d+s and was killed\.$/m.test(output)) return "timeout";
   if (output.split(/\r?\n|\r/).some(isUnconfirmedPush)) return "unconfirmed";
-  if (/^\s*!\s*\[(remote )?rejected\]/m.test(output)) return "remote-rejected";
+  if (/^[ \t]*![ \t]*\[(remote )?rejected\]/m.test(output))
+    return "remote-rejected";
   if (
     /^(fatal: (unable to access|the remote end hung up|could not read from remote repository)|ssh: connect to host|error: RPC failed)/im.test(
       output,
