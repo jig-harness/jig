@@ -232,13 +232,31 @@ function partialOf(
   const long = parts.filter(([, c]) => more(c)).map(([name]) => name);
   const why =
     long.length === 0 ? [] : [`more ${long.join(", ")} than one read holds`];
-  if (checkPageNodes(contexts) === null)
+  if (initialChecksIncomplete(commit, contexts))
     why.push("its first check page was incomplete");
   // The checks belong to the head only when the commit they were read on is it.
   const checked = str(at(commit, "commit", "oid"));
   if (checked !== "" && checked !== head)
     why.push("its checks were read on another commit");
   return why.length === 0 ? null : why.join("; ");
+}
+
+/** A null rollup is a complete head with no check contexts; any other absent or malformed connection is incomplete. */
+function initialChecksIncomplete(commit: unknown, contexts: unknown): boolean {
+  if (at(commit, "statusCheckRollup") === null) return false;
+  return (
+    checkPageNodes(contexts) === null ||
+    typeof at(contexts, "pageInfo", "hasNextPage") !== "boolean"
+  );
+}
+
+function initialCheckPageNodes(
+  commit: unknown,
+  contexts: unknown,
+): unknown[] | null {
+  return initialChecksIncomplete(commit, contexts)
+    ? null
+    : checkPageNodes(contexts);
 }
 
 /** What one query read: each pull request's facts, and what the forge charged. */
@@ -359,9 +377,9 @@ interface CheckPage {
   after: string | null;
 }
 
-/** The forge transport requires at least one second for a call. */
-function wholeSecondsLeft(deadline: number): number {
-  return Math.ceil((deadline - currentMs()) / 1000);
+/** The remaining shared deadline, passed to the transport without rounding up. */
+function secondsLeft(deadline: number): number {
+  return (deadline - currentMs()) / 1000;
 }
 
 /** Read a continuation pinned to the original head, using the board's deadline. */
@@ -372,7 +390,7 @@ async function readCheckPage(
   after: string,
   deadline: number,
 ): Promise<Outcome<CheckPage, "unreadable">> {
-  const leftSec = wholeSecondsLeft(deadline);
+  const leftSec = secondsLeft(deadline);
   if (leftSec <= 0)
     return failed(
       "unreadable",
@@ -384,6 +402,11 @@ async function readCheckPage(
     "-f",
     `after=${after}`,
   ]);
+  if (currentMs() >= deadline)
+    return failed(
+      "unreadable",
+      "the merge facts deadline expired while reading the next check page",
+    );
   if (!next.ok)
     return failed(
       "unreadable",
@@ -424,7 +447,7 @@ async function completeChecks(
   if (!more(initial) || at(commit, "oid") !== facts.head || !isRecord(initial))
     return facts;
 
-  const entries = checkPageNodes(initial);
+  const entries = initialCheckPageNodes(commit, initial);
   if (entries === null)
     return incompleteChecks(facts, "the first check page was incomplete");
   let after = str(at(initial, "pageInfo", "endCursor"));
@@ -454,6 +477,30 @@ async function completeChecks(
   );
 }
 
+interface FactsPage {
+  facts: FactsRead;
+  answer: unknown;
+}
+
+/** Read one board page without accepting a response that outlived the shared deadline. */
+async function readFactsPage(
+  slug: string | null,
+  numbers: readonly number[],
+  deadline: number,
+): Promise<Outcome<FactsPage, "unreadable">> {
+  const leftSec = secondsLeft(deadline);
+  if (leftSec <= 0)
+    return failed("unreadable", "the merge facts deadline expired");
+  const answer = await queryGraphql(slug, factsQuery(numbers), leftSec);
+  if (!answer.ok) return answer;
+  if (currentMs() >= deadline)
+    return failed("unreadable", "the merge facts deadline expired");
+  return ok({
+    facts: parseAnswer(answer.value, numbers),
+    answer: answer.value,
+  });
+}
+
 /**
  * The facts of `numbers` in `slug`, `FACTS_PAGE` to a query, each under
  * one shared `timeoutSec` deadline, or why a query did not read (ADR-0012). With `slug`
@@ -476,17 +523,17 @@ export async function readMergeFacts(
   const deadline = currentMs() + timeoutSec * 1000;
   const checkPulls = new Map<number, unknown>();
   for (let i = 0; i < numbers.length; i += FACTS_PAGE) {
-    const leftSec = wholeSecondsLeft(deadline);
-    if (leftSec <= 0)
-      return failed("unreadable", "the merge facts deadline expired");
     const chunk = numbers.slice(i, i + FACTS_PAGE);
-    const answer = await queryGraphql(slug, factsQuery(chunk), leftSec);
-    if (!answer.ok) return answer;
-    const part = parseAnswer(answer.value, chunk);
+    const next = await readFactsPage(slug, chunk, deadline);
+    if (!next.ok) return next;
+    const part = next.value.facts;
     addPart(read, part);
     for (const [n, facts] of part.pulls) {
       if (facts.partial !== null)
-        checkPulls.set(n, at(answer.value, "data", "repository", `pr${n}`));
+        checkPulls.set(
+          n,
+          at(next.value.answer, "data", "repository", `pr${n}`),
+        );
     }
   }
   for (const [n, pull] of checkPulls) {

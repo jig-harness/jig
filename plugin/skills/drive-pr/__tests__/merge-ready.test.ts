@@ -551,6 +551,7 @@ describe("the forge's facts", () => {
             commit: {
               statusCheckRollup: {
                 contexts: {
+                  pageInfo: { hasNextPage: false },
                   nodes: [
                     {
                       __typename: "CheckRun",

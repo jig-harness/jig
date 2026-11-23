@@ -167,6 +167,7 @@ for (const scenario of [
   "wrong-head",
   "unreadable-entry",
   "unreadable-first-page",
+  "deadline",
 ] as const) {
   it(`places a converged pull request using paginated checks (${scenario})`, async () => {
     const r = await run(
@@ -198,7 +199,7 @@ for (const scenario of [
       const scenario = ${JSON.stringify(scenario)};
       const after = Number(args.find((arg) => arg.startsWith("after="))?.slice("after=".length) ?? 0);
       appendFileSync(process.env.MERGE_FIXTURE + "/calls", JSON.stringify(args) + "\\n");
-      if (scenario === "deadline") writeFileSync(process.env.MERGE_FIXTURE + "/clock", "29500");
+      if (scenario === "deadline") writeFileSync(process.env.MERGE_FIXTURE + "/clock", after ? "30800" : "29500");
       const check = (id, name, conclusion = "SUCCESS", app = "github-actions", startedAt = "2026-11-08T10:00:00Z") => ({
         __typename: "CheckRun", databaseId: id, name, status: "COMPLETED",
         conclusion, startedAt, isRequired: app !== "example-review", checkSuite: { app: { slug: app } },
@@ -233,12 +234,15 @@ for (const scenario of [
     expectSpawnExit(r, 0);
     const result = JSON.parse(r.stdout);
     const calls = r.calls.trim().split("\n");
-    expect(result.cost).toBe(calls.length);
+    expect(result.cost).toBe(
+      scenario === "deadline" ? calls.length - 1 : calls.length,
+    );
     const partialRequests = {
       capped: 4,
       "wrong-head": 2,
       "unreadable-entry": 2,
       "unreadable-first-page": 1,
+      deadline: 2,
     } as const;
     if (scenario in partialRequests) {
       expect(calls).toHaveLength(
