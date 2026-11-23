@@ -404,6 +404,22 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.304.4] - 2026-11-23
+
+### Fixed
+
+- `jig dispatch`: a claimed item whose open pull request's drive is asked for
+  but not yet armed (a person's `drive` label, the completed pickup's
+  first-drive handoff, or `dispatch.adopt`) is now carried by that pull
+  request, shown with its drive waiting to be armed, instead of raised as a
+  stalled pickup whose pull request "has no drive" once it idles past
+  `dispatch.stalled_after`.
+- `jig dispatch`: a stalled pickup relaunched in its own tree
+  (`dispatch.stalled_relaunch: finish-once`) now keeps its workspace's
+  branch on its launch record, a retried relaunch included, so a relaunched
+  process pickup that opens its pull request and hands off the first drive
+  (`drive@`) gets that drive armed, as a first launch does.
+
 ## [0.304.3] - 2026-11-23
 
 ### Fixed
@@ -10813,7 +10829,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.304.3...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.304.4...HEAD
+[0.304.4]: https://github.com/jig-harness/jig/compare/v0.304.3...v0.304.4
 [0.304.3]: https://github.com/jig-harness/jig/compare/v0.304.2...v0.304.3
 [0.304.2]: https://github.com/jig-harness/jig/compare/v0.304.1...v0.304.2
 [0.304.1]: https://github.com/jig-harness/jig/compare/v0.304.0...v0.304.1

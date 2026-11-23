@@ -313,7 +313,7 @@ describe("a claimed pickup that stopped on a host fault", () => {
         ),
         relaunch: {
           record: SOURCE,
-          workspace: { id: "w12", path: PATH },
+          workspace: { id: "w12", path: PATH, branch: "12-task" },
           head: HEAD,
           fault: expect.stringContaining("inodes"),
         },
