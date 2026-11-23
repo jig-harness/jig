@@ -168,11 +168,13 @@ describe("the excerpt's bound", () => {
       said("run", { id: "t1", name: "Bash" }),
       result("t1", "boom", true),
       { type: "jig-omitted" },
+      said("again", { id: "t2", name: "Bash" }),
+      result("t2", "later boom", true),
       said("done"),
     ]);
     const excerpt = transcriptExcerpt(text);
-    expect(excerpt.toolErrors).toEqual([]);
-    expect(excerpt.assistant).toEqual(["run", "done"]);
+    expect(excerpt.toolErrors.map((e) => e.text)).toEqual(["later boom"]);
+    expect(excerpt.assistant).toEqual(["run", "again", "done"]);
     expect(excerpt.cut).toBe(true);
   });
 });

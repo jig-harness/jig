@@ -297,7 +297,7 @@ describe("keeping a run's transcript copy", () => {
     }
   });
 
-  it("masks a secret in a tool output that holds JSON, in its decoded form too", () => {
+  it("leaves out a line whose tool output holds JSON with a secret in its decoded form", () => {
     const root = scratch();
     const config = join(root, "config");
     const secret = 'ab"cd\\ef-credential';
@@ -320,12 +320,47 @@ describe("keeping a run's transcript copy", () => {
         SESSION,
         root,
       );
-      const line = JSON.parse(
-        readFileSync(String(copy?.transcript), "utf8").trim(),
+      expect(copy?.transcript).toBeNull();
+      expect(copy?.cut).toBe(true);
+    } finally {
+      holdCredential("none", "unused-placeholder");
+    }
+  });
+
+  it("leaves out lines whose JSON after a header, JSON string, deep nesting or credential key could hide a secret, and a marker-shaped source record", () => {
+    const root = scratch();
+    const config = join(root, "config");
+    const secret = 'ab"cd\\ef-credential';
+    const safe = { type: "assistant", message: "kept-evidence" };
+    let deep: unknown = "x";
+    for (let i = 0; i < 3000; i++) deep = [deep];
+    claudeTranscript(config, [
+      safe,
+      { out: `Output:\n${JSON.stringify({ a: secret })}` },
+      { out: JSON.stringify(JSON.stringify({ a: secret })) },
+      { out: JSON.stringify({ password: "opaque value x" }) },
+      { out: '{"big":9007199254740993}' },
+      { deep },
+      { type: "jig-omitted" },
+    ]);
+    holdCredential(ID, secret);
+    try {
+      const copy = keepTranscriptCopy(
+        record(config, {
+          provider: { provider: "p" },
+        } as unknown as Partial<LaunchRecord>),
+        SESSION,
+        root,
       );
-      const inner = JSON.parse(line.payload.output);
-      expect(inner.output).not.toContain(secret);
-      expect(inner.output).toContain("<redacted>");
+      const text = readFileSync(String(copy?.transcript), "utf8");
+      expect(text).toContain("kept-evidence");
+      expect(text).not.toContain("opaque value");
+      expect(text).not.toContain("ef-credential");
+      expect(text).toContain("9007199254740993");
+      expect(
+        text.split("\n").filter((l) => l.includes("jig-omitted")).length,
+      ).toBeGreaterThan(0);
+      expect(copy?.cut).toBe(true);
     } finally {
       holdCredential("none", "unused-placeholder");
     }

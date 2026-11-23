@@ -40,6 +40,9 @@ import { writeWall } from "./walls.ts";
 export type CredentialCode = "unauthorized" | "unreachable";
 
 /** The longest value a credential command may print. */
+/** The line a transcript copy writes where lines were left out; a credential that is part of it could not be told apart from it. */
+export const OMITTED_LINE_TEXT = JSON.stringify({ type: "jig-omitted" });
+
 const LONGEST_VALUE = 4096;
 
 /**
@@ -113,7 +116,10 @@ export async function resolveCredential(
   // A refused value is still remembered, so nothing this process records later can carry it.
   rememberSecret(value);
   // A value that is, or contains, a sink's replacement text could not be told apart from redacted output.
-  if (/<redacted>|\[redacted\]|\[launch token\]/i.test(value))
+  if (
+    /<redacted>|\[redacted\]|\[launch token\]/i.test(value) ||
+    OMITTED_LINE_TEXT.includes(value)
+  )
     return failed(
       "unauthorized",
       "the credential command printed a value that contains a redaction marker",
