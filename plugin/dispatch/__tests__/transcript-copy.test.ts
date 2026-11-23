@@ -201,11 +201,34 @@ describe("keeping a run's transcript copy", () => {
       expect(text).not.toContain(credential);
       const parsed = JSON.parse(text.trim());
       expect(parsed.keep).toBe("unrelated");
-      // The colliding names stay three fields, none lost.
-      expect(Object.keys(parsed.extra).length).toBeGreaterThanOrEqual(4);
+      // The colliding names stay distinct fields, none lost (the token-named field is a credential key, so its value is masked).
+      expect(parsed.extra["<redacted>#2"]).toBe(2);
+      expect(Object.values(parsed.extra).sort()).toEqual(
+        expect.arrayContaining([2, 3, "<redacted>"]),
+      );
+      expect(Object.keys(parsed.extra)).toHaveLength(5);
     } finally {
       holdCredential("none", "unused-placeholder");
     }
+  });
+
+  it("keeps an own constructor field and a field named authorization whose key a held secret would rename", () => {
+    const root = scratch();
+    const config = join(root, "config");
+    claudeTranscript(config, [
+      {
+        type: "assistant",
+        message: { content: [] },
+        constructor: "plain",
+        authorization: "some-other-opaque-secret",
+      },
+    ]);
+    const copy = keepTranscriptCopy(record(config), SESSION, root);
+    const parsed = JSON.parse(
+      readFileSync(String(copy?.transcript), "utf8").trim(),
+    );
+    expect(parsed.constructor).toBe("plain");
+    expect(parsed.authorization).toBe("<redacted>");
   });
 
   it("redacts structured tool inputs by their secret keys", () => {

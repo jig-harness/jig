@@ -166,10 +166,10 @@ function maskExact(value: unknown, secrets: readonly string[]): unknown {
   if (Array.isArray(value))
     return value.map((item) => maskExact(item, secrets));
   if (value !== null && typeof value === "object") {
-    const rebuilt: Record<string, unknown> = {};
+    const rebuilt: Record<string, unknown> = Object.create(null);
     for (const [key, field] of Object.entries(value)) {
       let name = replaceSecrets(key, secrets);
-      // Two names that mask alike stay two fields.
+      // Two names that mask alike stay two fields; only names already written count.
       for (let n = 2; name in rebuilt; n++)
         name = `${replaceSecrets(key, secrets)}#${n}`;
       rebuilt[name] = maskExact(field, secrets);
@@ -180,13 +180,17 @@ function maskExact(value: unknown, secrets: readonly string[]): unknown {
 }
 
 /** The transcript's lines, each redacted; a line that does not read as JSON is left out. */
-function redactedLines(text: string, held: readonly string[]): string[] {
+function redactedLines(
+  text: string,
+  held: readonly string[],
+): { lines: string[]; omitted: number } {
   const secrets = [...new Set(held.filter((secret) => secret !== ""))].sort(
     (a, b) => b.length - a.length,
   );
   const mask = (value: string) =>
     maskCredentials(replaceSecrets(value, secrets), "<redacted>");
   const lines: string[] = [];
+  let omitted = 0;
   for (const line of text.split("\n")) {
     if (line.trim() === "") continue;
     let value: unknown;
@@ -198,14 +202,25 @@ function redactedLines(text: string, held: readonly string[]): string[] {
     }
     // The exact values are masked in the parsed strings, numbers and property names first, so no generic rule can split them; the serialized line is masked again as JSON escapes it.
     let serialized = JSON.stringify(
-      redactStrings(maskFields(maskExact(value, secrets)), mask),
+      redactStrings(maskExact(maskFields(value), secrets), mask),
     );
     for (const secret of secrets)
       for (const form of new Set([secret, JSON.stringify(secret).slice(1, -1)]))
         serialized = serialized.split(form).join("<redacted>");
+    // A residual match that spanned JSON syntax would break the line: omit it rather than keep a line the reader skips.
+    try {
+      JSON.parse(serialized);
+    } catch (error) {
+      swallow(
+        error,
+        "a redacted transcript line that no longer reads is left out",
+      );
+      omitted++;
+      continue;
+    }
     lines.push(serialized);
   }
-  return lines;
+  return { lines, omitted };
 }
 
 /** The end of `lines` that fits in `COPY_BYTES`, and whether any was left out. */
@@ -271,15 +286,18 @@ export function keepTranscriptCopy(
     if ("missing" in found) copy = { ...copy, missing: found.missing };
     else {
       const longer = statSync(found.path).size > COPY_BYTES;
-      const { text, dropped } = boundedEnd(
-        redactedLines(readBoundedTail(found.path, COPY_BYTES), [
-          record.token,
-          heldCredential(record.id) ?? "",
-        ]),
-      );
+      const redacted = redactedLines(readBoundedTail(found.path, COPY_BYTES), [
+        record.token,
+        heldCredential(record.id) ?? "",
+      ]);
+      const { text, dropped } = boundedEnd(redacted.lines);
       const path = join(dir, "transcript.jsonl");
       writePrivate(path, text);
-      copy = { ...copy, transcript: path, cut: longer || dropped };
+      copy = {
+        ...copy,
+        transcript: path,
+        cut: longer || dropped || redacted.omitted > 0,
+      };
     }
     writePrivate(join(dir, "copy.json"), `${JSON.stringify(copy)}\n`);
     return copy;

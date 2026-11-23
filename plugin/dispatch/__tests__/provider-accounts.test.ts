@@ -136,6 +136,8 @@ describe("a provider account", () => {
       " https://openrouter.ai/api",
       "https://openrouter.ai/api\n",
       "\thttps://openrouter.ai/api",
+      "\u00a0https://openrouter.ai/api",
+      "https://openrouter.ai/api\u00a0",
     ])
       expect(refusal([router({ base_url: url })])).toContain("plain URL");
   });

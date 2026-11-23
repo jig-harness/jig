@@ -315,6 +315,10 @@ function baseUrl(
     return invalid(
       `${where} must be a plain URL with no backslash, space or control character (its value is withheld)`,
     );
+  if (typeof value === "string" && value !== value.trim())
+    return invalid(
+      `${where} must be a plain URL with no leading or trailing space (its value is withheld)`,
+    );
   const raw = text(value, where);
   if (!raw.ok) return raw;
   if (!URL.canParse(raw.value))
