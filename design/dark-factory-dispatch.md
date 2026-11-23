@@ -716,7 +716,10 @@ state undecided (a mergeability still being computed), or unarmed: no ledger
 yet, but a person's `drive` label, the completed pickup's first-drive
 handoff or the adoption rule asks for one, so the tick is about to arm it. A
 drive that stays unarmed is reported by whatever keeps it from arming
-(admission, slots, the arming rule), not as a stalled pickup. The tick reports the
+(admission, slots, the arming rule), not as a stalled pickup; one a launch
+already armed at its head, which ended without leaving a ledger, is not
+armed again until the head moves, so it carries nothing and the stall need
+names that launch. The tick reports the
 item as carried by that pull request, with its link and the drive's state,
 and the line lists it as [carried](../GLOSSARY.md); what a person must do
 there is the pull request's own need, shown once. A pull request merged

@@ -18,7 +18,10 @@
  *   or `unarmed`: no ledger yet, but something asks for one (a person's
  *   `drive` label, the completed pickup's first-drive handoff, the adoption
  *   rule), so the tick is about to arm it. A drive that stays unarmed is
- *   reported by whatever keeps it from arming, not as a stalled pickup.
+ *   reported by whatever keeps it from arming, not as a stalled pickup;
+ *   one a launch already armed at its head, which ended without leaving a
+ *   ledger, is not armed again until the head moves, so the plan reads it
+ *   as no drive (`armed-carriers.ts`) and the stall need names that launch.
  *   Whatever a person must do there is the pull request's own need, so the
  *   item raises no second one and is reported with the drive's state beside
  *   it. A pull request with no drive does not carry it: the item is a
