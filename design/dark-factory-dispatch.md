@@ -1298,7 +1298,16 @@ and from the ledger's heartbeat. These answers are unknowns, never "no
 session": a host the runtime's answer marks as not covered, a page cut
 short by its row limit, and a workspace on a branch that matches the item
 or pull request but whose agents the runtime does not report. The tick
-plans nothing for an item or pull request it cannot place, and reports why.
+starts nothing for an item or pull request it cannot place, and reports
+why. An agent the runtime does report working still holds its target
+beside such a workspace. Where the listing read and only a joined
+workspace's terminals are unreported (an idle shell or an editor looks the
+same as an agent the runtime cannot see), a notification, being only a
+message, still goes out, as it does beside a running session, so a stopped
+or parked drive and a stopped pickup stay on the line's needs; and a
+drive's re-arm or takeover becomes a person's need that names the
+workspace: closing the terminals that run no agent lets the next tick act
+on it.
 
 ### The tick reports by default and acts only with `--apply`
 
