@@ -268,11 +268,7 @@ function reviewerRuns(
 ): HeadCheck[] | null {
   const grouped = new Map<string, HeadCheck[]>();
   for (const check of facts.checks) {
-    if (
-      check.app !== rules.reviewerApp ||
-      !rules.reviewerCheck.test(check.name)
-    )
-      continue;
+    if (!isReviewerCheck(check, rules)) continue;
     const attempts = grouped.get(check.name) ?? [];
     attempts.push(check);
     grouped.set(check.name, attempts);
@@ -350,15 +346,7 @@ function witness(
 /** The checks failing on the head, the reviewer's own left to the witness. */
 function failingChecks(facts: ForgeFacts, rules: ReadyRules): string[] {
   return facts.checks
-    .filter(
-      (c) =>
-        c.state === "failure" &&
-        !(
-          rules.reviewerApp !== null &&
-          c.app === rules.reviewerApp &&
-          rules.reviewerCheck.test(c.name)
-        ),
-    )
+    .filter((c) => c.state === "failure" && !isReviewerCheck(c, rules))
     .map((c) => c.name);
 }
 
@@ -375,6 +363,8 @@ interface Read {
   failing: string[];
   /** Whether a required check other than the reviewer's failed on the head. */
   requiredFailing: boolean;
+  /** The names of those required failures. */
+  requiredFailingNames: string[];
   /** The forge's merge state, `null` where a merge queue decides instead. */
   state: string | null;
   own: boolean;
@@ -595,7 +585,7 @@ const BLOCKERS: Array<(r: Read) => Row | null> = [
       `changes were requested${by}: that reviewer re-reviews, or the drive is re-armed to address them`,
     ];
   },
-  ({ failing, state, requiredFailing }) =>
+  ({ failing, state, requiredFailing, requiredFailingNames }) =>
     failing.length > 0 &&
     (state === null ||
       state === "BLOCKED" ||
@@ -605,7 +595,9 @@ const BLOCKERS: Array<(r: Read) => Row | null> = [
       ? [
           "needs-you",
           person("re-run-check"),
-          `a check failed after the drive converged (${failing.join(", ")}): re-run it, or re-arm the drive`,
+          requiredFailing
+            ? `a required check failed after the drive converged (${requiredFailingNames.join(", ")})${failing.length > requiredFailingNames.length ? `; other failing checks: ${failing.filter((n) => !requiredFailingNames.includes(n)).join(", ")}` : ""}: re-run it, or re-arm the drive`
+            : `a check failed after the drive converged (${failing.join(", ")}): re-run it, or re-arm the drive`,
         ]
       : null,
   ({ facts }) =>
@@ -706,6 +698,11 @@ function trustOf(facts: MergeFacts, rules: ReadyRules): TrustVerdict | null {
 /** What every row and condition reads, worked out once. */
 function readOf(facts: MergeFacts, rules: ReadyRules): Read {
   facts = { ...facts, checks: latestChecks(facts, rules) };
+  const requiredFailingNames = facts.checks
+    .filter(
+      (c) => c.required && c.state === "failure" && !isReviewerCheck(c, rules),
+    )
+    .map((c) => c.name);
   const trusted = trustOf(facts, rules);
   return {
     facts,
@@ -713,9 +710,8 @@ function readOf(facts: MergeFacts, rules: ReadyRules): Read {
     ciHeld:
       rules.ciHoldLabel !== null && facts.labels.includes(rules.ciHoldLabel),
     failing: failingChecks(facts, rules),
-    requiredFailing: facts.checks.some(
-      (c) => c.required && c.state === "failure" && !isReviewerCheck(c, rules),
-    ),
+    requiredFailing: requiredFailingNames.length > 0,
+    requiredFailingNames,
     state: facts.mergeQueue ? null : facts.mergeState,
     own: OWN.has(facts.authorAssociation) || trusted?.met === true,
     trusted,

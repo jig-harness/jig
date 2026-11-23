@@ -634,17 +634,43 @@ describe("required checks and reviewer attempts", () => {
       { ...review, id: 2, required: true, state: "success" },
       ci,
     ];
-    expect(readiness(f, RULES).place).not.toBe("stay");
+    const r = readiness(f, RULES);
+    expect([r.place, r.waitsOn]).toEqual([
+      "needs-you",
+      { kind: "person", act: "open-pr" },
+    ]);
   });
-  it("lets an optional failure of a name a required check shares not override CLEAN", () => {
+  it("lets an optional failure of another app's check with a reviewer check's name not override CLEAN", () => {
+    const f = facts({ mergeState: "CLEAN" });
+    const [review, ci] = f.checks as [HeadCheck, HeadCheck];
+    f.checks = [
+      { ...review, id: 1, required: true, state: "failure" },
+      { ...review, id: 2, required: true, state: "success" },
+      {
+        ...ci,
+        name: review.name,
+        app: "other-ci",
+        required: false,
+        state: "failure",
+      },
+    ];
+    const r = readiness(f, RULES);
+    expect([r.place, r.lane]).toEqual(["ready", "merge-now"]);
+  });
+  it("names the required failures, not the optional ones, when they override CLEAN", () => {
     const f = facts({ mergeState: "CLEAN" });
     const [review, ci] = f.checks as [HeadCheck, HeadCheck];
     f.checks = [
       review,
-      { ...ci, app: "other-ci", required: false, state: "failure" },
-      { ...ci, required: true, state: "success", id: 9 },
+      { ...ci, name: "lint", required: false, state: "failure" },
+      { ...ci, required: true, state: "failure" },
     ];
-    expect(readiness(f, RULES).place).not.toBe("needs-you");
+    const r = readiness(f, RULES);
+    expect(r.place).toBe("needs-you");
+    expect(r.says).toContain(
+      "required check failed after the drive converged (test)",
+    );
+    expect(r.says).toContain("other failing checks: lint");
   });
   it("does not let an optional pending check hide an approval request", () => {
     const f = facts({
