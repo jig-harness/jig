@@ -86,7 +86,6 @@ import {
   hostFault,
   latestPickupFor,
 } from "./pickup-host-fault.ts";
-import { holdsItem } from "./launch-pickups.ts";
 import { namedMembers, wholeBatchQuestion } from "./batch-question.ts";
 import { relaunched, relaunchStep } from "./pickup-relaunch.ts";
 import { lockWaitStop } from "./pickup-lock-wait.ts";
@@ -204,6 +203,49 @@ function doubleClaim(
   };
 }
 
+interface WaitingSibling {
+  item: ClaimedItem;
+  input: PickupInput;
+  held: ReturnType<typeof holding>;
+  pr: LaunchPrReading;
+  latest: ReturnType<typeof latestPickupFor>;
+  record: ReadRecord;
+  anchor: string;
+}
+
+/** Claimed siblings of a whole-batch question, decided once every item is planned. */
+const waitingSiblings = new WeakMap<PickupPlan, WaitingSibling[]>();
+
+/**
+ * A claimed sibling of a whole-batch question waits quietly only while the
+ * anchor's own plan raised that question; the answer is the anchor's to
+ * settle. Otherwise (the anchor was released, or is carried or quiet) the
+ * sibling is planned as any claimed item, and raises no need of the batch's.
+ */
+function settleBatchSiblings(plan: PickupPlan): void {
+  for (const w of waitingSiblings.get(plan) ?? []) {
+    const shows = plan.actions.some(
+      (a) =>
+        a.target === w.anchor &&
+        a.cause === "pickup-question" &&
+        a.evidence.record === w.record.record.id,
+    );
+    if (!shows) {
+      planIdle(w.item, w.input, plan, {
+        held: w.held,
+        pr: w.pr,
+        latest: w.latest,
+      });
+      continue;
+    }
+    plan.quiet.push({
+      target: w.item.key,
+      class: "pickup-ended",
+      why: `waits on the question its batch's pass asked on ${w.anchor}, which names no member; the answer releases the anchor and the members the pass never claimed, and this member keeps its claim (launch record ${w.record.record.id})`,
+    });
+  }
+}
+
 export function planPickups(input: PickupInput): PickupPlan {
   const plan: PickupPlan = {
     actions: [],
@@ -228,6 +270,7 @@ export function planPickups(input: PickupInput): PickupPlan {
   for (const item of input.claimed ?? [])
     planClaimed(item, input, plan, joined(item.key));
   planWaiting(input, plan);
+  settleBatchSiblings(plan);
   if (input.values !== undefined && input.root !== undefined)
     plan.actions = batchPickups(
       plan.actions,
@@ -679,32 +722,22 @@ function planIdleClaimed(
     pickup.kind === "ended" &&
     batchQuestionForSibling(pickup.record, item.key)
   ) {
-    // A question about the whole batch is one need, on its anchor: a claimed
-    // sibling waits on it quietly only while the anchor holds it and shows it.
-    // A released anchor carries no question, so the sibling is planned as any
-    // claimed item; an anchor an open pull request carries shows none, so the
-    // sibling raises the need itself.
+    // A question about the whole batch is one need, on its anchor. Whether the
+    // anchor shows it depends on how the anchor itself is planned, so the
+    // sibling is settled once every item is (`settleBatchSiblings`).
     const anchor = pickup.record.record.item;
-    const whole = wholeBatchQuestion(pickup.record);
-    if (whole && anchor !== null && !holdsItem(pickup.record.record, anchor)) {
-      planIdle(item, input, plan, { held, pr, latest });
-      return;
-    }
-    if (
-      whole &&
-      anchor !== null &&
-      readLaunchPr(
-        { ...item, key: anchor },
-        input.launches,
-        input.sessions,
-        input.prOpen,
-      ).read.kind !== "open"
-    ) {
-      plan.quiet.push({
-        target: item.key,
-        class: "pickup-ended",
-        why: `waits on the question its batch's pass asked on ${anchor}, which names no member; the answer releases the anchor and the members the pass never claimed, and this member keeps its claim (launch record ${pickup.record.record.id})`,
+    if (wholeBatchQuestion(pickup.record) && anchor !== null) {
+      const waiting = waitingSiblings.get(plan) ?? [];
+      waiting.push({
+        item,
+        input,
+        held,
+        pr,
+        latest,
+        record: pickup.record,
+        anchor,
       });
+      waitingSiblings.set(plan, waiting);
       return;
     }
     plan.actions.push(endedNeed(input.slug, item, pickup.record, pickup.why));

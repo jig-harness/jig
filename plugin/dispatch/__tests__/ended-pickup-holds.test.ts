@@ -438,6 +438,19 @@ describe("a batch pickup that ended after claiming one member", () => {
     expect(next.quiet).toEqual([]);
   });
 
+  it("quiets a claimed sibling only when its claimed anchor raised the whole-batch question", () => {
+    const read = questionedBatch(
+      "Should the batch follow the shared approach?",
+    );
+    const next = plan([], [read], [], ["#923", "#924"]);
+    expect(
+      next.actions.filter((a) => a.cause === "pickup-question"),
+    ).toMatchObject([{ target: "#923" }]);
+    expect(
+      next.quiet.filter((q) => q.why.includes("waits on the question")),
+    ).toMatchObject([{ target: "#924" }]);
+  });
+
   it("plans a claimed sibling as any claimed item once the anchor of a whole-batch question is released", () => {
     const dir = root();
     const read = questionedBatch(
