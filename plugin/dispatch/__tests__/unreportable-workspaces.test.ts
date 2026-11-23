@@ -197,4 +197,26 @@ describe("a drive's unreportable notice", () => {
     expect(b.text.length).toBeLessThanOrEqual(4000);
     expect(b.text.split("\n")[1]).toContain("an agent may already work");
   });
+
+  it("names the workspace path exactly and keeps the original notice whole when it fits", async () => {
+    const { unreportedNotice, withUnreported } = await import(
+      "../lib/notices.ts"
+    );
+    const pr = {
+      number: 5,
+      title: "t",
+      url: "https://pr/5",
+      evidence: {},
+    } as never;
+    const path = `/work/${"a  b/".repeat(60)}end`;
+    const a = unreportedNotice("s", pr, "w", path, "r");
+    expect(a.text).toContain(`Check what holds ${path} and`);
+    const original = {
+      key: "k",
+      text: `[jig dispatch: k]\n${"q".repeat(3800)}`,
+    };
+    const b = withUnreported(original, "/work/a", "r".repeat(300));
+    expect(b.text).toContain("q".repeat(3800));
+    expect(b.text.length).toBeLessThanOrEqual(4000);
+  });
 });
