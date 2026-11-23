@@ -236,11 +236,19 @@ function providerHosts(value: unknown): Checked<Record<string, string[]>> {
         `${where} must name a provider in lowercase letters, digits and dashes`,
       );
     if (!Array.isArray(hosts)) return invalid(`${where} must list host names`);
-    const names = each(hosts, (host, i) =>
-      typeof host === "string" && /^[A-Za-z0-9.:[\]-]+$/.test(host)
-        ? ok(host.toLowerCase())
-        : invalid(`${where}[${i}] must be a host name, with no scheme or path`),
-    );
+    const names = each(hosts, (host, i) => {
+      const bad = invalid(
+        `${where}[${i}] must be a bare host name, with no scheme, port or path`,
+      );
+      if (typeof host !== "string" || !/^[A-Za-z0-9.:[\]-]+$/.test(host))
+        return bad;
+      // The same canonical form the URL check compares against (`URL.hostname`): a port, or a spelling the URL parser rewrites, is refused rather than silently never matching.
+      if (!URL.canParse(`https://${host}`)) return bad;
+      const parsed = new URL(`https://${host}`);
+      return parsed.port === "" && parsed.hostname === host.toLowerCase()
+        ? ok(parsed.hostname)
+        : bad;
+    });
     if (!names.ok) return names;
     out[provider] = names.value;
   }
@@ -256,12 +264,26 @@ function isLoopbackHost(host: string): boolean {
   );
 }
 
+/** `text` percent-decoded, or as written when it is not valid encoding. */
+function decodeURIComponentSafe(text: string): string {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+}
+
 /** Why a parsed base URL's form is refused: credentials, a query, or a scheme other than `https:` (`http:` only on loopback); `null` when it is not. */
 function urlFormRefusal(url: URL, where: string): string | null {
   if (url.username !== "" || url.password !== "")
     return `${where} must carry no user name or password (its value is withheld)`;
   if (url.search !== "" || url.hash !== "" || /[?#]/.test(url.href))
     return `${where} must carry no query or fragment (its value is withheld)`;
+  if (
+    maskCredentialShapes(decodeURIComponentSafe(url.pathname), "\u0000") !==
+    decodeURIComponentSafe(url.pathname)
+  )
+    return `${where} must carry no credential-shaped value in its path (its value is withheld)`;
   const loopbackHttp =
     url.protocol === "http:" && isLoopbackHost(url.hostname.toLowerCase());
   return url.protocol === "https:" || loopbackHttp

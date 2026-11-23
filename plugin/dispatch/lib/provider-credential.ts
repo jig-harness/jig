@@ -82,7 +82,8 @@ export async function resolveCredential(
     reapGroup: true,
   });
   if (done.bufferExceeded) {
-    learnPrinted(done.stdout);
+    // Only the bounded head is kept: the overflow chunk is never retained.
+    learnPrinted(done.stdout.slice(0, LONGEST_VALUE + 3));
     return failed(
       "unauthorized",
       "the credential command printed a value over 4 KiB",
@@ -110,6 +111,12 @@ export async function resolveCredential(
     return failed("unauthorized", "the credential command printed no value");
   // A refused value is still remembered, so nothing this process records later can carry it.
   rememberSecret(value);
+  // A value that is, or contains, a sink's replacement text could not be told apart from redacted output.
+  if (/<redacted>|\[redacted\]/i.test(value))
+    return failed(
+      "unauthorized",
+      "the credential command printed a value that contains a redaction marker",
+    );
   if (value.includes("\0"))
     return failed(
       "unauthorized",

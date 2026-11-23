@@ -437,7 +437,7 @@ a vendor's plan through its signed-in configuration directory; a
 provider with the host's own key, named by a credential reference that the
 host's `credential_command` resolves at each launch, and its pass carries
 that one key and no other provider's. A provider account is reported as
-configured and not admitted while the provider admission hold stands; the hold comes off with the spend-cap work.
+configured and not admitted while the provider admission hold stands; the hold comes off only once the spend-cap work lands together with the endpoint-routing, redaction and original-transcript work.
 Every launch for a repository, of either kind, needs the account's provider
 on the repository's own
 [`dispatch.allowed_providers`](CONFIGURATION.md#dispatch), read from its

@@ -28,7 +28,7 @@ page holds the account schema and everything else the build steps read.
 The account kind, the credential command, the identity forms and the
 provider allow list are built, the list applying to dispatch launches; a
 provider account is reported as configured and not admitted while the
-provider admission hold stands, which comes off with the spend-cap work. The
+provider admission hold stands, which comes off only once the spend-cap work lands together with the endpoint-routing, redaction and original-transcript work. The
 rest is not built yet: the allow list's reach over the measurement's replays
 and the repository need when no allowed account exists, redirect
 refusal and a minimum length beyond 8 characters are not enforced, and the
@@ -139,8 +139,7 @@ credential_timeout: 10s
 The contract of the command:
 
 - It is an argument list, run without a shell. Jig appends the reference as
-  the last argument, as one argument, so a reference with a space or a quote
-  in it is not interpreted.
+  the last argument, as one argument, so a quote or other shell character in a reference is not interpreted. The loader itself refuses a reference with whitespace in it, so write one without a space (a vault item with a space in its name cannot be named until the loader widens).
 - It runs with a small base of the host's environment (`PATH`, the home, the
   user, the locale and the temporary directory) and the variables
   `credential_env` names, such as a vault's session or service-account token
