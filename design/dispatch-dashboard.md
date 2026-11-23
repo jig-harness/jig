@@ -268,9 +268,10 @@ The card asks the question once, with the target replaced by "each item" or
 target with its repository, link, age and what became of its answer; the
 opened card shows each target's own evidence, what was already done and the
 reason. A box beside each target leaves it out ("all but these"); the ones
-left out stay open. A pick on the card is kept under the group's identity,
-so it stays while targets join or leave; the group's count and list change
-on the next read, and an answer covers exactly the targets listed when it
+left out stay open. A pick on the card is kept under the group's identity
+and the framing it was made for; the group's count and list change
+on the next read, and a change of membership changes the framing, which
+drops the pick. An answer covers exactly the targets listed when it
 was sent, which the confirmation names. Send posts one answer per target
 listed, each that target's own station answer with its own key and digest,
 as the person ([ADR-0019](../docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md)),

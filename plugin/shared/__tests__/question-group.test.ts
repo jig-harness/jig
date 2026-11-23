@@ -116,6 +116,40 @@ describe("questionGroups", () => {
     expect(questionGroups([a, b])).toEqual([[a], [b]]);
   });
 
+  it("keeps apart needs whose typed options differ in reversibility", () => {
+    const a = stationNeed("#17", stalled("#17"));
+    const b = stationNeed("#27", stalled("#27"));
+    const call = a.decisions[0]?.decision?.call;
+    if (call === undefined) throw new Error("no typed decision");
+    const withReversible = (n: LineNeed, reversible: boolean): LineNeed => {
+      const [d] = n.decisions;
+      if (d?.decision === undefined) throw new Error("no decision");
+      return {
+        ...n,
+        decisions: [
+          {
+            ...d,
+            // Only the typed option says it: no "Reversible" detail beside it.
+            options: (d.options ?? []).map((o) => ({ ...o, details: [] })),
+            decision: {
+              ...d.decision,
+              call: {
+                ...d.decision.call,
+                options: d.decision.call.options.map((o) => ({
+                  ...o,
+                  reversible,
+                })),
+              },
+            },
+          },
+        ],
+      };
+    };
+    const x = withReversible(a, true);
+    const y = withReversible(b, false);
+    expect(questionGroups([x, y])).toEqual([[x], [y]]);
+  });
+
   it("keeps apart needs of another class or another act", () => {
     const a = stationNeed("#17", stalled("#17"));
     const b = stationNeed("#27", stalled("#27"));

@@ -7,19 +7,23 @@
 import type { TargetOutcome } from "./question-group-send.ts";
 import type { GroupMember } from "./question-group-view.ts";
 
-/** What the line says the tick did with a target's answer. */
+/** What the line says the tick did with each decision of a target's answer, each with its key. */
 function actedWords(member: GroupMember): string | null {
-  const [a] = member.acted;
-  if (a === undefined) return null;
-  const did =
-    a.outcome === "done"
-      ? "carried out"
-      : a.outcome === "held"
-        ? "held"
-        : a.outcome === "refused"
-          ? "refused"
-          : "the tick is carrying it out";
-  return `${a.author} chose ${a.option}: ${did}${a.detail === null ? "." : ` — ${a.detail}`}`;
+  if (member.acted.length === 0) return null;
+  const each = member.acted.map((a) => {
+    const did =
+      a.outcome === "done"
+        ? "carried out"
+        : a.outcome === "held"
+          ? "held"
+          : a.outcome === "refused"
+            ? "refused"
+            : "the tick is carrying it out";
+    return `${a.author} chose ${a.option}: ${did}${a.detail === null ? "." : ` — ${a.detail}`}`;
+  });
+  return member.acted.length === 1
+    ? (each[0] ?? null)
+    : each.map((t, i) => `${member.acted[i]?.key}: ${t}`).join(" ");
 }
 
 /**

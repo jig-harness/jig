@@ -8,7 +8,7 @@
  * and the same number of decisions, and each decision, in
  * order, has the same kind, class and station, and the same question,
  * recommendation, options (each name, what it changes, what it costs, its
- * details and whether it is recommended), steps and interplay once the
+ * details, whether it is recommended and whether it is reversible), steps and interplay once the
  * need's own target identifier is replaced. Only that identifier is
  * replaced: another item or pull request named in the text stays, so a
  * question naming it groups only with questions naming the same one. The
@@ -40,7 +40,12 @@ interface GroupedDecision {
   decisionClass: string | null;
   question: string | null;
   recommendation: string | null;
-  decision?: { interplay?: ReadonlyArray<{ text: string }> };
+  decision?: {
+    interplay?: ReadonlyArray<{ text: string }>;
+    call?: {
+      options?: ReadonlyArray<{ name: string; reversible?: boolean }>;
+    };
+  };
   answer?: { station: string; on: string; framedBy: string };
   options?: readonly GroupedOption[];
   steps?: readonly string[];
@@ -128,6 +133,10 @@ function decisionKey(d: GroupedDecision, own: (text: string) => string) {
       changes: or(o.changes),
       costs: or(o.costs),
       recommended: o.recommended,
+      // A typed option's own reversibility guards its pick (`picking.ts`).
+      reversible:
+        d.decision?.call?.options?.find((t) => t.name === o.name)?.reversible ??
+        null,
       details: (o.details ?? []).map((x) => [x.label, own(x.text)]),
     })),
     steps: (d.steps ?? []).map(own),

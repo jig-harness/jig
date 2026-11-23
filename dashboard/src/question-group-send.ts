@@ -21,7 +21,7 @@ import { useSyncExternalStore } from "react";
 import { announce } from "./copy.tsx";
 import { keptToken, tokenGeneration, useKeptToken } from "./forge-token.ts";
 import type { NeedView } from "./needs-view.ts";
-import { cardAnswerIds, forgetAnswers } from "./answers.ts";
+import { cardAnswerIds, currentAnswers, forgetAnswers } from "./answers.ts";
 import {
   groupSends,
   isGroupCommit,
@@ -233,12 +233,28 @@ export function useGroupSend(
     }
     const generation = tokenGeneration();
     const held = () => tokenGeneration() === generation;
+    // What the person had picked and written when they pressed Send: a change made while the send runs is newer work.
+    const answerIds = cardAnswerIds(need);
+    const snapshot = currentAnswers(answerIds).map((a) =>
+      a === null ? null : JSON.stringify(a),
+    );
     update(id, (was) => ({ ...was, sending: true, outcomes: new Map() }));
     announce(`Sending the answers for ${need.target} as ${token.login}`);
     void (async () => {
       const outcomes = new Map<string, TargetOutcome>();
       for (const s of sends) {
-        outcomes.set(s.member.rowKey, await sendToTarget(token, s, held));
+        // The target may have been answered, or its send started from its own card, since the check above.
+        const taken = uncheckedTargets([s], token.login);
+        outcomes.set(
+          s.member.rowKey,
+          taken.length > 0
+            ? {
+                kind: "not attempted",
+                reason:
+                  "its card started a send or holds an unchecked one; open it and check",
+              }
+            : await sendToTarget(token, s, held),
+        );
         update(id, (was) => ({ ...was, outcomes: new Map(outcomes) }));
       }
       update(id, (was) => {
@@ -246,9 +262,16 @@ export function useGroupSend(
         for (const [key, o] of outcomes) if (o.kind !== "sent") left.add(key);
         return { sending: false, outcomes, left };
       });
-      // Every target has its answer: the pick has done its work.
-      if ([...outcomes.values()].every((o) => o.kind === "sent"))
-        forgetAnswers(cardAnswerIds(need));
+      // Every target has its answer: the pick has done its work, unless it changed while sending.
+      if ([...outcomes.values()].every((o) => o.kind === "sent")) {
+        const now = currentAnswers(answerIds);
+        forgetAnswers(
+          answerIds.filter(
+            (_, i) =>
+              (now[i] === null ? null : JSON.stringify(now[i])) === snapshot[i],
+          ),
+        );
+      }
       announce(summary(outcomes, sends.length, token.login));
     })();
   };

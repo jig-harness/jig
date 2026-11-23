@@ -241,16 +241,29 @@ function needFacetAttrs(
   const each = (of: (c: { repo: string; stage: string }) => string) =>
     members.length === 0 ? [of(card)] : [...new Set(members.map(of))];
   const since = Date.parse(row.since);
-  const hours = (clock.nowMs - since) / 3_600_000;
-  const age =
-    hours < 1 ? "Under 1 hour" : hours < 24 ? "1–24 hours" : "1 day or more";
+  const bucket = (iso: string) => {
+    const hours = (clock.nowMs - Date.parse(iso)) / 3_600_000;
+    return hours < 1
+      ? "Under 1 hour"
+      : hours < 24
+        ? "1–24 hours"
+        : "1 day or more";
+  };
+  // A group's card is found by the age of any of its targets.
+  const ages = [
+    ...new Set(
+      members.length === 0
+        ? [bucket(row.since)]
+        : members.map((m) => bucket(m.since)),
+    ),
+  ];
   return {
     ...facetAttrs({
       act: [row.type === "need" ? row.need.act : "Investigate"],
       repo: each((c) => c.repo),
       person: row.type === "need" ? row.need.people : [],
       stage: each((c) => c.stage),
-      age: [age],
+      age: ages,
     }),
     "data-facet-since": row.since,
     "data-facet-age-label":
