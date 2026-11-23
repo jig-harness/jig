@@ -7,6 +7,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { skillDirPathsIn } from "../../scripts/check-skill-runtime-forms.ts";
 import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   LEAKY_GIT_ENV,
@@ -45,11 +46,9 @@ test("every path a skill writes under its directory exists in the plugin copy", 
     if (!entry.isDirectory()) continue;
     const dir = join(cache, entry.name);
     const text = fs.readFileSync(join(dir, "SKILL.md"), "utf8");
-    for (const match of text.matchAll(
-      /\$\{CLAUDE_SKILL_DIR\}((?:\/[\w.-]+)+)(?=$|["'`\s),;:])/gm,
-    ))
-      if (!fs.existsSync(join(dir, `.${match[1]}`)))
-        missing.push(`${entry.name}: ${match[0]}`);
+    for (const path of skillDirPathsIn(text))
+      if (!fs.existsSync(join(dir, `.${path}`)))
+        missing.push(`${entry.name}: ${variable}${path}`);
   }
   expect(missing).toEqual([]);
 });
@@ -84,5 +83,5 @@ test("a skill command runs from the plugin copy once its directory is filled in 
   );
   expectSpawnExit({ ...run, exitCode: run.status }, 0);
   const report = JSON.parse(run.stdout);
-  expect(JSON.stringify(report)).toContain("README");
+  expect(report.totals.files).toBe(1);
 });

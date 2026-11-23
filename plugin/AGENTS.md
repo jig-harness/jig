@@ -140,15 +140,20 @@ here reaches every repository at once.
   skill, and reading the sibling's `SKILL.md` (`../<name>/SKILL.md`) works in
   any of them. Any other capability names its fallback beside it. These
   forms are held by `scripts/check-skill-runtime-forms.ts`, which
-  `bun run gates` runs over every skill page the agent reads:
+  `bun run gates` runs over the body of each `SKILL.md` and reference page
+  (not READMEs, templates, fixtures or test directories, nor frontmatter),
+  for three forms only: the skill directory, the structured question and the
+  review arbiter:
   - **The skill's directory.** `SKILL.md` writes it as `${CLAUDE_SKILL_DIR}`
     (a page that names `CLAUDE_PLUGIN_ROOT` explains that one the same way)
     and, in a paragraph before its commands, says that Claude Code
     fills it in and that in any other harness the agent replaces it with the
     absolute path of the directory containing that `SKILL.md`; a reference
     page is never substituted, so it writes `<skill-dir>` and says which
-    directory that is. Every path written under it exists once it is filled
-    in by hand.
+    directory that is. The condition is whether the loader expanded the
+    variable: a session that reads `SKILL.md` directly (Claude Code
+    included) substitutes it too. Every path written under it exists once it
+    is filled in by hand.
   - **The structured question.** A paragraph that names `AskUserQuestion`
     also names its fallback: a plain-text numbered question, one numbered
     line per option, the recommended one first and marked as the default

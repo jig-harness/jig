@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   checkSkillRuntimeForms,
   formFindings,
+  skillDirPathsIn,
 } from "./check-skill-runtime-forms.ts";
 
 const DIR = "$" + "{CLAUDE_SKILL_DIR}";
@@ -97,7 +98,7 @@ test("a path under the variable must exist once the directory is filled in", () 
   }
 });
 
-test("the shipped plugin's skills name a fallback for every runtime-specific form", () => {
+test("the shipped plugin's skills name a fallback for the skill-directory, question and review-arbiter forms", () => {
   expect(checkSkillRuntimeForms(".")).toBe(0);
 });
 
@@ -156,4 +157,60 @@ test("each variable needs its own explanation, and + and 1) items are separate b
   expect(
     rules("Delegate contested findings to `jig:review-arbiter`.\n"),
   ).toEqual(["subagent-form"]);
+});
+
+test("block boundaries follow Markdown: quotes, indented fences, comments, tables, ordered items", () => {
+  const q = "AskUserQuestion";
+  const fallback = "a plain-text numbered question, marked as the default";
+  // A quote-only `>` line separates two quoted paragraphs.
+  expect(rules(`> Use ${q}.\n>\n> Also ${fallback}.\n`)).toEqual([
+    "question-form",
+  ]);
+  // A fence marker indented four spaces is indented code, not a fence.
+  expect(rules(`    \`\`\`\nUse ${q}, or ${fallback}.\n`)).toEqual([]);
+  // A fallback in an HTML comment is not visible.
+  expect(rules(`Use ${q}. <!-- ${fallback} -->\n`)).toEqual(["question-form"]);
+  // Table rows without a leading pipe are separate blocks.
+  expect(rules(`a | b\n--|--\n${q} | x\n${fallback} | y\n`)).toEqual([
+    "question-form",
+  ]);
+  // `2)` cannot interrupt a paragraph, so the fallback stays with it.
+  expect(rules(`Use ${q}\n2) or ${fallback}.\n`)).toEqual([]);
+});
+
+test("asking the person after an arbiter ruling is no hand-over; delegating to its file is", () => {
+  expect(
+    rules(
+      "After a `jig:review-arbiter` escalation, ask the person to decide.\n",
+    ),
+  ).toEqual([]);
+  expect(
+    rules(
+      "Delegate it to the [Review Arbiter](../../agents/review-arbiter.md).\n",
+    ),
+  ).toEqual(["subagent-form"]);
+});
+
+test("a period before a closing quote belongs to the path", () => {
+  expect(skillDirPathsIn(`run "${DIR}/scripts/run.ts." now`)).toEqual([
+    "/scripts/run.ts.",
+  ]);
+  expect(skillDirPathsIn(`see ${DIR}/scripts/run.ts.`)).toEqual([
+    "/scripts/run.ts",
+  ]);
+});
+
+test("the gate entry point exits 1 on a violation and 2 with no pages", () => {
+  const root = mkdtempSync(join(tmpdir(), "skill-forms-gate-"));
+  try {
+    const skill = join(root, "plugin", "skills", "x");
+    mkdirSync(skill, { recursive: true });
+    writeFileSync(join(skill, "SKILL.md"), `bun "${run}"\n`);
+    expect(checkSkillRuntimeForms(root)).toBe(1);
+    rmSync(join(skill, "SKILL.md"));
+    writeFileSync(join(skill, "README.md"), "# x\n");
+    expect(checkSkillRuntimeForms(root)).toBe(2);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

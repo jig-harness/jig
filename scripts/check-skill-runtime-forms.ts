@@ -19,7 +19,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join, resolve, sep } from "node:path";
 import { cli } from "../lib/cli.ts";
-import { walk } from "../lib/files.ts";
+import { fenceAfter, walk } from "../lib/files.ts";
 import {
   couldNotCheck,
   type Finding,
@@ -37,20 +37,54 @@ interface Paragraph {
   line: number;
 }
 
-/** The file without its YAML frontmatter, which grants tools and is no form. */
-function withoutFrontmatter(source: string): string {
-  const lines = source.split(/\r?\n/);
-  if (lines[0] !== "---") return source;
-  const end = lines.indexOf("---", 1);
-  if (end < 0) return source;
-  return [...Array(end + 1).fill(""), ...lines.slice(end + 1)].join("\n");
+/** Blank out HTML comments, which no reader sees, keeping every line break. */
+function withoutComments(source: string): string {
+  return source.replace(/<!--[\s\S]*?-->/g, (match) =>
+    match.replace(/[^\n]/g, " "),
+  );
 }
 
-/** Blank-line separated blocks, fenced code kept whole, with 1-based lines. */
+/**
+ * The file without its YAML frontmatter, which grants tools and is no form,
+ * and without HTML comments, which nobody reads.
+ */
+function withoutFrontmatter(source: string): string {
+  const lines = source.split(/\r?\n/);
+  let body = source;
+  if (lines[0] === "---") {
+    const end = lines.indexOf("---", 1);
+    if (end >= 0)
+      body = [...Array(end + 1).fill(""), ...lines.slice(end + 1)].join("\n");
+  }
+  return withoutComments(body);
+}
+
+const QUOTE = /^ {0,3}>[ \t]?/;
+const DELIMITER_ROW =
+  /^[ \t]*(?=[^|]*\|)\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/;
+
+/** A line's block-quote depth and the content inside the quotes. */
+function unquote(line: string): { depth: number; content: string } {
+  let depth = 0;
+  let content = line;
+  while (QUOTE.test(content)) {
+    content = content.replace(QUOTE, "");
+    depth += 1;
+  }
+  return { depth, content };
+}
+
+/**
+ * Blank-line separated blocks with 1-based lines. Fenced code is kept whole
+ * (the top-level grammar of `fenceAfter`, applied inside quotes), a change of
+ * quote depth or a table row starts a block, and only `1.` or `1)` interrupts
+ * a paragraph that is not a list.
+ */
 function paragraphs(source: string): Paragraph[] {
   const result: Paragraph[] = [];
   let current: string[] = [];
   let start = 0;
+  let inList = false;
   const flush = (): void => {
     if (current.length)
       result.push({
@@ -58,41 +92,63 @@ function paragraphs(source: string): Paragraph[] {
         line: start,
       });
     current = [];
+    inList = false;
   };
-  let fence: string | null = null;
-  source.split(/\r?\n/).forEach((raw, index) => {
-    const marker = /^\s*(`{3,}(?![^`]*`)|~{3,})/.exec(raw);
-    if (marker) {
+  const lines = source.split(/\r?\n/);
+  let fence: string | undefined;
+  let depth = 0;
+  let table = false;
+  lines.forEach((raw, index) => {
+    const quote = unquote(raw);
+    const content = quote.content;
+    const after = fenceAfter(fence, content);
+    if (fence !== undefined || after !== undefined) {
       // A fence is one block of its own: its blank lines and list-like
       // lines do not split it, and its text never joins a neighbour.
-      if (fence === null) {
-        flush();
-        fence = marker[1] as string;
-      } else if (
-        marker[1]?.startsWith(fence) &&
-        raw.trim() === (marker[1] as string)
-      )
-        fence = null;
-      else if (fence !== null) {
-        current.push(raw.trim());
-        return;
-      }
+      if (fence === undefined) flush();
       if (current.length === 0) start = index + 1;
-      current.push(raw.trim());
-      if (fence === null) flush();
+      current.push(content.trim());
+      fence = after;
+      depth = quote.depth;
+      if (fence === undefined) flush();
       return;
     }
-    if (fence !== null) {
-      current.push(raw.trim());
-      return;
-    }
-    if (raw.trim() === "") {
+    if (quote.depth !== depth) flush();
+    depth = quote.depth;
+    if (content.trim() === "") {
+      table = false;
       flush();
       return;
     }
-    if (/^\s*(?:[-*+]|\d+[.)])\s|^\s*#{1,6}\s|^\s*\|/.test(raw)) flush();
+    if (
+      !table &&
+      content.includes("|") &&
+      DELIMITER_ROW.test(
+        lines[index + 1] ? unquote(lines[index + 1] as string).content : "",
+      )
+    ) {
+      flush();
+      table = true;
+    }
+    if (table) {
+      flush();
+      start = index + 1;
+      current.push(content.trim());
+      flush();
+      return;
+    }
+    const ordered = /^\s*(\d+)[.)]\s/.exec(content);
+    const bullet = /^\s*[-*+]\s/.test(content);
+    if (
+      bullet ||
+      /^\s*#{1,6}\s/.test(content) ||
+      (ordered && (ordered[1] === "1" || current.length === 0 || inList))
+    ) {
+      flush();
+      inList = Boolean(ordered || bullet);
+    }
     if (current.length === 0) start = index + 1;
-    current.push(raw.trim());
+    current.push(content.trim());
   });
   flush();
   return result;
@@ -160,9 +216,13 @@ function questionFindings(file: string, blocks: Paragraph[]): Finding[] {
     }));
 }
 
-const AGENT_ID = /jig:review-arbiter/;
-const HANDS_OVER =
-  /\b(?:spawn|invoke|hand|give|goes to|go to|route|delegate|ask)\b/i;
+const AGENT = String.raw`(?:jig:review-arbiter|review-arbiter\.md)`;
+const AGENT_ID = new RegExp(AGENT);
+// The agent is the recipient: after a hand-over verb, or the object of `ask`.
+const HANDS_OVER = new RegExp(
+  String.raw`\b(?:spawn|invoke|hand|give|goes to|go to|route|delegate)\b|\bask\s+(?:the\s+)?(?:\[[^\]]*\]\([^)]*\)|\x60?${AGENT})`,
+  "i",
+);
 const NO_SUBAGENTS = /\bno subagents?\b/i;
 const CALLING_SESSION = /\bcalling session\b/i;
 
@@ -189,18 +249,27 @@ function subagentFindings(file: string, blocks: Paragraph[]): Finding[] {
       ];
 }
 
-/** The literal paths a file writes under the skill-directory variable. */
+/**
+ * The literal paths a text writes under the skill-directory variable. A
+ * period closing a sentence is not part of an unquoted path; one before a
+ * closing quote is.
+ */
+export function skillDirPathsIn(text: string): string[] {
+  return [
+    ...text.matchAll(
+      /\$\{CLAUDE_SKILL_DIR\}((?:\/[\w.-]+)+)(?=$|["'`\s),;:])/gm,
+    ),
+  ].map((match) => {
+    const path = match[1] as string;
+    const next = text[(match.index ?? 0) + match[0].length] ?? "";
+    return /["'`]/.test(next) ? path : path.replace(/(?<=\w)\.$/, "");
+  });
+}
+
 function skillDirPaths(blocks: Paragraph[]): { path: string; line: number }[] {
-  const found: { path: string; line: number }[] = [];
-  for (const { text, line } of blocks)
-    for (const match of text.matchAll(
-      /\$\{CLAUDE_SKILL_DIR\}((?:\/[\w.-]+)+)(?=$|["'`\s),;:])/g,
-    ))
-      found.push({
-        path: (match[1] as string).replace(/(?<=\w)\.$/, ""),
-        line,
-      });
-  return found;
+  return blocks.flatMap(({ text, line }) =>
+    skillDirPathsIn(text).map((path) => ({ path, line })),
+  );
 }
 
 function pathFindings(
@@ -262,7 +331,7 @@ export function checkSkillRuntimeForms(root = "."): number {
       return 1;
     }
     console.log(
-      "skill-runtime-forms: OK — every runtime-specific form names its fallback",
+      "skill-runtime-forms: OK — the skill-directory, question and review-arbiter forms name their fallback",
     );
     return 0;
   } catch (error) {
