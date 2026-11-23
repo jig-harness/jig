@@ -92,7 +92,7 @@ function stillWall(
 }
 
 /** The wall the session `sessionId` met in `cwd` since `since`, if any. */
-function probeWall(
+export function probeWall(
   sessionId: string,
   cwd: string,
   since: Temporal.Instant,
@@ -106,7 +106,17 @@ function probeWall(
   ).wallReader;
   if (reader === null) return null;
   const block = detectQuotaBlock(
-    { cwd, since, now, correlation: { vendor: reader, sessionId } },
+    {
+      cwd,
+      since,
+      now,
+      // The adapter matches the correlation against its own vendor, which the
+      // registry key may differ from.
+      correlation: {
+        vendor: wallReaderFor(reader)?.vendor ?? reader,
+        sessionId,
+      },
+    },
     undefined,
     reader,
   );

@@ -31,6 +31,7 @@ import {
   processEnvironment,
   processSettings,
 } from "../lib/runtime/process-environment.ts";
+import { probeWall } from "../lib/quota-probe.ts";
 import { effectivePass } from "../../skills/drive-pr/scripts/lib/pass-model.ts";
 import {
   registerWallReader,
@@ -201,5 +202,32 @@ describe("a harness registered only here", () => {
     expect(wallReaderFor("reader-x")).toBe(adapter);
     expect(wallReaderFor("provider-x")).toBeUndefined();
     remove();
+  });
+});
+
+describe("the quota probe with a reader registered under another key", () => {
+  it("correlates on the adapter's vendor, not the registry key", () => {
+    let seen: string | null = null;
+    const adapter = {
+      vendor: "provider-x",
+      detect: (opts: { correlation?: { vendor: string } }) => {
+        seen = opts.correlation?.vendor ?? null;
+        return null;
+      },
+    } as never;
+    const remove = registerWallReader("reader-x", adapter);
+    const removeHarness = registerHarness({
+      ...fakeHarness,
+      name: "reader-harness",
+      wallReader: "reader-x",
+    } as never);
+    try {
+      const now = Temporal.Now.instant();
+      probeWall("session", "/work/x", now, now, "reader-harness" as never);
+      expect(seen as string | null).toBe("provider-x");
+    } finally {
+      removeHarness();
+      remove();
+    }
   });
 });
