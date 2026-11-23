@@ -92,6 +92,8 @@ The stages are the dispatcher's launch stages: `pickup` (a `do-item` pass),
 `rearm` (a drive-pr pass), `followup` and `steward`. The routing rows, the
 harness profiles and the ledger's operations use these names.
 
+The example below is the planned shape: it names a third harness (`pi`) and a Gemini endpoint the loader does not accept yet.
+
 ```yaml
 credential_command: [op, read, --no-newline]   # see the credential reference
 accounts:
