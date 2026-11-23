@@ -123,7 +123,7 @@ function now(): { tokens: KeptToken[]; saved: boolean } {
 /**
  * The tokens kept now, read from storage again when this browser stores them,
  * so a change another tab made that this one has not yet been told of counts.
- * A change a callback decides on must start from this, never from `keptTokens`.
+ * A change a callback decides on must start from this, never from the list a page last drew.
  */
 export function freshTokens(): KeptToken[] {
   if (held?.saved !== false) held = null;
@@ -163,11 +163,6 @@ export function listRefused(
   if (list === null) return false;
   if (list === UNTRUSTED || !Array.isArray(list.tokens)) return true;
   return list.tokens.length > 0 && tokensFrom(list, earlier).length === 0;
-}
-
-/** The tokens kept now. */
-export function keptTokens(): KeptToken[] {
-  return now().tokens;
 }
 
 /** The token kept now that answers for `repo`'s owner, or `null`. */
