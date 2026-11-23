@@ -479,6 +479,9 @@ describe("keeping a run's transcript copy", () => {
       { out: '{"token": null-opaque-tail}' },
       { out: '{"token": ""opaque-tail}' },
       { out: '{"token": "<redacted>"opaque-tail}' },
+      { out: '{"token": "<redacted>" opaque-spaced}' },
+      { out: '{"token": null   opaque-spaced}' },
+      { out: '{"token": ""\topaque-spaced}' },
       { out: layer('{"token":"opaque-nine"}', 9) },
       { out: layer('{"token":"opaque-three"}', 3) },
       { out: '\\"'.repeat(16000) },
@@ -513,7 +516,7 @@ describe("keeping a run's transcript copy", () => {
         '{"token":',
         '{"token": "<redacted>"}',
         "jig-omitted",
-        kept[7].out,
+        '\\"'.repeat(16000),
         "assistant",
       ]);
       expect(text).toContain("jig-omitted");

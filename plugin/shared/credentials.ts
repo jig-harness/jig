@@ -12,10 +12,13 @@
  */
 
 /** The names a key carries when its value is a secret. */
-const SECRET_KEY =
-  "[A-Za-z0-9_.-]*(?:token|secret|password|passwd|api[_-]?key|authorization)[A-Za-z0-9_.-]*";
-const KEY_CHARS = /^[A-Za-z0-9_.-]*$/;
-const KEY_FRAGMENT = /token|secret|password|passwd|api[_-]?key|authorization/i;
+const KEY_CLASS = "[A-Za-z0-9_.-]";
+const KEY_WORDS = "token|secret|password|passwd|api[_-]?key|authorization";
+/** The longest run of name characters either side of the fragment that the text patterns read: a bounded scan, so a long word of credential-like fragments cannot make a pattern retry quadratically. */
+const KEY_SPAN = 256;
+const SECRET_KEY = `${KEY_CLASS}{0,${KEY_SPAN}}(?:${KEY_WORDS})${KEY_CLASS}{0,${KEY_SPAN}}`;
+const KEY_CHARS = new RegExp(`^${KEY_CLASS}*$`);
+const KEY_FRAGMENT = new RegExp(KEY_WORDS, "i");
 /** Whether a structured field's name identifies a credential. */
 export function isCredentialKey(key: string): boolean {
   // One pass over the allowed characters, then a plain fragment search: the single pattern backtracks over the whole name.

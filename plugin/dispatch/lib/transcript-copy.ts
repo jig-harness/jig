@@ -212,7 +212,7 @@ function fullyDecoded(text: string): string {
   return layer;
 }
 
-/** The one traversal both secret checks share: `hit` is asked of the text and of each layer as its JSON escapes are decoded, up to `LOOK_DEPTH` decodes, so `LOOK_DEPTH + 1` forms in all: the loop's final `hit` call checks the form one decode past the advertised bound, and lowering the bound by one must keep that check. Where the last layer still holds a decodable escape (unless nothing but literal backslashes is left) the text counts as holding a secret, one policy for every check. */
+/** The one traversal both secret checks share: `hit` is asked of the text and of each layer as its JSON escapes are decoded, up to `LOOK_DEPTH` decodes, so `LOOK_DEPTH + 2` forms in the longest path: the raw text, the forms after decodes 1 through `LOOK_DEPTH` (the loop's last `hit` is the form after decode `LOOK_DEPTH`), and the form after decode `LOOK_DEPTH + 1`, checked by the `return` after the loop; lowering the bound keeps that last check. Where the last layer still holds a decodable escape (unless nothing but literal backslashes is left) the text counts as holding a secret, one policy for every check. */
 function walkLayers(text: string, hit: (layer: string) => boolean): boolean {
   let layer = text;
   for (let i = 0; i <= LOOK_DEPTH; i++) {
@@ -237,17 +237,20 @@ function holdsAfterUnescaping(
   );
 }
 
-/** Where a value ends: the text's end, whitespace, `,`, `}` or `]`. A marker followed by anything else is the start of a longer value, not a masked one. */
-const VALUE_END = /^(?:$|[\s,}\]])/;
+/** Where a value ends: the text's end, `,`, `}` or `]`, after any whitespace. A marker followed by anything else, whitespace-separated or not, is the start of a longer value, not a masked one. */
+const VALUE_END = /\s*(?:$|[,}\]])/y;
+
+/** Whether a value ends at `from`, without copying the rest of the text. */
+function endsValue(layer: string, from: number): boolean {
+  VALUE_END.lastIndex = from;
+  return VALUE_END.test(layer);
+}
 
 /** Whether the value written at `at` is one the masking left: `"<redacted>"`, `""` or `null`, each ending where a value ends. A text that ends at `at` holds no value. */
 function isMaskedValue(layer: string, at: number): boolean {
   if (at >= layer.length) return true;
   for (const marker of ['"<redacted>"', '""', "null"])
-    if (
-      layer.startsWith(marker, at) &&
-      VALUE_END.test(layer.slice(at + marker.length, at + marker.length + 1))
-    )
+    if (layer.startsWith(marker, at) && endsValue(layer, at + marker.length))
       return true;
   return false;
 }
