@@ -368,10 +368,19 @@ export function withUnreported(
   const short = unTagged(
     `Note: a terminal in ${unTagged(workspace)} could not be read; an agent may already work there.`,
   );
-  const extra = fits(full) ? full : short;
+  // Smallest form: the workspace alone, for an original that nearly fills
+  // the limit.
+  const least = unTagged(
+    `Note: an agent may already work in ${unTagged(workspace)}.`,
+  );
+  const extra = [full, short, least].find(fits) ?? least;
   const room = MAX_TEXT - head.length - extra.length - 2;
+  // What still cannot fit loses its start, never its end: the question and
+  // the link close the notice.
   const body =
-    rest.length > room ? `${rest.slice(0, Math.max(0, room - 1))}…` : rest;
+    rest.length > room
+      ? `…${rest.slice(rest.length - Math.max(0, room - 1))}`
+      : rest;
   return { ...n, key, text: `${head}\n${extra}\n${body}` };
 }
 

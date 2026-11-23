@@ -219,4 +219,16 @@ describe("a drive's unreportable notice", () => {
     expect(b.text).toContain("q".repeat(3800));
     expect(b.text.length).toBeLessThanOrEqual(4000);
   });
+
+  it("keeps the end of the original notice when even the short note cannot fit", async () => {
+    const { withUnreported } = await import("../lib/notices.ts");
+    const original = {
+      key: "k",
+      text: `[jig dispatch: k]\n${"q".repeat(3960)}QUESTION?`,
+    };
+    const b = withUnreported(original, "/work/a", "r");
+    expect(b.text.length).toBeLessThanOrEqual(4000);
+    expect(b.text.endsWith("QUESTION?")).toBe(true);
+    expect(b.text).toContain("an agent may already work");
+  });
 });
