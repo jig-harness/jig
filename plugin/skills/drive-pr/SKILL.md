@@ -1081,6 +1081,17 @@ stops admit it on a mechanical state:
   A same-account re-arm is admitted once the recorded reset has passed, or
   with `--window-reopened` only if you know the window has reopened: a person
   passes it, never an agent, as with `clear-lease`.
+- **[`MAX_ROUNDS`](../../protocol/drive-exits.md).** A re-arm with `--rearm-budget` (`arm-drive.ts`
+  forwards it; the dispatcher passes it only on a re-arm a person asked for,
+  never on the steward's or the tick's) grants one more round budget when
+  the durable counters spent it: the drive state records the heads spent as
+  `roundsGranted`, so `--max-rounds` more distinct heads are allowed, counting
+  the head the drive resumes on, and the passes counted on that head restart
+  at zero, still bounded by `--max-rounds`. The grant survives a restart and
+  a takeover (it is published to the ledger) and is never renewed without the flag, so the drive stops on
+  [`MAX_ROUNDS`](../../protocol/drive-exits.md) again once it spends it. Without the flag the re-arm stops
+  at once on the spent budget. Pass the flag only on a person's re-arm,
+  after the handoff file was read.
 - **[`HITL_PARKED`](../../protocol/drive-exits.md).** Once **every** parked item has an answer — a
   comment by an author GitHub reports as the repository's owner, member or
   collaborator, last edited (or posted) later than the park, on the item's
@@ -1098,7 +1109,10 @@ stops admit it on a mechanical state:
   replaces their earlier one. Different choices, different notes, or a
   structured answer beside another person's free answer leave the item
   disputed and parked. The dispatcher notifies the disputing answers.
-  With any item unanswered nothing is unparked. If the PR conflicts with
+  An explicit re-arm can also clear a park whose review thread GitHub
+  reports as resolved. Dispatch enables this for a validated request
+  and reports what it still waits on when a pending re-arm cannot proceed.
+  With any item still waiting nothing is unparked. If the PR conflicts with
   its base, the first gate reports `PR_CONFLICTING` before the park: the
   re-arm attempts conflict repair within its budget. Successful repair lets
   the next gate park on unanswered questions; a remaining conflict stops
@@ -1428,7 +1442,8 @@ could forge or forget.
    repository's `drive.max_rounds` (default 10); pass the flag only to override
    it. `--max-rounds` counts from the durable state, so
    re-arming a PR that has already run rounds resumes it ("at round 4 of 10")
-   rather than restarting the budget. `--pass-model` names the model each
+   rather than restarting the budget; only `--rearm-budget` extends a spent
+   one (§ Picking up a stopped drive). `--pass-model` names the model each
    pass runs on for this drive (a model id, a Claude Code alias or a routing
    tier) over `drive.pass_model`; the driver log and `drives.ts` name it.
 5. **Check the spawn once, a few seconds later** — not immediately and not in a

@@ -10,8 +10,9 @@
  * With `--every`, the named keys must be every park there is: a park added
  * since the answers were read has none, and refuses the whole set.
  * With `--stdin`, the verdicts the re-arm consumed are read on stdin, and
- * each park removed gets its resolution receipt in the same mutation
- * (`resolution-receipt.ts`).
+ * answered or provisional parks get a resolution receipt in the same
+ * mutation. A review thread already resolved on GitHub is removed without a
+ * human verdict.
  */
 import { fail, readStdinAll } from "../cli.ts";
 import type { DriveState, ParkedItem } from "./schema.ts";
@@ -35,6 +36,21 @@ function usageError(
     : null;
 }
 
+/** A resolved-thread verdict must describe one of the review-thread parks being removed. */
+function invalidResolvedThreads(
+  consumed: readonly ConsumedVerdict[],
+  keys: readonly string[],
+  parked: ReadonlyMap<string, ParkedItem>,
+): string[] {
+  return consumed
+    .filter(
+      (v) =>
+        v.resolvedThread === true &&
+        (!keys.includes(v.key) || parked.get(v.key)?.kind !== "thread"),
+    )
+    .map((v) => v.key);
+}
+
 /** Why the set cannot be unparked as named; `null` when it can. */
 export function refusal(
   parked: readonly ParkedItem[],
@@ -52,6 +68,9 @@ export function refusal(
   if (changed.length > 0)
     return `parked again since its answers were read: ${changed.join(", ")}`;
   if (consumed !== null) {
+    const invalid = invalidResolvedThreads(consumed, keys, byKey);
+    if (invalid.length > 0)
+      return `resolvedThread must name a review thread being unparked: ${invalid.join(", ")}`;
     const counts = new Map<string, number>();
     for (const v of consumed) counts.set(v.key, (counts.get(v.key) ?? 0) + 1);
     const uncovered = keys.filter((k) => counts.get(k) !== 1);

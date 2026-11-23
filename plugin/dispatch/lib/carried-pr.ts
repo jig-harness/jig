@@ -14,7 +14,14 @@
  * - Its drive carries the item in every state it has: live, converged and
  *   waiting for its merge, parked on a person's question, stopped and
  *   waiting for a re-arm or a re-drive, or unplaced for this tick while the
- *   forge leaves its state undecided (a mergeability still being computed).
+ *   forge leaves its state undecided (a mergeability still being computed),
+ *   or `unarmed`: no ledger yet, but something asks for one (a person's
+ *   `drive` label, the completed pickup's first-drive handoff, the adoption
+ *   rule), so the tick is about to arm it. A drive that stays unarmed is
+ *   reported by whatever keeps it from arming, not as a stalled pickup;
+ *   one a launch already armed at its head, which ended without leaving a
+ *   ledger, is not armed again until the head moves, so the plan reads it
+ *   as no drive (`armed-carriers.ts`) and the stall need names that launch.
  *   Whatever a person must do there is the pull request's own need, so the
  *   item raises no second one and is reported with the drive's state beside
  *   it. A pull request with no drive does not carry it: the item is a
@@ -64,6 +71,7 @@ export type CarrierDrive =
   | { kind: "parked"; why: string }
   | { kind: "stopped"; why: string }
   | { kind: "unplaced"; why: string }
+  | { kind: "unarmed"; why: string }
   | { kind: "none"; why: string }
   | { kind: "unread"; why: string };
 
@@ -73,7 +81,8 @@ export type CarryingDrive =
   | "converged"
   | "parked"
   | "stopped"
-  | "unplaced";
+  | "unplaced"
+  | "unarmed";
 
 /** How long after its merge a pull request that links an item settles it for the stall watch: its follow-up's time, waits included. */
 const MERGED_SETTLES_MS = 24 * 3_600_000;
@@ -94,6 +103,22 @@ export type Carriage =
   /** A pull request links it, but no drive carries it, or what carries it could not be told: the stall need says which. */
   | { kind: "stall"; note: string };
 
+/** A pull request with no drive among the tick's: none where its ledgers read, unread otherwise. */
+function noLedger(
+  pr: number,
+  read: ReadonlySet<number>,
+  inScope: ReadonlySet<number> | undefined,
+): CarrierDrive {
+  if (read.has(pr)) return { kind: "none", why: "it has no drive" };
+  return {
+    kind: "unread",
+    why:
+      inScope !== undefined && !inScope.has(pr)
+        ? "it carries no dispatch label, so its drive is not read (dispatch.labels.only_labeled)"
+        : "its drive was not read this tick",
+  };
+}
+
 /** The drive of a pull request among `drives`, the ones `read` holds the ledgers of, `inScope` those `only_labeled` keeps. */
 function carrierDrive(
   pr: number,
@@ -102,18 +127,11 @@ function carrierDrive(
   inScope: ReadonlySet<number> | undefined,
 ): CarrierDrive {
   const drive = drives.find((d) => d.number === pr);
-  if (drive === undefined) {
-    if (read.has(pr)) return { kind: "none", why: "it has no drive" };
-    return {
-      kind: "unread",
-      why:
-        inScope !== undefined && !inScope.has(pr)
-          ? "it carries no dispatch label, so its drive is not read (dispatch.labels.only_labeled)"
-          : "its drive was not read this tick",
-    };
-  }
-  const projected = stateOf(drive);
+  if (drive === undefined) return noLedger(pr, read, inScope);
   const why = `${drive.class}${drive.why === "" ? "" : `: ${drive.why}`}`;
+  // Asked for and not yet armed: carried work waiting for a slot, unlike a pull request nothing asks a drive for. The label projection gives both no state.
+  if (drive.class === "unarmed") return { kind: "unarmed", why };
+  const projected = stateOf(drive);
   if (projected === "unknown")
     // Only a ledger that read and waits on a state the forge leaves undecided is carried; an unreadable heartbeat, a ledger naming no verified head or one with no stop cannot be told.
     return drive.class === "unplaced" &&
@@ -205,6 +223,8 @@ const DRIVE_TEXT: Record<CarryingDrive, (why: string) => string> = {
     `its drive stopped (${why}) and waits for a re-arm or a re-drive, which is the pull request's own need`,
   unplaced: (why) =>
     `its drive's state is undecided this tick (${why}), which a later tick reads again`,
+  unarmed: (why) =>
+    `its drive waits to be armed (${why}), which the tick arms when a slot and its admission allow`,
 };
 
 function carriedWhy(

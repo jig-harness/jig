@@ -7,7 +7,7 @@
  *
  * | What the ledgers show | Event row |
  * | --- | --- |
- * | a receipt whose identity the line has not ingested, whether or not the line held its park | `park-answered`, or `park-provisional` for one handed on to be decided provisionally |
+ * | a receipt whose identity the line has not ingested, whether or not the line held its park | `park-answered`, `park-provisional`, or `park-resolved-thread` |
  * | a park the line held that is gone, with no receipt for it | `park-removed` |
  * | a park on a pull request no longer open | its final receipts count; without a receipt it leaves without a row |
  *
@@ -86,10 +86,37 @@ export interface ParkMemory {
   ingested?: string[];
 }
 
+/** How one park left the tick's ledgers, for the need that held it: who answered and what they chose, or that it was withdrawn. */
+export interface ParkLeft {
+  repo: string;
+  /** `PR #7`. */
+  target: string;
+  /** The park's key: the decision a need on the target carried. */
+  key: string;
+  /** The framing the park carried; `null` when it had none. */
+  digest: string | null;
+  /** When it was parked; the occurrence's time. */
+  parkedAt: string | null;
+  outcome: ParkFacts["outcome"];
+  /** When it left: the receipt's time, else the tick's. */
+  at: string;
+  /** The people whose answers the receipt consumed. */
+  people: string[];
+  /** The first answer's option, when it chose one. */
+  option: string | null;
+  recommended: boolean | null;
+  /** Each answer in words (`answerWords`). */
+  words: string[];
+  /** The first answer's link. */
+  url: string | null;
+}
+
 export interface ParkOutcomes {
   parks: LinePark[];
   ingested: string[];
   rows: EventRow[];
+  /** How each park the rows account for left, in the rows' order. */
+  left: ParkLeft[];
 }
 
 const identityOf = (p: LinePark): string | null =>
@@ -152,13 +179,31 @@ function choiceFacts(
   };
 }
 
+/**
+ * The ledger publishes a park the forge resolved as an `answered` receipt with
+ * no answers, which readers of earlier releases accept. A human answer always
+ * leaves at least one, so that shape is the resolved-thread outcome.
+ */
+function receiptOutcome(r: ResolutionReceipt): ResolutionReceipt["outcome"] {
+  return r.outcome === "answered" && r.answers.length === 0
+    ? "resolved-thread"
+    : r.outcome;
+}
+
+/** A receipt as readers of this release see it, the forge-resolved shape named. */
+function readReceipt(published: ResolutionReceipt): ResolutionReceipt {
+  return { ...published, outcome: receiptOutcome(published) };
+}
+
 function receiptRow(slug: string, pr: number, r: ResolutionReceipt): EventRow {
   const facts = choiceFacts(r);
   const waited = spanMs(r.parkedAt, r.answeredAt ?? r.resolvedAt);
   const said =
     r.outcome === "provisional"
       ? "handed on unanswered, to be decided provisionally"
-      : `answered: ${r.answers.map((a) => answerWords(answerView(a))).join("; ")}`;
+      : r.outcome === "resolved-thread"
+        ? "was already resolved on the forge, without a human answer"
+        : `answered: ${r.answers.map((a) => answerWords(answerView(a))).join("; ")}`;
   return {
     kind: "event",
     key: `park ${receiptIdentity(slug, pr, r)}`,
@@ -166,7 +211,12 @@ function receiptRow(slug: string, pr: number, r: ResolutionReceipt): EventRow {
     repo: slug,
     stage: "rearm",
     target: `PR #${pr}`,
-    event: r.outcome === "provisional" ? "park-provisional" : "park-answered",
+    event:
+      r.outcome === "provisional"
+        ? "park-provisional"
+        : r.outcome === "resolved-thread"
+          ? "park-resolved-thread"
+          : "park-answered",
     account: null,
     class: null,
     reason: `${r.kind} ${r.key}${r.class === undefined ? "" : ` (class ${r.class})`} ${said}`,
@@ -179,6 +229,25 @@ function receiptRow(slug: string, pr: number, r: ResolutionReceipt): EventRow {
       outcome: r.outcome,
       ...facts,
     },
+  };
+}
+
+/** How a park whose receipt this tick ingested left, for the need that held it. */
+function receiptLeft(slug: string, pr: number, r: ResolutionReceipt): ParkLeft {
+  const first = r.answers[0];
+  return {
+    repo: slug,
+    target: `PR #${pr}`,
+    key: r.key,
+    digest: r.digest ?? null,
+    parkedAt: r.parkedAt ?? null,
+    outcome: r.outcome,
+    at: r.resolvedAt,
+    people: [...new Set(r.answers.map((a) => a.author))],
+    option: first?.choice?.option ?? null,
+    recommended: first?.choice?.recommended ?? null,
+    words: r.answers.map((a) => answerWords(answerView(a))),
+    url: first?.url ?? null,
   };
 }
 
@@ -252,6 +321,45 @@ function goneHow(
   return "unknown";
 }
 
+/** The remembered parks of one repository that no longer show: carried while unknown, removed once withdrawn. */
+function carriedParks(
+  repo: ParkRepo,
+  read: ReadonlyMap<number, DrivenPr>,
+  memory: ParkMemory,
+  seen: ReadonlySet<string | null>,
+  nowIso: string,
+): Omit<ParkOutcomes, "ingested"> {
+  const parks: LinePark[] = [];
+  const rows: EventRow[] = [];
+  const left: ParkLeft[] = [];
+  for (const p of memory.parks ?? []) {
+    const identity = p.repo === repo.slug ? identityOf(p) : null;
+    if (identity === null || seen.has(identity)) continue;
+    const how = goneHow(repo, read, p.pr);
+    if (how === "unknown") parks.push(p);
+    else if (how === "withdrawn" && repo.owner) {
+      rows.push(
+        removedRow(p, identity, "it was withdrawn or framed again", nowIso),
+      );
+      left.push({
+        repo: p.repo,
+        target: `PR #${p.pr}`,
+        key: p.key,
+        digest: p.digest ?? null,
+        parkedAt: p.parkedAt ?? null,
+        outcome: "removed",
+        at: nowIso,
+        people: [],
+        option: null,
+        recommended: null,
+        words: [],
+        url: null,
+      });
+    }
+  }
+  return { parks, rows, left };
+}
+
 /** One repository's parks, ingested receipts and rows. */
 function repoOutcomes(
   repo: ParkRepo,
@@ -274,26 +382,29 @@ function repoOutcomes(
   );
   const before = new Set(memory.ingested ?? []);
   const ingested = repo.owner ? [...receipts.keys()] : [];
-  const rows = ingested
+  const fresh = ingested
     .filter((identity) => !before.has(identity))
     .flatMap((identity) => {
       const found = receipts.get(identity);
-      return found === undefined
-        ? []
-        : [receiptRow(repo.slug, found.pr, found.receipt)];
+      return found === undefined ? [] : [found];
     });
-  for (const p of memory.parks ?? []) {
-    const identity = p.repo === repo.slug ? identityOf(p) : null;
-    if (identity === null || held.has(identity) || receipts.has(identity))
-      continue;
-    const how = goneHow(repo, read, p.pr);
-    if (how === "unknown") parks.push(p);
-    else if (how === "withdrawn" && repo.owner)
-      rows.push(
-        removedRow(p, identity, "it was withdrawn or framed again", nowIso),
-      );
-  }
-  return { parks, ingested, rows };
+  const normalized = fresh.map((f) => ({
+    pr: f.pr,
+    receipt: readReceipt(f.receipt),
+  }));
+  const rows = normalized.map((f) => receiptRow(repo.slug, f.pr, f.receipt));
+  const left = normalized.map((f) => receiptLeft(repo.slug, f.pr, f.receipt));
+  const gone = carriedParks(
+    repo,
+    read,
+    memory,
+    new Set([...held, ...receipts.keys()]),
+    nowIso,
+  );
+  parks.push(...gone.parks);
+  rows.push(...gone.rows);
+  left.push(...gone.left);
+  return { parks, ingested, rows, left };
 }
 
 /**
@@ -310,6 +421,7 @@ export function parkOutcomes(
     parks: each.flatMap((o) => o.parks),
     ingested: each.flatMap((o) => o.ingested),
     rows: each.flatMap((o) => o.rows),
+    left: each.flatMap((o) => o.left),
   };
 }
 

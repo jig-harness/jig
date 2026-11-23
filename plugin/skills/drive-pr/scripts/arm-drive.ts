@@ -9,7 +9,7 @@
  * Usage:
  *   arm-drive.ts <PR> [--mode auto|tab|background|print] [--pass-model M]
  *                [--pass-args "WORDS"] [--max-rounds N] [--keep-draft]
- *                [--handoff-at V]
+ *                [--handoff-at V] [--rearm-budget]
  *
  *   --mode        overrides `do_item.arm_drive` (default `auto`) for this arm;
  *                 `print` where a human checkpoint withholds the drive
@@ -26,7 +26,9 @@
  *                 run's environment may set, else none. The words are written
  *                 into the pass command before `-p`, and the flag is
  *                 forwarded to `drive.ts`, as `--pass-model` is
- *   --max-rounds, --keep-draft, --handoff-at  forwarded to `drive.ts`
+ *   --max-rounds, --keep-draft, --handoff-at, --rearm-budget  forwarded to
+ *                 `drive.ts`; `--rearm-budget` grants a drive stopped on
+ *                 `MAX_ROUNDS` one more round budget
  *
  * The pass command is the session's own agent tool's (`lib/arm.ts`): in a
  * Codex session it is Codex's, on the standard tier of
@@ -75,7 +77,11 @@ import {
   tabTitle,
 } from "./lib/arm.ts";
 import { drives } from "./lib/driver/paths.ts";
-import type { AccountVendor } from "./lib/identity.ts";
+import type { HarnessName } from "../../../shared/agent-harness/index.ts";
+import {
+  defaultHarness,
+  harnessFor,
+} from "../../../shared/agent-harness/index.ts";
 import {
   type ArmDriveMode,
   armDriveSetting,
@@ -110,7 +116,7 @@ import {
 import { currentMs } from "../../../shared/time.ts";
 
 const USAGE =
-  'usage: arm-drive.ts <PR> [--mode auto|tab|background|print] [--pass-model M] [--pass-args "WORDS"] [--max-rounds N] [--keep-draft] [--handoff-at V]';
+  'usage: arm-drive.ts <PR> [--mode auto|tab|background|print] [--pass-model M] [--pass-args "WORDS"] [--max-rounds N] [--keep-draft] [--handoff-at V] [--rearm-budget]';
 
 interface Args {
   pr: string;
@@ -133,7 +139,7 @@ const VALUE_FLAGS = new Set([
 const DASHED_VALUES = new Set(["--pass-args"]);
 
 /** The flags of this command line, which a dashed value may not be mistaken for. */
-const OWN_FLAGS = new Set([...VALUE_FLAGS, "--keep-draft"]);
+const OWN_FLAGS = new Set([...VALUE_FLAGS, "--keep-draft", "--rearm-budget"]);
 
 function value(argv: string[], index: number): string {
   const v = argv[index + 1];
@@ -185,7 +191,8 @@ function parseArgs(argv: string[]): Args {
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i] as string;
     if (VALUE_FLAGS.has(flag)) takeValue(args, flag, value(argv, i++));
-    else if (flag === "--keep-draft") args.forward.push(flag);
+    else if (flag === "--keep-draft" || flag === "--rearm-budget")
+      args.forward.push(flag);
     else if (flag.startsWith("-") || args.pr !== "") fail(2, USAGE);
     else args.pr = flag;
   }
@@ -222,7 +229,7 @@ function attempt<T>(read: () => T): T | Error {
 const PASS_FLAGS = new Set(["--pass-model", "--pass-args"]);
 
 /** The model a failed report's command is built on when the configured one could not be read. */
-function fallbackModel(vendor: AccountVendor): ArmModel {
+function fallbackModel(vendor: HarnessName): ArmModel {
   return vendor === "claude"
     ? {
         model: DEFAULT_PASS_MODEL,
@@ -247,11 +254,13 @@ async function readInputs(
   args: Args,
 ): Promise<ArmInputs | { report: ArmReport; exit: number }> {
   const tree = await workingTree();
-  const vendor = sessionVendor(process.env) ?? "claude";
+  const vendor = sessionVendor(process.env) ?? defaultHarness().name;
   const armDrive = attempt(() => setting(args.mode));
   const model = attempt(() => passModel(args.passModel, vendor));
   const passArgs = attempt(() => extraPassArgs(args.passArgs, vendor));
-  const codexBypass = attempt(() => vendor === "codex" && codexBypassSetting());
+  const codexBypass = attempt(
+    () => harnessFor(vendor).capabilities.bypassOptIn && codexBypassSetting(),
+  );
   const evidence = readableReviewer();
   const problems = [tree, armDrive, model, passArgs, codexBypass, evidence];
   const problem = problems.find((v) => v instanceof Error);
@@ -326,7 +335,7 @@ function setting(mode: ArmDriveMode | undefined): {
 }
 
 /** The pass's model: Claude Code's `--pass-model`, else `drive.pass_model`; a Codex pass's from `routing.models.codex`. */
-function passModel(flag: string | undefined, vendor: AccountVendor): ArmModel {
+function passModel(flag: string | undefined, vendor: HarnessName): ArmModel {
   if (vendor === "codex")
     return flag === undefined
       ? configuredCodexModel()
@@ -343,7 +352,7 @@ function passModel(flag: string | undefined, vendor: AccountVendor): ArmModel {
  */
 function extraPassArgs(
   flag: string | undefined,
-  vendor: AccountVendor,
+  vendor: HarnessName,
 ): PassArgs {
   if (vendor === "claude") return chosenPassArgs(flag);
   if (flag === undefined) return configuredCodexPassArgs();
@@ -449,7 +458,7 @@ async function main(): Promise<number> {
         {
           model: inputs.model,
           passArgs: inputs.passArgs,
-          vendor: sessionVendor(inputs.env) ?? "claude",
+          vendor: sessionVendor(inputs.env) ?? defaultHarness().name,
           codexBypass: inputs.codexBypass === true,
         },
         runtime,

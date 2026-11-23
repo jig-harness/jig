@@ -66,6 +66,7 @@ import { mailboxCheckpointOrExit } from "./mailbox.ts";
 import { ignoreDriveContext } from "./../context-ignore.ts";
 
 import { clearDeadlineRetries } from "./restart.ts";
+import { roundBudget } from "./rearm-budget.ts";
 
 import {
   decideTakeover,
@@ -597,7 +598,10 @@ async function drive(ctx: DriveContext): Promise<number> {
   // long, silent wait.
   const probeFlags = dryRun ? ["--no-count", "--once"] : [];
 
-  await announceRoundBudget(pr, maxRoundsN, handoffAt);
+  // The budget the rounds enforce: the base plus what a re-arm granted, and
+  // under `--rearm-budget` another grant when the counters spent it.
+  const budget = await roundBudget(pr, maxRoundsN, options.rearmBudget, dryRun);
+  await announceRoundBudget(pr, budget.rounds, handoffAt);
 
   await capturePickup(pr, dryRun, diag);
 
@@ -609,7 +613,8 @@ async function drive(ctx: DriveContext): Promise<number> {
     dryRun,
     agent,
     held,
-    maxRoundsN,
+    maxRoundsN: budget.rounds,
+    maxAttemptsN: budget.attempts,
     forward,
     probeFlags,
     markReadyPolicy,

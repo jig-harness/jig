@@ -1,4 +1,5 @@
 /** The owner host schedules an admitted, bounded pass; the pass has no launch authority. */
+import { harnessFor } from "../../../shared/agent-harness/index.ts";
 import { parseRoutingModels } from "../../../skills/do-item/scripts/lib/routing.ts";
 import { runtimeModel } from "../../../shared/model-families.ts";
 import { admittedVendor, codexLaunchFields } from "../accounts.ts";
@@ -175,7 +176,7 @@ export async function applySteward(
     return skip(openedWorkspace.outcome.detail);
   }
   const vendor = admittedVendor(slots.account);
-  const runtime = vendor === "claude" ? "claude-code" : "codex";
+  const runtime = harnessFor(vendor).runtime;
   const models = parseRoutingModels(opened.values);
   const family = models[runtime]?.complex;
   if (family === undefined) {

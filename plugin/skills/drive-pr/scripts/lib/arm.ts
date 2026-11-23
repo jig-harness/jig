@@ -50,7 +50,7 @@ import {
 } from "../../../../shared/orca.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { driveTs, drives } from "./driver/paths.ts";
-import type { AccountVendor } from "./identity.ts";
+import type { HarnessName } from "../../../../shared/agent-harness/index.ts";
 import type { ArmDriveMode } from "./overlay.ts";
 import { codexPermission, type PassArgs, permissionMode } from "./pass-args.ts";
 import { runTabEnv } from "../../../../shared/orca-tabs.ts";
@@ -58,8 +58,13 @@ import {
   DISPATCHED_FROM_VARIABLE,
   dispatchedFrom,
 } from "../../../../shared/launched-session.ts";
-import { passCommand } from "./pass-command.ts";
-import { withCodexModel } from "./pass-model.ts";
+import {
+  defaultHarness,
+  harnessFor,
+  harnessOfRuntime,
+} from "../../../../shared/agent-harness/index.ts";
+import { passPrompt } from "./pass-command.ts";
+import { withHarnessModel } from "./pass-model.ts";
 import { parseMs } from "../../../../shared/time.ts";
 
 type Env = Record<string, string | undefined>;
@@ -74,11 +79,8 @@ export interface ArmModel {
  * The agent tool whose pass command a session arms: Claude Code's in a
  * Claude Code session, Codex's in a Codex session; `null` for any other.
  */
-export function sessionVendor(env: Env): AccountVendor | null {
-  const harness = detectHarness(env)?.name ?? null;
-  if (harness === "claude-code") return "claude";
-  if (harness === "codex") return "codex";
-  return null;
+export function sessionVendor(env: Env): HarnessName | null {
+  return harnessOfRuntime(detectHarness(env)?.name)?.name ?? null;
 }
 
 /** The way a drive is armed once the setting meets the session. */
@@ -131,22 +133,19 @@ export function commandLine(
  * `codexBypass` says the host opted in, and `passArgs` before the prompt.
  */
 function passArgv(
-  vendor: AccountVendor,
+  vendor: HarnessName,
   pr: string,
   model: string | null,
   passArgs: readonly string[],
   codexBypass: boolean,
 ): string[] {
-  const pass = passCommand(vendor, pr, codexBypass, passArgs);
-  if (vendor === "codex")
-    return model === null ? pass : withCodexModel(pass, model);
-  const [claude, ...prompt] = pass;
-  return [
-    claude as string,
-    ...(model === null ? [] : ["--model", model]),
-    ...passArgs,
-    ...prompt,
-  ];
+  const harness = harnessFor(vendor);
+  const pass = harness.passCommand({
+    prompt: passPrompt(vendor, pr),
+    bypass: harness.capabilities.bypassOptIn && codexBypass,
+    hostArgs: passArgs,
+  });
+  return model === null ? pass : withHarnessModel(pass, model);
 }
 
 /**
@@ -159,7 +158,7 @@ export function driveArgv(
   request: ArmRequest,
   model: string | null,
   passArgs: readonly string[] = [],
-  vendor: AccountVendor = "claude",
+  vendor: HarnessName = defaultHarness().name,
   codexBypass = false,
 ): string[] {
   const { pr, tree, forward } = request;
@@ -495,13 +494,13 @@ export function failedReport(
   pass: {
     model: ArmModel;
     passArgs: PassArgs;
-    vendor?: AccountVendor;
+    vendor?: HarnessName;
     codexBypass?: boolean;
   },
   reason: string,
 ): ArmReport {
   const { model, passArgs } = pass;
-  const vendor = pass.vendor ?? "claude";
+  const vendor = pass.vendor ?? defaultHarness().name;
   const codexBypass = pass.codexBypass === true;
   const tree = request.tree;
   const known = tree === null ? null : { ...request, tree };
@@ -509,12 +508,12 @@ export function failedReport(
     known === null
       ? []
       : driveArgv(known, model.model, passArgs.words, vendor, codexBypass);
-  const permission =
-    vendor === "codex"
-      ? codexPermission(
-          passArgv(vendor, request.pr, null, passArgs.words, codexBypass),
-        )
-      : permissionMode(["claude", ...passArgs.words]);
+  const harness = harnessFor(vendor);
+  const permission = harness.capabilities.permissionModes
+    ? permissionMode([harness.program, ...passArgs.words])
+    : codexPermission(
+        passArgv(vendor, request.pr, null, passArgs.words, codexBypass),
+      );
   return {
     pr: request.pr,
     tree,
@@ -567,7 +566,7 @@ export async function arm(
   deps: TabDeps,
 ): Promise<{ report: ArmReport; exit: number }> {
   const { request, setting, model, passArgs, env, codexBypass } = inputs;
-  const vendor = sessionVendor(env) ?? "claude";
+  const vendor = sessionVendor(env) ?? defaultHarness().name;
   const base = failedReport(
     request,
     setting,

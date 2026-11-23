@@ -174,7 +174,7 @@ describe("a claimed pickup whose push the host's test lock held", () => {
         reason: expect.stringContaining("host's test lock"),
         relaunch: {
           record: SOURCE,
-          workspace: { id: "w12", path: PATH },
+          workspace: { id: "w12", path: PATH, branch: "12-task" },
           head: HEAD,
           lockWait: true,
         },

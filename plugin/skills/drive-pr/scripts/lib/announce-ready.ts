@@ -36,7 +36,7 @@ export interface AnnounceReady {
 }
 
 /** The drive's own rules (`overlay.ts`): the reviewer app and check its convergence matched. */
-function driveRules(): ReadyRules {
+export function driveRules(): ReadyRules {
   const app = reviewerApp();
   return {
     reviewerApp: app === "" ? null : app,
@@ -67,6 +67,7 @@ function rcOf(answer: Readiness): AnnounceReady["rc"] {
 export async function announceReady(
   pr: string,
   head: string,
+  reviewCarriedFrom?: string,
 ): Promise<AnnounceReady> {
   const facts = await liveFacts(Number(pr));
   if (!facts.ok)
@@ -82,6 +83,7 @@ export async function announceReady(
       slug: "",
       converged: true,
       verifiedSha: head,
+      ...(reviewCarriedFrom === undefined ? {} : { reviewCarriedFrom }),
       held: facts.value.labels.includes(hold),
     },
     driveRules(),

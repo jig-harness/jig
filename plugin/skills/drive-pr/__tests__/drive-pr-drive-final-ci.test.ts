@@ -100,34 +100,44 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain("Running CI-repair pass 1/1");
   });
 
-  it("rejects a diagnosing repair report with a malformed tracker issue", async () => {
-    // The pass exits 0 but changes nothing, so the drive re-gates onto the
-    // identical red verdict. Budget 1 grants one ordinary repair before diagnosis.
-    const r = await runDrive(
-      {
-        threads: [],
-        head: scratchClean.head,
-        reviewedSha: scratchClean.head,
-        checkRuns: [REVIEWER_RUN, DORMANT_ARM, FAILING_RUN],
-      },
-      [
-        "--keep-draft",
-        "--no-head-sync",
-        "--",
-        "sh",
-        "-c",
-        ': pass for 999; if [ "$DRIVE_PR_ROUND_TASK" = ci-diagnose ]; then echo "diagnosing now" >&2; printf \'%s\\n\' \'{"diagnosis":"the local gate ran no tests","issue":"not a key"}\' > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"; fi',
-      ],
-      undefined,
-      { env: { DRIVE_PR_CI_REPAIR_ROUNDS: "1" } },
-    );
-    expect(r.stderr).toContain("Running CI-repair pass 1/1");
-    expect(r.stderr).toContain("diagnosing now");
-    expect(r.stderr).toContain(
-      "a diagnosis and either a tracker issue key or the key of the filing it parked",
-    );
-    expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
-  }, 20_000);
+  // A diagnosing drive runs a repair round and then the diagnosing round,
+  // each a chain of driver helpers spawned under the CI shard's parallel
+  // files. The receipt rules themselves are unit tests in
+  // ci-diagnosis-receipt.test.ts; these pin the drive's wiring around them.
+  const DIAGNOSING_DRIVE_TIMEOUT = 120_000;
+
+  it(
+    "rejects a diagnosing repair report with a malformed tracker issue",
+    async () => {
+      // The pass exits 0 but changes nothing, so the drive re-gates onto the
+      // identical red verdict. Budget 1 grants one ordinary repair before diagnosis.
+      const r = await runDrive(
+        {
+          threads: [],
+          head: scratchClean.head,
+          reviewedSha: scratchClean.head,
+          checkRuns: [REVIEWER_RUN, DORMANT_ARM, FAILING_RUN],
+        },
+        [
+          "--keep-draft",
+          "--no-head-sync",
+          "--",
+          "sh",
+          "-c",
+          ': pass for 999; if [ "$DRIVE_PR_ROUND_TASK" = ci-diagnose ]; then echo "diagnosing now" >&2; printf \'%s\\n\' \'{"diagnosis":"the local gate ran no tests","issue":"not a key"}\' > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"; fi',
+        ],
+        undefined,
+        { env: { DRIVE_PR_CI_REPAIR_ROUNDS: "1" } },
+      );
+      expect(r.stderr).toContain("Running CI-repair pass 1/1");
+      expect(r.stderr).toContain("diagnosing now");
+      expect(r.stderr).toContain(
+        "a diagnosis and either a tracker issue key or the key of the filing it parked",
+      );
+      expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
+    },
+    DIAGNOSING_DRIVE_TIMEOUT,
+  );
 
   // A pass that omits the issue key must name the filing decision it parked
   // during this diagnosis: the driver reads the drive state for that park.
@@ -155,86 +165,70 @@ describe("drive.ts loop control", () => {
       },
     );
 
-  it("keeps the diagnosis of a report that parked the issue filing", async () => {
-    // The pass exits 0 but changes nothing, so the drive re-gates onto the
-    // identical red verdict. Budget 1 grants one ordinary repair before diagnosis.
-    const record = join(
-      mkdtempSync(join(tmpdir(), "diagnosis-park-")),
-      "record.json",
-    );
-    writeFileSync(
-      record,
-      parkRecord(
-        "File the recurring CI cause as a tracker issue",
-        "human-decision",
-      ),
-    );
-    const r = await diagnoseOnRed(
-      diagnoseOnly(
-        `"${join(SCRIPTS, "drive-state.ts")}" park 999 --key ${FILING_KEY} --kind finding --class human-decision < "${record}" && printf '%s\\n' '{"diagnosis":"the local gate ran no tests","parked":"${FILING_KEY}"}' > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"`,
-      ),
-    );
-    expect(r.stderr).toContain("Running CI-repair pass 1/1");
-    expect(r.stderr).toContain("diagnosing now");
-    expect(r.stderr).toContain(
-      "no issue filed (parked for a person). the local gate ran no tests",
-    );
-    expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
-  }, 20_000);
+  it(
+    "keeps the diagnosis of a report that parked the issue filing",
+    async () => {
+      // The pass exits 0 but changes nothing, so the drive re-gates onto the
+      // identical red verdict. Budget 1 grants one ordinary repair before diagnosis.
+      const record = join(
+        mkdtempSync(join(tmpdir(), "diagnosis-park-")),
+        "record.json",
+      );
+      writeFileSync(
+        record,
+        parkRecord(
+          "File the recurring CI cause as a tracker issue",
+          "human-decision",
+        ),
+      );
+      const r = await diagnoseOnRed(
+        diagnoseOnly(
+          `"${join(SCRIPTS, "drive-state.ts")}" park 999 --key ${FILING_KEY} --kind finding --class human-decision < "${record}" && printf '%s\\n' '{"diagnosis":"the local gate ran no tests","parked":"${FILING_KEY}"}' > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"`,
+        ),
+      );
+      expect(r.stderr).toContain("Running CI-repair pass 1/1");
+      expect(r.stderr).toContain("diagnosing now");
+      expect(r.stderr).toContain(
+        "no issue filed (parked for a person). the local gate ran no tests",
+      );
+      expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
+    },
+    DIAGNOSING_DRIVE_TIMEOUT,
+  );
 
-  it("rejects a diagnosis report with no issue key and no parked filing", async () => {
-    const r = await diagnoseOnRed(
-      diagnoseOnly(
-        `printf '%s\\n' '{"diagnosis":"done"}' > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"`,
-      ),
-    );
-    expect(r.stderr).toContain("diagnosing now");
-    expect(r.stderr).toContain(
-      "a diagnosis and either a tracker issue key or the key of the filing it parked",
-    );
-    expect(r.stderr).not.toContain("parked for a person");
-    expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
-  }, 20_000);
+  it(
+    "re-gates without stopping when the diagnosing pass stands down",
+    async () => {
+      const r = await diagnoseOnRed(
+        diagnoseOnly(
+          `if [ ! -e "$DRIVE_PR_STATE_DIR/.stood-down" ]; then : > "$DRIVE_PR_STATE_DIR/.stood-down"; printf '%s\\n' '{"standDown":true}' > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"; else printf '%s\\n' '{"diagnosis":"second try","issue":"#42"}' > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"; fi`,
+        ),
+      );
+      // The stand-down released the head's diagnosis: a second one ran.
+      expect(r.stderr.match(/Running diagnosing CI repair/g)?.length).toBe(2);
+      expect(r.stderr).not.toContain(
+        "a diagnosis and either a tracker issue key",
+      );
+      expect(r.stderr).toContain("issue #42. second try");
+      expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
+    },
+    DIAGNOSING_DRIVE_TIMEOUT,
+  );
 
-  it("rejects a diagnosis report naming a filing park the drive does not hold", async () => {
-    const r = await diagnoseOnRed(
-      diagnoseOnly(
-        `printf '%s\\n' '{"diagnosis":"done","parked":"${FILING_KEY}"}' > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"`,
-      ),
-    );
-    expect(r.stderr).toContain("diagnosing now");
-    expect(r.stderr).toContain(
-      `names the filing park ${FILING_KEY}, but this diagnosis parked no human-decision under that key`,
-    );
-    expect(r.stderr).not.toContain("parked for a person");
-    expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
-  }, 20_000);
-
-  it("re-gates without stopping when the diagnosing pass stands down", async () => {
-    const r = await diagnoseOnRed(
-      diagnoseOnly(
-        `if [ ! -e "$DRIVE_PR_STATE_DIR/.stood-down" ]; then : > "$DRIVE_PR_STATE_DIR/.stood-down"; printf '%s\\n' '{"standDown":true}' > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"; else printf '%s\\n' '{"diagnosis":"second try","issue":"#42"}' > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"; fi`,
-      ),
-    );
-    // The stand-down released the head's diagnosis: a second one ran.
-    expect(r.stderr.match(/Running diagnosing CI repair/g)?.length).toBe(2);
-    expect(r.stderr).not.toContain(
-      "a diagnosis and either a tracker issue key",
-    );
-    expect(r.stderr).toContain("issue #42. second try");
-    expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
-  }, 20_000);
-
-  it("stops when the diagnosing pass keeps standing down on one head", async () => {
-    const r = await diagnoseOnRed(
-      diagnoseOnly(
-        `printf '%s\\n' '{"standDown":true}' > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"`,
-      ),
-    );
-    expect(r.stderr.match(/Running diagnosing CI repair/g)?.length).toBe(2);
-    expect(r.stderr).toContain("stood down 2 times on this head");
-    expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
-  }, 20_000);
+  it(
+    "stops when the diagnosing pass keeps standing down on one head",
+    async () => {
+      const r = await diagnoseOnRed(
+        diagnoseOnly(
+          `printf '%s\\n' '{"standDown":true}' > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"`,
+        ),
+      );
+      expect(r.stderr.match(/Running diagnosing CI repair/g)?.length).toBe(2);
+      expect(r.stderr).toContain("stood down 2 times on this head");
+      expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
+    },
+    DIAGNOSING_DRIVE_TIMEOUT,
+  );
 
   const failingHead = (head: string) => ({
     threads: [],
@@ -253,70 +247,80 @@ describe("drive.ts loop control", () => {
   const driveWithDiagnosis = ["--keep-draft", "--no-head-sync", "--"];
   const oneRepair = { DRIVE_PR_CI_REPAIR_ROUNDS: "1" };
 
-  it("stops with the diagnosis and tracker key when the diagnosing repair cannot push a fix", async () => {
-    const { dir, stateDir } = writeFixture(failingHead(scratchClean.head));
-    const result = await runDriveIn(
-      dir,
-      stateDir,
-      [...driveWithDiagnosis, ...diagnosisPass("exit 1")],
-      undefined,
-      { env: oneRepair },
-    );
-    expectSpawnExit({ ...result, stdout: null }, CI_REPAIR_SPENT_EXIT);
-    expect(result.stderr).toContain(
-      "issue #42. The local gate skipped the CI comparison.",
-    );
-    const stored = await state(stateDir, ["get", "999"]);
-    expectSpawnExit(stored, 0);
-    expect(JSON.parse(stored.stdout).ciActions).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          detail: expect.stringContaining(
-            `diagnosis: head ${scratchClean.head}: issue #42.`,
-          ),
-        }),
-      ]),
-    );
-  }, 20_000);
+  it(
+    "stops with the diagnosis and tracker key when the diagnosing repair cannot push a fix",
+    async () => {
+      const { dir, stateDir } = writeFixture(failingHead(scratchClean.head));
+      const result = await runDriveIn(
+        dir,
+        stateDir,
+        [...driveWithDiagnosis, ...diagnosisPass("exit 1")],
+        undefined,
+        { env: oneRepair },
+      );
+      expectSpawnExit({ ...result, stdout: null }, CI_REPAIR_SPENT_EXIT);
+      expect(result.stderr).toContain(
+        "issue #42. The local gate skipped the CI comparison.",
+      );
+      const stored = await state(stateDir, ["get", "999"]);
+      expectSpawnExit(stored, 0);
+      expect(JSON.parse(stored.stdout).ciActions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            detail: expect.stringContaining(
+              `diagnosis: head ${scratchClean.head}: issue #42.`,
+            ),
+          }),
+        ]),
+      );
+    },
+    DIAGNOSING_DRIVE_TIMEOUT,
+  );
 
-  it("continues the drive on the head pushed by the diagnosing repair", async () => {
-    const tree = makeScratchRepo("ci-diagnosis-push");
-    const git = (...args: string[]) => {
-      const spawn = Bun.spawnSync(["git", ...args], {
-        cwd: tree.dir,
-        env: gitCleanEnv(),
-      });
-      expectSpawnExit(spawn, 0);
-      return spawn.stdout.toString().trim();
-    };
-    git("commit", "--allow-empty", "-qm", "CI repair");
-    const pushedHead = git("rev-parse", "HEAD");
-    git("reset", "--hard", tree.head);
-    const red = rawFixture(failingHead(tree.head), tree.dir);
-    const green = rawFixture({ head: pushedHead }, tree.dir);
-    const result = await runDriveIn(
-      red.dir,
-      red.stateDir,
-      [
-        ...driveWithDiagnosis,
-        ...diagnosisPass(`git merge --ff-only "$FIXED_HEAD"
+  it(
+    "continues the drive on the head pushed by the diagnosing repair",
+    async () => {
+      const tree = makeScratchRepo("ci-diagnosis-push");
+      const git = (...args: string[]) => {
+        const spawn = Bun.spawnSync(["git", ...args], {
+          cwd: tree.dir,
+          env: gitCleanEnv(),
+        });
+        expectSpawnExit(spawn, 0);
+        return spawn.stdout.toString().trim();
+      };
+      git("commit", "--allow-empty", "-qm", "CI repair");
+      const pushedHead = git("rev-parse", "HEAD");
+      git("reset", "--hard", tree.head);
+      const red = rawFixture(failingHead(tree.head), tree.dir);
+      const green = rawFixture({ head: pushedHead }, tree.dir);
+      const result = await runDriveIn(
+        red.dir,
+        red.stateDir,
+        [
+          ...driveWithDiagnosis,
+          ...diagnosisPass(`git merge --ff-only "$FIXED_HEAD"
           for name in pr-view check-runs issue-comments; do
             cp "$FIXED_EVIDENCE/$name.json" "$DRIVE_PR_FIXTURES/$name.json"
           done
           printf '{"diagnosis":"The local gate skipped the CI comparison.","issue":"#42","pushedHead":"%s"}\\n' "$FIXED_HEAD" > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"`),
-      ],
-      tree.dir,
-      {
-        env: {
-          ...oneRepair,
-          FIXED_HEAD: pushedHead,
-          FIXED_EVIDENCE: green.dir,
+        ],
+        tree.dir,
+        {
+          env: {
+            ...oneRepair,
+            FIXED_HEAD: pushedHead,
+            FIXED_EVIDENCE: green.dir,
+          },
         },
-      },
-    );
-    expectSpawnExit({ ...result, stdout: null }, 0);
-    expect(result.stderr).toContain(`The pull request moved to ${pushedHead}`);
-  }, 20_000);
+      );
+      expectSpawnExit({ ...result, stdout: null }, 0);
+      expect(result.stderr).toContain(
+        `The pull request moved to ${pushedHead}`,
+      );
+    },
+    DIAGNOSING_DRIVE_TIMEOUT,
+  );
 
   /** A converged red head, driven with `drive.ci_repair_rounds: 1` in the configuration. */
   async function driveWithRepairSetting(env: Record<string, string>) {
@@ -345,12 +349,16 @@ describe("drive.ts loop control", () => {
     );
   }
 
-  it("spends the repository's drive.ci_repair_rounds", async () => {
-    const r = await driveWithRepairSetting({});
-    expect(r.stderr).toContain("Running CI-repair pass 1/1");
-    expect(r.stderr).toContain("TASK=ci-diagnose");
-    expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
-  }, 20_000);
+  it(
+    "spends the repository's drive.ci_repair_rounds",
+    async () => {
+      const r = await driveWithRepairSetting({});
+      expect(r.stderr).toContain("Running CI-repair pass 1/1");
+      expect(r.stderr).toContain("TASK=ci-diagnose");
+      expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
+    },
+    DIAGNOSING_DRIVE_TIMEOUT,
+  );
 
   it("lets DRIVE_PR_CI_REPAIR_ROUNDS override drive.ci_repair_rounds for one run", async () => {
     const r = await driveWithRepairSetting(NO_REPAIR);

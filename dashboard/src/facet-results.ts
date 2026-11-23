@@ -6,8 +6,10 @@ import {
   type FilterProjection,
   FACETS,
   facetsFor,
+  MEMBER_ATTR,
   projectFilters,
   readFacetAttrs,
+  readMemberAttrs,
 } from "./facets.ts";
 import { rove } from "./keys.ts";
 import { reasonCounts } from "./queue-view.ts";
@@ -70,7 +72,12 @@ function applyGroupFilter(root: HTMLElement, active: boolean): void {
     ].filter((card) => !card.hidden);
     const hide = active && visible.length === 0;
     if (group.hidden !== hide) group.hidden = hide;
-    textIn(group, "[data-group-count]", String(visible.length));
+    // A question group's card counts each target it holds (`data-needs`).
+    const needs = visible.reduce(
+      (n, card) => n + (Number(card.dataset.needs) || 1),
+      0,
+    );
+    textIn(group, "[data-group-count]", String(needs));
     const oldest = oldestOf(visible);
     textIn(
       group,
@@ -95,6 +102,7 @@ function applyFilters(
     cards.map((card) => ({
       text: card.textContent ?? "",
       values: readFacetAttrs(card, facets),
+      members: readMemberAttrs(card),
     })),
     filter,
     facets,
@@ -145,6 +153,7 @@ export function useFilterResults(
       characterData: true,
       attributeFilter: [
         ...FACETS.map((facet) => `data-facet-${facet}`),
+        MEMBER_ATTR,
         "data-facet-since",
         "data-facet-age-label",
         "data-group-why",
