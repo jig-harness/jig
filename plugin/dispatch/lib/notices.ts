@@ -63,6 +63,44 @@ function unTagged(text: string): string {
   return text.replaceAll(TAG, "[jig dispatch - ");
 }
 
+/** The most of a workspace's path a message shows; the notify step names the workspace whole. */
+const MAX_WORKSPACE = 1000;
+
+/**
+ * A workspace as a key names it. A plain path stands as itself; one the key
+ * line cannot carry (a control or line-separator character, the key line's
+ * opening, or a start that reads as the quoted form) is written quoted with
+ * those characters escaped. The quoted form starts with a quote and a plain
+ * one never does, and escaping doubles every backslash, so no two paths
+ * share a key.
+ */
+function workspaceKey(workspace: string): string {
+  const plain =
+    !workspace.startsWith('"') &&
+    !workspace.includes(TAG) &&
+    !/[\p{Cc}\u2028\u2029]/u.test(workspace);
+  if (plain) return workspace;
+  return JSON.stringify(workspace).replace(
+    /[\p{Cc}\u2028\u2029[]/gu,
+    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+}
+
+/**
+ * A workspace as a message shows it: the path itself when it is short and
+ * cannot be read as a key line, otherwise its start and end with the key
+ * line's opening broken, marked as shortened. One bound for every message
+ * that names a workspace, so no notice grows with the path.
+ */
+export function workspaceLabel(workspace: string): string {
+  const cut =
+    workspace.length > MAX_WORKSPACE
+      ? `${workspace.slice(0, 100)}…${workspace.slice(workspace.length - (MAX_WORKSPACE - 101))}`
+      : workspace;
+  const safe = unTagged(cut);
+  return safe === workspace ? workspace : `${safe} (shortened)`;
+}
+
 /** A message: its key, reserved priority lines, bounded detail, and its uncut tail. */
 function notice(
   fullKey: string,
@@ -319,6 +357,75 @@ export function stopNotice(slug: string, pr: DrivenPr): Notice {
         : [`jig send ${driveAddress(slug, pr)} rearm`]),
     ]),
   };
+}
+
+/**
+ * A re-arm or takeover the dispatcher holds back because a workspace joined
+ * to the pull request has terminals whose agents the runtime cannot report:
+ * it cannot tell whether a session still works there, so a person settles
+ * it. Keyed by the ledger generation, so it is sent once per stop.
+ */
+export function unreportedNotice(
+  slug: string,
+  pr: DrivenPr,
+  wanted: string,
+  workspace: string,
+  reason: string,
+): Notice {
+  const shown = workspaceLabel(workspace);
+  return {
+    ...notice(
+      `${slug} PR #${pr.number} workspace ${workspaceKey(workspace)} unreportable, ledger generation ${generation(pr)}`,
+      [
+        `PR #${pr.number} (${compact(pr.title, 120)}): the dispatcher would act on it (${compact(wanted, 200)}), but ${compact(reason, 300)}, so it cannot tell whether a session still works on it and starts nothing.`,
+      ],
+      [
+        `Check what holds ${shown} and its terminals: close the ones that run no agent, or settle the one the runtime could not read, and the next tick acts on it; or run \`/jig:drive-pr ${pr.number}\` there yourself, or stop it.`,
+        pr.url,
+      ],
+    ),
+    ...driveFields(slug, pr, [`/jig:drive-pr ${pr.number}`]),
+  };
+}
+
+/**
+ * A stopped-pickup need carrying that a terminal the runtime cannot report
+ * sits in a workspace joined to the item: its text says an agent may already
+ * work there, and its key names the workspace so a change of workspace is
+ * delivered again.
+ */
+export function withUnreported(
+  n: Notice,
+  workspace: string,
+  reason: string,
+): Notice {
+  const key = boundedKey(`${n.key} unreportable in ${workspaceKey(workspace)}`);
+  const head = keyLine(key);
+  const rest = n.text.slice(keyLine(n.key).length + 1);
+  const shown = workspaceLabel(workspace);
+  const fits = (note: string): boolean =>
+    head.length + note.length + rest.length + 2 <= MAX_TEXT;
+  const full = unTagged(
+    `Note: ${compact(reason, 300)}, so an agent may already work in ${shown}; check it before picking the item up again.`,
+  );
+  // A long reason gives way to the short note before any of the original is cut.
+  const short = unTagged(
+    `Note: a terminal in ${shown} could not be read; an agent may already work there.`,
+  );
+  const least = unTagged(`Note: an agent may already work in ${shown}.`);
+  const extra = [full, short, least].find(fits) ?? least;
+  const room = MAX_TEXT - head.length - extra.length - 2;
+  if (rest.length <= room)
+    return { ...n, key, text: `${head}\n${extra}\n${rest}` };
+  // What cannot fit loses its middle: its opening names the cause and the
+  // question, its end carries the instruction and the link. The note says
+  // so, since the question may sit in the cut part.
+  const note = `${extra} The original notice is shortened and its question may be cut; run \`jig ask --waiting\` to list what waits on a person and find the full question, or read the launch's closing report.`;
+  const left = MAX_TEXT - head.length - note.length - 3;
+  const keepStart = Math.ceil(left / 2);
+  const keepEnd = Math.max(0, left - keepStart);
+  const body = `${rest.slice(0, keepStart)}…${rest.slice(rest.length - keepEnd)}`;
+  return { ...n, key, text: `${head}\n${note}\n${body}` };
 }
 
 /** A rearm refused before launch because this host's lock could not be read. */

@@ -604,7 +604,11 @@ worth exactly what the mandatory pre-push gates behind it are worth.
 
 **Guard**: `bun "<skill-dir>/scripts/drive.ts" --max-rounds` (default `drive.max_rounds`, else 10). Hitting it reports [`MAX_ROUNDS`](../../../protocol/drive-exits.md) with an
 explicit non-convergence report naming the state that was still live — not a
-quiet stop that reads like success.
+quiet stop that reads like success. The budget is `--max-rounds` plus the
+rounds a re-arm granted (`roundsGranted`, `lib/state/round-grant.ts`): a
+drive started with `--rearm-budget` on a spent budget is granted one more,
+past the rounds it spent, once per such re-arm, so a re-armed drive stays
+bounded.
 
 **A second, earlier guard catches the spin `--max-rounds` only bounds**: the
 stall stop ([`STALLED`](../../../protocol/drive-exits.md)). Each ROUND_READY gate fingerprints the observable

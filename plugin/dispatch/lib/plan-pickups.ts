@@ -76,7 +76,7 @@ import {
 import { type Holding, holding, liveAgents } from "./holding.ts";
 import type { ReadRecord } from "./launches.ts";
 import { type Carriage, readCarriage } from "./carried-pr.ts";
-import { pickupNotice } from "./notices.ts";
+import { pickupNotice, withUnreported } from "./notices.ts";
 import { planWaiting } from "./plan-pickup-waiting.ts";
 import { testLockNote } from "./test-lock-waits.ts";
 import { unwrittenResult } from "./session-startup.ts";
@@ -279,7 +279,13 @@ function planWanted(
     });
     return;
   }
-  if (held.kind === "unknown") {
+  // A stopped pickup's need is only a notification: it still goes out where
+  // the listing read and a workspace joined to the item has terminals the
+  // runtime cannot report, carrying that as evidence.
+  if (
+    held.kind === "unknown" &&
+    (hold.kind === "none" || held.workspace === undefined)
+  ) {
     plan.unplaced.push({
       target: item.key,
       record: "runtime",
@@ -296,8 +302,32 @@ function planWanted(
     });
     return;
   }
-  if (hold.kind !== "none") planStopped(input, item, hold, plan);
-  else planFresh(item, held.evidence, input, plan);
+  if (hold.kind === "none") {
+    if (held.kind === "free") planFresh(item, held.evidence, input, plan);
+    return;
+  }
+  const before = plan.actions.length;
+  planStopped(input, item, hold, plan);
+  if (held.kind === "unknown" && held.workspace !== undefined)
+    annotateUnreported(plan, before, held.workspace, held.reason);
+}
+
+/** The needs a stopped pickup just planned, each saying a workspace joined to the item has terminals the runtime cannot report. */
+function annotateUnreported(
+  plan: PickupPlan,
+  from: number,
+  workspace: string,
+  reason: string,
+): void {
+  for (const [i, need] of plan.actions.slice(from).entries())
+    plan.actions[from + i] = {
+      ...need,
+      reason: `${need.reason}; but ${reason}, so an agent may already work there`,
+      evidence: { ...need.evidence, unreportedSessions: reason },
+      ...(need.notice === undefined
+        ? {}
+        : { notice: withUnreported(need.notice, workspace, reason) }),
+    };
 }
 
 /** An item nothing holds: picked up, unless its host-fault hold says to wait or it has no priority to rank it by. */

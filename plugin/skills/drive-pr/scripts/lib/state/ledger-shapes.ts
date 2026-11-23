@@ -215,6 +215,9 @@ export const LEDGER_PAYLOAD_FIELDS = {
   attempts: count,
   attemptsHead: text,
   deadlineRetries: count,
+  // Published unrestricted, as the stable ledger accepted it before the field
+  // existed; the reader checks it is a whole number (`ledger.ts`).
+  roundsGranted: s.optional(s.unknown()),
   phase: text,
   lastCountedHead: text,
   verifiedSha: text,

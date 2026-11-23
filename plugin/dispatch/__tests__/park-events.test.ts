@@ -449,7 +449,7 @@ describe("the outcome log over real ticks", () => {
 });
 
 describe("parks of repositories the tick's part does not carry", () => {
-  const none = { parks: [], ingested: [], rows: [] };
+  const none = { parks: [], ingested: [], rows: [], left: [] };
   const other = { ...linePark("B"), repo: "o/other" };
   const memory: ParkMemory = {
     parks: [linePark("A"), other],

@@ -1,8 +1,13 @@
 /**
  * Whether a running session holds a target, from the workspaces the
  * runtime joins to it: running when an agent in one of them is working or
- * waiting, free when none is (its finished agents kept as evidence), and
- * unknown when the runtime's answer cannot be trusted for it.
+ * waiting (even beside a terminal the runtime cannot report), free when
+ * none is (its finished agents kept as evidence), and unknown when the
+ * runtime's answer cannot be trusted for it. An unknown names the
+ * workspace when the listing read but one of its terminals runs an agent
+ * the runtime cannot report (an idle shell, an editor or a leftover
+ * terminal looks the same as an agent it cannot see): a notification still
+ * goes out there, and a launch becomes a person's need (`plan.ts`).
  */
 import {
   RUNNING_STATES,
@@ -14,7 +19,12 @@ import { failureText } from "./text.ts";
 export type Holding =
   | { kind: "free"; evidence: string | null }
   | { kind: "running"; workspaces: Workspace[] }
-  | { kind: "unknown"; reason: string };
+  | {
+      kind: "unknown";
+      reason: string;
+      /** The workspace whose unreportable terminals made it unknown; absent when the listing itself did not read. */
+      workspace?: string;
+    };
 
 export function holding(
   sessions: SessionsReport,
@@ -22,16 +32,19 @@ export function holding(
 ): Holding {
   if (!sessions.ok) return { kind: "unknown", reason: sessions.reason };
   const mine = sessions.workspaces.filter(joined);
+  // An agent the runtime reports working holds the target, whatever else
+  // shares its workspaces.
+  const live = mine.filter((w) =>
+    w.agents.some((a) => RUNNING_STATES.has(a.state)),
+  );
+  if (live.length > 0) return { kind: "running", workspaces: live };
   const unreadable = mine.find((w) => w.unverifiableTerminals > 0);
   if (unreadable !== undefined)
     return {
       kind: "unknown",
       reason: `workspace ${unreadable.path} has ${unreadable.unverifiableTerminals} terminal(s) whose agents the runtime cannot report`,
+      workspace: unreadable.path,
     };
-  const live = mine.filter((w) =>
-    w.agents.some((a) => RUNNING_STATES.has(a.state)),
-  );
-  if (live.length > 0) return { kind: "running", workspaces: live };
   const finished = mine.flatMap((w) =>
     w.agents.map((a) => `${w.branch || w.path}: ${a.state}`),
   );

@@ -43,6 +43,8 @@ interface DriverRoundOptions {
   agent: string[];
   held: DriveLock[];
   maxRoundsN: number;
+  /** The passes allowed on one head: the base budget, which a re-arm resets rather than raises. */
+  maxAttemptsN: number;
   forward: string[];
   probeFlags: string[];
   markReadyPolicy: MarkReady;
@@ -64,6 +66,7 @@ export async function runDriverRounds({
   agent,
   held,
   maxRoundsN,
+  maxAttemptsN,
   forward,
   probeFlags,
   markReadyPolicy,
@@ -209,6 +212,8 @@ export async function runDriverRounds({
     finalRegateKey: "",
     finalRegateLimit: finalRegateLimit(),
     maxRoundsN,
+    maxAttemptsN,
+    budgetAtLimit: false,
     deadlineRetryBudget,
     stallExtraRound: false,
     stallNarrative: null,

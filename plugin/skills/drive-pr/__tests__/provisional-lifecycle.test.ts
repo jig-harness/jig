@@ -279,6 +279,8 @@ describe("the recoveries the drive records", () => {
       stallExtraRound: false,
       passNotice: "",
       maxRoundsN: 10,
+      maxAttemptsN: 10,
+      budgetAtLimit: false,
     };
     const r = await inModule(
       forge,
