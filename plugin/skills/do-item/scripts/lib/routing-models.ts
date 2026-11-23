@@ -142,10 +142,12 @@ function addDeclaration(
       throw new RoutingError(
         `routing.model_tiers.${formatField([runtime])}.${formatField([name])} (${entry.tier}) and routing.family_tiers.${formatField([runtime])}.${formatField([older])} (${other.tier}) declare one model with different tiers; keep one`,
       );
-    delete merged[older];
+    // Only an older-key entry is replaced: two `model_tiers` spellings of one
+    // model both stay, so the audit reports each declaration's own reason.
+    if (other.key !== "model_tiers") delete merged[older];
   }
   merged[name] = entry;
-  byModel.set(target, [name]);
+  byModel.set(target, [...olders.filter((k) => k in merged), name]);
 }
 
 function parseTierEntries(raw: unknown, key: TierKey): FamilyTiers {
@@ -426,7 +428,11 @@ function stageRow(entry: unknown, at: string): Partial<ModelRow> {
  */
 export function parseStages(raw: unknown): StageModels {
   const out: StageModels = Object.create(null);
-  if (raw === undefined || raw === null) return out;
+  if (raw === undefined) return out;
+  if (raw === null)
+    throw new RoutingError(
+      "routing.stages is null, which would erase a lower layer's stage models whole; omit the key to inherit, or give a mapping",
+    );
   const section = mapping(
     raw,
     "routing.stages",

@@ -199,6 +199,12 @@ describe("the host and the repository layers", () => {
     ).toThrow("routing.stages.steward.models is null");
   });
 
+  it("refuses routing.stages set to null, which would erase a lower layer", () => {
+    expect(() => parseRoutingModels({ routing: { stages: null } })).toThrow(
+      "routing.stages is null",
+    );
+  });
+
   it("lets a run's environment win over both files", () => {
     layered(HOST, null);
     const config = loadLayeredConfig(repo, {
