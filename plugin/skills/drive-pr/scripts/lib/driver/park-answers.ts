@@ -216,6 +216,16 @@ function verdictOf(item: ParkedItem, answers: PendingAnswer[]): PendingVerdict {
   };
 }
 
+/** Whether the answers read so far are complete, current and undisputed. */
+function settles(
+  answers: readonly PendingAnswer[],
+  staleCount: number,
+  disputed: boolean,
+  blocked: boolean,
+): boolean {
+  return answers.length > 0 && staleCount === 0 && !disputed && !blocked;
+}
+
 /** Classify one complete or partial history, preserving evidence that blocks provisional work. */
 function classifyPark(
   result: ReadParkAnswers,
@@ -246,13 +256,7 @@ function classifyPark(
   }
   // A condition note from someone who did not answer is not in the verdict
   // handed on, so the item keeps waiting rather than losing it.
-  if (
-    answers.length > 0 &&
-    stale.length === 0 &&
-    !disputed &&
-    !incomplete &&
-    !hasNotes
-  )
+  if (settles(answers, stale.length, disputed, incomplete || hasNotes))
     result.answered.push(verdict);
   else result.waiting.push(item);
 }
