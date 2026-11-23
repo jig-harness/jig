@@ -39,7 +39,7 @@ export async function grantRounds(
     return {
       ...s,
       roundsGranted: granted,
-      ...(resetAttempts ? { attempts: 0 } : {}),
+      ...(resetAttempts ? { attempts: 0, lastReflectedAttempts: 0 } : {}),
     };
   });
   console.log(granted);
@@ -69,13 +69,18 @@ export interface RearmGrant {
  * the counted ones have reached the budget (a stop on `MAX_ROUNDS` leaves
  * them at the budget or one past it), the budget is the heads counted
  * before the one the drive resumes on plus `base`, so the resumed head is
- * the first of `base` more. Passes on one head: reset when they reached
- * `base`, never granted past it.
+ * the first of `base` more. A stop on either counter grants both: the heads
+ * as above and a fresh count of passes on the resumed head.
  */
 export function rearmGrant(spent: SpentRounds, base: number): RearmGrant {
-  const spentHeads = spent.rounds >= base + spent.granted;
-  const granted = spentHeads
-    ? Math.max(spent.granted, spent.rounds - (spent.headCounted ? 1 : 0))
-    : spent.granted;
-  return { granted, resetAttempts: spent.attempts >= base };
+  const stopped =
+    spent.rounds >= base + spent.granted || spent.attempts >= base;
+  if (!stopped) return { granted: spent.granted, resetAttempts: false };
+  return {
+    granted: Math.max(
+      spent.granted,
+      spent.rounds - (spent.headCounted ? 1 : 0),
+    ),
+    resetAttempts: true,
+  };
 }

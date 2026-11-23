@@ -361,7 +361,7 @@ export async function readRoundBudget(
   }
 
   context.budgetAtLimit =
-    counted >= context.maxRoundsN || peekedAttempts >= context.maxAttemptsN;
+    counted >= context.maxRoundsN && peekedAttempts >= context.maxAttemptsN;
   console.error(
     `--- round ${round}/${context.maxRoundsN} on PR #${context.pr} ---`,
   );

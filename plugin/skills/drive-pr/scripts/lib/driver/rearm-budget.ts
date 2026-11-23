@@ -10,6 +10,7 @@ import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
 import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { rearmGrant, type SpentRounds } from "./../state/round-grant.ts";
+import { HANDOFF_TELLS_REFUSED } from "./../state/ledger-mirror.ts";
 import { driveState } from "./paths.ts";
 
 /** A whole number a stored state holds, or `null`. */
@@ -125,11 +126,17 @@ export async function roundBudget(
     stdout: "ignore",
     stderr: "inherit",
     timeoutSec: helperTimeoutSeconds(),
+    // A drive run without the ledger has nothing to publish to, so a
+    // refused write is not a failure there.
+    env:
+      (process.env.DRIVE_PR_LEDGER ?? "") === "off"
+        ? process.env
+        : { ...process.env, [HANDOFF_TELLS_REFUSED]: "1" },
   });
   if (published.code !== 0)
     return fail(
       1,
-      `drive.ts: could not publish the re-arm's round grant for PR #${pr} to the drive ledger (drive-state.ts handoff exited ${published.code}); re-arm again`,
+      `drive.ts: could not publish the re-arm's round grant for PR #${pr} to the drive ledger (drive-state.ts handoff exited ${published.code}, a refused write included); re-arm again`,
     );
   console.error(
     `re-arm: PR #${pr} had spent its round budget of ${was}; the budget is now ${budget} heads (${base} more, counting the head it resumes on) and ${base} passes on a head, and the drive stops on MAX_ROUNDS again when it spends them`,

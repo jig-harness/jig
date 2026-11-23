@@ -77,7 +77,7 @@ async function driveAt(
     undefined,
     // Durable budget accounting is the subject: the stall stop would end
     // the no-op passes one gate early.
-    { env: { DRIVE_PR_STALL_ROUNDS: "0" } },
+    { env: { DRIVE_PR_STALL_ROUNDS: "0", DRIVE_PR_LEDGER: "off" } },
   );
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(p.stdout).text(),
@@ -117,7 +117,7 @@ describe("rearmGrant", () => {
     // 11 of 10: the 11th head was counted, then refused: it is the first of the new budget.
     expect(rearmGrant(spent(11, 1), 10)).toEqual({
       granted: 10,
-      resetAttempts: false,
+      resetAttempts: true,
     });
   });
 
@@ -128,13 +128,13 @@ describe("rearmGrant", () => {
   it("treats a head count equal to the budget as spent (a quota stop on the last head)", () => {
     expect(rearmGrant(spent(10, 3), 10)).toEqual({
       granted: 9,
-      resetAttempts: false,
+      resetAttempts: true,
     });
   });
 
-  it("restarts the passes on one head instead of granting them, leaving the heads' allowance alone", () => {
+  it("grants both counters when only the passes on one head were spent", () => {
     expect(rearmGrant(spent(4, 10), 10)).toEqual({
-      granted: 0,
+      granted: 3,
       resetAttempts: true,
     });
   });
