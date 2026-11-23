@@ -981,7 +981,11 @@ export function buildLine(input: LineInput): LineSnapshot {
                     target: q.target,
                     pr: q.carried.pr,
                     url: q.carried.url,
-                    drive: q.carried.drive,
+                    // A version-1 reader's closed list has no `unarmed`: the line stores it as undecided and the reason says it waits to be armed.
+                    drive:
+                      q.carried.drive === "unarmed"
+                        ? "unplaced"
+                        : q.carried.drive,
                     why: q.why,
                   },
                 ]

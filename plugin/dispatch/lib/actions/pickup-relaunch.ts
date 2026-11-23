@@ -82,7 +82,7 @@ async function changed(
 ): Promise<string | null> {
   return (
     recordsChanged(state, repo, ctx, { item, relaunch, own }) ??
-    (await runtimeChanged(ctx, item, relaunch.workspace.path)) ??
+    (await runtimeChanged(ctx, item, relaunch.workspace)) ??
     treeChanged(state, ctx, relaunch)
   );
 }
@@ -150,12 +150,13 @@ function recordsChanged(
     : `launch record ${other.record.id} holds the item`;
 }
 
-/** Why the runtime no longer leaves the tree's workspace open and free; `null` when it does. */
+/** Why the runtime no longer leaves the tree's workspace open, free and on the branch the plan read; `null` when it does. */
 async function runtimeChanged(
   ctx: RelaunchContext,
   item: string,
-  path: string,
+  workspace: PickupRelaunch["workspace"],
 ): Promise<string | null> {
+  const { path } = workspace;
   const { sessions, held } = await holdingAgain(
     ctx.sessions,
     (w) => w.path === path || w.items.includes(item),
@@ -168,7 +169,13 @@ async function runtimeChanged(
   if (held.kind === "unknown") return held.reason;
   if (held.kind === "running")
     return `a session started since the plan read it: ${held.workspaces.map((w) => w.path).join(", ")}`;
-  return null;
+  const open =
+    sessions?.ok === true
+      ? sessions.workspaces.find((w) => w.path === path)
+      : undefined;
+  return open !== undefined && open.branch !== workspace.branch
+    ? `its tree's branch moved from ${workspace.branch} to ${open.branch} since the plan read it`
+    : null;
 }
 
 /** Why the tree no longer stands at the head the plan read; `null` when it does. */

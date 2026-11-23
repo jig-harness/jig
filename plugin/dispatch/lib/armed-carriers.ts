@@ -22,7 +22,10 @@ function armedAlready(input: PlanInput, number: number): string | null {
   const claims = input.shared?.drives.get(number);
   if (input.shared === undefined || claims === undefined) return null;
   const foreign = foreignHold(pr, claims, input.shared.host);
-  return foreign.kind === "armed" ? foreign.why : null;
+  // A refusal on these ledger facts spent the head's arm as surely as an arm that left no ledger.
+  return foreign.kind === "armed" || foreign.kind === "refused"
+    ? foreign.why
+    : null;
 }
 
 /** `input` with its carriers reading an unarmed drive already armed at its head as no drive. */

@@ -442,6 +442,29 @@ describe("the line", () => {
     ]);
   });
 
+  it("lines a waiting drive as undecided, a state every reader of the line knows", () => {
+    const r = report({
+      quiet: [
+        {
+          target: "#12",
+          class: "claimed-carried",
+          why: "waits to be armed",
+          carried: { pr: 31, url: URL, drive: "unarmed" },
+        },
+      ],
+    });
+    expect(buildLine(lineInput({ reports: [r] })).carried).toEqual([
+      {
+        repo: REPO,
+        target: "#12",
+        pr: 31,
+        url: URL,
+        drive: "unplaced",
+        why: "waits to be armed",
+      },
+    ]);
+  });
+
   it("stores the carried items with the line", () => {
     const root = mkdtempSync(join(tmpdir(), "jig-carried-"));
     try {
@@ -472,15 +495,6 @@ describe("the line", () => {
       expect(stored.value?.carried).toEqual(line.carried);
       expect(line.carried).toHaveLength(1);
       const [entry] = line.carried ?? [];
-      const waiting = {
-        ...line,
-        carried: [{ ...entry, drive: "unarmed" } as LineCarried],
-      };
-      writeLine(waiting, "{}", root);
-      const unarmed = readLine(root);
-      expect(unarmed.ok).toBe(true);
-      if (!unarmed.ok) return;
-      expect(unarmed.value?.carried).toEqual(waiting.carried);
       writeLine(
         {
           ...line,
