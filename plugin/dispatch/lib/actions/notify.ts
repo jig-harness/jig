@@ -634,6 +634,9 @@ function startingChannel(
   try {
     return !channelStarted(channel, root);
   } catch (error) {
+    // A repository left unstarted keeps the host's start from being written by another repository of this tick.
+    state.channelStartFailed ??= new Set();
+    state.channelStartFailed.add(channel);
     report.unplaced.push({
       target: `the ${channel} notification channel`,
       record: "runtime",
