@@ -475,10 +475,11 @@ function codeSpans(
   return spans;
 }
 
-/** The end of the double-quoted string opening at `at`, or -1 if it never closes. */
+/** The end of the quoted string opening at `at`, or -1 if it never closes. */
 function titleEnd(text: string, at: number): number {
+  const quote = text[at];
   for (let end = at + 1; end < text.length; end++) {
-    if (text[end] === '"') return end;
+    if (text[end] === quote) return end;
     if (text[end] === "\\") end += 1;
   }
   return -1;
@@ -498,7 +499,8 @@ function inertCharacters(text: string, spans: [number, number][]): Uint8Array {
 
 /** `at`, or the end of the link title that opens there: a quote after whitespace. */
 function afterTitle(text: string, at: number): number {
-  if (text[at] !== '"' || !/\s/.test(text[at - 1] ?? "")) return at;
+  if ((text[at] !== '"' && text[at] !== "'") || !/\s/.test(text[at - 1] ?? ""))
+    return at;
   const end = titleEnd(text, at);
   return end < 0 ? at : end;
 }
@@ -506,7 +508,7 @@ function afterTitle(text: string, at: number): number {
 /**
  * Each `open` character's matching `close` index, by one stack pass that
  * skips backslash escapes and code spans: nested pairs balance, an unmatched
- * one is absent. With `titles`, a double-quoted string after whitespace
+ * one is absent. With `titles`, a quoted string (double or single) after whitespace
  * inside an open pair (a link title) is skipped whole.
  */
 function pairsOf(

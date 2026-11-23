@@ -134,7 +134,7 @@ the topic's direction. Send a technical dilemma to a fresh session using
 fresh session using `/jig:explain`. Those sessions own any generated records;
 this session receives their findings.
 Ask through the runtime's question tool where available (Claude Code:
-AskUserQuestion), otherwise a plain-text numbered question (one numbered line per option, the recommended one first and marked as the default where there is one, which the reply `default` takes: ask one question per turn; when a batch is unavoidable, every reply names the question number and then the option number or `default`, as `2.1` or `2.default`, or the question number and free text, as `2: keep both formats`; a reply of `default` to a question with no marked default, a question the reply leaves out and one it explicitly defers stay unanswered until the person clarifies; a question it answers twice with different resolved selections, as `2.2` beside `2.default`, or with two different free-text replies, is a conflict, kept distinct from an omission: no plan default settles it, and only the person's explicit resolution does). After emitting a single question or a batch, end the turn and resume from the person's reply. With nobody
+AskUserQuestion), otherwise a plain-text numbered question (one numbered line per option, the recommended one first and marked as the default where there is one, which the reply `default` takes: ask one question per turn; when a batch is unavoidable, every reply names the question number and then the option number or `default`, as `2.1` or `2.default`, or the question number and free text, as `2: keep both formats`; a reply of `default` to a question with no marked default, a question the reply leaves out and one it explicitly defers stay unanswered until the person clarifies; a question it answers twice with incompatible answers, in either reply form or mixed (`2.2` beside `2.default`, `2.1` beside `2: keep both formats`, or two different free-text replies), is a conflict, kept distinct from an omission and from an explicit deferral: no plan default settles it, and only the person's explicit resolution does). After emitting a single question or a batch, end the turn and resume from the person's reply. With nobody
 there to answer, stop and state the question rather than choose for them.
 
 ### 5. Record each answer
@@ -181,10 +181,10 @@ which remain filed.
 When the agreed work spans more than one pull request, have a fresh session
 write the plan on the repository and host's review surface. Only the first
 wave becomes tasks; give later waves one line each, so unstarted detail does
-not become stale. State a default for each unanswered choice in the plan;
-when the person approves it with a choice unanswered, say that its stated
-default settles that choice, except a choice the person's replies conflict on,
-which waits for their explicit resolution. Request review on that surface, tell the person,
+not become stale. State a default for each choice the person left out in the plan;
+when the person approves it with such a choice unanswered, say that its stated
+default settles that choice, except a choice the person explicitly deferred or
+their replies conflict on, which waits for their explicit resolution. Request review on that surface, tell the person,
 and end the turn; never poll for review. Without a configured review
 surface, present the plan in chat for explicit review and end the turn.
 

@@ -113,8 +113,9 @@ pick-up's or a follow-up's thread is `--thread` on its own address. Write a
 - **What was settled recently.** `jig ask --settled` lists what left the
   line in the last day, with who settled each (a person's login, a rule of the
   tick, the steward, or no one because its facts changed) and how; an answer
-  held or refused shows with its reason and its card stays open. Say the
-  tick's time, as for `--waiting`.
+  held or refused shows with its reason and its card stays open. As for
+  `--waiting`, when `unread` is non-null or `tick` is null, relay why the line
+  is unavailable and never report an empty day; otherwise say the tick's time.
 - **A pick-up** is answered only on a machine with a checkout of its
   repository; elsewhere `ask` refuses and says why. Relay that.
 - **Exit `1`** means the key names nothing: no such pull request or item.

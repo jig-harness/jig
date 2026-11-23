@@ -432,6 +432,7 @@ test("link grammar is read in its inline context, not by raw delimiters", () => 
   for (const text of [
     "Hand it to [agent `[`](../review-arbiter.md).\n",
     'Hand it to [agent](../review-arbiter.md "read this (first").\n',
+    "Hand it to [agent](../review-arbiter.md 'read this (first').\n",
   ])
     expect(rules(text)).toEqual(["subagent-form"]);
   expect(
@@ -449,10 +450,10 @@ test("deeply nested link labels neither overflow the stack nor the clock", () =>
 });
 
 test("comment masking follows paragraph boundaries and escaped ticks", () => {
-  // An ordered item and a setext underline end the paragraph a tick opened.
+  // An ordered item ends the paragraph a tick opened.
   expect(
     rules(
-      "A stray ` tick.\n1. Use AskUserQuestion. <!-- plain-text numbered question default; stop and state the question --> and `.\n",
+      "A stray ` tick.\n1. Use AskUserQuestion. <!-- plain-text numbered question, the recommended option first and marked as the default; stop and state the question --> and `.\n",
     ),
   ).toEqual(["question-form"]);
   // The second of two ticks after a backslash opens a span, so the `<!--`
