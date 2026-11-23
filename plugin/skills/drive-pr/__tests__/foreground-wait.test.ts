@@ -578,63 +578,92 @@ describe("foreground-wait.ts", () => {
       // outage, and the command's observed exit proves the deadline has begun
       // cancellation before the snapshot is restored. Once it recovers the
       // descendant must receive TERM, not be killed cold.
-      const { broken, captured, deadlineGate, flag, path, restored } =
-        installSnapshotFailureFixture(cwd);
-      expectSpawnExit(
-        runWith(
-          {
-            ...captureEnv(captured),
-            DRIVE_PR_FOREGROUND_WAIT_TIMEOUT: "3",
-            DRIVE_PR_FOREGROUND_WAIT_DEADLINE_GATE: deadlineGate,
-            PATH: path,
-          },
-          "launch",
-          "--",
-          ...bunCommand(
-            childTree(
-              `process.on("SIGTERM",()=>{require("node:fs").writeFileSync("termed.marker","term");process.exit(0)});require("node:fs").writeFileSync("descendant.pid",String(process.pid));${busy}`,
+      const {
+        broken,
+        captured,
+        deadlineGate,
+        flag,
+        nativeFailure,
+        path,
+        restored,
+      } = installSnapshotFailureFixture(cwd);
+      let descendant: number | null = null;
+      try {
+        expectSpawnExit(
+          runWith(
+            {
+              ...captureEnv(captured),
+              DRIVE_PR_FOREGROUND_WAIT_TIMEOUT: "3",
+              DRIVE_PR_FOREGROUND_WAIT_DEADLINE_GATE: deadlineGate,
+              PATH: path,
+            },
+            "launch",
+            "--",
+            ...bunCommand(
+              childTree(
+                `process.on("SIGTERM",()=>{require("node:fs").writeFileSync("termed.marker","term");process.exit(0)});require("node:fs").writeFileSync("descendant.pid",String(process.pid));${busy}`,
+              ),
             ),
           ),
-        ),
-        0,
-      );
-      await awaitObserved(
-        "the runner recorded its command",
-        () => pidOf("cmd.pid") !== null,
-      );
-      const command = pidOf("cmd.pid") as number;
-      await awaitObserved("the descendant announced itself", () =>
-        existsSync(join(cwd, "descendant.pid")),
-      );
-      const descendant = Number.parseInt(
-        readFileSync(join(cwd, "descendant.pid"), "utf8"),
-        10,
-      );
-      await capturedCommand(captured, [command, descendant]);
-      rmSync(restored, { force: true });
-      writeFileSync(flag, "");
-      writeFileSync(deadlineGate, "");
-      await awaitObserved(
-        "the process snapshot failed after the deadline began",
-        () => existsSync(broken),
-      );
-      await awaitObserved(
-        "the deadline ended the command while snapshots failed",
-        () => alive(command).then((isAlive) => !isAlive),
-      );
-      rmSync(flag);
-      await awaitObserved("the process snapshot recovered", () =>
-        existsSync(restored),
-      );
-      const cancellationEvidence = byPlatform(
-        "Windows has no cooperative POSIX TERM handler",
-        { windows: restored, posix: join(cwd, "termed.marker") },
-      );
-      await awaitObserved("the recovered descendant was cancelled", () =>
-        existsSync(cancellationEvidence),
-      );
-      const w = run("wait", "--max-sec", "40");
-      expectSpawnExit(w, 30);
+          0,
+        );
+        await awaitObserved(
+          "the runner recorded its command",
+          () => pidOf("cmd.pid") !== null,
+        );
+        const command = pidOf("cmd.pid") as number;
+        await awaitObserved("the descendant announced itself", () =>
+          existsSync(join(cwd, "descendant.pid")),
+        );
+        descendant = Number.parseInt(
+          readFileSync(join(cwd, "descendant.pid"), "utf8"),
+          10,
+        );
+        await capturedCommand(captured, [command, descendant]);
+        rmSync(restored, { force: true });
+        writeFileSync(flag, "");
+        writeFileSync(deadlineGate, "");
+        await awaitObserved(
+          "the process snapshot failed after the deadline began",
+          () => existsSync(broken),
+        );
+        await awaitObserved(
+          "the deadline ended the command while snapshots failed",
+          () => alive(command).then((isAlive) => !isAlive),
+        );
+        rmSync(flag);
+        writeFileSync(nativeFailure, "");
+        await sleepMs(200);
+        expect(existsSync(restored)).toBe(false);
+        rmSync(nativeFailure);
+        await awaitObserved("the process snapshot recovered", () =>
+          existsSync(restored),
+        );
+        const cancellationEvidence = byPlatform(
+          "Windows has no cooperative POSIX TERM handler",
+          { windows: restored, posix: join(cwd, "termed.marker") },
+        );
+        await awaitObserved("the recovered descendant was cancelled", () =>
+          existsSync(cancellationEvidence),
+        );
+        const w = run("wait", "--max-sec", "40");
+        expectSpawnExit(w, 30);
+        expect(await alive(descendant)).toBe(false);
+        expect(
+          JSON.parse(readFileSync(join(latestGen(), "result.json"), "utf8"))
+            .treeWitnessed,
+        ).toBe(true);
+      } finally {
+        rmSync(flag, { force: true });
+        rmSync(nativeFailure, { force: true });
+        if (descendant !== null) {
+          try {
+            process.kill(descendant, "SIGKILL");
+          } catch {
+            // already gone
+          }
+        }
+      }
     },
     T,
   );
