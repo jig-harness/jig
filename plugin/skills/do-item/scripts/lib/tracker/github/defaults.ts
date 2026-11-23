@@ -1,6 +1,6 @@
 /**
- * The GitHub adapter with GitHub's field default (design/tracker-facets.md,
- * "Defaults per adapter"): every facet the configuration does not name gets
+ * The GitHub adapter with GitHub's field default (plugin/protocol/tracker-facets.md,
+ * "Why a store is in force"): every facet the configuration does not name gets
  * the store detection selects before its first read or write
  * (facets/detected.ts); a facet the configuration names never waits on
  * detection.
