@@ -168,6 +168,21 @@ describe("keeping a run's transcript copy", () => {
     expect(readTranscriptCopy(ID, root)).toEqual(copy);
   });
 
+  it("masks the launch token used as a property name", () => {
+    const root = scratch();
+    const config = join(root, "config");
+    claudeTranscript(config, [
+      {
+        type: "assistant",
+        message: { content: [] },
+        extra: { "launch-token-1234": 1 },
+      },
+    ]);
+    const copy = keepTranscriptCopy(record(config), SESSION, root);
+    const text = readFileSync(String(copy?.transcript), "utf8");
+    expect(text).not.toContain("launch-token-1234");
+  });
+
   it("redacts structured tool inputs by their secret keys", () => {
     const root = scratch();
     const config = join(root, "config");

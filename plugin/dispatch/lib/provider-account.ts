@@ -315,8 +315,16 @@ function baseUrl(
     return invalid(`${where} must be an absolute URL`);
   const url = new URL(raw.value);
   // The path as written is checked before the URL parser normalizes it: a dot segment or an escaped dot could otherwise remove text the checks below never see.
-  const written = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]*([^?#]*)/i.exec(raw.value);
-  const writtenPath = written?.[1] ?? "";
+  // Only a plain form is accepted: the URL parser also reads a backslash as a separator and drops tabs and line breaks, which would hide a path segment from these checks.
+  const written = /^[a-z][a-z0-9+.-]*:\/\/[^/?#\\]*([^?#\\]*)$/i.exec(
+    raw.value.split(/[?#]/)[0] ?? "",
+  );
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is refused
+  if (written === null || /[\u0000-\u0020\u007f\\]/.test(raw.value))
+    return invalid(
+      `${where} must be a plain URL with no backslash, space or control character (its value is withheld)`,
+    );
+  const writtenPath = written[1] ?? "";
   if (
     /%/.test(writtenPath) ||
     writtenPath.split("/").some((part) => part === "." || part === "..")

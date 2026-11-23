@@ -148,6 +148,21 @@ function maskFields(value: unknown): unknown {
   return value;
 }
 
+/** `value` with the exact `token` replaced in every string and every property name, before any generic redaction can split it. */
+function maskExact(value: unknown, token: string): unknown {
+  if (token === "") return value;
+  if (typeof value === "string") return value.split(token).join("<redacted>");
+  if (Array.isArray(value)) return value.map((item) => maskExact(item, token));
+  if (value !== null && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([key, field]) => [
+        key.split(token).join("<redacted>"),
+        maskExact(field, token),
+      ]),
+    );
+  return value;
+}
+
 /** The transcript's lines, each redacted; a line that does not read as JSON is left out. */
 function redactedLines(text: string, token: string): string[] {
   const mask = (value: string) =>
@@ -165,8 +180,10 @@ function redactedLines(text: string, token: string): string[] {
       swallow(error, "a transcript line that does not read is left out");
       continue;
     }
-    // The serialized line is masked again for the exact value, as written and as JSON escapes it, so an object key that holds it is covered too.
-    let serialized = JSON.stringify(redactStrings(maskFields(value), mask));
+    // The exact value is masked in the parsed strings and property names first, so no generic rule can split it; the serialized line is masked again as JSON escapes it.
+    let serialized = JSON.stringify(
+      redactStrings(maskFields(maskExact(value, token)), mask),
+    );
     if (token !== "")
       for (const form of new Set([token, JSON.stringify(token).slice(1, -1)]))
         serialized = serialized.split(form).join("<redacted>");

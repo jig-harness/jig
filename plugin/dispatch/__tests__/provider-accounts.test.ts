@@ -120,6 +120,17 @@ describe("a provider account", () => {
       );
   });
 
+  it("refuses a base URL the parser would normalize past the path checks", () => {
+    for (const url of [
+      "https://openrouter.ai\\api\\..\\x",
+      "https://openrouter.ai/api/\t./x",
+      "https://openrouter.ai/api/\n../x",
+    ])
+      expect(refusal([router({ base_url: url })])).toMatch(
+        /plain URL|no percent escapes|no credential-shaped value/,
+      );
+  });
+
   it("refuses a base URL path with a percent escape or a credential shape, naming neither", () => {
     for (const path of [
       "/api/%FF",

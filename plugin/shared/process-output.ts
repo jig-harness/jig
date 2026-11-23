@@ -167,10 +167,16 @@ function captureProcessOutput(
       let kept = text;
       if (bytes + length > limit) {
         over = true;
-        kept = Buffer.from(text)
-          .subarray(0, Math.max(0, limit - bytes))
-          .toString("utf8")
-          .replace(/\uFFFD+$/, "");
+        const whole = Buffer.from(text);
+        let end = Math.min(whole.length, Math.max(0, limit - bytes));
+        // Back up to the start of the character the limit cuts, so a complete character is kept as it is and a cut one is dropped.
+        while (
+          end > 0 &&
+          end < whole.length &&
+          ((whole[end] ?? 0) & 0xc0) === 0x80
+        )
+          end--;
+        kept = whole.subarray(0, end).toString("utf8");
       }
       if (stream === "stdout") stdout += kept;
       else stderr += kept;
