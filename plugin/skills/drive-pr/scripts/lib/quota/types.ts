@@ -660,3 +660,17 @@ export interface QuotaAdapter {
     env: NodeJS.ProcessEnv,
   ): PreparedSpawn | null;
 }
+
+/**
+ * Say that an adapter's detection-time walk was cut short before it found a
+ * wall: `message` on the driver's output, and `opts.onScanTruncated` for the
+ * caller that carries it to where a person reads the stop.
+ */
+export function reportTruncatedScan(
+  opts: DetectOpts,
+  vendor: string,
+  message: string,
+): void {
+  console.error(message);
+  opts.onScanTruncated?.(vendor);
+}

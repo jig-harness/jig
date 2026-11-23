@@ -46,6 +46,7 @@ import {
   type QuotaWindow,
   readBoundedTail,
   readFullySync,
+  reportTruncatedScan,
   scanBudgetExceeded,
 } from "./types.ts";
 import { currentMs, parseMs } from "../../../../../shared/time.ts";
@@ -650,10 +651,11 @@ export const codexAdapter: QuotaAdapter = {
       // same claim as "no wall exists" — the walk may simply not have reached
       // the rollout carrying one. Say so rather than letting the caller read
       // this as an ordinary, fully-investigated pass failure.
-      console.error(
+      reportTruncatedScan(
+        opts,
+        "codex",
         "drive-pr quota: the detection scan over ~/.codex/sessions was truncated (see MAX_CANDIDATE_FILES_SCANNED/DRIVE_PR_QUOTA_MAX_SCAN_MS) before it finished — a Codex quota wall may exist in a rollout this walk did not reach.",
       );
-      opts.onScanTruncated?.("codex");
     }
     return best;
   },

@@ -50,6 +50,7 @@ import {
   type QuotaAdapter,
   type QuotaBlock,
   readBoundedTail,
+  reportTruncatedScan,
   scanBudgetExceeded,
 } from "./types.ts";
 import {
@@ -337,6 +338,77 @@ function textBlocks(record: Record<string, unknown>): string[] {
     if (typeof t === "string") out.push(t.replace(/\s+/g, " ").trim());
   }
   return out;
+}
+
+/**
+ * The wall one `rate_limit` record at instant `ts` in `path` reports.
+ */
+function blockOf(
+  record: Record<string, unknown>,
+  ts: number,
+  path: string,
+): QuotaBlock {
+  const blocks = textBlocks(record);
+  // Classified from a SINGLE block, never the join of all of them: a
+  // vendor message can bundle more than one block, and an incidental
+  // "session limit" mention in one block combined with an unrelated
+  // `resets ...` clause substring from a DIFFERENT block would report a
+  // false SHORT classification for a wall that is actually unknown or
+  // weekly — defeating the fail-closed policy this file otherwise
+  // follows. The first block that is itself a whole notice wins
+  // (`recognisedNotice`, matched end to end — see
+  // `SESSION_LIMIT_NOTICE_RE` for why a partial match at any position
+  // leaves a bypass); its OWN reset clause is the only one trusted.
+  const notice = recognisedNotice(
+    blocks,
+    Temporal.Instant.fromEpochMilliseconds(ts),
+  );
+  // `evidence` is what a human reads via `describeQuota()`, and what
+  // drive.ts logs unattended to a clone-wide log file. A vendor
+  // message's blocks can include ordinary reply content bundled
+  // alongside its own rate-limit line, not just the limit notice
+  // itself. Storing all of it risks logging unrelated transcript
+  // content the user typed, with no classification, redaction, or
+  // retention bound. Record only what was actually RECOGNISED: the
+  // notice's phrase (a fixed label, not a quote) and the `resets ...`
+  // clause substring itself — never the free text either was found in.
+  // For an unrecognised wall, still surface any resets clause found in
+  // ANY block purely as evidence — it is never trusted for `resetAt`
+  // or `window` unless it came from the block that is the notice.
+  const resetClauseText =
+    notice !== null
+      ? notice.clause
+      : (blocks
+          .map((b) => matchDatedResetClauseText(b) ?? matchResetClauseText(b))
+          .find((m) => m !== null) ?? null);
+  const recognised = [notice?.label ?? null, resetClauseText].filter(
+    (p): p is string => p !== null,
+  );
+  return {
+    vendor: claudeVendor,
+    window: notice?.window ?? "unknown",
+    // A reset clause is only trusted for wording we classified. On an
+    // unrecognised phrase the instant may well parse, but it would be an
+    // instant for a window whose LENGTH we do not know — and length is
+    // what decides sleepability. Report the block, withhold the reset.
+    resetAt: notice?.reset ?? null,
+    observedAt: Temporal.Instant.fromEpochMilliseconds(ts),
+    evidence:
+      recognised.length > 0
+        ? recognised.join(" · ")
+        : "(rate_limit record with no recognised wording)",
+    source: path,
+  };
+}
+
+/** `walked`, with the transcripts of `sessionId` read by name when there is one (`sessionFiles`). */
+function withSessionFiles(
+  walked: readonly string[],
+  sessionId: string | null,
+  sinceMs: number,
+): string[] {
+  if (sessionId === null) return [...walked];
+  return [...new Set([...sessionFiles(sessionId, sinceMs), ...walked])];
 }
 
 /**
@@ -633,15 +705,7 @@ export const claudeAdapter: QuotaAdapter = {
     // cannot hide this pass's own wall. The walk still runs: a transcript in
     // a layout the lookup does not know is found there, and matched on the
     // same record id.
-    const files =
-      ourSessionId === null
-        ? scan.files
-        : [
-            ...new Set([
-              ...sessionFiles(ourSessionId, sinceFloorMs),
-              ...scan.files,
-            ]),
-          ];
+    const files = withSessionFiles(scan.files, ourSessionId, sinceFloorMs);
     for (const path of files) {
       const isPreexisting = opts.preexistingSessions?.has(path) ?? false;
       // A file that already existed when the pass was spawned ORDINARILY
@@ -774,62 +838,9 @@ export const claudeAdapter: QuotaAdapter = {
         if (ts < bestAt) continue;
         if (ts === bestAt && path !== bestPath) continue;
 
-        const blocks = textBlocks(record);
-        // Classified from a SINGLE block, never the join of all of them: a
-        // vendor message can bundle more than one block, and an incidental
-        // "session limit" mention in one block combined with an unrelated
-        // `resets ...` clause substring from a DIFFERENT block would report a
-        // false SHORT classification for a wall that is actually unknown or
-        // weekly — defeating the fail-closed policy this file otherwise
-        // follows. The first block that is itself a whole notice wins
-        // (`recognisedNotice`, matched end to end — see
-        // `SESSION_LIMIT_NOTICE_RE` for why a partial match at any position
-        // leaves a bypass); its OWN reset clause is the only one trusted.
-        const notice = recognisedNotice(
-          blocks,
-          Temporal.Instant.fromEpochMilliseconds(ts),
-        );
         bestAt = ts;
         bestPath = path;
-        // `evidence` is what a human reads via `describeQuota()`, and what
-        // drive.ts logs unattended to a clone-wide log file. A vendor
-        // message's blocks can include ordinary reply content bundled
-        // alongside its own rate-limit line, not just the limit notice
-        // itself. Storing all of it risks logging unrelated transcript
-        // content the user typed, with no classification, redaction, or
-        // retention bound. Record only what was actually RECOGNISED: the
-        // notice's phrase (a fixed label, not a quote) and the `resets ...`
-        // clause substring itself — never the free text either was found in.
-        // For an unrecognised wall, still surface any resets clause found in
-        // ANY block purely as evidence — it is never trusted for `resetAt`
-        // or `window` unless it came from the block that is the notice.
-        const resetClauseText =
-          notice !== null
-            ? notice.clause
-            : (blocks
-                .map(
-                  (b) =>
-                    matchDatedResetClauseText(b) ?? matchResetClauseText(b),
-                )
-                .find((m) => m !== null) ?? null);
-        const recognised = [notice?.label ?? null, resetClauseText].filter(
-          (p): p is string => p !== null,
-        );
-        best = {
-          vendor: claudeVendor,
-          window: notice?.window ?? "unknown",
-          // A reset clause is only trusted for wording we classified. On an
-          // unrecognised phrase the instant may well parse, but it would be an
-          // instant for a window whose LENGTH we do not know — and length is
-          // what decides sleepability. Report the block, withhold the reset.
-          resetAt: notice?.reset ?? null,
-          observedAt: Temporal.Instant.fromEpochMilliseconds(ts),
-          evidence:
-            recognised.length > 0
-              ? recognised.join(" · ")
-              : "(rate_limit record with no recognised wording)",
-          source: path,
-        };
+        best = blockOf(record, ts, path);
       }
     }
     if (best === null && rejectedBySession > 0) {
@@ -867,10 +878,11 @@ export const claudeAdapter: QuotaAdapter = {
       // the same claim as "no wall exists" — the walk may simply not have
       // reached the transcript carrying one. Say so rather than letting the
       // caller read this as an ordinary, fully-investigated pass failure.
-      console.error(
+      reportTruncatedScan(
+        opts,
+        claudeVendor,
         "drive-pr quota: the detection scan over ~/.claude/projects was truncated (see MAX_CANDIDATE_FILES_SCANNED/DRIVE_PR_QUOTA_MAX_SCAN_MS) before it finished — a Claude quota wall may exist in a transcript this walk did not reach.",
       );
-      opts.onScanTruncated?.(claudeVendor);
     }
     return best;
   },
