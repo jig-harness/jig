@@ -26,22 +26,27 @@
  * runtime turn cap. A Codex pass has no turn cap of its own: the pass deadline
  * (`DRIVE_PR_PASS_TIMEOUT`, `--pass-timeout`) bounds one that runs on.
  */
-import type { AccountVendor } from "./identity.ts";
+import {
+  harnessFor,
+  harnessNamed,
+  harnesses,
+  isHarnessName,
+} from "../../../../shared/agent-harness/index.ts";
+import type { HarnessName } from "../../../../shared/agent-harness/index.ts";
 
-/** The agent tools the drive documents a pass command for. */
-export const PASS_VENDORS: readonly AccountVendor[] = ["claude", "codex"];
+/** The agent tools the drive documents a pass command for: every registered harness. */
+export const PASS_VENDORS: readonly HarnessName[] = harnesses().map(
+  (h) => h.name,
+);
 
 /** Whether `vendor` names an agent tool with a documented pass command. */
-export function isPassVendor(vendor: string): vendor is AccountVendor {
-  return (PASS_VENDORS as readonly string[]).includes(vendor);
+export function isPassVendor(vendor: string): vendor is HarnessName {
+  return isHarnessName(vendor);
 }
 
-/** The agent tools whose pass has no turn cap of its own, so only the pass deadline bounds it. */
-const UNCAPPED: ReadonlySet<AccountVendor> = new Set(["codex"]);
-
-/** Whether a pass of `vendor` is bounded by nothing but the pass deadline. */
-export function onlyDeadlineBounds(vendor: AccountVendor): boolean {
-  return UNCAPPED.has(vendor);
+/** Whether a pass of `vendor` is bounded by nothing but the pass deadline: its harness has no turn cap of its own. */
+export function onlyDeadlineBounds(vendor: HarnessName): boolean {
+  return harnessNamed(vendor)?.capabilities.turnCap === false;
 }
 
 /**
@@ -56,7 +61,7 @@ export const NO_BACKGROUND_TASKS: Readonly<Record<string, string>> = {
 };
 
 /** The words Codex's command line runs without a sandbox and without asking. */
-export const CODEX_BYPASS = "--dangerously-bypass-approvals-and-sandbox";
+export { CODEX_BYPASS } from "../../../../shared/agent-harness/codex.ts";
 
 /**
  * A skill's invocation as `vendor` takes it in a prompt: Claude Code's
@@ -64,10 +69,8 @@ export const CODEX_BYPASS = "--dangerously-bypass-approvals-and-sandbox";
  * invocation, since Codex runs a skill the prompt names. `invocation`
  * starts with the skill's slash command (`/jig:drive-pr --bots-only 7`).
  */
-export function skillPrompt(vendor: AccountVendor, invocation: string): string {
-  if (vendor === "claude") return invocation;
-  const skill = /^\/(\S+)/.exec(invocation)?.[1] ?? invocation;
-  return `Use the ${skill} skill: ${invocation}`;
+export function skillPrompt(vendor: HarnessName, invocation: string): string {
+  return harnessFor(vendor).skillPrompt(invocation);
 }
 
 /**
@@ -97,7 +100,7 @@ export function passRole(pr: number | string): string {
  * pass role.
  */
 export function passPrompt(
-  vendor: AccountVendor,
+  vendor: HarnessName,
   pr: number | string,
   botsOnly = true,
 ): string {
@@ -112,19 +115,16 @@ export function passPrompt(
  * `drive.codex_pass_args`) before the prompt; Claude Code's ignores both.
  */
 export function passCommand(
-  vendor: AccountVendor,
+  vendor: HarnessName,
   pr: number | string,
   codexBypass = false,
   codexPassArgs: readonly string[] = [],
 ): string[] {
-  const prompt = passPrompt(vendor, pr);
-  return vendor === "claude"
-    ? ["claude", "-p", prompt]
-    : [
-        "codex",
-        "exec",
-        ...(codexBypass ? [CODEX_BYPASS] : []),
-        ...codexPassArgs,
-        prompt,
-      ];
+  const harness = harnessFor(vendor);
+  return harness.passCommand({
+    prompt: passPrompt(vendor, pr),
+    bypass: harness.capabilities.bypassOptIn && codexBypass,
+    hostArgs:
+      harness.capabilities.hostArgsAt === "admission" ? codexPassArgs : [],
+  });
 }

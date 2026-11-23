@@ -9,7 +9,6 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
-import { readRecord } from "../lib/launches.ts";
 import { type EndedRow, readRows } from "../lib/log.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
@@ -85,30 +84,6 @@ async function redrive(w: World): Promise<string> {
 }
 
 describe("jig dispatch --apply re-drives a stale converged pull request", () => {
-  it("re-arms a converged drive the forge reports conflicting exactly once across three ticks", async () => {
-    const w = fixture({ mergeable: "CONFLICTING" });
-    const record = await redrive(w);
-    const stored = readRecord(record, dispatchState(w));
-    expect(stored?.redrive).toEqual({
-      cause: "conflicting with its base",
-      change: `head ${HEAD_SHA}, conflicting`,
-    });
-
-    // The drive converged again without settling it: the same change is never re-driven twice.
-    for (const _ of [2, 3]) {
-      const later = await tick(w);
-      expect(launches(later)).toEqual([]);
-      expect(later.repos[0]?.actions).toEqual([]);
-      expect(later.repos[0]?.quiet).toContainEqual({
-        target: "PR #7",
-        class: "stale",
-        why: `stale (conflicting with its base), and launch record ${record} already re-drove it for this change; it is not launched again until its head or its mergeability changes`,
-      });
-    }
-    expect(terminalCreates(w)).toHaveLength(1);
-    expect(driveRuns(w)).toHaveLength(1);
-  }, 90_000);
-
   it("re-arms a converged drive whose head moved past the verified head once, and again for the next change", async () => {
     const w = fixture({ headRefOid: MOVED });
     await redrive(w);

@@ -1,4 +1,5 @@
 /** Resolve update next from the repository's converged pull requests, as the board does. */
+import { confirmCarriedReview } from "../../skills/drive-pr/scripts/lib/carried-review.ts";
 import { carriesSet } from "../../dispatch/lib/labels.ts";
 import { oneUpdateNext, type BoardCard } from "../../dispatch/lib/board.ts";
 import {
@@ -78,14 +79,14 @@ async function peerLedgers(
 }
 
 /** Place peers on the same live facts before selecting the repository's one update lane. */
-function peerCards(
+async function peerCards(
   ctx: AskContext,
   ledgers: Map<number, Ledger>,
   pulls: Map<number, ForgeFacts>,
   rules: ReadyRules,
   prefix: string | null,
   onlyLabeled: boolean,
-): Outcome<BoardCard[], "unreadable"> {
+): Promise<Outcome<BoardCard[], "unreadable">> {
   const cards: BoardCard[] = [];
   for (const [n, l] of ledgers) {
     const f = pulls.get(n);
@@ -106,6 +107,14 @@ function peerCards(
         slug: ctx.address.repo,
         converged: true,
         verifiedSha: l.verifiedSha,
+        ...(await confirmCarriedReview(
+          ctx.checkout,
+          ctx.address.repo,
+          l.reviewCarriedFrom,
+          f.head,
+          f.base,
+          rules,
+        )),
         held: prefix !== null && f.labels.includes(`${prefix}hold`),
       },
       rules,
@@ -156,7 +165,7 @@ export async function updateQueueWait(
   ctx.reading.forgeCall();
   const read = await readMergeFacts(ctx.address.repo, [...ledgers.keys()], sec);
   if (!read.ok) return unknown(read.failure.reason);
-  const placedPeers = peerCards(
+  const placedPeers = await peerCards(
     ctx,
     ledgers,
     read.value.pulls,
