@@ -96,6 +96,35 @@ function unquote(line: string): { depth: number; content: string } {
   return { depth, content };
 }
 
+/** Whether a line is a table's header row, given the line after it. */
+function startsTable(content: string, next: string | undefined): boolean {
+  return (
+    content.includes("|") &&
+    DELIMITER_ROW.test(next ? unquote(next).content : "")
+  );
+}
+
+/** The ordered number (as text) or `-` of a list item line, if it is one. */
+function listMarker(content: string): string | undefined {
+  const ordered = /^\s*(\d+)[.)]\s/.exec(content);
+  if (ordered) return ordered[1];
+  return /^\s*[-*+]\s/.test(content) ? "-" : undefined;
+}
+
+/**
+ * Whether a line ends the paragraph before it: a bullet, a heading, or an
+ * ordered item numbered `1`, one that opens a block or one in a list.
+ */
+function interrupts(
+  content: string,
+  marker: string | undefined,
+  empty: boolean,
+  inList: boolean,
+): boolean {
+  if (marker === "-" || /^\s*#{1,6}\s/.test(content)) return true;
+  return marker !== undefined && (marker === "1" || empty || inList);
+}
+
 /**
  * Blank-line separated blocks with 1-based lines. Fenced code is kept whole
  * (the top-level grammar of `fenceAfter`, applied inside quotes), a change of
@@ -142,13 +171,7 @@ function paragraphs(source: string): Paragraph[] {
       flush();
       return;
     }
-    if (
-      !table &&
-      content.includes("|") &&
-      DELIMITER_ROW.test(
-        lines[index + 1] ? unquote(lines[index + 1] as string).content : "",
-      )
-    ) {
+    if (!table && startsTable(content, lines[index + 1])) {
       flush();
       table = true;
     }
@@ -159,15 +182,10 @@ function paragraphs(source: string): Paragraph[] {
       flush();
       return;
     }
-    const ordered = /^\s*(\d+)[.)]\s/.exec(content);
-    const bullet = /^\s*[-*+]\s/.test(content);
-    if (
-      bullet ||
-      /^\s*#{1,6}\s/.test(content) ||
-      (ordered && (ordered[1] === "1" || current.length === 0 || inList))
-    ) {
+    const list = listMarker(content);
+    if (interrupts(content, list, current.length === 0, inList)) {
       flush();
-      inList = Boolean(ordered || bullet);
+      inList = list !== undefined;
     }
     if (current.length === 0) start = index + 1;
     current.push(content.trim());
