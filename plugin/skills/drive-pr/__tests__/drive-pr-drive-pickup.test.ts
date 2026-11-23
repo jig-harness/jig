@@ -412,7 +412,12 @@ describe("drive.ts re-arms a HITL-parked drive once every item is answered", () 
       expect(after.parked.map((park: { key: string }) => park.key)).toEqual(
         explicit ? [] : ["PRRT_p"],
       );
-      expect(after.resolvedParks ?? []).toEqual([]);
+      // A cleared resolved thread keeps its receipt as evidence.
+      expect(
+        (after.resolvedParks ?? []).map(
+          (p: { key: string; outcome: string }) => [p.key, p.outcome],
+        ),
+      ).toEqual(explicit ? [["PRRT_p", "resolved-thread"]] : []);
     },
     120_000,
   );

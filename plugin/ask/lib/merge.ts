@@ -8,6 +8,7 @@
  * default branch, read in the same query, as the tick reads them; when that
  * does not read, the answer says so rather than guess at a reviewer.
  */
+import { confirmCarriedReview } from "../../skills/drive-pr/scripts/lib/carried-review.ts";
 import { readMergeFacts } from "../../skills/drive-pr/scripts/lib/merge-facts.ts";
 import {
   type Act,
@@ -155,6 +156,14 @@ export async function convergedWait(
       slug: ctx.address.repo,
       converged: true,
       verifiedSha: ledger.verifiedSha,
+      ...(await confirmCarriedReview(
+        ctx.checkout,
+        ctx.address.repo,
+        ledger.reviewCarriedFrom,
+        read.value.facts.head,
+        read.value.facts.base,
+        read.value.rules,
+      )),
       held:
         prefix !== null && read.value.facts.labels.includes(`${prefix}hold`),
     },

@@ -10,7 +10,9 @@
  * | --- | --- |
  * | running, heartbeat inside the lease window | driven |
  * | running, heartbeat past the lease window | silent, read beside whether this host shows its driver gone |
- * | stopped `CONVERGED` (`0`), the pull request conflicting or its head past the verified head | stale |
+ * | stopped `CONVERGED` (`0`), the pull request conflicting with its base | stale, once per head and base head |
+ * | stopped `CONVERGED`, mergeable with a head past the verified head | stale unless the dispatcher proves a clean base merge |
+ * | stopped `CONVERGED`, clean base merge proved and new required checks pending | held from re-drive until the checks settle |
  * | stopped `PR_CONFLICTING` (`9`) | stale |
  * | stopped `CI_REPAIR_SPENT` (`21`) with diagnosis on the current head | needs-person, with the diagnosis |
  * | stopped `STALLED` (`14`), `CI_REPAIR_SPENT` without a diagnosis on the current head, `PASS_DEADLINE` (`15`) | stale, once per head commit |
@@ -34,7 +36,11 @@
  * request's mergeability as the forge reports it, read with the pull
  * request, and its head commit against the head the ledger says the drive
  * verified (`verifiedSha`). A base that merely moved past a pull request
- * that still merges cleanly does not make it stale.
+ * that still merges cleanly leaves the converged drive waiting for a person's
+ * merge. On apply, a stopped drive with a trusted announcement at the
+ * prior head can refresh after a clean merge of its base. The check and
+ * ledger write run without review rounds. Changed or unprovable history
+ * goes through the ordinary stale re-drive.
  *
  * A ledger that stopped `PR_CONFLICTING` is read beside its pull request's
  * mergeability, its head and its base branch's head, which is read for no
@@ -143,7 +149,14 @@ import { readPark, type ParkReading } from "./park-reading.ts";
 import { failedRead } from "./ledger-read-failure.ts";
 import { ledgerParks } from "../park-events.ts";
 import { readFailureOf } from "../read-failures.ts";
-import { listComments } from "../../../shared/records/forge-claims.ts";
+import {
+  listComments,
+  listedFrom,
+} from "../../../shared/records/forge-claims.ts";
+import {
+  announcementsOf,
+  MERGE_READY,
+} from "../../../skills/drive-pr/scripts/lib/announce.ts";
 export type { ParkReading } from "./park-reading.ts";
 import type {
   DrivenPr,
@@ -153,6 +166,7 @@ import type {
   WaitingPark,
 } from "../types.ts";
 import { parseMs } from "../../../shared/time.ts";
+import { readsBaseHead, stopEvidence } from "./ledger-stop-evidence.ts";
 import { readFacts } from "./ledger-facts.ts";
 import { undecided } from "./ledger-undecided.ts";
 import {
@@ -206,26 +220,31 @@ function convergedClass(ledger: Ledger, forge: PrFacts): Classified {
         )
       : { ...unplaced(facts.unread), forgeUndecided: true };
   const { head, conflicting } = facts;
-  if (verified === "" && !conflicting)
+  if (conflicting) {
+    const pair = conflictPair(forge);
+    if ("unread" in pair)
+      return undecided(
+        `stopped ${DRIVE_EXIT.CONVERGED} (converged), and now conflicting with its base, but ${pair.unread}, so the change a re-drive would act on cannot be told`,
+      );
+    return conflictRedrive(
+      `stopped ${DRIVE_EXIT.CONVERGED} (converged), and now conflicting with its base`,
+      pair,
+    );
+  }
+  if (verified === "")
     return unplaced("its ledger names no head the drive verified");
-  const causes = [
-    ...(conflicting ? ["conflicting with its base"] : []),
-    ...(verified !== "" && head !== verified
-      ? [`head ${short(head)} past the verified head ${short(verified)}`]
-      : []),
-  ];
-  if (causes.length === 0)
+  if (head === verified)
     return {
       class: "done",
       why: `stopped ${DRIVE_EXIT.CONVERGED} (converged), still at the verified head ${short(verified)} and mergeable`,
     };
-  const cause = causes.join(", and ");
+  const cause = `head ${short(head)} past the verified head ${short(verified)}`;
   return {
     class: "stale",
     why: `stopped ${DRIVE_EXIT.CONVERGED} (converged), and now ${cause}: re-drive on any account`,
     stale: {
       cause,
-      change: `head ${head}, ${conflicting ? "conflicting" : "mergeable"}`,
+      change: `head ${head}, mergeable`,
     },
   };
 }
@@ -313,22 +332,6 @@ function failedConflictClass(forge: PrFacts): Classified | null {
       recovery: true,
     },
   };
-}
-
-/** Whether a ledger's stop is read beside its base branch's head: a stop on a conflict, or a park or a failure on a pull request the forge reports conflicting. */
-export function readsBaseHead(
-  ledger: Ledger,
-  mergeable: string | null | undefined,
-): boolean {
-  if (ledger.driver.state !== "stopped") return false;
-  const exit = ledger.driver.exit;
-  return (
-    exit === DRIVE_EXIT.PR_CONFLICTING ||
-    (exit === DRIVE_EXIT.HITL_PARKED && mergeable === "CONFLICTING") ||
-    (exit === FAILED &&
-      ledger.driver.personStop === undefined &&
-      mergeable === "CONFLICTING")
-  );
 }
 
 /** The stops a re-drive settles once per head commit, by exit: what each is, in words, and whether it draws on the recovery budget. */
@@ -540,25 +543,6 @@ function parkConflictClass(waiting: string, forge: PrFacts): Classified | null {
   );
 }
 
-/** What a stop's evidence adds: the heads and the mergeability a ledger whose stop the forge's read places (`CONVERGED`, a conflict, a mechanical stop) was read beside. */
-function stopEvidence(ledger: Ledger, forge: PrFacts): Evidence {
-  if (ledger.driver.state !== "stopped") return {};
-  const read = { headSha: forge.head, mergeable: forge.mergeable };
-  if (MECHANICAL_STOPS.has(ledger.driver.exit ?? Number.NaN)) return read;
-  if (ledger.driver.exit === DRIVE_EXIT.CONVERGED)
-    return {
-      verifiedSha: ledger.verifiedSha === "" ? null : ledger.verifiedSha,
-      ...read,
-    };
-  if (ledger.driver.exit === DRIVE_EXIT.WORKTREE_UNCLEAN) return read;
-  if (!readsBaseHead(ledger, forge.mergeable)) return {};
-  const { base } = forge;
-  return {
-    baseSha: base !== undefined && "oid" in base ? base.oid : null,
-    ...read,
-  };
-}
-
 /** The evidence a report prints for one ledger. */
 function ledgerEvidence(
   ledger: Ledger,
@@ -567,7 +551,11 @@ function ledgerEvidence(
 ): Evidence {
   const beat = parseMs(ledger.driver.heartbeat);
   return {
-    ...stopEvidence(ledger, forge),
+    ...stopEvidence(
+      ledger,
+      forge,
+      MECHANICAL_STOPS.has(ledger.driver.exit ?? Number.NaN),
+    ),
     driverActor: ledger.driver.actor,
     driverClone: ledger.driver.clone,
     handoff: ledger.narrative.join("\n").slice(-12_000),
@@ -825,6 +813,26 @@ async function presenceEvidence(
   return { driverGone: seen.gone, driverCheck: seen.why };
 }
 
+/** Whether the tick's already-read comments show a merge-ready announcement for another head. */
+function announcementEvidence(
+  comments: readonly unknown[],
+  slug: string,
+  pr: number,
+  login: string | null,
+  head: string | null,
+): Evidence {
+  if (head === null) return {};
+  const announcements = announcementsOf(
+    listedFrom(MERGE_READY, comments, { repo: slug, number: pr }, login),
+  );
+  return announcements.some(
+    (announcement) =>
+      announcement.unreadable !== undefined || announcement.head !== head,
+  )
+    ? { staleMergeReadyAnnouncement: true }
+    : {};
+}
+
 /** One pull request's drive; `null` when it carries no ledger and no label asks for one. */
 async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
   const { slug, login, nowMs, windowMs, labels } = r;
@@ -890,6 +898,13 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
     ...(classified.class === "unplaced" ? failedRead(ledger, park, forge) : {}),
     evidence: {
       ...ledgerEvidence(ledger, nowMs, forge),
+      ...announcementEvidence(
+        listing.value,
+        slug,
+        pr.number,
+        login,
+        forge.head,
+      ),
       ...reviewer?.evidence,
       ...request,
       ...(await presenceEvidence(pr.number, ledger, classified, r)),
