@@ -21,6 +21,13 @@
  *
  * Releasing a notice's key (a host failure's quiet, `tick-settle.ts`)
  * releases it on every channel.
+ *
+ * A channel's first send on this host starts it from the causes that
+ * already stand (`channelStarted`, `markChannelStarted`): one row under the
+ * key `channel started`, at no repository, is the host's record that the
+ * channel has begun, so that a channel which has sent nothing yet is not
+ * mistaken for a new one when its first cause appears. A channel's records
+ * and that row go together.
  */
 import type { Database } from "bun:sqlite";
 import { insertRow, type LogRow } from "./log.ts";
@@ -43,6 +50,32 @@ function noticeKeyOf(channel: string, stored: string): string {
   return channel !== ORCA_CARD && stored.startsWith(prefix)
     ? stored.slice(prefix.length)
     : stored;
+}
+
+/** The stored key of the row that records a channel's start, at no repository: no notice's key reads like it, since a notice's key starts with a repository's `owner/name` or with `host `. */
+const STARTED_KEY = "channel started";
+
+/** Whether the host has begun sending through `channel`: its start row, or any record an earlier release wrote for it. */
+export function channelStarted(channel: string, root: string): boolean {
+  return (
+    stateDb(root)
+      .query("SELECT 1 AS found FROM notices WHERE channel = ? LIMIT 1")
+      .get(channel) !== null
+  );
+}
+
+/** Record that the host has begun sending through `channel`; the row stays, and the record's key never meets a notice's. */
+export function markChannelStarted(
+  channel: string,
+  at: string,
+  root: string,
+): void {
+  stateDb(root)
+    .query(
+      `INSERT INTO notices (repo, key, target, workspace, at, lasting, channel)
+       VALUES ('', ?, '', '', ?, 1, ?) ON CONFLICT (repo, key) DO NOTHING`,
+    )
+    .run(recordKey(channel, STARTED_KEY), at, channel);
 }
 
 /** The failure ledger's key of a delivery of the notice keyed `key` on `channel`. */

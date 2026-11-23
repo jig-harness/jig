@@ -1047,6 +1047,9 @@ only way out on `runtime: process`, which has no notices workspace: a
 `webhook` channel posts it to an incoming webhook (an ntfy topic a phone
 subscribes to, a Slack or Discord channel), whose address the file names
 by the environment variable that holds it, never by the address. A
+channel added to a host that already has standing needs starts from them: it
+records them as known without sending them, so only a need that appears
+afterwards reaches it. A
 message that
 still stands `dispatch.renotify_after` (a day by default) after it was last
 sent is sent again, saying since when it has waited, until its cause goes;

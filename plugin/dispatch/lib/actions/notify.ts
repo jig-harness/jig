@@ -29,6 +29,17 @@
  *   log (`log.ts`) in the same transaction as the first suppression record
  *   written for it, timed at that record and keyed by the same facts; a
  *   cause about a stage this machine launched has its ended row instead.
+ * - **A channel new to the host starts from what stands.** The first tick
+ *   that can send through a channel with no record on this host does not
+ *   send the causes that already stand, one message each: it records them
+ *   as known (`startFrom`), without sending, on every repository of that
+ *   tick, and says once on the receipt how many (`channelStarts`). Only a
+ *   cause that appears or changes afterwards is sent, and the causes
+ *   recorded this way follow the usual rules: repeated on
+ *   `dispatch.renotify_after` while they stand, dropped when they leave. A
+ *   renamed channel is a new one, and so is one whose records were dropped.
+ *   `orca-card` is never started this way. A channel that is not reachable
+ *   has not started: it starts on the first tick it can send.
  * - **Backed off while it keeps failing.** A cause whose delivery was lost
  *   is counted in the failure ledger (`failures.ts`) under its channel's key
  *   (`notice <key>` on `orca-card`, `notice <channel> <key>` on another):
@@ -71,8 +82,10 @@ import {
 } from "../failure-notices.ts";
 import { holderRecordStands } from "../holder-notices.ts";
 import {
+  channelStarted,
   dropSuppressions,
   ledgerKey,
+  markChannelStarted,
   ORCA_CARD,
   readHostSuppressions,
   readSuppressions,
@@ -508,7 +521,7 @@ export async function applyNotices(
   };
   const due = channels.map((channel) => ({
     channel,
-    due: dueOn(channel, scope),
+    due: dueOn(channel, scope, state, channel === card),
   }));
   // The notices go first on every channel: a delivery that recovers on any of them clears its row before a failure notice about it is decided.
   for (const { channel, due: causes } of due)
@@ -633,10 +646,16 @@ function namedChannels(
 }
 
 /** The causes due on `channel` and tried this tick; the rest reported suppressed, backing off, or waiting on a channel that cannot be reached. */
-function dueOn(channel: NotificationChannel<Cause>, scope: SendScope): Cause[] {
+function dueOn(
+  channel: NotificationChannel<Cause>,
+  scope: SendScope,
+  state: ApplyState,
+  isCard: boolean,
+): Cause[] {
   const name = channel.name;
-  const due = dueThere(name, scope);
-  if (due.length === 0) return due;
+  const starting = !isCard && startingChannel(name, scope.root, state);
+  const due = dueThere(name, scope, starting);
+  if (due.length === 0 && !starting) return due;
   let why: string | null;
   try {
     why = channel.unreachable();
@@ -648,9 +667,64 @@ function dueOn(channel: NotificationChannel<Cause>, scope: SendScope): Cause[] {
       reason: why,
     });
   }
-  if (why === null) return due;
+  if (why === null) return starting ? startFrom(name, scope, state, due) : due;
   for (const c of due)
     scope.report.notifications.push(outcomeFor(name, c, "waits", null, why));
+  return [];
+}
+
+/** Whether `channel` has yet to send on this host, or started this tick and so starts alike on every repository of it. */
+function startingChannel(
+  channel: string,
+  root: string,
+  state: ApplyState,
+): boolean {
+  return (
+    state.channelStarts?.has(channel) === true || !channelStarted(channel, root)
+  );
+}
+
+/**
+ * Start `channel` from the causes that already stand: record each as known
+ * without sending it, so only a cause that appears or changes afterwards is
+ * sent, and tell the receipt once how many. The channel's start row goes in
+ * after the records, so a tick that fails part way starts it again.
+ */
+function startFrom(
+  channel: string,
+  scope: SendScope,
+  state: ApplyState,
+  due: readonly Cause[],
+): Cause[] {
+  state.channelStarts ??= new Map();
+  let start = state.channelStarts.get(channel);
+  if (start === undefined) {
+    start = { channel, causes: 0 };
+    state.channelStarts.set(channel, start);
+    scope.report.channelStarts = [...(scope.report.channelStarts ?? []), start];
+  }
+  for (const c of due) {
+    recordSent(channel, c, "", scope);
+    start.causes++;
+    scope.report.notifications.push(
+      outcomeFor(
+        channel,
+        c,
+        "suppressed",
+        null,
+        `recorded as known without sending: the ${channel} channel started this tick from the causes that already stood`,
+      ),
+    );
+  }
+  try {
+    markChannelStarted(channel, currentIso(), scope.root);
+  } catch (error) {
+    outcomeLogFailed(
+      scope.report,
+      `the start of the ${channel} channel`,
+      error,
+    );
+  }
   return [];
 }
 
@@ -658,6 +732,7 @@ function dueOn(channel: NotificationChannel<Cause>, scope: SendScope): Cause[] {
 function dueThere(
   channel: string,
   { repo, report, root, settings, causes, standing }: SendScope,
+  starting = false,
 ): Cause[] {
   const sent = readSuppressions(channel, repo.slug, root);
   const hostSent = readHostSuppressions(channel, HOST_NOTICE, root);
@@ -682,7 +757,8 @@ function dueThere(
         ),
       );
   }
-  return notBackingOff(channel, all, settings.book, report);
+  // A channel that is starting records the causes that stand, so none is held back for its failures: it has none.
+  return starting ? all : notBackingOff(channel, all, settings.book, report);
 }
 
 /** Record a cause `channel` delivered, with its event row when it is the cause's first record. */

@@ -18,7 +18,7 @@ import {
   type MachineConfig,
   parseMachineConfigText,
 } from "../lib/machine-config.ts";
-import { ORCA_CARD } from "../lib/notice-records.ts";
+import { markChannelStarted, ORCA_CARD } from "../lib/notice-records.ts";
 import { NOTICES_READ } from "../lib/notices-read.ts";
 import { noticeOutlets } from "../lib/notify-config.ts";
 import type {
@@ -137,6 +137,8 @@ function host(runtime: "orca" | "process") {
   const outlets = () => noticeOutlets(config, { JIG_TEST_PHONE_URL: hook.url });
   const repo: RepoTarget = { path: root, slug: SLUG, defaultBranch: "main" };
   const ledgerFailures: string[] = [];
+  // The channel has already begun sending on this host; one that has not starts from what stands (notify-channel-start.test.ts).
+  markChannelStarted("phone", "2026-01-01T00:00:00.000Z", root);
   const book = () =>
     actionBook(SLUG, FAILURE_DEFAULTS, (r) => ledgerFailures.push(r), root);
   return { root, hook, config, outlets, repo, book, ledgerFailures };
@@ -212,9 +214,9 @@ describe.skipIf(process.platform === "win32")("on runtime: process", () => {
     );
 
     const db = stateDb(h.root);
-    expect(db.query("SELECT channel FROM notices").all()).toEqual([
-      { channel: "phone" },
-    ]);
+    expect(
+      db.query("SELECT channel FROM notices WHERE repo <> ''").all(),
+    ).toEqual([{ channel: "phone" }]);
     // One event row for the cause, and no read observation: a webhook has no read state.
     expect(
       db.query("SELECT key FROM log WHERE key = ?").all(`event ${KEY}`),
@@ -249,7 +251,9 @@ describe.skipIf(process.platform === "win32")("on runtime: process", () => {
       ["phone", "waits"],
     ]);
     expect(h.hook.posts).toHaveLength(2);
-    expect(stateDb(h.root).query("SELECT key FROM notices").all()).toEqual([]);
+    expect(
+      stateDb(h.root).query("SELECT key FROM notices WHERE repo <> ''").all(),
+    ).toEqual([]);
   });
 
   it("lets every cause wait, counting no failure, while the address variable is unset", async () => {
