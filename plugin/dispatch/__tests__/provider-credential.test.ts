@@ -74,6 +74,17 @@ describe("resolving a credential reference", () => {
     expect(!wide.ok && wide.failure.reason).toContain("8 characters");
   });
 
+  it("refuses a value with a malformed byte, which decodes to U+FFFD", async () => {
+    const bad = await resolveCredential(
+      command(
+        "process.stdout.write(Buffer.from([0x61,0x62,0x63,0x64,0x65,0x66,0x67,0x68,0xff,0x69]))",
+      ),
+      "ref",
+      process.env,
+    );
+    expect(!bad.ok && bad.failure.reason).toContain("not valid UTF-8");
+  });
+
   it("prints the value for the reference appended as one argument, one trailing newline removed", async () => {
     const value = await resolveCredential(
       command(ECHO_REFERENCE),

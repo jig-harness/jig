@@ -16,6 +16,6 @@ it("keeps a complete character that fits and drops one the bound cuts", async ()
     { timeoutSec: 20, maxBufferBytes: 6 },
   );
   expect(done.bufferExceeded).toBe(true);
-  // U+FFFD takes three bytes and each e-acute two: the third byte of the bound cuts the second e-acute.
+  // U+FFFD takes three bytes and each e-acute two: the bound's sixth byte is the first byte of the second e-acute, so that character is dropped.
   expect(done.stdout).toBe("\u{FFFD}\u00e9");
 });

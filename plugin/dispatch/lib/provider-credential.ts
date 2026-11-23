@@ -118,6 +118,12 @@ export async function resolveCredential(
       "unauthorized",
       "the credential command printed a value that contains a redaction marker",
     );
+  // The output was decoded as UTF-8 before it reached here: a malformed byte became U+FFFD, so the value is not what the command printed.
+  if (value.includes("\uFFFD"))
+    return failed(
+      "unauthorized",
+      "the credential command printed a value that is not valid UTF-8",
+    );
   if (value.includes("\0"))
     return failed(
       "unauthorized",

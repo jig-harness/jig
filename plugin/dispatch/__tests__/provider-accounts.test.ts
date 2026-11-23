@@ -131,6 +131,15 @@ describe("a provider account", () => {
       );
   });
 
+  it("refuses a base URL written with a leading or trailing space or line break", () => {
+    for (const url of [
+      " https://openrouter.ai/api",
+      "https://openrouter.ai/api\n",
+      "\thttps://openrouter.ai/api",
+    ])
+      expect(refusal([router({ base_url: url })])).toContain("plain URL");
+  });
+
   it("refuses a base URL path with a percent escape or a credential shape, naming neither", () => {
     for (const path of [
       "/api/%FF",

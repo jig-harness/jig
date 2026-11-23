@@ -20,6 +20,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { recordExit, writeRecord, type LaunchRecord } from "../lib/launches.ts";
+import { holdCredential } from "../lib/provider-held.ts";
 import { insertRow, readRows, type EndedRow } from "../lib/log.ts";
 import { closeStateDb, stateDb } from "../lib/state.ts";
 import {
@@ -168,19 +169,41 @@ describe("keeping a run's transcript copy", () => {
     expect(readTranscriptCopy(ID, root)).toEqual(copy);
   });
 
-  it("masks the launch token used as a property name", () => {
+  it("masks the launch token and a held provider credential in names, strings and numbers", () => {
     const root = scratch();
     const config = join(root, "config");
+    const credential = "98765432101";
     claudeTranscript(config, [
       {
         type: "assistant",
         message: { content: [] },
-        extra: { "launch-token-1234": 1 },
+        keep: "unrelated",
+        extra: {
+          "launch-token-1234": 1,
+          "<redacted>": 2,
+          [`key-${credential}`]: 3,
+          number: Number(credential),
+          text: `me@x.io-${credential}`,
+        },
       },
     ]);
-    const copy = keepTranscriptCopy(record(config), SESSION, root);
-    const text = readFileSync(String(copy?.transcript), "utf8");
-    expect(text).not.toContain("launch-token-1234");
+    holdCredential(ID, credential);
+    try {
+      const copy = keepTranscriptCopy(
+        record(config, { provider: "p" } as Partial<LaunchRecord>),
+        SESSION,
+        root,
+      );
+      const text = readFileSync(String(copy?.transcript), "utf8");
+      expect(text).not.toContain("launch-token-1234");
+      expect(text).not.toContain(credential);
+      const parsed = JSON.parse(text.trim());
+      expect(parsed.keep).toBe("unrelated");
+      // The colliding names stay three fields, none lost.
+      expect(Object.keys(parsed.extra).length).toBeGreaterThanOrEqual(4);
+    } finally {
+      holdCredential("none", "unused-placeholder");
+    }
   });
 
   it("redacts structured tool inputs by their secret keys", () => {

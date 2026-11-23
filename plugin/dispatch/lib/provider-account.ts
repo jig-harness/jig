@@ -309,6 +309,12 @@ function baseUrl(
           `${where} is required for ${provider} on ${harness}: only ${DEFAULT_ENDPOINT_PROVIDER[harness]} is that harness's own default endpoint`,
         );
   }
+  // The value as written is checked before `text` trims it: a leading or trailing space or control character is refused like one inside.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is refused
+  if (typeof value === "string" && /[\u0000-\u0020\u007f\\]/.test(value))
+    return invalid(
+      `${where} must be a plain URL with no backslash, space or control character (its value is withheld)`,
+    );
   const raw = text(value, where);
   if (!raw.ok) return raw;
   if (!URL.canParse(raw.value))

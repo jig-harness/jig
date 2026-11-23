@@ -40,7 +40,7 @@ import { claudeCode } from "../../shared/agent-harness/claude-code.ts";
 import { harnessOrDefault } from "../../shared/agent-harness/index.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { isCredentialKey, maskCredentials } from "../../shared/credentials.ts";
-import { holdsCredentialOf } from "./provider-held.ts";
+import { heldCredential, holdsCredentialOf } from "./provider-held.ts";
 import { swallow } from "../../shared/errors.ts";
 import { redactStrings } from "../../shared/redact.ts";
 import { LAUNCH_RECORD_ID } from "../../shared/records/launch-claims.ts";
@@ -148,28 +148,44 @@ function maskFields(value: unknown): unknown {
   return value;
 }
 
-/** `value` with the exact `token` replaced in every string and every property name, before any generic redaction can split it. */
-function maskExact(value: unknown, token: string): unknown {
-  if (token === "") return value;
-  if (typeof value === "string") return value.split(token).join("<redacted>");
-  if (Array.isArray(value)) return value.map((item) => maskExact(item, token));
-  if (value !== null && typeof value === "object")
-    return Object.fromEntries(
-      Object.entries(value).map(([key, field]) => [
-        key.split(token).join("<redacted>"),
-        maskExact(field, token),
-      ]),
-    );
+/** `text` with every one of `secrets` replaced, the longest first so one that contains another goes whole. */
+function replaceSecrets(text: string, secrets: readonly string[]): string {
+  let out = text;
+  for (const secret of secrets) out = out.split(secret).join("<redacted>");
+  return out;
+}
+
+/** `value` with each exact secret replaced in every string, every number written as one and every property name, before any generic redaction can split it. */
+function maskExact(value: unknown, secrets: readonly string[]): unknown {
+  if (secrets.length === 0) return value;
+  if (typeof value === "string") return replaceSecrets(value, secrets);
+  if (typeof value === "number") {
+    const written = String(value);
+    return replaceSecrets(written, secrets) === written ? value : "<redacted>";
+  }
+  if (Array.isArray(value))
+    return value.map((item) => maskExact(item, secrets));
+  if (value !== null && typeof value === "object") {
+    const rebuilt: Record<string, unknown> = {};
+    for (const [key, field] of Object.entries(value)) {
+      let name = replaceSecrets(key, secrets);
+      // Two names that mask alike stay two fields.
+      for (let n = 2; name in rebuilt; n++)
+        name = `${replaceSecrets(key, secrets)}#${n}`;
+      rebuilt[name] = maskExact(field, secrets);
+    }
+    return rebuilt;
+  }
   return value;
 }
 
 /** The transcript's lines, each redacted; a line that does not read as JSON is left out. */
-function redactedLines(text: string, token: string): string[] {
+function redactedLines(text: string, held: readonly string[]): string[] {
+  const secrets = [...new Set(held.filter((secret) => secret !== ""))].sort(
+    (a, b) => b.length - a.length,
+  );
   const mask = (value: string) =>
-    maskCredentials(
-      token === "" ? value : value.split(token).join("<redacted>"),
-      "<redacted>",
-    );
+    maskCredentials(replaceSecrets(value, secrets), "<redacted>");
   const lines: string[] = [];
   for (const line of text.split("\n")) {
     if (line.trim() === "") continue;
@@ -180,12 +196,12 @@ function redactedLines(text: string, token: string): string[] {
       swallow(error, "a transcript line that does not read is left out");
       continue;
     }
-    // The exact value is masked in the parsed strings and property names first, so no generic rule can split it; the serialized line is masked again as JSON escapes it.
+    // The exact values are masked in the parsed strings, numbers and property names first, so no generic rule can split them; the serialized line is masked again as JSON escapes it.
     let serialized = JSON.stringify(
-      redactStrings(maskFields(maskExact(value, token)), mask),
+      redactStrings(maskFields(maskExact(value, secrets)), mask),
     );
-    if (token !== "")
-      for (const form of new Set([token, JSON.stringify(token).slice(1, -1)]))
+    for (const secret of secrets)
+      for (const form of new Set([secret, JSON.stringify(secret).slice(1, -1)]))
         serialized = serialized.split(form).join("<redacted>");
     lines.push(serialized);
   }
@@ -256,7 +272,10 @@ export function keepTranscriptCopy(
     else {
       const longer = statSync(found.path).size > COPY_BYTES;
       const { text, dropped } = boundedEnd(
-        redactedLines(readBoundedTail(found.path, COPY_BYTES), record.token),
+        redactedLines(readBoundedTail(found.path, COPY_BYTES), [
+          record.token,
+          heldCredential(record.id) ?? "",
+        ]),
       );
       const path = join(dir, "transcript.jsonl");
       writePrivate(path, text);
