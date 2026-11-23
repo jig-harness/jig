@@ -58,7 +58,8 @@ import {
   credentialVariables,
   directoryVariables,
   type HarnessName,
-  harnessFor,
+  harnessNamed,
+  harnessOrDefault,
   isSessionMarker,
 } from "../../shared/agent-harness/index.ts";
 import {
@@ -104,7 +105,7 @@ export function passEnvironment(
   for (const name of Object.keys(env))
     if (isSessionMarker(name)) delete env[name];
   for (const name of directoryVariables()) delete env[name];
-  env[harnessFor(account.vendor).environment.directoryVariable] =
+  env[harnessOrDefault(account.vendor).environment.directoryVariable] =
     account.configDir;
   return env;
 }
@@ -188,7 +189,10 @@ function stageRefusal(
 function vendorRefusal(vendor: string, launch: LaunchKind): string | null {
   if (!isPassVendor(vendor))
     return `the drive documents no pass command for its vendor ${vendor}, so it is accepted and not admitted`;
-  if (harnessFor(vendor).capabilities.bypassOptIn && !launch.codex.on)
+  if (
+    harnessNamed(vendor)?.capabilities.bypassOptIn === true &&
+    !launch.codex.on
+  )
     return `${launch.codex.why}: not admitted`;
   if (
     launch.kind === "pass" &&
@@ -434,7 +438,10 @@ export function replaySlotBlock(
     return `${slots.account.name} no longer has the vendor and directory the launch was recorded with`;
   const weightBlock = accountWeightBlock(slots);
   if (weightBlock !== null) return `${slots.account.name}: ${weightBlock}`;
-  if (harnessFor(record.vendor).capabilities.bypassOptIn && !codex.on)
+  if (
+    harnessNamed(record.vendor)?.capabilities.bypassOptIn === true &&
+    !codex.on
+  )
     return `${slots.account.name}: ${codex.why}`;
   if (slots.wallUnrecorded)
     return `${slots.account.name} ended on a wall that was not recorded`;

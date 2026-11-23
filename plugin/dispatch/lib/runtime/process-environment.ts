@@ -3,7 +3,7 @@ import { delimiter, isAbsolute, join, resolve } from "node:path";
 import {
   directoryVariables,
   type HarnessName,
-  harnessFor,
+  harnessOrDefault,
 } from "../../../shared/agent-harness/index.ts";
 import { isMapping } from "../../../shared/config-layers.ts";
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
@@ -126,7 +126,7 @@ export function processEnvironment(
     )
       env[name] = PLACES.has(name) && value !== "" ? resolve(value) : value;
   Object.assign(env, nativeEnvironment(source, settings.path));
-  env[harnessFor(account.vendor).environment.directoryVariable] =
+  env[harnessOrDefault(account.vendor).environment.directoryVariable] =
     account.configDir;
   if (launch !== undefined) env.JIG_LAUNCH = launch;
   return env;

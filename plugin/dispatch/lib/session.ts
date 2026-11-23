@@ -21,7 +21,8 @@ import { resolve } from "node:path";
 import { shellQuote } from "../../shared/cli.ts";
 import {
   type HarnessName,
-  harnessFor,
+  harnessNamed,
+  harnessOrDefault,
 } from "../../shared/agent-harness/index.ts";
 import { skillPrompt } from "../../skills/drive-pr/scripts/lib/pass-command.ts";
 import type { LaunchRecord, LaunchState } from "./launches.ts";
@@ -58,7 +59,7 @@ const JIG = resolve(import.meta.dir, "../../jig.ts");
  * its session records no wall and gets no nudge.
  */
 export function sessionIdFor(vendor: HarnessName): string | null {
-  return harnessFor(vendor).capabilities.sessionId === "minted"
+  return harnessNamed(vendor)?.capabilities.sessionId === "minted"
     ? crypto.randomUUID()
     : null;
 }
@@ -495,7 +496,7 @@ function stewardResumeLines(
  * (its `model_reasoning_effort` setting), on the prompt.
  */
 export function sessionArgv(record: LaunchRecord): string[] {
-  return harnessFor(record.vendor).interactiveCommand({
+  return harnessOrDefault(record.vendor).interactiveCommand({
     prompt: pickupPrompt(record),
     model: record.model,
     effort: record.effort,
@@ -526,7 +527,7 @@ function headlessArgv(
   prompt: string,
   routed: boolean,
 ): string[] {
-  const harness = harnessFor(record.vendor);
+  const harness = harnessOrDefault(record.vendor);
   return harness.passCommand({
     prompt,
     model: routed ? record.model : null,

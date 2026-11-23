@@ -15,7 +15,7 @@ import { run } from "../../shared/proc.ts";
 import type { PoolIssue } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import {
   type HarnessName,
-  harnessFor,
+  harnessOrDefault,
   isSessionMarker,
 } from "../../shared/agent-harness/index.ts";
 
@@ -48,7 +48,9 @@ function harnessEnvironment(account: {
     if (isSessionMarker(name)) delete env[name];
   Object.assign(
     env,
-    harnessFor(account.vendor).environment.sessionMarkers(account.configDir),
+    harnessOrDefault(account.vendor).environment.sessionMarkers(
+      account.configDir,
+    ),
   );
   return env;
 }
@@ -105,7 +107,7 @@ export async function pickupRoute(
   const route = parsed;
   if (route.declared !== true)
     return none(
-      `the repository declares no routing: ${harnessFor(account.vendor).label}'s defaults`,
+      `the repository declares no routing: ${harnessOrDefault(account.vendor).label}'s defaults`,
     );
   // The model the runtime takes: Codex's model id for a family alias.
   const model =
@@ -119,6 +121,6 @@ export async function pickupRoute(
   return {
     model,
     effort,
-    detail: `route ${String(route.tier)} for ${harnessFor(account.vendor).label}, ${effort ?? "default effort"}, ${model ?? "default model"}`,
+    detail: `route ${String(route.tier)} for ${harnessOrDefault(account.vendor).label}, ${effort ?? "default effort"}, ${model ?? "default model"}`,
   };
 }

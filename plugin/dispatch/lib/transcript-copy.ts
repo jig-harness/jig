@@ -35,7 +35,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { claudeCode } from "../../shared/agent-harness/claude-code.ts";
-import { harnessFor } from "../../shared/agent-harness/index.ts";
+import { harnessOrDefault } from "../../shared/agent-harness/index.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { isCredentialKey, maskCredentials } from "../../shared/credentials.ts";
 import { swallow } from "../../shared/errors.ts";
@@ -106,7 +106,7 @@ function findTranscript(
   record: Pick<LaunchRecord, "vendor" | "configDir" | "createdAt">,
   session: string | null,
 ): { path: string } | { missing: string } {
-  const harness = harnessFor(record.vendor);
+  const harness = harnessOrDefault(record.vendor);
   if (session === null)
     return {
       missing:

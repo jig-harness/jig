@@ -76,6 +76,17 @@ export function harnessFor(name: HarnessName): AgentHarness {
   return harness;
 }
 
+/**
+ * The harness `name` names, else the default one: for a caller whose
+ * record or account predates its validation, which reads an unknown vendor
+ * the way it always read one that is not Codex.
+ */
+export function harnessOrDefault(
+  name: string | null | undefined,
+): AgentHarness {
+  return harnessNamed(name) ?? defaultHarness();
+}
+
 /** A trailing platform binary extension, so `claude.exe` and `codex.cmd` read as their Unix names. */
 const BINARY_EXT_RE = /\.(exe|cmd|bat|ps1)$/i;
 

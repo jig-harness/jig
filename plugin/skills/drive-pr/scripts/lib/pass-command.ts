@@ -28,6 +28,7 @@
  */
 import {
   harnessFor,
+  harnessNamed,
   harnesses,
   isHarnessName,
 } from "../../../../shared/agent-harness/index.ts";
@@ -45,7 +46,7 @@ export function isPassVendor(vendor: string): vendor is HarnessName {
 
 /** Whether a pass of `vendor` is bounded by nothing but the pass deadline: its harness has no turn cap of its own. */
 export function onlyDeadlineBounds(vendor: HarnessName): boolean {
-  return !harnessFor(vendor).capabilities.turnCap;
+  return harnessNamed(vendor)?.capabilities.turnCap === false;
 }
 
 /**

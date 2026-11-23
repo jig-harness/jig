@@ -135,7 +135,7 @@ import { captureIdentity, type ProcessIdentity } from "../shared/liveness.ts";
 import { endOwnTab, withoutRunTabMarker } from "../shared/orca-tabs.ts";
 import { LAUNCH_VARIABLE } from "../shared/launched-session.ts";
 import { resolveAccountIdentity } from "../skills/drive-pr/scripts/lib/identity.ts";
-import { harnessFor, harnessNamed } from "../shared/agent-harness/index.ts";
+import { harnessNamed } from "../shared/agent-harness/index.ts";
 import {
   NO_BACKGROUND_TASKS,
   passCommand,
@@ -255,7 +255,7 @@ function driveCommand(record: LaunchRecord, script: string): string[] {
 
 /** Whether the record's harness reads the host's extra pass words as the pass starts; one that fixed them at admission pins them. */
 function readsLaunchArgs(record: LaunchRecord): boolean {
-  return harnessFor(record.vendor).capabilities.hostArgsAt === "launch";
+  return harnessNamed(record.vendor)?.capabilities.hostArgsAt !== "admission";
 }
 
 /** The drive script: `drive-pr`'s, unless a test names another. */
@@ -605,7 +605,7 @@ function startupOf(
 } {
   if (
     !ownPass(record) ||
-    !harnessFor(record.vendor).capabilities.signInProbe ||
+    harnessNamed(record.vendor)?.capabilities.signInProbe !== true ||
     ran.started === undefined ||
     ran.exited === undefined
   )
@@ -664,8 +664,8 @@ function startupOutputOf(ran: Ran): string {
 
 /** The session id a pass printed at its start (Codex's); Claude Code's is the one the tick minted (`sessionId`). */
 function sessionOf(record: LaunchRecord, ran: Ran): string | null {
-  const harness = harnessFor(record.vendor);
-  return harness.capabilities.sessionId === "printed" && ownPass(record)
+  const harness = harnessNamed(record.vendor);
+  return harness?.capabilities.sessionId === "printed" && ownPass(record)
     ? harness.sessionIdIn(ran.head)
     : null;
 }
