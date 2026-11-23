@@ -758,6 +758,9 @@ describe("the forge's facts", () => {
     };
     expect(partial(status)).toBeNull();
     for (const bad of [
+      { id: undefined },
+      { id: "" },
+      { id: 7 },
       { context: "" },
       { context: undefined },
       { state: undefined },
@@ -825,11 +828,11 @@ describe("the forge's facts", () => {
     ).pulls.get(12);
     expect(pull?.partial).toBeNull();
     expect(
-      pull?.checks.map((c) => [c.name, c.app, c.state, c.required]),
+      pull?.checks.map((c) => [c.name, c.app, c.id, c.state, c.required]),
     ).toEqual([
-      ["AI review", "example-review", "neutral", false],
-      ["test", "ci", "pending", true],
-      ["deploy", null, "failure", false],
+      ["AI review", "example-review", 11, "neutral", false],
+      ["test", "ci", 12, "pending", true],
+      ["deploy", null, null, "failure", false],
     ]);
   });
 });
@@ -850,10 +853,21 @@ describe("required checks and reviewer attempts", () => {
         mergeState: "BLOCKED",
         reviewDecision,
       });
-      f.checks = f.checks.map((c, i) =>
-        i === 1 ? { ...c, state: "pending" } : c,
+      f.checks = f.checks.map((c) =>
+        c.name === "test" ? { ...c, state: "pending" } : c,
       );
-      expect(readiness(f, RULES).place).toBe("stay");
+      const r = readiness(f, RULES);
+      expect(r.place).toBe("stay");
+      expect(r.waitsOn.kind).toBe("waiting");
+      // The same facts with the check green are not held back.
+      f.checks = f.checks.map((c) =>
+        c.name === "test" ? { ...c, state: "success" } : c,
+      );
+      const green = readiness(f, RULES);
+      expect(green.place).toBe("ready");
+      expect(green.lane).toBe(
+        reviewDecision === "REVIEW_REQUIRED" ? "approve-first" : "merge-now",
+      );
     }
   });
   it("does not let an optional pending check hide an approval request", () => {
@@ -861,11 +875,18 @@ describe("required checks and reviewer attempts", () => {
       mergeState: "BLOCKED",
       reviewDecision: "REVIEW_REQUIRED",
     });
-    f.checks = f.checks.map((c, i) =>
-      i === 1 ? { ...c, state: "pending" } : c,
-    );
-    f.checks = f.checks.map((c, i) =>
-      i === 1 ? { ...c, required: false } : c,
+    f.checks = [
+      ...f.checks,
+      {
+        name: "lint",
+        app: "github-actions",
+        required: false,
+        state: "pending",
+        startedAt: "2026-11-08T10:00:00Z",
+      },
+    ];
+    expect(f.checks.some((c) => c.state === "pending" && !c.required)).toBe(
+      true,
     );
     expect(readiness(f, RULES).lane).toBe("approve-first");
   });
