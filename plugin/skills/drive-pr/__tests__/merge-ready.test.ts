@@ -7,6 +7,7 @@ import { describe, expect, it } from "bun:test";
 import { parseAnswer } from "../scripts/lib/merge-facts.ts";
 import {
   checkPattern,
+  type HeadCheck,
   type MergeFacts,
   mergeCommand,
   type ReadyRules,
@@ -627,20 +628,21 @@ describe("required checks and reviewer attempts", () => {
   });
   it("ignores an earlier required reviewer attempt the later attempt replaced", () => {
     const f = facts({ mergeState: "BLOCKED" });
-    const review = f.checks[0];
+    const [review, ci] = f.checks as [HeadCheck, HeadCheck];
     f.checks = [
       { ...review, id: 1, required: true, state: "pending" },
       { ...review, id: 2, required: true, state: "success" },
-      f.checks[1],
+      ci,
     ];
     expect(readiness(f, RULES).place).not.toBe("stay");
   });
   it("lets an optional failure of a name a required check shares not override CLEAN", () => {
     const f = facts({ mergeState: "CLEAN" });
+    const [review, ci] = f.checks as [HeadCheck, HeadCheck];
     f.checks = [
-      f.checks[0],
-      { ...f.checks[1], app: "other-ci", required: false, state: "failure" },
-      { ...f.checks[1], required: true, state: "success", id: 9 },
+      review,
+      { ...ci, app: "other-ci", required: false, state: "failure" },
+      { ...ci, required: true, state: "success", id: 9 },
     ];
     expect(readiness(f, RULES).place).not.toBe("needs-you");
   });
