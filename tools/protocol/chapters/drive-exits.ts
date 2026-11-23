@@ -59,7 +59,7 @@ function driveExitOf(name: string, entry: TerminalStateEntry): number | null {
   return entry.additionalExitCodes?.[0] ?? entry.exitCode;
 }
 
-/** The code `drive-status.ts` exits with for an entry, or null when it never does. */
+/** The code `drive-status.ts` exits with for an entry, or null when it reports no such state (a startup refusal that names no state is not one). */
 function driveStatusExitOf(entry: TerminalStateEntry): number | null {
   return entry.category === "driver-only" ||
     entry.category === "helper" ||
@@ -201,7 +201,7 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
     required: true,
     identifies: false,
     description:
-      "The code drive-status.ts exits with for it; null when drive-status.ts never does. Not part of identity: a withdrawn code keeps its row with this null.",
+      "The code drive-status.ts exits with when it reports this state; null when it reports no such state. A startup refusal that names no state (UNSUPPORTED_CLI's exit 2 from drive-status.ts) is not a report, so it stays null. Not part of identity: a withdrawn code keeps its row with this null.",
   },
   driveExit: {
     type: "integer",
