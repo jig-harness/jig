@@ -416,13 +416,50 @@ test("a code span's padding spaces are not part of its text", () => {
 });
 
 test("distinct unmatched tick lengths scan in linear time", () => {
+  // Prose between the runs keeps each length's line distinct from a fence.
   const ticks = Array.from({ length: 400 }, (_, i) => "`".repeat(i + 1));
   for (const text of [
     `Send it to ${ticks.join(" ")}\n`,
-    `Send it to ${ticks.join("\n")}\n`,
+    `Send it to ${ticks.map((run) => `word ${run} word`).join("\n")}\n`,
   ]) {
     const started = performance.now();
     arbiter(text);
     expect(performance.now() - started).toBeLessThan(2000);
   }
+});
+
+test("link grammar is read in its inline context, not by raw delimiters", () => {
+  for (const text of [
+    "Hand it to [agent `[`](../review-arbiter.md).\n",
+    'Hand it to [agent](../review-arbiter.md "read this (first").\n',
+  ])
+    expect(rules(text)).toEqual(["subagent-form"]);
+  expect(
+    rules(
+      "Ask [maintainer [alternate](maintainers.md)](../review-arbiter.md) to look.\n",
+    ),
+  ).toEqual([]);
+});
+
+test("deeply nested link labels neither overflow the stack nor the clock", () => {
+  const started = performance.now();
+  const nested = `${"[".repeat(50000)}x${"](a.md)".repeat(50000)}`;
+  expect(rules(`Send it to ${nested}\n`)).toEqual([]);
+  expect(performance.now() - started).toBeLessThan(2000);
+});
+
+test("comment masking follows paragraph boundaries and escaped ticks", () => {
+  // An ordered item and a setext underline end the paragraph a tick opened.
+  expect(
+    rules(
+      "A stray ` tick.\n1. Use AskUserQuestion. <!-- plain-text numbered question default; stop and state the question --> and `.\n",
+    ),
+  ).toEqual(["question-form"]);
+  // The second of two ticks after a backslash opens a span, so the `<!--`
+  // inside it is literal text and the fallback after it stays visible.
+  expect(
+    rules(
+      "Ask with `AskUserQuestion`, \\`` x <!-- y ` or a plain-text numbered question with the recommended option first, marked as the default.\n",
+    ),
+  ).toEqual([]);
 });
