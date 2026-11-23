@@ -12,9 +12,11 @@
  *       flags: catalog               # or a list of labels
  *       sizes: [large, xl]           # default: the sizes too large to batch
  *       reviews: true                # an area with a mandatory review
- *     models:                        # runtime → tier → the runtime's family alias
+ *     models:                        # runtime → tier → a model the runtime takes
  *       claude-code: { simple: sonnet, standard: sonnet, complex: opus }
- *     family_tiers: {}               # runtime → family → { tier, reason }
+ *     model_tiers: {}                # runtime → model → { tier, reason }
+ *     family_tiers: {}               # the older spelling of model_tiers
+ *     stages: {}                     # stage → models → runtime → tier → model
  *     efforts:                       # runtime → effort → the runtime's own spelling
  *       codex: { max: xhigh }
  *
@@ -42,10 +44,15 @@ import {
   token,
 } from "./routing-fields.ts";
 import {
+  declaredTiers,
   type FamilyTiers,
   type ModelRow,
+  modelAlias,
   parseFamilyTiers,
   parseModels,
+  parseModelTiers,
+  type Stage,
+  type StageModels,
 } from "./routing-models.ts";
 import {
   type DefaultType,
@@ -63,7 +70,12 @@ export {
   type Tier,
   tierNamed,
 } from "./routing-fields.ts";
-export { DEFAULT_MODELS, type ModelRow } from "./routing-models.ts";
+export {
+  DEFAULT_MODELS,
+  type ModelRow,
+  type Stage,
+  STAGES,
+} from "./routing-models.ts";
 
 /**
  * One type's row: its effort, and the tier it names in place of the
@@ -155,7 +167,9 @@ export const ROUTING_FIELDS = [
   "types",
   "raise",
   "models",
+  "model_tiers",
   "family_tiers",
+  "stages",
   "efforts",
 ] as const;
 export const RAISE_FIELDS = ["flags", "sizes", "reviews"] as const;
@@ -180,11 +194,13 @@ export interface RoutingRules {
   };
   /** Runtime → tier → the runtime's family alias. */
   models: Record<string, ModelRow>;
-  /** Runtime → family → the M0 tier the repository declares for it. */
+  /** Stage → runtime → the cells that stage's row sets over `models`. */
+  stages: StageModels;
+  /** Runtime → model → the M0 tier `model_tiers` and `family_tiers` declare for it. */
   familyTiers: FamilyTiers;
   /** Runtime → effort → the runtime's own name for it, where it differs. */
   efforts: Record<string, Partial<Record<Effort, string>>>;
-  /** What the audit reports beside the score: each Judgment mapping and each `family_tiers` entry. */
+  /** What the audit reports beside the score: each Judgment mapping and each tier declaration. */
   reported: string[];
 }
 
@@ -379,8 +395,12 @@ export function parseRouting(
   const { declared, section } = sectionOf(overlay);
   refuseUnknownKeys(section, ROUTING_FIELDS, "routing");
   const rows = parseRows(section.types, workTypes, declared);
-  const familyTiers = parseFamilyTiers(section.family_tiers);
-  const { models, reported } = parseModels(section.models, familyTiers);
+  const familyTiers = declaredFrom(section);
+  const { models, stages, reported } = parseModels(
+    section.models,
+    familyTiers,
+    section.stages,
+  );
   return {
     declared,
     rows,
@@ -391,24 +411,52 @@ export function parseRouting(
         : ruleValues(section.complex_flags, "routing.complex_flags"),
     raise: parseRaise(section.raise),
     models,
+    stages,
     familyTiers,
     efforts: parseEfforts(section.efforts),
     reported,
   };
 }
 
+/** The tiers `routing.model_tiers` and `routing.family_tiers` declare, as one table. */
+function declaredFrom(section: Record<string, unknown>): FamilyTiers {
+  return declaredTiers(
+    parseFamilyTiers(section.family_tiers),
+    parseModelTiers(section.model_tiers),
+  );
+}
+
 /**
- * The tier-to-model table alone (`routing.models`, every default applied
- * and every check made), for a reader that resolves a tier without routing
- * an item: the drive's pass model. Throws, naming the field, as
- * `parseRouting` does.
+ * The tier-to-model table alone (`routing.models` and `routing.stages`,
+ * every default applied and every check made), for a reader that resolves a
+ * tier without routing an item: the drive's pass model, the steward's. With
+ * a `stage`, each cell is the stage's where it sets one, else the
+ * all-stages one. Throws, naming the field, as `parseRouting` does.
  */
 export function parseRoutingModels(
   overlay: Record<string, unknown>,
-): RoutingRules["models"] {
+  stage?: Stage,
+): Record<string, Partial<ModelRow>> {
   const { section } = sectionOf(overlay);
-  return parseModels(section.models, parseFamilyTiers(section.family_tiers))
-    .models;
+  const parsed = parseModels(
+    section.models,
+    declaredFrom(section),
+    section.stages,
+  );
+  const runtimes = new Set([
+    ...Object.keys(parsed.models),
+    ...(stage === undefined ? [] : Object.keys(parsed.stages[stage] ?? {})),
+  ]);
+  const out: Record<string, Partial<ModelRow>> = Object.create(null);
+  for (const runtime of runtimes) {
+    const row: Partial<ModelRow> = {};
+    for (const tier of TIERS) {
+      const alias = modelAlias(parsed, runtime, tier, stage);
+      if (alias !== undefined) row[tier] = alias;
+    }
+    out[runtime] = row;
+  }
+  return out;
 }
 
 /** The labels a declared raise list names that a label taxonomy does not declare. */

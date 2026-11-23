@@ -770,8 +770,10 @@ the pass itself keeps the agent's own
 | `routing.raise.flags` | list of labels, or `catalog` | `catalog`: every flag the catalog's areas declare under `tracker.flags` | do-item | Flag labels that move the effort up one step, matched as [rule matchers](protocol/rule-matchers.md) say |
 | `routing.raise.sizes` | list of sizes | The known sizes (the size facet's values where the label taxonomy has a size group, with `work_batch.sizes`, else `issue_tracker.labels.batch_sizes`, and `review.taxonomy.sizes`) outside `issue_tracker.labels.batch_sizes`; `[large]` where that leaves none | do-item | Sizes that move the effort up one step, matched as [rule matchers](protocol/rule-matchers.md) say: against the item's size facet where the repository has one, else against its labels. A batchable size never raises by default |
 | `routing.raise.reviews` | `true` or `false` | `true` | do-item | Whether an area with a mandatory review (`review.skills` naming a skill) among the areas the item's labels reach through `do_item.agents.codearea_areas`, and every area their `impliedBy` closure adds, moves the effort up one step |
-| `routing.models` | map from a runtime (`claude-code`, `codex`) to `{simple, standard, complex}`, each the runtime's [family alias](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) | `claude-code: {simple: sonnet, standard: sonnet, complex: opus}`, `codex: {simple: terra, standard: terra, complex: sol}` | do-item, drive-pr, dispatch | Where a complexity tier becomes a model: a route names a tier, never a model, and `drive.pass_model` set to a tier resolves here too (that field may also name a model directly). The dispatcher reads the row of the agent a session runs in, which the account's vendor picks: a repository names a model per runtime here, never an agent. A cell a row leaves out keeps its runtime's default; a runtime with no defaults names every tier, and a runtime with no row gets no model, its routes recorded and not applied. Claude Code is given the alias; Codex is given the model the family names today (`terra` runs as `gpt-5.6-terra`), from the plugin's one list of families (`plugin/shared/model-families.ts`). A Codex pass of a drive with no model of its own runs on the `codex` row's `standard` model. The legacy keys `execution` and `strategic` read as `standard` and `complex`, and an `execution` model is also `simple`'s unless the row names `simple`; a row naming a legacy key and its new key with different models is refused |
-| `routing.family_tiers` | map from a runtime to a map from a family alias to `{tier, reason}`, the tier one of M0's `scout`, `execution`, `strategic`, `judgment` | Each family's tier from the plugin's list | do-item, drive-pr, dispatch | A family whose M0 tier differs in this repository (a provider whose alias names another family), or a model outside the list the repository names in `routing.models`. Refused without a `reason`. The audit reports each entry |
+| `routing.models` | map from a runtime (`claude-code`, `codex`, or any other runtime name) to `{simple, standard, complex}`, each a model the runtime takes: a [family alias](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) or, with its tier declared in `routing.model_tiers`, any other model identifier | `claude-code: {simple: sonnet, standard: sonnet, complex: opus}`, `codex: {simple: terra, standard: terra, complex: sol}` | do-item, drive-pr, dispatch | Where a complexity tier becomes a model: a route names a tier, never a model, and `drive.pass_model` set to a tier resolves here too (that field may also name a model directly). The dispatcher reads the row of the agent a session runs in, which the account's vendor picks: a repository names a model per runtime here, never an agent. A cell a row leaves out keeps its runtime's default; a runtime with no defaults names every tier, and a runtime with no row gets no model, its routes recorded and not applied. Claude Code is given the alias; Codex is given the model the family names today (`terra` runs as `gpt-5.6-terra`), from the plugin's one list of families (`plugin/shared/model-families.ts`); a model outside the list is given as written. A Codex pass of a drive with no model of its own runs on the `codex` row's `standard` model. The legacy keys `execution` and `strategic` read as `standard` and `complex`, and an `execution` model is also `simple`'s unless the row names `simple`; a row naming a legacy key and its new key with different models is refused. This row is the all-stages one; [`routing.stages`](#the-open-model-vocabulary) replaces a cell for one stage |
+| `routing.model_tiers` | map from a runtime to a map from a model identifier or family alias to `{tier, reason}`, the tier one of M0's `scout`, `execution`, `strategic`, `judgment` | Each listed family's tier from the plugin's list | do-item, drive-pr, dispatch | The M0 tier of a model the list does not name, which a route needs before it may use the model, or of a listed family whose tier differs in this repository. Refused without a `reason`. The audit reports each entry. [The open model vocabulary](#the-open-model-vocabulary) says how the layers combine |
+| `routing.family_tiers` | the same shape as `routing.model_tiers` | none | do-item, drive-pr, dispatch | The older spelling of `routing.model_tiers`; its entries are read as that key's, and a configuration that sets only this one routes exactly as it did. One model declared under both keys with different tiers is refused |
+| `routing.stages` | map from a stage (`pickup`, `rearm`, `followup`, `steward`) to `{models: {<runtime>: {simple, standard, complex}}}`, each cell a model as in `routing.models` | none: every stage runs on the `routing.models` row | do-item, dispatch | One launch stage's model for a tier, in place of the all-stages cell. A cell a stage leaves out falls through to `routing.models`. The checks of `routing.models` apply to a stage's cells beside the row they replace. The steward reads its row today; a stage's other passes read theirs as each learns its stage |
 | `routing.efforts` | map from a runtime to a map from an effort to the runtime's name for it | Each effort as written | do-item, dispatch | Where a runtime spells an effort differently. A dispatched Codex session takes its effort as Codex's `model_reasoning_effort` |
 
 The families each runtime knows, with the tier
@@ -785,15 +787,48 @@ give them:
 | Strategic | `opus` | `sol` (`gpt-6.2-sol`) |
 | Judgment | `fable` | `astra` (`gpt-6-astra`) |
 
-Loading `routing.models` refuses, for a runtime with a list: an alias
-outside its families unless `routing.family_tiers` declares it; any tier
-mapped to a Scout family (`haiku`, `luna`), by default or by configuration,
-which no `routing.family_tiers` entry waives, since M0 keeps that tier
-read-only (an implementer may still hand it simple sub-steps); and a row in
-which a stricter complexity tier runs on a family of a lower M0 tier than a
-lighter one. A Judgment family (`fable`, `astra`) is no tier's default and
-is accepted where a repository configures it; the audit reports each such
-mapping.
+### The open model vocabulary
+
+The list of families above is the **default**, not an allowlist: configuration
+maps any model identifier to an M0 tier, for the host, for a repository and for
+a stage, and a route still names a tier, never a model.
+
+- **Naming a model.** `routing.models.<runtime>.<tier>` and
+  `routing.stages.<stage>.models.<runtime>.<tier>` take any model the runtime
+  accepts, one word. For a runtime with a list (`claude-code`, `codex`) a name
+  outside the list is **refused** until `routing.model_tiers.<runtime>.<model>`
+  says which M0 tier it is, so a typo never routes silently; the message names
+  that key. A runtime with no list accepts every name as written, as before,
+  and the checks below apply to a name once its tier is declared.
+- **Layers.** A host sets any of these keys in its [user file](#configuration-layers)
+  and a repository in `.config/jig.yaml`; the layers merge cell by cell before
+  the loader reads them, so the repository's value for a cell replaces the
+  host's, and a cell only the host sets serves every repository. A run's
+  `JIG__ROUTING__…` variable replaces both.
+- **Precedence.** For a stage, a runtime and a tier, the first of: the stage's
+  cell (highest layer that sets it), the all-stages `routing.models` cell
+  (highest layer that sets it), the runtime's default. A stage's cell is
+  more specific than the all-stages one whichever layer set each, so a host
+  that sets the steward's model in its user file has it in every repository
+  unless a repository sets that stage's cell.
+- **`routing.family_tiers`** is kept: its entries are read as
+  `routing.model_tiers` entries, and a configuration that sets only it routes
+  exactly as before. The two keys are one table; a model declared under both
+  with different tiers is refused.
+- **Which stages read their row today.** The dispatcher's steward launch. The
+  other stages (`pickup`, `rearm`, `followup`) are accepted and checked, and a
+  pass reads its row as it learns its stage.
+
+Loading `routing.models` and `routing.stages` refuses, for a runtime with a
+list: a model outside it whose tier `routing.model_tiers` does not declare;
+any tier mapped to a Scout model (`haiku`, `luna`), by default or by
+configuration, which no `routing.model_tiers` or `routing.family_tiers` entry
+waives, since M0 keeps that tier read-only (an implementer may still hand it
+simple sub-steps); and a row in which a stricter complexity tier runs on a
+model of a lower M0 tier than a lighter one (a stage's cells are checked
+beside the row they replace). A Judgment model (`fable`, `astra`) is no
+tier's default and is accepted where a repository configures it; the audit
+reports each such mapping.
 
 Refused besides: an unknown field in `routing`, `routing.raise` or a
 `routing.models` row, a name that is more than one word (it would not read
@@ -2354,8 +2389,12 @@ routing:                                 # absent: routes derived and printed, n
   models:
     claude-code: { simple: sonnet, standard: sonnet, complex: opus }
     codex: { complex: astra }
-  family_tiers:
+  model_tiers:
+    codex: { gpt-house: { tier: strategic, reason: "our gateway's flagship" } }
+  family_tiers:                          # the older spelling, read as model_tiers entries
     codex: { terra: { tier: execution, reason: "the provider serves Terra as listed" } }
+  stages:
+    steward: { models: { codex: { complex: gpt-house } } }
   efforts:
     codex: { max: xhigh }
 fleet_health:

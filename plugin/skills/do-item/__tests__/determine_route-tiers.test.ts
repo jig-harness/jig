@@ -248,7 +248,9 @@ describe("the models per tier", () => {
           },
         },
       }),
-    ).toThrow("no routing.family_tiers entry changes that");
+    ).toThrow(
+      "no routing.model_tiers or routing.family_tiers entry changes that",
+    );
   });
 
   it("runs a complex item on Fable where a repository configures it, and reports it", () => {
@@ -266,7 +268,7 @@ describe("the models per tier", () => {
     expect(() =>
       models({ models: { codex: { standard: "gpt-example" } } }),
     ).toThrow(
-      "routing.models.codex.standard: gpt-example is not a model family codex knows (luna, terra, sol, astra)",
+      "routing.models.codex.standard: gpt-example is not a model codex knows (luna, terra, sol, astra); name one of those, or say which M0 tier gpt-example is by setting routing.model_tiers.codex.gpt-example to { tier: scout | execution | strategic | judgment, reason }",
     );
   });
 

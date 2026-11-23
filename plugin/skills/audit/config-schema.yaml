@@ -1167,6 +1167,18 @@ fields:
     values_type: { type: map, values_type: { type: map } }
     read_by: [do-item, drive-pr, dispatch]
     since: 0.179.0
+  routing.model_tiers:
+    type: map
+    values_type: { type: map, values_type: { type: map } }
+    read_by: [do-item, drive-pr, dispatch]
+    since: next
+  routing.stages:
+    type: map
+    values_type:
+      type: map
+      values_type: { type: map, values_type: { type: map, values_type: string } }
+    read_by: [do-item, dispatch]
+    since: next
   routing.efforts:
     type: map
     values_type: { type: map, values_type: string }
