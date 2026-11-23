@@ -1,6 +1,6 @@
 /**
  * How the weekly sweep and the move write to the tracker
- * (design/tracker-facets.md, "The weekly sweep"): at most 30 writes a minute,
+ * (plugin/skills/file-issue/README.md, "The weekly sweep"): at most 30 writes a minute,
  * a refusal that carries `Retry-After` waited out and the write tried again,
  * up to 3 times a run, and any other refusal (or the fourth that asks to
  * wait) stopping the run, which then reports what it wrote and what remains.

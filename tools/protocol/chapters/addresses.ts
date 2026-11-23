@@ -155,7 +155,7 @@ export const ADDRESSES: Chapter = {
   version: 1,
   status: "provisional",
   planItems: [
-    { item: 39, epic: 485 },
+    { item: 36, epic: 539 },
     { item: 42, epic: 541 },
   ],
   module: "tools/protocol/chapters/addresses.ts",

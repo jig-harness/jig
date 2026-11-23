@@ -1,7 +1,7 @@
 import { MoveRecordError } from "./move-error.ts";
 /**
- * The move record (design/tracker-facets.md, "Moving a repository from one
- * store to another"): the file `check-fields.ts move --record <file>` names.
+ * The move record (plugin/skills/file-issue/README.md,
+ * "Moving to another store"): the file `check-fields.ts move --record <file>` names.
  * The preview writes the source section in force when the move starts and
  * the target section beside it; copy, retire and restore read both from it,
  * so the source stays named after the switch commits the target. Every

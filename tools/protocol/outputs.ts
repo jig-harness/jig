@@ -392,7 +392,7 @@ function chapterOutputs(
     finding(
       file,
       "the chapter list names this chapter, but its file does not exist",
-      `write the chapter's prose with a marker for each generated section (design/protocol.md § The chapter template), then run ${COMMAND}`,
+      `write the chapter's prose with a marker for each generated section (tools/protocol/README.md § The chapter template), then run ${COMMAND}`,
     ),
     (text) => renderChapter(chapter, text),
     "fix the markers to name the sources tools/protocol/chapters.ts lists",
