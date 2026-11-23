@@ -27,7 +27,7 @@ export interface CardInfo {
   committedOnCard?: boolean;
 }
 
-/** The station whose records a stage leaves (design/addresses.md). */
+/** The station whose records a stage leaves (plugin/protocol/addresses.md). */
 function stationOf(stage: string): string {
   return stage === "pickup" || stage === "followup" ? stage : "drive";
 }

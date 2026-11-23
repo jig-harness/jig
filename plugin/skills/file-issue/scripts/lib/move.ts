@@ -3,8 +3,8 @@ import {
   destinationProblem as representationProblem,
 } from "./move-copy-plan.ts";
 /**
- * The move between facet stores (design/tracker-facets.md, "Moving a
- * repository from one store to another"): labels to fields, fields to
+ * The move between facet stores (plugin/skills/file-issue/README.md,
+ * "Moving to another store"): labels to fields, fields to
  * labels, field to field. Every open issue is read through two trackers, one
  * keeping each moved facet in its source store and one in its destination,
  * so each side's value is read and written by the store's own code.

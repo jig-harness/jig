@@ -96,7 +96,7 @@ issue_tracker:
     epic_types: [Epic]
   # Type, priority and size are kept in the organization's issue types and
   # its Priority and Effort fields, whose options are the taxonomy's types
-  # and sizes (design/tracker-facets.md, "Jig's own repository"). Named, so
+  # and sizes (see label-taxonomy.yaml). Named, so
   # no read waits on detecting the stores.
   facets:
     type: { store: native }
