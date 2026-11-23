@@ -12,6 +12,15 @@
 // The legacy-time counter holds how often runnable code builds a Date or reads
 // the clock through one (ADR-0018). The browser's code (dashboard, website),
 // the design prototypes, the seeds and the tests stay outside it.
+// The harness-type counter holds how often runnable code outside the agent
+// harness's directory names Claude Code or Codex by value (ADR-0026): a
+// quoted "claude" or "codex" and the AccountVendor type, the two-value agent
+// type's name. The implementations and their registry
+// (plugin/shared/agent-harness/) name them by design, and tests name them as
+// fixtures, so both stay outside it, with the browser's code, the design
+// prototypes and the seeds. A program's own variable names (CLAUDE_CONFIG_DIR,
+// CODEX_HOME) are not counted: they are that program's interface, which the
+// readers kept beside their skills and the plugin's install code must read.
 // The voice counter holds each visitor document's count of findings under
 // docs/VOICE.md's caps. Its rules are the documents and its entries the
 // findings, so each document's total is compared, and a document whose total
@@ -77,6 +86,15 @@
         "new-date": "\\bnew Date\\(",
         "date-now": "\\bDate\\.now\\(",
         "date-parse": "\\bDate\\.parse\\("
+      }
+    },
+    {
+      "name": "harness-type",
+      "format": "grep",
+      "files": "^(?!dashboard/|website/|design/|seeds/|plugin/shared/agent-harness/)(?!.*(\\.test\\.|/__tests__/|vendor/)).*\\.(ts|tsx|mts|cts|mjs|js|jsx|cjs)$",
+      "patterns": {
+        "harness-literal": "([\"'`])(?:claude|codex)\\1",
+        "harness-union": "\\bAccountVendor\\b"
       }
     }
   ],

@@ -1298,7 +1298,16 @@ and from the ledger's heartbeat. These answers are unknowns, never "no
 session": a host the runtime's answer marks as not covered, a page cut
 short by its row limit, and a workspace on a branch that matches the item
 or pull request but whose agents the runtime does not report. The tick
-plans nothing for an item or pull request it cannot place, and reports why.
+starts nothing for an item or pull request it cannot place, and reports
+why. An agent the runtime does report working still holds its target
+beside such a workspace. Where the listing read and only a joined
+workspace's terminals are unreported (an idle shell or an editor looks the
+same as an agent the runtime cannot see), a notification, being only a
+message, still goes out, as it does beside a running session, so a stopped
+or parked drive and a stopped pickup stay on the line's needs; and a
+drive's re-arm or takeover becomes a person's need that names the
+workspace: closing the terminals that run no agent lets the next tick act
+on it.
 
 ### The tick reports by default and acts only with `--apply`
 
@@ -2755,11 +2764,11 @@ when an agent waits, blocks or finishes or a workspace is removed
 ([Waking the dispatcher](orca-integration.md)); and `jig send`, once it
 has written a record the tick reads (`assign`, `drive`, `hold`, `release`,
 `answer`), where the machine file lists the repository with the stage the
-tick acts under ([`jig send`](addresses.md)). Both follow one rule: one
+tick acts under ([`jig send`](../plugin/protocol/addresses.md)). Both follow one rule: one
 tick at a time for a repository, no sooner than a minute after the last
 one started, a request made inside that minute taken by one trailing
 tick, and a tick refused for a held lock tried again after the minute. `send` keeps its pending requests on disk
-(`plugin/shared/wake.ts`), since it exits at once; its waiter runs the
+([the wake runtime](../plugin/shared/wake.ts)), since it exits at once; its waiter runs the
 tick with the installed timer's command and environment and exits after
 it. A systemd timer's are read as systemd runs them, its drop-ins applied
 (`plugin/runtime/systemd-dropins.ts`), so a drop-in that wraps the command
@@ -2989,18 +2998,16 @@ One pull request each, in this order; each is usable on its own.
    pickup and follow-up expectations on steps 4 and 5; the nudge on
    interactive launches (step 4, itself waiting on an agent launch that
    binds its account) and on a launch that carries the vendor session id.
-7. **Re-drive a stale converged pull request.** The forge read carries each
-   open pull request's mergeability and current head commit, compared with the ledger's `verifiedSha`; the
-   ledger classification the
-   `stale` class (converged, and conflicting or past the verified head),
-   and the plan re-arms it through step 3's launch, on any admitted
-   account. Tests: a converged ledger on a conflicting pull request is
-   re-armed once; one whose head moved is re-armed once; one still at the
-   verified head and mergeable is left alone; a mergeability still being
-   computed leaves it unplaced. Waits on step 3 only. Usable alone: a
-   pull request that converged and then conflicted no longer waits for a
-   person to notice. A drive that stopped `9` is re-driven through the same
-   launch, keyed on its head and its base branch's head.
+7. **Settle a converged pull request whose head moves.** A mergeable pull
+   request at the verified head waits for a person's merge. When the
+   dispatcher proves a clean merge of the base preserved the reviewed
+   change, it holds the re-drive while required checks run and refreshes
+   the verified head and merge-ready claim once they pass. A change to
+   the pull request's contribution or an unreadable proof re-arms it on
+   an admitted account. A conflict re-arms it once per pair of heads, as
+   for a drive that stopped `9`. A conflict that remains at that pair
+   goes to a person. Mergeability that the forge is still computing
+   leaves the pull request unplaced.
 8. **Admit Codex accounts.** The drive skill documents the Codex pass
    command beside Claude Code's, with the pass model read per vendor from
    `routing.models`; the dispatcher admits `vendor: codex` accounts, on a

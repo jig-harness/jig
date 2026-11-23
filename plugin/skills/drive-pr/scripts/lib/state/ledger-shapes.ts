@@ -199,7 +199,7 @@ const receipt = s.object({
   class: s.optional(text),
   digest: s.optional(digest),
   parkedAt: text,
-  outcome: s.enum(["answered", "provisional"]),
+  outcome: s.enum(["answered", "provisional", "resolved-thread"]),
   answers: s.array(answer),
   answeredAt: s.optional(text),
   resolvedAt: text,
@@ -215,6 +215,9 @@ export const LEDGER_PAYLOAD_FIELDS = {
   attempts: count,
   attemptsHead: text,
   deadlineRetries: count,
+  // Published unrestricted, as the stable ledger accepted it before the field
+  // existed; the reader checks it is a whole number (`ledger.ts`).
+  roundsGranted: s.optional(s.unknown()),
   phase: text,
   lastCountedHead: text,
   verifiedSha: text,

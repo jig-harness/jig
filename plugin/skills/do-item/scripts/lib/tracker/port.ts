@@ -184,8 +184,7 @@ export interface IssueSummary {
 
 /**
  * The facts every issue carries beside its labels: what kind of work it is,
- * how soon it matters and how much work it is (design/tracker-facets.md in
- * the Jig repository). The interface holds each as a canonical value; where
+ * how soon it matters and how much work it is (plugin/protocol/tracker-facets.md). The interface holds each as a canonical value; where
  * the tracker keeps it (its store) is configuration, `issue_tracker.facets`.
  */
 export const FACETS = ["type", "priority", "size"] as const;

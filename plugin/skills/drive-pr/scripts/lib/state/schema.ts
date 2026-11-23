@@ -397,6 +397,8 @@ export interface DriveState {
   ledgerGeneration?: number;
   /** Passes killed at their deadline this drive restarted from (`deadline-retries.ts`). */
   deadlineRetries?: number;
+  /** Rounds a re-arm added to the round budget (`round-grant.ts`). */
+  roundsGranted?: number;
   /** Decisions the agent took and recorded, oldest first (`decisions.ts`). */
   decisions?: UnattendedDecision[];
   /** The drive's self-restarts and re-arms, oldest first (`events.ts`). */

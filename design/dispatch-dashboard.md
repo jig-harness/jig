@@ -43,8 +43,9 @@ whether they are built is decided once the first is in use
 ([Build order](#build-order)). It grows from today's
 dispatch dashboard and the line it serves
 ([dark-factory-dispatch.md § Control](dark-factory-dispatch.md#control-observe-record-report-steer),
-item 33), from `jig ask`, `jig send` and `/jig:operator`
-([addresses.md](addresses.md), item 39), and from the Jig plugin for Orca
+item 33), from [the address commands](../plugin/protocol/addresses.md) and
+the [operator skill](../plugin/skills/operator/SKILL.md),
+and from the Jig plugin for Orca
 ([orca-integration.md](orca-integration.md#the-jig-plugin-for-orca),
 item 34). Most of its status per pull request is the
 [dispatch board](dispatch-board.md), item 36, partly built, which
@@ -306,6 +307,24 @@ Needs you is read again at each request: nothing is queued in it, and
 acting on an entry writes the record its station reads. Every card ends
 with the tick and the host it was read at.
 
+**Settled recently.** What left Needs you does not vanish without a trace.
+Below the open cards, a section folded to one line with its count ("12
+settled in the last 24 hours · show") lists each need that left the line in
+the window, newest first: its target, repository and link, the question or
+act it carried, when it left, by whom and how, and a link to its History
+rows. *By whom* is the person (their login, and the comment they answered
+in), the tick (naming the rule), the steward (naming its record), or no one
+because the need's facts changed (its pull request is no longer open).
+An answer a station took and did not carry out shows with its outcome, held
+or refused, and its reason, while its card stays open above; one answer that
+settled several targets is one entry listing them. The tick writes one
+`need_leaves` row for every need that the line it writes no longer holds
+that the line before held, whatever its notify stage did, so a need that
+leaves and returns is two entries, and the line's `settled` list is the last
+day of those rows with the unsettled answers. The section adds no forge or
+tracker call. `jig ask --settled --json` answers the same list for the
+panel's inbox and for an agent.
+
 **Marks on every pull request card.** To item 36's status row (conflicts,
 checks, threads, merge;
 [dispatch-board.md](dispatch-board.md#the-status-row-on-every-pull-request-card))
@@ -424,15 +443,24 @@ until stage 2, a host's page sees only the pickups that host runs.
 
 A **thread** is one piece of work's correspondence: the entries
 `jig ask --thread` derives for each of its addresses, in one list
-([addresses.md § The thread](addresses.md#the-thread-of-an-address)). The
+([thread design](addresses.md#what-the-thread-gains-for-the-dashboard)). The
 dashboard stores none of it. Its entries grow under `ask`'s version 1:
 
 - **Each entry gets a stable id.** A question gets its key, its class and a
   status (open, answered, acted on, expired); an answer gets `inReplyTo`,
-  who answered and that person's permission on the repository.
-- **An answered park stays.** The ledger keeps resolved parks
-  (`resolvedParks[]`, the last 10), so a park stays in the thread, with its
-  answer, after the re-arm clears it.
+  who answered and the permission evidence recorded when it counted. A legacy
+  receipt without that evidence reports the historical permission as unknown.
+- **An answered park stays.** The ledger keeps recent resolved parks
+  (`resolvedParks[]`), so a park stays in the thread after the re-arm clears
+  it. Count-based retention can evict older receipts, and byte-limit trimming
+  can retain only part of a batch or none of it; either eviction marks that
+  history incomplete. It reads source text only from the configured forge after
+  validating the receipt URL's repository and pull request, compares it with
+  the retained body hash, and shows later edits as later than the retained
+  verdict. A legacy receipt without a hash leaves fetched source text marked
+  unverified; an absent source, or a read that expires or is cancelled, leaves
+  the retained metadata visible and the source text unavailable. That lookup
+  shares the thread read's deadline and cancellation signal.
 - **One thread per piece of work.** Its addresses fold by the aliases the
   source feed joins, and a work-batch's batch key is its members' thread.
 
@@ -458,18 +486,33 @@ host is `dashboard (browser)` since a browser has no machine name to
 digest. One comment per decision, as `jig send` answers one key per
 comment, since a comment carries one record. The page posts each through
 GitHub's REST API (`POST /repos/{owner}/{repo}/issues/{n}/comments`) itself,
-from the browser, with a fine-grained token the person pastes once per
-browser
+from the browser, with the fine-grained token the person pasted in that
+browser for the target repository's owner
 ([ADR-0019](../docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md)). So:
 
-- **Who writes, and with what.** The person, with their own token. The
-  page's settings panel tests a pasted token by asking GitHub who it signs
-  in as (`GET /user`), names that login, keeps the token in the browser's
-  local storage alone (for the page's own origin; a browser that refuses
-  storage keeps it while the page stays open) and forgets it on request. A
-  card names the login it sends as where the park names another person; the
-  drive counts any author its rule for answers trusts, so this informs and
-  never blocks.
+- **Who writes, and with what.** The person, with their own tokens, one per
+  GitHub account they answer as. The page's settings panel tests each
+  pasted token by asking GitHub who it signs in as (`GET /user`), names
+  that login, keeps the token in the browser's local storage alone (for the
+  page's own origin; a browser that refuses storage keeps it while the page
+  stays open) with the repository owners it answers for, and forgets each
+  on request, leaving the others kept. A card names the login it sends as
+  where the park names another person; the drive counts any author its rule
+  for answers trusts, so this informs and never blocks.
+- **Which token a card sends with.** The token that names the card's target
+  repository's owner (`example-org` covers every `example-org/*`
+  repository, compared without case), or else the one token that names no
+  owner, which answers for every owner no other token names. A card whose
+  owner no token answers for has no Send, names that owner and points at
+  the settings; Copy still works. One owner maps to one token, one token at
+  most names no owner, and one account keeps one token: the panel refuses a
+  token or a mapping that would break these, naming the token that holds
+  the owner, rather than choosing. The panel also names the owners of the
+  cards that can send that no token answers for. A browser that kept the
+  single token of the earlier storage shape keeps it as the token that
+  names no owner. Tokens are chosen by owner, not by repository, because an
+  owner's repositories are reached by one account
+  ([ADR-0019](../docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md#which-token-a-card-sends-with)).
 - **What the host never does.** The dashboard's server has no route that
   writes and never receives the token, the comment or GitHub's answer. The
   dispatcher never relays an answer, and no pass sees one before the forge
@@ -492,7 +535,9 @@ browser
 - **Every send is confirmed.** Send first shows the target, the login it
   sends as and the exact answer, and Confirm send posts. The confirmation
   holds for what it showed alone: a change to the target, the decision's
-  framing, the answer's text or the token asks for a new one. A guarded pick
+  framing, the answer's text or the token the card sends with (replaced,
+  forgotten, or another token now answering for its owner) asks for a new
+  one, and a change to another token leaves it standing. A guarded pick
   (under a class the acts table does not list as Decide, or of an option
   that cannot be undone) also takes this second step to copy.
 - **Only where an answer comment is read.** Send is offered where the
@@ -509,7 +554,7 @@ browser
   every card says why it has no Send and the settings panel takes no
   token, since someone on the path who can change the page could read it.
 - **What comes back.** After GitHub answers 201 for each comment, the card
-  links them, in this browser alone, and the page reads the line every 3
+  links them with the login that sent them, in this browser alone, and the page reads the line every 3
   seconds for up to 90 seconds, stopping sooner once the tick records the
   answer's outcome. The card then shows whether the step was carried out,
   refused with its reason, or held: an answered hold leaves the list and is
@@ -522,10 +567,10 @@ browser
   A call with no answer says the comment may or may not be posted and to
   check the linked issue or pull request before sending again.
 
-**The token's scope.** A fine-grained personal access token, limited to the
-repositories the dashboard shows, with Issues and Pull requests set to read
-and write, and a short expiry. The settings panel says so and lists the
-repositories whose cards can send. A token with wider rights works but
+**The tokens' scope.** Each a fine-grained personal access token, limited to
+the repositories the dashboard shows of the owners it answers for, with
+Issues and Pull requests set to read and write, and a short expiry. The
+settings panel says so and lists the repositories whose cards can send. A token with wider rights works but
 risks more if it leaks.
 
 **Threat model.** The token is as safe as the page's origin and the browser
@@ -742,12 +787,32 @@ envelope: the value, or a coded failure with a reason.
 - **`hello`** returns `{protocol {major, minor}, instance, jig {version,
   channel}, now, viewer {login per forge, proof}, front {kind, login,
   capabilities}?, sources[] {host, name, state, since, protocol, jig,
-  clockOffsetMs, capabilities[]}, scope}`. A source is fresh, overdue,
+  clockOffsetMs, capabilities[]}, scope {laptop {instance, revision, expiresAt}, hub {instance, revision, expiresAt}?}}`.
+  A source is fresh, overdue,
   unreachable, refused or incompatible. A different major version is
   refused, naming the side to update; minor versions only add, and unknown
   fields are ignored. Version 1's scope is what the person's machine
   reads, narrowed, for a viewer a front names, by that viewer's grant
-  ([A front on a private network](#a-front-on-a-private-network)).
+  ([A front on a private network](#a-front-on-a-private-network)). Every
+  protected response and stream event also carries the viewer and the laptop
+  binding that authorized its delivery; hub-backed data carries its hub binding
+  too. Before display or caching, the page checks every applicable binding
+  against its current `hello` scope and the earlier expiry; an older request
+  that finishes after either grant narrows or either issuing authority instance
+  changes is discarded. The page binds each `hello` to the request and
+  connection generation that issued it. The page serializes handshakes per
+  binding: starting one supersedes every earlier outstanding handshake for that
+  binding. A response is usable only by that live handshake and generation. A
+  combined `hello` response that updates more than one binding is usable only
+  when the handshake for every binding it updates is still live; a separately
+  renewed hub scope is bound again to the current viewer and laptop
+  authorization before it can be installed;
+  accepting a replacement authority instance retires every prior
+  instance for that binding before it installs the new grant. Either instance
+  change clears the affected cache and requires a fresh `hello` handshake
+  before another protected result is shown. A delayed response from a retired
+  instance therefore cannot restore its grant, whether it is the laptop or hub
+  grant.
 - **Changes**: an opaque cursor that combines one per source. One watch per
   dashboard, shared by every open stream, produces the notices: it checks the
   records' versions (the database's data version, the drive and pickup
@@ -820,7 +885,18 @@ own machine only.
 
 - **`snapshot()` and `changes(since)`** return records in their
   [envelope](../GLOSSARY.md), each with `{host, incarnation, kind, key,
-  generation, at, visibility}`. The incarnation is an id the dispatcher's
+  generation, at, visibility}`. A settlement record also carries the source
+  authority's attestation of its [occurrence identity](../GLOSSARY.md#occurrence-identity),
+  observation time, [coverage revision](../GLOSSARY.md#coverage-revision) and
+  [authority epoch](../GLOSSARY.md#authority-epoch), plus the hub-recorded
+  acceptance time and epoch fence, all bound to the exact repository, occurrence
+  and settlement facts; the hub checks the applicable authority record and
+  persists that exact accepted settlement and fence in the same transaction,
+  serialized with handoff. An epoch mismatch rejects the report without
+  replacing an existing accepted settlement; the fold verifies both bindings
+  against the authority record before it settles anything. With no hub, the local source authority
+  records and verifies the same evidence; the hub fence applies only to
+  hub-backed replay. The incarnation is an id the dispatcher's
   state database gets when it is created, so records from a recreated
   database are told apart. A snapshot holds the live work the newest line
   names: the line, each live drive's ledger (at most 64 KiB, about 2 KiB on
@@ -829,14 +905,45 @@ own machine only.
   ledgers a host, about 1 MiB, and 32 MiB only if every ledger were at
   its cap. History is read when the page asks, never sent in a snapshot.
   `changes(since)` derives what changed from the records the hub holds of
-  each host: each record written after the cursor, and the newest line, so
-  a drive or a pickup the line no longer names is sent as gone. A cursor
+  each host: each record written after the cursor, and the newest line. A
+  drive or pickup is sent as `gone` only after a complete authoritative read
+  identifies its occurrence, proves the source's coverage and establishes
+  settlement; an incomplete read or ordinary record removal reports
+  incompleteness and never emits `gone`, while scope removal emits a distinct
+  scope invalidation that removes the row without settling its occurrence. Any
+  cursor that can no longer be served gets `reset` and a replacement snapshot that
+  either includes authoritative settlement evidence for each previously open
+  omitted occurrence or leaves it internally unresolved for the bounded
+  `settlement.get(occurrence)` read; the hub retains the evidence for that
+  lookup window. The page displays an omitted unresolved row only when its
+  current grant and visibility class still permit it. A cursor
   names a point in those records, not a connection, so it stays servable
-  across reconnects; one from another incarnation gets `reset` and a new
-  snapshot. One fold library turns records and forge and tracker reads
+  across reconnects. One fold library turns records and forge and tracker reads
   into the work and host views, and every dashboard and a shared control plane
   run it.
-- **Bounded reads besides.** The hub also answers `log.rows` (one page
+- **Bounded reads besides.** The hub also answers `settlement.get(occurrence)`,
+  which returns retained authoritative settlement evidence, `history-pending`
+  when the source can still reconcile it, or `history-exhausted` with a reason
+  when that recovery window is over. A client keeps the occurrence unresolved
+  for either non-evidence result; `history-pending` is retryable, while
+  `history-exhausted` is terminal for the lookup rather than evidence of
+  settlement. The hub places the reconciliation obligation on the affected
+  current authorized host's authenticated poll path, with the occurrence,
+  deadline and required completion result. On authority handoff the hub moves
+  an unfinished observation obligation to the successor while retaining any
+  exact original accepted record for replay. That host recovers that record and
+  republishes it when it remains available; otherwise its current authority
+  takes a fresh authoritative observation. A successor never attests to its
+  predecessor's observation under a new epoch. The hub admits every completion,
+  including a no-evidence completion, only in the transaction that still names
+  the current obligation assignment; a delayed former host therefore cannot
+  settle its successor's obligation. The hub records the outcome on
+  that host-facing path before it reports `history-exhausted`. If no admissible
+  completion arrives by the deadline, the hub itself records the terminal
+  timeout outcome rather than continuing to return `history-pending`. The
+  deadline belongs durably to the occurrence, so reassignment, repeated lookups,
+  and hub restart do not start a new recovery window; a dashboard only
+  reads that result through the viewer feed. Other bounded reads are `log.rows` (one page
   through a host's reported outcome rows), `receipt.get(run)` and
   `thread.get(address)`, the thread derived with the same fold as
   `jig ask --thread`, each with the views API's envelope and the feed
@@ -1430,9 +1537,11 @@ phone measurement and acceptance fixture follows 3 and precedes 5; 5 needs
 that fixture; 8 needs 3, 6 and 7; 9 needs 8's fixtures; 10 needs 9.
 
 1. **Rounds and resolved parks in the drive ledger**, under its current
-   version, the last 10 of each, cut first as the ledger nears its
-   65,536-byte cap. A reader takes a missing field as unknown, never as zero
-   rounds, and the previous release's takeover keeps the drive running.
+   version, with the oldest receipts cut first as the ledger nears its
+   65,536-byte cap; count-based retention keeps a fresh receipt batch whole,
+   while byte-limit trimming can retain only part of it or none of it. A reader
+   takes a missing field as unknown, never as zero rounds, and the previous
+   release's takeover keeps the drive running.
 2. **The Orca plugin reads any line whose `minReader` it meets**, ignoring
    fields it does not know, and otherwise says to update the plugin.
 3. **The board read, with the marks**: item 36's step 2

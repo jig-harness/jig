@@ -18,6 +18,16 @@ bounded, deadline-protected forge calls. The historical outcome stays unchanged;
 a merged or closed PR no longer presents its drive decision as actionable after
 a successful refresh. Follow-up failures still need a person after merge.
 
+Send, the page's one write, posts a card's answers from the browser straight
+to GitHub with a token the person pasted in that browser
+([ADR-0019](../docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md)).
+The page keeps one token per GitHub account, each naming the repository
+owners it answers for, and a card sends with the token for its target
+repository's owner (`src/token-owners.ts`); the tokens are kept by
+`src/forge-token.ts`, which also reads the single token a browser kept
+before, and the settings panel is `src/send-settings.tsx`. No token reaches
+the dashboard's server.
+
 The page also names a [web app manifest](../GLOSSARY.md) and icons, so a phone's browser can
 offer to install it (`plugin/phone-access.md`). `build.ts` writes the manifest
 and copies `icons/` beside the page. The icons are PNGs rendered from Jig's

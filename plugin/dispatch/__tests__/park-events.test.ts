@@ -128,6 +128,40 @@ describe("park outcomes", () => {
     expect(got.ingested).toHaveLength(1);
   });
 
+  it("records a forge-resolved thread without calling it a human answer", () => {
+    const got = parkOutcomes(
+      [
+        repo([
+          drive(
+            7,
+            [],
+            [receipt("A", { outcome: "resolved-thread", answers: [] })],
+          ),
+        ]),
+      ],
+      {},
+      NOW,
+    );
+    expect(events(got.rows)).toEqual([["park-resolved-thread", "A"]]);
+    expect(got.rows[0]?.park?.outcome).toBe("resolved-thread");
+    expect(got.rows[0]?.reason).toContain("without a human answer");
+  });
+
+  it("reads an answerless answered receipt, as the ledger publishes a forge resolution, as resolved", () => {
+    const got = parkOutcomes(
+      [
+        repo([
+          drive(7, [], [receipt("A", { outcome: "answered", answers: [] })]),
+        ]),
+      ],
+      {},
+      NOW,
+    );
+    expect(events(got.rows)).toEqual([["park-resolved-thread", "A"]]);
+    expect(got.rows[0]?.park?.outcome).toBe("resolved-thread");
+    expect(got.left[0]?.outcome).toBe("resolved-thread");
+  });
+
   it("counts a held park that left with no receipt as removed, not answered", () => {
     const memory: ParkMemory = { parks: [linePark("A")] };
     const got = parkOutcomes([repo([drive(7, [])])], memory, NOW);
@@ -416,7 +450,7 @@ describe("the outcome log over real ticks", () => {
 });
 
 describe("parks of repositories the tick's part does not carry", () => {
-  const none = { parks: [], ingested: [], rows: [] };
+  const none = { parks: [], ingested: [], rows: [], left: [] };
   const other = { ...linePark("B"), repo: "o/other" };
   const memory: ParkMemory = {
     parks: [linePark("A"), other],

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Broadside step 3, light, 1440</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#f9f6f1}
+a{color:#1a6444}a:hover{color:#251e18}
+a:focus-visible{outline:2px solid #0267c7;outline-offset:3px}
+</style>
+</helmet>
+<!-- tokens (light): bg #f9f6f1, ink #251e18, muted #59514a, line-strong #867f77, accent #1a6444, accent-soft #dbf2e4 -->
+<div style="width:1440px; height:1320px; box-sizing:border-box; position:relative; overflow:hidden; background:#f9f6f1; color:#251e18; font-family:'Iowan Old Style','Palatino Linotype',Palatino,'Book Antiqua','URW Palladio L',Georgia,serif; font-variant-numeric:oldstyle-nums;">
+
+  <!-- running head: wordmark and the catalogue folio (position in the five entries) -->
+  <header style="position:absolute; left:72px; right:72px; top:0; height:64px; display:flex; align-items:center; justify-content:space-between;">
+    <a href="#top" style="display:flex; align-items:center; gap:10px; text-decoration:none; color:#251e18;">
+      <img src="./logo.svg" width="30" height="30" alt="" style="display:block; width:30px; height:30px;">
+      <span style="font-weight:700; font-size:22px; letter-spacing:0.01em;">Jig</span>
+    </a>
+    <nav aria-label="Entries" style="display:flex; align-items:baseline; gap:2px; font-size:22px;">
+      <span style="font-style:italic; font-size:18px; color:#59514a; margin-right:8px;">No.</span>
+      <a href="#step-1" style="display:inline-block; min-width:30px; text-align:center; text-decoration:none;">1</a>
+      <a href="#step-2" style="display:inline-block; min-width:30px; text-align:center; text-decoration:none;">2</a>
+      <span aria-current="step" style="display:inline-block; min-width:30px; text-align:center; font-weight:700; color:#251e18; border-bottom:2px solid #251e18; line-height:1.1;">3</span>
+      <a href="#step-4" style="display:inline-block; min-width:30px; text-align:center; text-decoration:none;">4</a>
+      <a href="#step-5" style="display:inline-block; min-width:30px; text-align:center; text-decoration:none;">5</a>
+    </nav>
+  </header>
+  <div aria-hidden="true" style="position:absolute; left:72px; right:72px; top:64px; height:3px; border-top:2px solid #251e18; border-bottom:0.5px solid #251e18;"></div>
+
+  <!-- No. 2, neighbour, quiet: muted ink, its cut out of view -->
+  <section id="step-2" aria-labelledby="t2" style="position:absolute; left:72px; right:72px; top:100px; height:240px; color:#59514a;">
+    <div style="position:absolute; left:0; top:0; width:500px;">
+      <p style="margin:0; line-height:1;"><span style="font-style:italic; font-size:24px;">No.</span> <span style="font-weight:700; font-size:72px; color:#867f77;">2</span></p>
+      <p style="margin:10px 0 0; font-size:18px; font-style:italic;">The tick</p>
+      <h2 id="t2" style="margin:10px 0 0; font-size:40px; line-height:1.08; font-weight:700;">A timer wakes the dispatcher.<span style="font-weight:400;">&#8224;</span></h2>
+    </div>
+    <div style="position:absolute; left:568px; top:84px; width:560px;">
+      <p style="margin:0; font-size:19px; line-height:1.55;">Every few minutes the dispatcher reads the tracker, the pull requests and the running sessions. Then it starts what should be running and is not.</p>
+      <div aria-hidden="true" style="width:96px; margin-top:18px; border-top:0.5px solid #59514a;"></div>
+      <p style="margin:8px 0 0; font-size:17px; line-height:1.4; font-style:italic;">&#8224; Machinery ships. Running unattended is planned.</p>
+    </div>
+  </section>
+
+  <div aria-hidden="true" style="position:absolute; left:72px; right:72px; top:364px; height:3px; border-top:2px solid #251e18; border-bottom:0.5px solid #251e18;"></div>
+
+  <!-- No. 3, in view: entry left, cut right bleeding to the edge -->
+  <section id="step-3" aria-labelledby="t3" style="position:absolute; left:0; right:0; top:404px; height:580px;">
+    <div style="position:absolute; left:72px; top:0; width:480px;">
+      <p style="margin:0; line-height:0.9;"><span style="font-style:italic; font-size:30px;">No.</span> <span style="font-weight:700; font-size:120px;">3</span></p>
+      <p style="margin:18px 0 0; font-size:18px; font-style:italic; color:#59514a;">The slots</p>
+      <h2 id="t3" style="margin:10px 0 0; font-size:40px; line-height:1.08; font-weight:700; letter-spacing:-0.005em;">Two slots per account, and the wall.</h2>
+      <p style="margin:22px 0 0; font-size:19px; line-height:1.55;">Each subscription account holds two sessions at once. When an account reaches its usage limit, that is the wall: the account stays out of every launch until the wall resets.</p>
+    </div>
+    <figure style="position:absolute; left:580px; top:0; margin:0; width:960px;">
+      <img src="../figure/line-step2-light.svg" width="960" height="540" alt="Isometric engraving of one account: two slots, each holding a session, and the wall standing across the track in front of a third session." style="display:block; width:960px; height:540px;">
+      <figcaption style="margin:6px 0 0 40px; font-size:18px; font-style:italic; color:#59514a;">No. 3 &#183; The slots</figcaption>
+    </figure>
+  </section>
+
+  <div aria-hidden="true" style="position:absolute; left:72px; right:72px; top:1016px; height:3px; border-top:2px solid #251e18; border-bottom:0.5px solid #251e18;"></div>
+
+  <!-- No. 4, neighbour, quiet -->
+  <section id="step-4" aria-labelledby="t4" style="position:absolute; left:72px; right:72px; top:1052px; height:260px; color:#59514a;">
+    <div style="position:absolute; left:0; top:0; width:500px;">
+      <p style="margin:0; line-height:1;"><span style="font-style:italic; font-size:24px;">No.</span> <span style="font-weight:700; font-size:72px; color:#867f77;">4</span></p>
+      <p style="margin:10px 0 0; font-size:18px; font-style:italic;">The ledger</p>
+      <h2 id="t4" style="margin:10px 0 0; font-size:40px; line-height:1.08; font-weight:700;">The drive keeps its ledger on the pull request.</h2>
+    </div>
+    <div style="position:absolute; left:568px; top:84px; width:560px;">
+      <p style="margin:0; font-size:19px; line-height:1.55;">One comment records the round, the last head checked and every parked question. Another machine reads it and picks up where the drive stopped.</p>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1320}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

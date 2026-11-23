@@ -92,6 +92,12 @@ if (fs.existsSync(F + "/gh-hold.json")) {
   if (args.join(" ").includes(hold.match)) Bun.sleepSync(hold.ms);
 }
 const out = (v) => { process.stdout.write(typeof v === "string" ? v : JSON.stringify(v)); process.exit(0); };
+// CI evidence by head, where a fixture supplies it.
+const ci = args[0] === "api" && /\\/commits\\/([a-f0-9]+)\\/(check-runs|status)\\?/.exec(args.find((a) => a.includes("/commits/")) ?? "");
+if (ci && fs.existsSync(F + "/ci-" + ci[1] + ".json")) {
+  const evidence = JSON.parse(fs.readFileSync(F + "/ci-" + ci[1] + ".json", "utf8"));
+  out(ci[2] === "check-runs" ? [{ total_count: evidence.length, check_runs: evidence }] : [{ statuses: [] }]);
+}
 // The repository's labels as labels-repo.json lists them: a name alone is a label with no description and the forge's gray.
 const repoLabels = () => (fs.existsSync(F + "/labels-repo.json") ? JSON.parse(fs.readFileSync(F + "/labels-repo.json", "utf8")) : [])
   .map((l) => (typeof l === "string" ? { name: l, description: "", color: "ededed" } : l));
@@ -117,6 +123,8 @@ if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("q
 if (args[0] === "repo" && args[1] === "view" && args.includes("nameWithOwner,defaultBranchRef"))
   // A checkout named "other" is another repository; every other is ${SLUG}.
   out({ nameWithOwner: process.cwd().endsWith("/other") ? "example-org/other-repo" : "${SLUG}", defaultBranchRef: { name: "main" } });
+if (args[0] === "repo" && args[1] === "view" && args.includes("defaultBranchRef"))
+  out("main");
 if (args[0] === "api" && args[1] === "rate_limit")
   // What is left: 4990 unless rate-remaining says otherwise.
   out({ resources: { core: { limit: 5000, remaining: fs.existsSync(F + "/rate-remaining") ? Number(fs.readFileSync(F + "/rate-remaining", "utf8")) : 4990, reset: 1793000000 } } });
@@ -127,7 +135,7 @@ if (args[0] === "pr" && args[1] === "list") {
   if (fs.existsSync(F + "/prs-" + state + "-fail")) { process.stderr.write("gh: HTTP 422\\n"); process.exit(1); }
   out(fs.readFileSync(F + "/prs-" + state + ".json", "utf8"));
 }
-if (args[0] === "pr" && args[1] === "view" && args.some((a) => a.includes("headRefOid"))) {
+if (args[0] === "pr" && args[1] === "view" && args.some((a) => a.includes("headRefOid") || a === "baseRefName,url")) {
   if (args.some((a) => a.includes("labels")) && fs.existsSync(F + "/pr-labels-fail")) { process.stderr.write("gh: labels unavailable\\n"); process.exit(1); }
   // One open pull request read again, as prs-open.json lists it.
   const listed = JSON.parse(fs.readFileSync(F + "/prs-open.json", "utf8")).find((p) => p.number === Number(args[2]));

@@ -19,23 +19,47 @@ that work from item 18's remaining site work.
 
 ## How it works
 
-### The message: a software factory first
+### The message: the delivery line
 
-Jig is a [software factory](../GLOSSARY.md): a work item passes through
-fixed steps, each with an input, checks and an output. Agents carry it to a
-merge-ready pull request. A person decides what to build, answers questions
-the agents cannot settle and merges. The rules, checks and kept knowledge
-that guide each session, Jig's [scaffolding](../GLOSSARY.md), are what the
-factory stands on. They explain how the factory works after the reader
-knows what it does.
+Jig helps a team take a work item to a merge-ready pull request, or stop with
+a question when a person must decide. A person decides what to build, answers
+questions the agents cannot settle and merges. The rules, checks and kept
+knowledge that guide each session, Jig's [scaffolding](../GLOSSARY.md), explain
+how that delivery line works.
 
-The home page's headline is **“Jig is a software factory.”** Beside it is
-the sentence a reader can check: **“Give an agent a work item; it builds the
-change, runs the checks and works through review until the pull request is
-ready or needs your decision. You merge.”** This describes the shipped
-pickup and drive skills. It promises neither that every item finishes nor
-that every transition starts by itself. The headline links the glossary;
-the sentence links the line. A count of modules does not lead either.
+The home page's headline is **“A work item goes in. A pull request you can
+merge, or a question for you, comes out.”** Its sentence is **“Give an agent a
+work item; it builds the change, runs the checks and works through review until
+the pull request is ready or needs your decision. You merge.”** The page leads
+with the line's stations, the dispatcher's tick, capacity, the drive's ledger
+and a question parked until a person answers it. It promises neither that every
+item finishes nor that every transition starts by itself.
+
+**Introduction and site direction.**
+
+- **One round.** The design round covers both the overhaul of jig-harness.dev
+  and a new introduction to Jig.
+- **The figures are isometric engravings in the plate style.** They are ink on
+  warm paper, with hatching and the green accent, drawn as scenes of motion-kit's
+  isometric kit. The jig model's hatching shader is their 3D
+  counterpart, so the illustration rule below holds: a plate in the plate
+  style, or the jig model.
+- **The introduction is one stepped page** on jig-harness.dev. The same scenes
+  give a talk deck and a short video.
+- **The introduction is concrete.** It leads with the line's seven stations,
+  the dispatcher's tick, how the dispatcher takes capacity into account, the
+  drive's ledger on the pull request, and a question parked until a person
+  answers it. The person-merges boundary and the capability table stay as they
+  are.
+- **The layout is the Broadside**, with the Strip board as runner-up
+  ([the round's record](prototypes/intro-directions/README.md)).
+- **The figure shows how an item changes.** The line is not a closed loop: the
+  follow-up reaches pickup as a side feed whose visual weight follows evidence.
+  The pickup queue is drawn. The
+  item changes form from an issue to a pull request, to one with comments and
+  build status, to one with every check green, to merged. The wall is
+  capacity, with no number and no mention of several accounts
+  ([the brief](prototypes/intro-directions/figure-brief.md)).
 
 The site tells the factory in layers, in this order:
 
@@ -59,27 +83,26 @@ the same promise, then expands the line before its foundations.
 
 ### The home page's one loop
 
-The scenario is a small change to an existing repository: **“You want an
-export to include a missing column.”** A ready work item states the column
-and its acceptance check. You start the pickup. An agent claims it, builds
-the change and opens a draft pull request. Review finds an edge case; the
-agent repairs it and runs the checks again. If the item needs a choice
-about the export's meaning, the agent stops with options for you. Once the
-review and checks settle, you inspect the pull request and merge. The
-repository's follow-up records what the merge owes and sends any remaining
-work back to the tracker. That is the loop, with the merge as its human
-boundary, rather than a second tour of the architecture.
+The page opens on the delivery-line headline and checkable sentence, then
+steps through five short steps, in this order: the line (seven stations in order, with the person merging at the sixth and the follow-up reaching the first as a short side feed, not a closed track); the tick (a timer wakes the
+dispatcher, which starts what should be running and is not); the capacity step (how the dispatcher takes capacity into account, with no exact count of slots, minutes or limits; its copy is not yet approved and is left to the next session); the ledger (the drive keeps its round, last
+head checked and parked questions in one comment on the pull request); and
+the question (when only a person can settle something, the drive parks a
+question with its options and the next tick re-arms it once answered). The
+round's brief (`design/prototypes/intro-directions/briefs/brief.md`) is the historical render: its loop wording and its capacity draft are superseded, so the build follows the figure brief (`design/prototypes/intro-directions/figure-brief.md`). No step copy is approved yet: the step 1 loop wording and the capacity step's copy are both pending, and the build waits for a person to approve them rather than reusing either draft. The page closes on “You merge.” That is
+the line, with the merge as its human boundary, rather than a second tour of
+the architecture.
 
-This is an illustrative scenario, labelled as such. A recorded run used as
+The steps are illustrative, labelled as such. A recorded run used as
 evidence carries its source and date and lives on the line page. It must not
 be presented as evidence of unattended starts unless the recording shows
-them. The home page ends the scenario with paths to the line and to adoption.
+them. The home page ends the steps with paths to the line and to adoption.
 The audit remains one step from home: a visible **“Start with an audit”**
 link goes to the adoption page's audit instructions, for a team adopting
 one module at a time.
 
 The first screen answers what Jig does and who merges. The rest of the
-home page explains the scenario, gives the short human boundary, and offers
+home page explains the five steps, gives the short human boundary, and offers
 the adoption path. It does not inventory the features. These parts move
 down a level:
 
@@ -148,14 +171,14 @@ the module catalog rather than becoming another home-page feature grid.
 
 After this amendment merges, `design-brief-builder` prepares the external
 [Claude Design](../GLOSSARY.md) session. Its bundle carries the headline,
-checkable sentence, scenario, layer inventory, human boundary, destination
+checkable sentence, five steps, layer inventory, human boundary, destination
 table and the source documents at a named commit. It includes the page
 table, the existing tokens and components, the parser migration contract
 below. The brief goes to the design session without an outside reference
 site; the settled message and prototype rubric guide its simplicity.
 
-The brief asks the designer how to present the settled message, not whether
-the factory comes first. It leaves layout, illustration and interaction
+The brief asks the designer how to present the settled delivery-line message,
+not whether its promise changes. It leaves layout, illustration and interaction
 choices to the round. It exercises the prototype rubric's First question,
 Above the fold, Keyboard, Contrast, Weight, Truth, Brand, Decisions argued
 and Neutral data blocks at the repository's configured widths and in both
@@ -171,12 +194,12 @@ The copy and the parsers that consume it change together after the accepted
 design round. The visitor-page work must:
 
 - Replace `readme.ts`'s statement-then-bold-tagline assumption with an
-  explicit factory opening: headline and checkable sentence. Adjust
+  explicit delivery-line opening: headline and checkable sentence. Adjust
   `ReadmeOpening`, the `index.astro` consumer and `data.test.ts` together.
   A missing promise fails the parser; the old tagline is not retained just
   to satisfy a test.
-- Replace the shape pinned to “Jig as a software factory”, its colon-ended
-  jobs lead and its scaffolding list with the accepted loop structure.
+- Replace the old factory-first shape, its colon-ended jobs lead and its
+  scaffolding list with the accepted delivery-line structure.
   Tests assert the work item, reviewed pull request, possible decision stop
   and human merge, rather than the previous heading or paragraph count.
 - Move “Ways to use” out of home's contract. Remove the four-entry assertion
@@ -194,8 +217,10 @@ design round. The visitor-page work must:
   for that evidence.
 - Update navigation, search, Markdown twins, `llms.txt`, repository-link
   routing and anchor tests for moved content, so human and agent readers
-  receive the same message. The Protocol renderer is owned by its design;
-  agree its source paths and chapter slugs before adding route mappings.
+  receive the same message. The [Protocol maintainer reference's rendering
+  overview](../tools/protocol/README.md#how-the-site-renders-the-chapters)
+  defines its renderer's source paths, and [Page types](#page-types) defines
+  the chapter slugs; preserve those contracts when adding route mappings.
 - Run the parser tests, site types and build/link checks as well as
   `bun run gates`. `scripts/check-voice.ts` holds the visitor documents;
   review holds the copy in `website/src`. Advance the site's sync record
@@ -247,7 +272,7 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
 
 | Route | Source | What the page adds |
 |-------|--------|--------------------|
-| `/` | README.md, FACTORY.md | planned message under item 52: factory headline, checkable sentence and the work-item scenario from § The home page's one loop; the human merge boundary and direct paths to the line, adoption and its audit instructions; the accepted design round chooses the presentation |
+| `/` | README.md, FACTORY.md | planned message under item 52: delivery-line headline, checkable sentence and the five-step introduction from § The home page's one loop; the human merge boundary and direct paths to the line, adoption and its audit instructions; the accepted design round chooses the presentation |
 | `/features/` | FEATURES.md, the plugin README's skill tables, ROADMAP.md, FACTORY.md | what a team gets: the intro beside its plate, an at-a-glance card per feature (its plate, its problem line, number, title and skill chips) linking to its section, then one section per feature: its problem line as a quotation, its prose beside its plate, the skills that run it as actor chips, the modules that state the practice as chips, the factory stations its skills run linked into `/factory/`, and what is on the roadmap as roadmap chips beside each entry |
 | `/modules/` | modules/README.md, profiles.yaml | the full map: every module at three levels, in id order, with a profile switch, scaffolding jobs and the skills that run each |
 | `/modules/<Mn>/` | the module README, its criteria YAML, its mappings.md | three numbered parts (the idea, the practice by level with the audit's criteria, the mechanics folded), the CI-provider switch for the mappings, and a rail: commands, scaffolding job, target per profile, adoption order |
@@ -262,7 +287,7 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
 | `/adopt/existing/`, `/adopt/greenfield/` | adoption/*.md, profiles | the guides with the plan rail: the chosen profile's modules in order, linked to their levels, and a hand-off link that keeps the profile (`?profile=`) |
 | `/adopt/plugin/`, `/adopt/configuration/`, `/adopt/extending/`, `/adopt/mechanisms/` | plugin/README.md, CONFIGURATION.md, EXTENDING.md, MECHANISMS.md | the plugin README's sections getting started does not render; the configuration reference; the extending guide; the map of the deterministic and reasoned parts |
 | `/skills/`, `/skills/<name>/`, `/skills/<name>/skill/` | plugin README tables, each skill's README or SKILL.md | what each skill runs (stations and modules), the stations no skill runs, each skill's own page, and its agent contract where the page is its README |
-| `/protocol/`, `/protocol/<chapter>/` | the Jig Protocol's index and generated chapter Markdown in `plugin/protocol/`; existing chapter filename stems are the agreed slugs | reference in the “what it is built from” layer: the index links to each chapter; each chapter has a status badge, prose and tables with a link target per value. Data is published at `/protocol/<chapter>/v<version>/data.json`, and schemas at `/protocol/<chapter>/v<version>/schemas/<filename>.json`, for the current version only (an earlier version is withdrawn), as [the Protocol design](protocol.md#how-the-site-renders-the-chapters) defines |
+| `/protocol/`, `/protocol/<chapter>/` | the Jig Protocol's index and generated chapter Markdown in `plugin/protocol/`; existing chapter filename stems are the agreed slugs | reference in the “what it is built from” layer: the index links to each chapter; each chapter has a status badge, prose and tables with a link target per value. Data is published at `/protocol/<chapter>/v<version>/data.json`, and schemas at `/protocol/<chapter>/v<version>/schemas/<filename>.json`, for the current version only (an earlier version is withdrawn), as the Protocol maintainer reference's rendering overview defines |
 | `/principles/`, `/principles/<n>/` | principles/ | the index shows each principle's statement and the first paragraph of its why, with a link to where it is visible on the site; each principle's page has its statement, why and consequences; principle 4 draws the ladder |
 | `/glossary/` | GLOSSARY.md | every term in its group, an anchor per term, a find filter |
 | `/whats-new/` | CHANGELOG.md, ROADMAP.md | every release beside the roadmap, each item foldable and anchored (`#rm-item-<n>`) |
@@ -594,12 +619,12 @@ design round and visitor-page work under that epic, in this order:
    Design; the returned bundle is audited against the brief and prototype
    rubric. Settle every failure and obtain the person's acceptance before
    treating the result as the page design. The round may reopen layout and
-   information architecture, but does not silently reopen the factory-first
-   position or the status of a capability.
+   information architecture, and reopens the factory-first headline as the
+   decision above records it. It does not reopen the status of a capability.
 3. **Build the visitor pages and site together.** Apply the accepted design
    to README.md, FACTORY.md, FEATURES.md and `website/src`, with the parser
-   and test changes above. The Protocol routes follow its design's
-   agreed contract. Keep planned autonomy claims in On the roadmap until
+   and test changes above. The Protocol routes follow the
+   [maintainer reference](../tools/protocol/README.md). Keep planned autonomy claims in On the roadmap until
    item 33's live-host checks are recorded. The direct audit path remains.
 
 When the page work finishes, remove item 52 from the plan and roadmap and

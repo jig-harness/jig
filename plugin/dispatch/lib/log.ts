@@ -146,8 +146,8 @@ export interface ParkFacts {
   class: string | null;
   digest: string | null;
   parkedAt: string;
-  /** Answered by people, handed on to be decided provisionally, or gone with no receipt. */
-  outcome: "answered" | "provisional" | "removed";
+  /** Answered by people, provisionally handed on, already resolved on the forge, or gone with no receipt. */
+  outcome: "answered" | "provisional" | "resolved-thread" | "removed";
   /** The answers' form: `approve`, `choose`, or `free` for answers in people's own words; `null` when none was consumed. */
   form: "approve" | "choose" | "free" | null;
   /** Whether the option chosen is the one the decision recommended; `null` when no option was chosen. */
@@ -631,6 +631,7 @@ export function endedRow(
       framed: r.framed,
       class: placed.class,
       reason,
+      driveExit: r.state.kind === "ended" ? r.state.exit.code : null,
       ...(placed.probeStopped ? { probeStopped: true } : {}),
     }),
     ...aboutFields(about),

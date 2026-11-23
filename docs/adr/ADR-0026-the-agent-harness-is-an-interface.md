@@ -1,11 +1,11 @@
 ---
 title: "ADR-0026: The agent harness is an interface, and a session runtime is a separate one"
 type: adr
-status: draft
+status: approved
 description: "The program that runs an AI model as an agent is reached through one agent-harness interface, with Claude Code and Codex as its first two implementations; where a session runs stays ADR-0011's session runtime, and the two vary independently"
 lifecycle: permanent
 version: "1.0"
-last_updated: 2026-11-20
+last_updated: 2026-11-23
 owner: maintainers
 decision_date: 2026-11-20
 supersedes: ~
@@ -20,7 +20,7 @@ tags: [adr, dispatcher, agents, harness, providers]
 
 # ADR-0026: The agent harness is an interface, and a session runtime is a separate one
 
-**Status:** Draft · **Date:** 2026-11-20 · **Deciders:** Jig's maintainers through pull-request review
+**Status:** Approved · **Date:** 2026-11-20 · **Deciders:** Jig's maintainers through pull-request review
 
 ## Context
 

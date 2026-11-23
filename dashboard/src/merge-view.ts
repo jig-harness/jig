@@ -59,7 +59,7 @@ export interface MergeLaneView {
   cards: MergeCardView[];
 }
 
-/** The `jig ask` line for a pull request's drive (design/addresses.md). */
+/** The `jig ask` line for a pull request's drive (plugin/protocol/addresses.md). */
 function askLine(repo: string, pr: number): string {
   return `jig ask drive@${repo}#${pr}`;
 }

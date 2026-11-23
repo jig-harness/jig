@@ -140,6 +140,19 @@ describe("unpark --stdin leaves a resolution receipt", () => {
     expect((await stored(stateDir)).resolvedParks).toBeUndefined();
   });
 
+  it("records an already-resolved thread distinctly from a withdrawn park", async () => {
+    const { stateDir } = writeFixture({}, scratchClean.dir);
+    await park(stateDir, "PRRT_a", "thread");
+    await unparkWith(
+      stateDir,
+      ["PRRT_a"],
+      [{ key: "PRRT_a", resolvedThread: true, answers: [] }],
+    );
+    const receipt = (await stored(stateDir)).resolvedParks?.[0];
+    expect(receipt?.outcome).toBe("resolved-thread");
+    expect(receipt?.answers).toEqual([]);
+  });
+
   it("keeps existing receipts whole, marking none lost, on a hand unpark", async () => {
     const { stateDir } = writeFixture({}, scratchClean.dir);
     await park(stateDir, "PRRT_a", "thread");
