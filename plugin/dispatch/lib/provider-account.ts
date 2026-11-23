@@ -314,6 +314,21 @@ function baseUrl(
   if (!URL.canParse(raw.value))
     return invalid(`${where} must be an absolute URL`);
   const url = new URL(raw.value);
+  // The path as written is checked before the URL parser normalizes it: a dot segment or an escaped dot could otherwise remove text the checks below never see.
+  const written = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]*([^?#]*)/i.exec(raw.value);
+  const writtenPath = written?.[1] ?? "";
+  if (
+    /%/.test(writtenPath) ||
+    writtenPath.split("/").some((part) => part === "." || part === "..")
+  )
+    return invalid(
+      `${where} must carry a path with no percent escapes or dot segments (its value is withheld)`,
+    );
+  const writtenShape = maskCredentialShapes(writtenPath, "\u0000");
+  if (writtenShape !== writtenPath)
+    return invalid(
+      `${where} must carry no credential-shaped value in its path (its value is withheld)`,
+    );
   const refused = urlFormRefusal(url, where);
   if (refused !== null) return invalid(refused);
   const host = url.hostname.toLowerCase();

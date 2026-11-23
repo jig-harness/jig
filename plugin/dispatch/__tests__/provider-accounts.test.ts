@@ -125,6 +125,9 @@ describe("a provider account", () => {
       "/api/%FF",
       "/api/%2573k-AAAAAAAAAAAA",
       "/api/sk-AAAAAAAAAAAA",
+      "/api/%2e",
+      "/api/sk-AAAAAAAAAAAA/..",
+      "/api/./x",
     ]) {
       const reason = refusal([
         router({ base_url: `https://openrouter.ai${path}` }),

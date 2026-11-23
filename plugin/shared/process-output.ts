@@ -160,14 +160,25 @@ function captureProcessOutput(
     if (stream === "stderr") tail = lastBytes(tail + text);
     const captured = !(bufferExceeded || cancellation.timedOut());
     const length = Buffer.byteLength(text);
+    const limit = options.maxBufferBytes ?? MAX_BUFFER_BYTES;
+    let over = false;
     if (captured) {
-      if (stream === "stdout") stdout += text;
-      else stderr += text;
-      bytes += length;
-      options.onOutput?.(stream, text);
+      // The bound is enforced before appending: a chunk that crosses it keeps only what fits, so the result never holds more than the limit.
+      let kept = text;
+      if (bytes + length > limit) {
+        over = true;
+        kept = Buffer.from(text)
+          .subarray(0, Math.max(0, limit - bytes))
+          .toString("utf8")
+          .replace(/\uFFFD+$/, "");
+      }
+      if (stream === "stdout") stdout += kept;
+      else stderr += kept;
+      bytes += over ? limit + 1 - bytes : length;
+      options.onOutput?.(stream, kept);
     }
     options.onChunk?.(stream, length, captured);
-    if (bytes > (options.maxBufferBytes ?? MAX_BUFFER_BYTES)) overflow();
+    if (over || bytes > limit) overflow();
   };
   const observed: NonNullable<ChildProcess["stdout"]>[] = [];
   let hasCapturedOutput = false;

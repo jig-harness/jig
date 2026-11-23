@@ -11,7 +11,7 @@ unknown wall, and a 402 is a plain pass failure that is tried again on the
 next tick. Model identifiers are a closed list. Nothing records what a pass
 cost, and the choice of agent is a two-value type spread through the code.
 With this built, a host lists provider accounts beside its subscriptions. Each
-has a [spend cap](../GLOSSARY.md), a reference to its credential and a
+has a reference to its credential, a [spend cap](../GLOSSARY.md) when it is metered, and a
 provider the repository allows. Every pass's cost is in a ledger, a 429 is
 waited out and a 402 parks one account with one need. A model outside the
 known families is routed by configuration alone, and a third
@@ -156,12 +156,13 @@ The contract of the command:
   launch waits for the next tick, as for any system that did not answer.
 - Jig resolves it at each launch and keeps the value only in the launching
   process's memory and the pass's environment. The value is never written to a
-  launch record, a receipt, the ledger, a transcript Jig keeps, an error
-  message or a command line. Every place text is recorded (stdout, stderr and
-  transcripts) is redacted for the **exact resolved value** as well as by
+  launch record, a receipt, the ledger, an error message or a command line.
+  Every place text is recorded (stdout, stderr and the transcript copy) masks
+  the **exact resolved value** as well as by
   [`plugin/shared/credentials.ts`](../plugin/shared/credentials.ts), whose
   pattern masking recognises only credential-shaped text and cannot catch an
-  opaque value printed alone.
+  opaque value printed alone. The transcript copy does not mask a value cut
+  partway, so the guarantee is not yet complete.
 - `credential_command` is read only from the machine file, so a repository
   cannot choose what runs on the host. With no command, a provider account is
   refused at load with that reason. 1Password's `op://` form is one

@@ -165,7 +165,12 @@ function redactedLines(text: string, token: string): string[] {
       swallow(error, "a transcript line that does not read is left out");
       continue;
     }
-    lines.push(JSON.stringify(redactStrings(maskFields(value), mask)));
+    // The serialized line is masked again for the exact value, as written and as JSON escapes it, so an object key that holds it is covered too.
+    let serialized = JSON.stringify(redactStrings(maskFields(value), mask));
+    if (token !== "")
+      for (const form of new Set([token, JSON.stringify(token).slice(1, -1)]))
+        serialized = serialized.split(form).join("<redacted>");
+    lines.push(serialized);
   }
   return lines;
 }

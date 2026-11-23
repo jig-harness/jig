@@ -2472,8 +2472,7 @@ make, use the entry's term instead.
 - **Credential reference** — the name of a secret in a store, such as
   `op://Vault/item/field`, written in configuration where the secret itself
   would otherwise go. A command the host configures turns the reference
-  into the value at the moment it is needed, so the configuration never holds the value and a copy of a session's transcript is redacted
-  of it (the original transcript's retention is pending work). A *provider account*'s credential is one.
+  into the value at the moment it is needed, so the configuration never holds the value. A copy of a session's transcript masks the exact value wherever it is written, but a partial value can remain (the original transcript's retention is pending work). A *provider account*'s credential is one.
 - **Agent harness** — the program that runs an AI model as an agent: it
   reads the prompt, calls the tools, edits files and ends with a result.
   Claude Code and Codex are the harnesses Jig supports. Jig
