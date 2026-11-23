@@ -76,8 +76,7 @@ export async function resolveCredential(
   const done = await run([...command, reference], {
     timeoutSec,
     env,
-    // Error output is never recorded, so it is not captured; standard output is bounded to the longest value plus a line ending and one byte to tell an overlong value apart.
-    stderr: "ignore",
+    // Error output is captured but never read or recorded; standard output is bounded to the longest value plus a line ending and one byte to tell an overlong value apart.
     maxBufferBytes: LONGEST_VALUE + 3,
     reapGroup: true,
   });
