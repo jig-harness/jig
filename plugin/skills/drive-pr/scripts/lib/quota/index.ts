@@ -49,9 +49,23 @@ export type {
  * adapters run in the order the harness registry lists their harnesses, and
  * a harness that names no reader (or one not here) contributes none.
  */
-const READERS: ReadonlyMap<string, QuotaAdapter> = new Map(
+const READERS: Map<string, QuotaAdapter> = new Map(
   [claudeAdapter, codexAdapter].map((adapter) => [adapter.vendor, adapter]),
 );
+
+/**
+ * Register the wall reader a harness names in its `wallReader`; returns the
+ * function that removes it. A harness whose key has no reader reads no walls.
+ */
+export function registerWallReader(
+  key: string,
+  adapter: QuotaAdapter,
+): () => void {
+  READERS.set(key, adapter);
+  return () => {
+    if (READERS.get(key) === adapter) READERS.delete(key);
+  };
+}
 
 /** The adapters of every registered harness's wall reader. */
 function adapters(): QuotaAdapter[] {

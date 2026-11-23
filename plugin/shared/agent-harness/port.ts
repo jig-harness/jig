@@ -131,6 +131,18 @@ export interface HarnessIdentity {
 /** An operation the harness does not supply. */
 export type NotSupplied = "not-supplied";
 
+/** What a pass reported using. */
+export interface HarnessUsage {
+  inputTokens: number;
+  outputTokens: number;
+  model: string | null;
+  /** The cost in US dollars, `null` when the harness reports none. */
+  costUsd: number | null;
+}
+
+/** How a stopped pass is read: a plain failure, or one of the closed failure classes. */
+export type StopClass = "ok" | "failure" | "rate-limited" | "timeout" | "auth";
+
 export interface AgentHarness {
   readonly name: HarnessName;
   readonly label: string;
@@ -168,11 +180,11 @@ export interface AgentHarness {
   /** Where the transcript of a session is, or `null` when it was not found. */
   transcript(query: TranscriptQuery): string | null;
   /** The tokens, model and cost a pass reported. */
-  usage(output: string): Outcome<never, NotSupplied>;
+  usage(output: string): Outcome<HarnessUsage, NotSupplied>;
   /** An exit and its output as one of the closed failure classes. */
   classifyStop(
     code: number | null,
     output: string,
-  ): Outcome<never, NotSupplied>;
+  ): Outcome<StopClass, NotSupplied>;
   readonly capabilities: HarnessCapabilities;
 }

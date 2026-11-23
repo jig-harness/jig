@@ -27,7 +27,12 @@ import { sessionVendor } from "../../skills/drive-pr/scripts/lib/arm.ts";
 import { admittedVendor, passEnvironment } from "../lib/accounts.ts";
 import { resumeLine } from "../lib/attach-resume.ts";
 import type { LaunchRecord } from "../lib/launches.ts";
-import { processEnvironment } from "../lib/runtime/process-environment.ts";
+import {
+  processEnvironment,
+  processSettings,
+} from "../lib/runtime/process-environment.ts";
+import { effectivePass } from "../../skills/drive-pr/scripts/lib/pass-model.ts";
+import { registerWallReader } from "../../skills/drive-pr/scripts/lib/quota/index.ts";
 import {
   followupPassArgv,
   pickupPassArgv,
@@ -158,5 +163,32 @@ describe("a harness registered only here", () => {
     unregister?.();
     expect(isPassVendor(FAKE_NAME)).toBe(false);
     expect(() => passCommand(FAKE_NAME, 7)).toThrow();
+  });
+
+  it("refuses its credentials and session markers in env_keep, in any case", () => {
+    for (const name of [
+      FAKE_CREDENTIAL,
+      FAKE_CREDENTIAL.toLowerCase(),
+      FAKE_MARKER,
+    ])
+      expect(processSettings({ env_keep: [name] })).toMatchObject({
+        ok: false,
+      });
+    expect(
+      processSettings({ env_keep: ["SOME_OTHER_VARIABLE"] }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it("takes --pass-model in its own form", () => {
+    const pass = effectivePass([FAKE_PROGRAM, "-p", "x"], "fake-large");
+    expect(pass.argv).toContain("--fake-model");
+    expect(pass.argv).toContain(pass.model as string);
+  });
+
+  it("registers a wall reader and removes it again", () => {
+    const adapter = { vendor: "fake-reader" } as never;
+    const remove = registerWallReader("fake-reader", adapter);
+    expect(typeof remove).toBe("function");
+    remove();
   });
 });

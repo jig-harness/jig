@@ -91,9 +91,9 @@
     {
       "name": "harness-type",
       "format": "grep",
-      "files": "^(?!dashboard/|website/|design/|seeds/|plugin/shared/agent-harness/)(?!.*(\\.test\\.|/__tests__/|vendor/)).*\\.(ts|tsx|mjs)$",
+      "files": "^(?!dashboard/|website/|design/|seeds/|plugin/shared/agent-harness/)(?!.*(\\.test\\.|/__tests__/|vendor/)).*\\.(ts|tsx|mjs|js|jsx|cjs)$",
       "patterns": {
-        "harness-literal": "([\"'])(?:claude|codex)\\1",
+        "harness-literal": "([\"'`])(?:claude|codex)\\1",
         "harness-union": "\\bAccountVendor\\b"
       }
     }

@@ -1,9 +1,11 @@
 /** Environment shared by the process runtime's identity probe and wrapper. */
 import { delimiter, isAbsolute, join, resolve } from "node:path";
 import {
+  credentialVariables,
   directoryVariables,
   type HarnessName,
   harnessOrDefault,
+  isSessionMarker,
 } from "../../../shared/agent-harness/index.ts";
 import { isMapping } from "../../../shared/config-layers.ts";
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
@@ -40,7 +42,10 @@ function blocked(name: string): boolean {
   const upper = name.toUpperCase();
   return (
     BLOCKED.has(upper) ||
-    directoryVariables().includes(upper) ||
+    directoryVariables().some((v) => v.toUpperCase() === upper) ||
+    credentialVariables().some((v) => v.toUpperCase() === upper) ||
+    isSessionMarker(name) ||
+    isSessionMarker(upper) ||
     /^(CODEX_|LD_|DYLD_)/.test(upper)
   );
 }

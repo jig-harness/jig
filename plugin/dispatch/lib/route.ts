@@ -46,12 +46,11 @@ function harnessEnvironment(account: {
   const env: Record<string, string | undefined> = { ...process.env };
   for (const name of Object.keys(env))
     if (isSessionMarker(name)) delete env[name];
-  Object.assign(
-    env,
-    harnessOrDefault(account.vendor).environment.sessionMarkers(
-      account.configDir,
-    ),
-  );
+  const harness = harnessOrDefault(account.vendor);
+  Object.assign(env, harness.environment.sessionMarkers(account.configDir));
+  // The route's own detector knows only the built-in harnesses' markers, so
+  // the registered harness names its runtime.
+  env.JIG_ROUTE_RUNTIME = harness.runtime;
   return env;
 }
 

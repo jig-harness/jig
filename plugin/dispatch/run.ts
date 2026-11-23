@@ -157,7 +157,7 @@ import {
   readResult,
   recordExit,
 } from "./lib/launches.ts";
-import { probeWall } from "./lib/quota-probe.ts";
+import { quotaMain } from "./lib/quota-probe.ts";
 import {
   driverReportFile,
   printKeptReport,
@@ -199,13 +199,7 @@ import {
   recordWorkingStartup,
 } from "./lib/account-startup.ts";
 import { forgetClaudeSignIn } from "./lib/claude-sign-in.ts";
-import {
-  currentIso,
-  currentMs,
-  isoFromMs,
-  parseInstant,
-  parseMs,
-} from "../shared/time.ts";
+import { currentIso, currentMs, isoFromMs, parseMs } from "../shared/time.ts";
 
 const CLAIMED = 3;
 
@@ -948,19 +942,8 @@ function identityMain(name: string): number {
 export async function runMain(argv: string[]): Promise<number> {
   if (argv[0] === "identity" && argv.length === 2)
     return identityMain(argv[1] as string);
-  if (argv[0] === "quota" && argv.length === 4) {
-    const [, session, cwd, since] = argv as [string, string, string, string];
-    if (!Number.isFinite(parseMs(since))) {
-      console.error(`jig dispatch run: ${since} is not a date`);
-      return 2;
-    }
-    console.log(
-      JSON.stringify(
-        probeWall(session, cwd, parseInstant(since), Temporal.Now.instant()),
-      ),
-    );
-    return 0;
-  }
+  if (argv[0] === "quota" && (argv.length === 4 || argv.length === 5))
+    return quotaMain(argv.slice(1));
   if (argv[0] === "tracker" && argv.length === 3)
     return trackerMain(argv[1] as string, argv[2] as string);
   const supervising = argv[0] === "supervise" && argv.length === 3;

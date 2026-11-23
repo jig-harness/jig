@@ -65,7 +65,13 @@ async function probe(
 ): Promise<ProbedWall | null | string> {
   const { record } = r;
   const done = await run(
-    [...probeCommand(), record.sessionId as string, cwd, record.createdAt],
+    [
+      ...probeCommand(),
+      record.sessionId as string,
+      cwd,
+      record.createdAt,
+      record.vendor,
+    ],
     { timeoutSec, env: passEnvironment(process.env, record), stderr: "pipe" },
   );
   if (done.code !== 0)

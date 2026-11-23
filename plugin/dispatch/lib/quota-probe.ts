@@ -12,10 +12,15 @@
  */
 import { detectQuotaBlock } from "../../skills/drive-pr/scripts/lib/quota/index.ts";
 import { readBoundedTail } from "../../skills/drive-pr/scripts/lib/quota/types.ts";
-import { defaultHarness } from "../../shared/agent-harness/index.ts";
+import {
+  defaultHarness,
+  type HarnessName,
+  harnessNamed,
+  harnessOrDefault,
+} from "../../shared/agent-harness/index.ts";
 import { swallow } from "../../shared/errors.ts";
 import { isMapping } from "../../shared/config-layers.ts";
-import { isoOf, parseMs } from "../../shared/time.ts";
+import { isoOf, parseInstant, parseMs } from "../../shared/time.ts";
 
 /** What the probe prints: the wall, or `null`. */
 export interface ProbedWall {
@@ -63,19 +68,25 @@ function isWall(
 }
 
 /** The wall the session `sessionId` met in `cwd` since `since`, if any. */
-export function probeWall(
+function probeWall(
   sessionId: string,
   cwd: string,
   since: Temporal.Instant,
   now: Temporal.Instant,
+  harness: HarnessName | null = null,
 ): ProbedWall | null {
   const block = detectQuotaBlock({
     cwd,
     since,
     now,
-    // The probe's command line names no harness: it reads sessions whose id
-    // the launch minted, which is the default harness's (Claude Code's) form.
-    correlation: { vendor: defaultHarness().wallReader ?? "", sessionId },
+    // The record's harness names the reader; without one the session is the
+    // default harness's (Claude Code's).
+    correlation: {
+      vendor:
+        (harness === null ? defaultHarness() : harnessOrDefault(harness))
+          .wallReader ?? "",
+      sessionId,
+    },
   });
   if (block === null) return null;
   return {
@@ -85,6 +96,26 @@ export function probeWall(
     evidence: block.evidence,
     last: isWall(lastRecord(block.source), block.observedAt, sessionId),
   };
+}
+
+/** `run.ts quota <session> <cwd> <since> [harness]`: print the wall the session met, or `null`. */
+export function quotaMain(args: string[]): number {
+  const [session, cwd, since, vendor] = args as [
+    string,
+    string,
+    string,
+    string | undefined,
+  ];
+  if (!Number.isFinite(parseMs(since))) {
+    console.error(`jig dispatch run: ${since} is not a date`);
+    return 2;
+  }
+  const harness = harnessNamed(vendor ?? "")?.name ?? null;
+  const now = Temporal.Now.instant();
+  console.log(
+    JSON.stringify(probeWall(session, cwd, parseInstant(since), now, harness)),
+  );
+  return 0;
 }
 
 /** Whether a parsed value is what the probe prints for a wall. */

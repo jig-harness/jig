@@ -312,6 +312,34 @@ function codexPass(
       };
 }
 
+/** A pass of a registered harness other than the built-in two: `--pass-model` in its own form, else its own choice. */
+function registeredPass(
+  argv: readonly string[],
+  flag: string | undefined,
+): EffectivePass {
+  const other = harnessOfProgram(argv[0]);
+  if (flag === undefined || other === null)
+    return {
+      argv: [...argv],
+      model: null,
+      source: `chosen by the pass command (${basename(argv[0] ?? "")})`,
+    };
+  const chosen = resolveModelValue(
+    flag,
+    "--pass-model",
+    readOptionalOverlay,
+    other.runtime,
+  );
+  return {
+    argv: other.withModel(
+      withoutModel(argv),
+      chosen.model,
+      modelOption(argv)?.index ?? null,
+    ),
+    ...chosen,
+  };
+}
+
 /**
  * The pass command with its model decided (see the module header), from the
  * command as given, the `--pass-model` flag and the configured model.
@@ -340,12 +368,7 @@ export function effectivePass(
     );
     return { argv: withCodexModel(argv, chosen.model), ...chosen };
   }
-  if (vendor !== "claude")
-    return {
-      argv: [...argv],
-      model: null,
-      source: `chosen by the pass command (${basename(first)})`,
-    };
+  if (vendor !== "claude") return registeredPass(argv, flag);
   const own = modelOption(argv);
   if (flag !== undefined) {
     const chosen = resolveModelValue(flag, "--pass-model");

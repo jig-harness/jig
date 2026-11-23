@@ -49,6 +49,22 @@ describe("the harness-type counter", () => {
     expect(out).toContain("plugin/runtime/new-switch.ts (0 → 1)");
   });
 
+  test("fails a template literal and a runnable .js file", () => {
+    for (const [file, text] of [
+      [
+        "plugin/runtime/tpl.ts",
+        "export const a = (v: string) => v === `claude`;\n",
+      ],
+      ["plugin/runtime/run.js", "export const a = (v) => v === 'codex';\n"],
+    ] as const) {
+      const r = harnessRepo();
+      r.write(file, text);
+      const { code, out } = r.ratchet();
+      expect(code).toBe(1);
+      expect(out).toContain(`${file} (0 → 1)`);
+    }
+  });
+
   test("fails a new use of the two-value type", () => {
     const r = harnessRepo();
     r.write(
