@@ -163,6 +163,8 @@ describe("how a need left", () => {
             repo: REPO,
             target: "PR #7",
             key: "k",
+            digest: null,
+            parkedAt: null,
             outcome: "answered",
             at: "2026-11-23T09:59:00.000Z",
             people: ["maintainer-b"],
@@ -324,6 +326,7 @@ describe("what stays visible", () => {
       who: "maintainer-a",
       option: "Release the pickup",
       answer: "https://forge.example/comment/x",
+      occurrence: "https://forge.example/comment/x 2026-11-23T09:00:00.000Z",
     };
     const db = stateDb(root);
     insertLeaves(
@@ -343,12 +346,39 @@ describe("what stays visible", () => {
     expect(settled[0]?.targets.toSorted()).toEqual(["ENG-4", "ENG-5"]);
   });
 
+  it("keeps an edited answer, another occurrence of the same comment and option, as its own entry", () => {
+    const shared = {
+      by: "person" as const,
+      who: "maintainer-a",
+      option: "Release the pickup",
+      answer: "https://forge.example/comment/x",
+    };
+    const db = stateDb(root);
+    insertLeaves(
+      db,
+      [
+        {
+          ...leaveOf(need({ target: "ENG-4" }), [], nothing, NOW),
+          occurrence:
+            "https://forge.example/comment/x 2026-11-23T08:00:00.000Z",
+        },
+        {
+          ...leaveOf(need({ target: "ENG-5" }), [], nothing, NOW),
+          occurrence:
+            "https://forge.example/comment/x 2026-11-23T09:00:00.000Z",
+        },
+      ].map((e) => ({ ...e, ...shared })),
+    );
+    expect(readSettled(db, parseMs(NOW), [])).toHaveLength(2);
+  });
+
   it("lists a merged card, one answer that settled several targets, as one entry", () => {
     const shared = {
       by: "person" as const,
       who: "maintainer-a",
       option: "Release the pickup",
       answer: "https://forge.example/comment/x",
+      occurrence: "https://forge.example/comment/x 2026-11-23T09:00:00.000Z",
     };
     const db = stateDb(root);
     insertLeaves(

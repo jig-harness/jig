@@ -93,6 +93,10 @@ export interface ParkLeft {
   target: string;
   /** The park's key: the decision a need on the target carried. */
   key: string;
+  /** The framing the park carried; `null` when it had none. */
+  digest: string | null;
+  /** When it was parked; the occurrence's time. */
+  parkedAt: string | null;
   outcome: ParkFacts["outcome"];
   /** When it left: the receipt's time, else the tick's. */
   at: string;
@@ -212,6 +216,8 @@ function receiptLeft(slug: string, pr: number, r: ResolutionReceipt): ParkLeft {
     repo: slug,
     target: `PR #${pr}`,
     key: r.key,
+    digest: r.digest ?? null,
+    parkedAt: r.parkedAt ?? null,
     outcome: r.outcome,
     at: r.resolvedAt,
     people: [...new Set(r.answers.map((a) => a.author))],
@@ -336,6 +342,8 @@ function repoOutcomes(
         repo: p.repo,
         target: `PR #${p.pr}`,
         key: p.key,
+        digest: p.digest ?? null,
+        parkedAt: p.parkedAt ?? null,
         outcome: "removed",
         at: nowIso,
         people: [],

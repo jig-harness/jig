@@ -618,6 +618,8 @@ export interface LineSettled {
   how: string;
   /** The answer's link, when it was an answer. */
   answer: string | null;
+  /** The answer's occurrence (its comment link and the time it was counted from, or the park's digest and time): what makes entries one answer. */
+  occurrence?: string | null;
 }
 
 /** A claimed item an open pull request carries, as the tick read it (`carried-pr.ts`). */

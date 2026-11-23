@@ -30,9 +30,8 @@ import type { ParkLeft } from "./park-events.ts";
 export const SETTLED_WINDOW_MS = 24 * 3_600_000;
 /** The most entries the line carries, newest first. */
 const SETTLED_LIMIT = 100;
-/** Held and refused answers are read in pages of this many rows, until the list is full or the scan bound is reached. */
+/** Held and refused answers are read in pages of this many rows, until the list is full or the window is read to its start. */
 const UNSETTLED_PAGE = 200;
-const UNSETTLED_SCAN_MAX = 5_000;
 /** How long a leave row is kept. */
 const LEAVES_KEPT_MS = 7 * 24 * 3_600_000;
 
@@ -117,7 +116,7 @@ const where = (target: string): string =>
 type Why = Pick<
   LineSettled,
   "by" | "who" | "via" | "option" | "recommended" | "how" | "answer"
-> & { at?: string };
+> & { at?: string; occurrence?: string };
 
 const NO_ONE = {
   via: null,
@@ -139,6 +138,7 @@ function personAnswered(need: LineNeed, a: AnswerSeen): Why {
     recommended: null,
     how: `chose ${a.option}${a.detail === null ? "" : `: ${a.detail}`}`,
     answer: linkOf(a.answer),
+    occurrence: a.answer,
   };
 }
 
@@ -154,6 +154,7 @@ function parkLeft(need: LineNeed, park: ParkLeft): Why {
       recommended: park.recommended,
       how: park.words.join("; ") || "answered",
       answer: park.url,
+      occurrence: `park ${park.digest ?? ""} ${park.parkedAt ?? ""} ${park.url ?? ""}`,
     };
   return {
     ...NO_ONE,
@@ -230,7 +231,13 @@ export function leaveOf(
           (p) =>
             p.repo === need.repo &&
             p.target === need.target &&
-            need.decisions.some((d) => d.key === p.key),
+            need.decisions.some(
+              (d) =>
+                d.key === p.key &&
+                (d.digest === undefined ||
+                  p.digest === null ||
+                  d.digest === p.digest),
+            ),
         )
       : undefined;
   const open = ev.open.get(need.repo);
@@ -328,11 +335,11 @@ function grouped(entries: readonly LineSettled[]): LineSettled[] {
   const out: LineSettled[] = [];
   const byAnswer = new Map<string, LineSettled>();
   for (const e of entries) {
-    // One answer: the same comment and the same choice. Its targets leave in different ticks, so the time is not part of it; the entry keeps the newest.
+    // One answer: the same occurrence (comment and the time it was counted from, so an edit is another) and the same choice. Its targets leave in different ticks, so the tick's time is not part of it; the entry keeps the newest.
     const key =
-      e.answer === null
+      e.occurrence == null
         ? null
-        : `${e.repo} ${e.answer} ${e.outcome} ${e.option ?? ""}`;
+        : `${e.repo} ${e.occurrence} ${e.outcome} ${e.option ?? ""}`;
     const same = key === null ? undefined : byAnswer.get(key);
     if (same === undefined) {
       const copy = { ...e, targets: [...e.targets] };
@@ -367,6 +374,7 @@ function unsettledEntry(
     recommended: null,
     how: `chose ${a.option}, ${outcome}${a.detail === null ? "" : `: ${a.detail}`}; its card stays open`,
     answer: linkOf(a.answer),
+    occurrence: a.answer,
   };
 }
 
@@ -383,9 +391,9 @@ export function readSettled(
   const left = (
     db
       .query(
-        "SELECT value FROM need_leaves WHERE at_ms >= ? ORDER BY at_ms DESC, id DESC LIMIT ?",
+        "SELECT value FROM need_leaves WHERE at_ms >= ? ORDER BY at_ms DESC, id DESC",
       )
-      .all(since, SETTLED_LIMIT) as Array<{ value: string }>
+      .all(since) as Array<{ value: string }>
   ).flatMap((r) => {
     const entry = parsed(r.value);
     return entry === null ? [] : [entry];
@@ -393,7 +401,7 @@ export function readSettled(
   const unsettled: LineSettled[] = [];
   for (
     let offset = 0;
-    unsettled.length < SETTLED_LIMIT && offset < UNSETTLED_SCAN_MAX;
+    unsettled.length < SETTLED_LIMIT;
     offset += UNSETTLED_PAGE
   ) {
     const page = db
