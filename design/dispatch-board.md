@@ -154,14 +154,20 @@ Ready to merge, lane **merge now**, when all of these hold at the tick:
    (`mergeStateStatus` is `CLEAN` or `HAS_HOOKS`), or its base requires a
    merge queue (`isMergeQueueEnabled`), whose own rules then decide.
 8. Its author is the repository's own (association `OWNER`, `MEMBER` or
-   `COLLABORATOR`), or a person approved it, or its author is
+   `COLLABORATOR`), or a person approved it (a user the forge reports as
+   `OWNER`, `MEMBER` or `COLLABORATOR` approved the current head; an
+   approval of an earlier head does not count), or its author is
    [trusted automation](../GLOSSARY.md): a bot the default branch's
    `pull_requests.trusted_automation` lists, whose head is in the
    repository, whose commits are all the bot's own or a listed
    committer's (each signed for its account unless the entry says
    `signed: false`), whose changed files are all within the entry's paths,
-   and, where the entry names update types, whose manifest diff shows only
-   listed types (a grouped minor-plus-patch change needs both listed). The
+   and, where the entry names update types, whose whole change is
+   classified: every changed file is a manifest or a recognized lockfile
+   whose edit is of a listed type (a lockfile-only change can qualify
+   without a manifest; a grouped minor-plus-patch change needs both
+   listed), and an unsupported file or an unclassifiable manifest edit
+   withholds the exception even where the path policy allows it. The
    exception applies only where the repository names a reviewer app: with
    none, a person's approval is the review witness and the commits and
    files are not read.

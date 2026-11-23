@@ -232,16 +232,23 @@ function supersedes(a: HeadCheck, b: HeadCheck): boolean {
   return Number.isFinite(endA) && Number.isFinite(endB) && endA > endB;
 }
 
+function isReviewerCheck(check: HeadCheck, rules: ReadyRules): boolean {
+  return (
+    rules.reviewerApp !== null &&
+    check.app === rules.reviewerApp &&
+    rules.reviewerCheck.test(check.name)
+  );
+}
+
 /** Latest ordinary checks by name and posting app; unread order retains every possible blocker. */
 function latestChecks(facts: ForgeFacts, rules: ReadyRules): HeadCheck[] {
+  const latestReviewer =
+    rules.reviewerApp === null ? null : reviewerRuns(facts, rules);
   return facts.checks.filter((check) => {
-    // The review witness has its own stricter ordering by attempt id.
-    if (
-      rules.reviewerApp !== null &&
-      check.app === rules.reviewerApp &&
-      rules.reviewerCheck.test(check.name)
-    )
-      return true;
+    // The review witness orders its attempts by id: only the latest attempt
+    // per name blocks, and unread order keeps every attempt.
+    if (isReviewerCheck(check, rules))
+      return latestReviewer === null || latestReviewer.includes(check);
     return !facts.checks.some(
       (other) =>
         other.name === check.name &&
@@ -366,6 +373,8 @@ interface Read {
   seen: ReturnType<typeof witness>;
   ciHeld: boolean;
   failing: string[];
+  /** Whether a required check other than the reviewer's failed on the head. */
+  requiredFailing: boolean;
   /** The forge's merge state, `null` where a merge queue decides instead. */
   state: string | null;
   own: boolean;
@@ -586,15 +595,13 @@ const BLOCKERS: Array<(r: Read) => Row | null> = [
       `changes were requested${by}: that reviewer re-reviews, or the drive is re-armed to address them`,
     ];
   },
-  ({ facts, failing, state }) =>
+  ({ failing, state, requiredFailing }) =>
     failing.length > 0 &&
     (state === null ||
       state === "BLOCKED" ||
       state === "UNSTABLE" ||
       // A stale CLEAN merge state cannot override a current required failure.
-      facts.checks.some(
-        (c) => c.required && c.state === "failure" && failing.includes(c.name),
-      ))
+      requiredFailing)
       ? [
           "needs-you",
           person("re-run-check"),
@@ -706,6 +713,9 @@ function readOf(facts: MergeFacts, rules: ReadyRules): Read {
     ciHeld:
       rules.ciHoldLabel !== null && facts.labels.includes(rules.ciHoldLabel),
     failing: failingChecks(facts, rules),
+    requiredFailing: facts.checks.some(
+      (c) => c.required && c.state === "failure" && !isReviewerCheck(c, rules),
+    ),
     state: facts.mergeQueue ? null : facts.mergeState,
     own: OWN.has(facts.authorAssociation) || trusted?.met === true,
     trusted,

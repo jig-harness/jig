@@ -625,6 +625,25 @@ describe("required checks and reviewer attempts", () => {
       expect(readiness(f, RULES).place).toBe("stay");
     }
   });
+  it("ignores an earlier required reviewer attempt the later attempt replaced", () => {
+    const f = facts({ mergeState: "BLOCKED" });
+    const review = f.checks[0];
+    f.checks = [
+      { ...review, id: 1, required: true, state: "pending" },
+      { ...review, id: 2, required: true, state: "success" },
+      f.checks[1],
+    ];
+    expect(readiness(f, RULES).place).not.toBe("stay");
+  });
+  it("lets an optional failure of a name a required check shares not override CLEAN", () => {
+    const f = facts({ mergeState: "CLEAN" });
+    f.checks = [
+      f.checks[0],
+      { ...f.checks[1], app: "other-ci", required: false, state: "failure" },
+      { ...f.checks[1], required: true, state: "success", id: 9 },
+    ];
+    expect(readiness(f, RULES).place).not.toBe("needs-you");
+  });
   it("does not let an optional pending check hide an approval request", () => {
     const f = facts({
       mergeState: "BLOCKED",
