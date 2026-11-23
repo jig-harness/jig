@@ -179,11 +179,7 @@ describe("what a browser has stored", () => {
     expect(
       tokensFrom(
         {
-          tokens: [
-            A,
-            B,
-            { ...A, token: "pat-dup" },
-          ],
+          tokens: [A, B, { ...A, token: "pat-dup" }],
         },
         { token: "pat-old", login: "old", at: 1 },
       ),
