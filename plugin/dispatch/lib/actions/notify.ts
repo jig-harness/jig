@@ -603,6 +603,8 @@ function dueOn(
 ): Cause[] {
   const name = channel.name;
   const starting = !isCard && startingChannel(name, scope, state);
+  // A start state that could not be read is no start and no proof of one: send nothing until a tick reads it.
+  if (starting === undefined) return [];
   const due = dueThere(name, scope, starting);
   if (due.length === 0 && !starting) return due;
   let why: string | null;
@@ -622,19 +624,23 @@ function dueOn(
   return [];
 }
 
-/** Whether `channel` has yet to begin on this host, or started this tick and so starts alike on every repository of it. */
+/** Whether `channel` has yet to begin on this host, or started this tick and so starts alike on every repository of it; `undefined` when the start state cannot be read, reported on the receipt. */
 function startingChannel(
   channel: string,
   { root, report }: SendScope,
   state: ApplyState,
-): boolean {
+): boolean | undefined {
   if (state.channelStarts?.has(channel) === true) return true;
   try {
     return !channelStarted(channel, root);
   } catch (error) {
-    outcomeLogFailed(report, `the start of the ${channel} channel`, error);
+    report.unplaced.push({
+      target: `the ${channel} notification channel`,
+      record: "runtime",
+      reason: `its start state could not be read, so nothing is sent on it until a later tick reads it: ${failureText(error)}`,
+    });
   }
-  return false;
+  return undefined;
 }
 
 /**
