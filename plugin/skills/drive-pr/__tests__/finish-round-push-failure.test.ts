@@ -10,6 +10,7 @@ import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.
 import {
   failureExcerpt,
   observedPush,
+  outputTail,
   pushFailureKind,
   pushFailureReason,
 } from "../scripts/lib/push-failure.ts";
@@ -52,6 +53,11 @@ describe("a failed push's reason", () => {
       ),
     ).toBe("unconfirmed");
     expect(pushFailureKind("")).toBe("unknown");
+    expect(
+      pushFailureKind(
+        "guarded-push: pushed abc to origin, but PR #9 still reports def.",
+      ),
+    ).toBe("unconfirmed");
     // A gate whose own output reads like git's transport errors is still a gate.
     expect(
       pushFailureKind(
@@ -87,6 +93,16 @@ describe("a failed push's reason", () => {
     expect(
       failureExcerpt("token ghp_abcdefghijklmnopqrstuvwxyz0123456789"),
     ).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz0123456789");
+  });
+
+  it("masks a credential whose key would otherwise be cut before the retained tail", () => {
+    const tail = outputTail();
+    tail.observe(
+      Buffer.from(`password=${"s".repeat(20 * 1024)}\npre-push failed`),
+    );
+    expect(tail.text()).not.toContain("s".repeat(100));
+    expect(tail.text()).toContain("password=<redacted>");
+    expect(tail.text()).toContain("pre-push failed");
   });
 
   it("names the exit, the kind and what it means", () => {

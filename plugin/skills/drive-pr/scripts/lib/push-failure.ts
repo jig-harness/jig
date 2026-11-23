@@ -39,6 +39,24 @@ export const PUSH_FAILURE_WORDS: Readonly<Record<PushFailureKind, string>> = {
   unknown: "the push failed",
 };
 
+/** Whether one guarded-push diagnostic says the forge never confirmed its head. */
+function isUnconfirmedPush(line: string): boolean {
+  const prefix = "guarded-push: pushed ";
+  if (!line.startsWith(prefix)) return false;
+  const pushedEnd = line.indexOf(" to ", prefix.length);
+  if (pushedEnd === prefix.length) return false;
+  const remoteEnd = line.indexOf(", but PR #", pushedEnd + 4);
+  if (remoteEnd === pushedEnd + 4) return false;
+  const reports = " still reports ";
+  const number = line.slice(remoteEnd + ", but PR #".length);
+  const reportsAt = number.indexOf(reports);
+  return (
+    reportsAt > 0 &&
+    /^[1-9][0-9]*$/.test(number.slice(0, reportsAt)) &&
+    number.slice(reportsAt + reports.length) !== ""
+  );
+}
+
 /** The most bytes of the push's stderr kept to read the cause from. */
 const TAIL_BYTES = 16 * 1024;
 
@@ -59,7 +77,12 @@ export function outputTail(): {
   let kept = Buffer.alloc(0);
   return {
     observe(bytes) {
-      kept = Buffer.concat([kept, bytes]);
+      // Mask before dropping the prefix.  A credential key can occur at the
+      // start of one very long stderr line, with its value still in the tail
+      // after the key would otherwise have been discarded.
+      kept = Buffer.from(
+        redactReportText(Buffer.concat([kept, bytes]).toString("utf8")),
+      );
       if (kept.length > TAIL_BYTES)
         kept = kept.subarray(kept.length - TAIL_BYTES);
     },
@@ -78,10 +101,7 @@ const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[A-Za-z]`, "g");
  */
 export function pushFailureKind(output: string): PushFailureKind {
   if (/^\d+s and was killed\.$/m.test(output)) return "timeout";
-  if (
-    /^guarded-push: pushed \S+ to \S+, but PR #\d+ still reports /m.test(output)
-  )
-    return "unconfirmed";
+  if (output.split(/\r?\n|\r/).some(isUnconfirmedPush)) return "unconfirmed";
   if (/^\s*!\s*\[(remote )?rejected\]/m.test(output)) return "remote-rejected";
   if (
     /^(fatal: (unable to access|the remote end hung up|could not read from remote repository)|ssh: connect to host|error: RPC failed)/im.test(

@@ -148,6 +148,35 @@ export function redactedFinish(event: DriveEvent): DriveEvent {
   return kept === undefined ? rest : { ...rest, finish: kept };
 }
 
+/** What a ledger's `cut` names when its older stops' finish details were dropped. */
+export const OLDER_FINISH_DETAILS_CUT = "the older finish details";
+
+/**
+ * `ledger` with every finish but the newest stop's dropped, or `ledger` itself
+ * when there is none to drop. The newest finish explains the current state;
+ * older finish prose is history that can grow until the forge refuses the
+ * whole ledger.
+ */
+export function withOlderFinishesCut<
+  L extends { events?: readonly DriveEvent[]; cut: readonly string[] },
+>(ledger: L): L {
+  const events = ledger.events ?? [];
+  const latest = events.findLastIndex(
+    (event) => event.kind === "stop" && event.finish !== undefined,
+  );
+  if (!events.some((e, i) => i !== latest && e.finish !== undefined))
+    return ledger;
+  return {
+    ...ledger,
+    events: events.map((event, index) => {
+      if (index === latest || event.finish === undefined) return event;
+      const { finish: _finish, ...withoutFinish } = event;
+      return withoutFinish;
+    }),
+    cut: [...ledger.cut, OLDER_FINISH_DETAILS_CUT],
+  };
+}
+
 /** Whether `cause` is one of the causes of an event of `kind`. */
 function isCause(kind: unknown, cause: unknown): boolean {
   if (kind === "stop")

@@ -355,6 +355,30 @@ describe("the size cut", () => {
     expect(Buffer.byteLength(second.body)).toBeLessThanOrEqual(noOutcomes - 1);
   });
 
+  it("compacts old finish details while preserving the newest stop evidence", () => {
+    const events: DriveEvent[] = Array.from({ length: 100 }, (_, i) => ({
+      at: `2026-10-01T10:${String(i % 60).padStart(2, "0")}:00.000Z`,
+      round: i,
+      kind: "stop",
+      cause: "14",
+      finish: {
+        state: "PUSH_FAILED",
+        reason: `${i === 99 ? "latest" : "historical"} ${"x".repeat(900)}`,
+      },
+    }));
+    const rendered = renderLedger(ledger({ events }));
+    if ("error" in rendered) throw new Error(rendered.error);
+    expect(rendered.ledger.cut).toContain("the older finish details");
+    expect(
+      rendered.ledger.events?.slice(0, -1).every((e) => e.finish === undefined),
+    ).toBe(true);
+    expect(rendered.ledger.events?.at(-1)?.finish).toMatchObject({
+      state: "PUSH_FAILED",
+      reason: expect.stringContaining("latest"),
+    });
+    expect(Buffer.byteLength(rendered.body)).toBeLessThanOrEqual(65_536);
+  });
+
   it("names the telemetry cut only when telemetry was removed, and keeps it while trimming receipts", () => {
     const rec = (n: number) => ({
       key: `PRRT_r${n}`,
