@@ -267,6 +267,7 @@ function needFacetAttrs(
     ...memberAttrs(
       members.map((m) => ({
         repo: [m.repo],
+        person: m.people,
         stage: [m.stage],
         age: [bucket(m.since)],
       })),

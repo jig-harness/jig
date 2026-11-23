@@ -136,3 +136,29 @@ test("a group card's selections on its targets' facts are met by one target", ()
   ).counts.age;
   expect(withAge).toEqual([{ value: "Under 1 hour", count: 1 }]);
 });
+
+test("a group card keeps each target's person with its other facts", () => {
+  const group = {
+    text: "Group",
+    values: {
+      person: ["Alice", "Bob"],
+      repo: ["org/a", "org/b"],
+    },
+    members: [
+      { person: ["Alice"], repo: ["org/a"] },
+      { person: ["Bob"], repo: ["org/b"] },
+    ],
+  };
+  const facets = ["person", "repo"] as const;
+  const match = (person: string, repo: string) =>
+    projectFilters(
+      [group],
+      { query: "", values: { person: [person], repo: [repo] } },
+      facets,
+    ).matching[0];
+
+  expect(match("Alice", "org/a")).toBe(true);
+  expect(match("Bob", "org/b")).toBe(true);
+  expect(match("Alice", "org/b")).toBe(false);
+  expect(match("Bob", "org/a")).toBe(false);
+});
