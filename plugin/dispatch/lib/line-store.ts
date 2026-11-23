@@ -325,7 +325,14 @@ const LINE_FIELDS: Fields = {
       url: isString,
       drive: (v) =>
         typeof v === "string" &&
-        ["driving", "converged", "parked", "stopped", "unplaced"].includes(v),
+        [
+          "driving",
+          "converged",
+          "parked",
+          "stopped",
+          "unplaced",
+          "unarmed",
+        ].includes(v),
       why: isString,
     })(value),
   sessions: listOf(ENTRY_FIELDS.sessions),

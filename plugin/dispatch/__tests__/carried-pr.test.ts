@@ -3,7 +3,8 @@
  * that names no `pr_open` state, an item with no running session past
  * `dispatch.stalled_after` whose open pull request links it raises no stall
  * need while that pull request's drive is live, converged, parked on a
- * question, stopped or undecided this tick, and is reported as carried by
+ * question, stopped, undecided this tick or asked for and waiting to be
+ * armed, and is reported as carried by
  * it with the drive's state, on the tick's report and on the line; the
  * drive's own need stays. A merged pull request that links it settles it.
  * No linking pull request, a pull request with no drive, a fork's pull
@@ -178,6 +179,23 @@ describe("a claimed item an open pull request carries", () => {
   it("is still a stalled pickup naming the pull request when the pull request has no drive", () => {
     const reason = expectStalled(planPickups(input(stalled([pr()], []))));
     expect(reason).toContain("pull request #31: it has no drive");
+  });
+
+  it("raises no stall need while the drive is asked for and waits to be armed, and is reported as carried with the drive's why", () => {
+    const asked = drive("unarmed", {
+      ledger: "none",
+      headSha: "abc123",
+      pickupArm: true,
+    });
+    asked.why =
+      "no drive ledger, and its completed process pickup handed off the first drive: arm a drive on any account";
+    const plan = planPickups(input(stalled([pr()], [asked])));
+    expect(plan.actions).toEqual([]);
+    const [quiet] = plan.quiet.filter((q) => q.class === "claimed-carried");
+    expect(quiet?.carried).toEqual({ pr: 31, url: URL, drive: "unarmed" });
+    expect(quiet?.why).toContain(
+      "its drive waits to be armed (unarmed: no drive ledger, and its completed process pickup handed off the first drive",
+    );
   });
 
   it("raises no stall need while the drive is parked on a question, stopped, or undecided this tick, and is reported with the drive's state", () => {
@@ -405,6 +423,15 @@ describe("the line", () => {
       expect(stored.value?.carried).toEqual(line.carried);
       expect(line.carried).toHaveLength(1);
       const [entry] = line.carried ?? [];
+      const waiting = {
+        ...line,
+        carried: [{ ...entry, drive: "unarmed" } as LineCarried],
+      };
+      writeLine(waiting, "{}", root);
+      const unarmed = readLine(root);
+      expect(unarmed.ok).toBe(true);
+      if (!unarmed.ok) return;
+      expect(unarmed.value?.carried).toEqual(waiting.carried);
       writeLine(
         {
           ...line,

@@ -711,8 +711,12 @@ stall while an open pull request of the
 repository's own branches that the line links to it (as the need's framed
 decision reads the links) has a drive, whatever its state: live, converged
 and waiting for its merge, parked on a person's question, stopped for a
-re-arm or a re-drive, or unplaced for the tick while the forge leaves its
-state undecided (a mergeability still being computed). The tick reports the
+re-arm or a re-drive, unplaced for the tick while the forge leaves its
+state undecided (a mergeability still being computed), or unarmed: no ledger
+yet, but a person's `drive` label, the completed pickup's first-drive
+handoff or the adoption rule asks for one, so the tick is about to arm it. A
+drive that stays unarmed is reported by whatever keeps it from arming
+(admission, slots, the arming rule), not as a stalled pickup. The tick reports the
 item as carried by that pull request, with its link and the drive's state,
 and the line lists it as [carried](../GLOSSARY.md); what a person must do
 there is the pull request's own need, shown once. A pull request merged
