@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Keep every open issue's type, priority and size where the repository keeps
- * them (design/tracker-facets.md in the Jig repository): the weekly sweep
+ * them (plugin/skills/file-issue/README.md): the weekly sweep
  * for issues filed without them, and the move from one facet store to
  * another. Run from the repository's root; it reads `.config/jig.yaml`
  * through the plugin's configuration reader and reaches the tracker only

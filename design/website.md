@@ -194,8 +194,10 @@ design round. The visitor-page work must:
   for that evidence.
 - Update navigation, search, Markdown twins, `llms.txt`, repository-link
   routing and anchor tests for moved content, so human and agent readers
-  receive the same message. The Protocol renderer is owned by its design;
-  agree its source paths and chapter slugs before adding route mappings.
+  receive the same message. The [Protocol maintainer reference's rendering
+  overview](../tools/protocol/README.md#how-the-site-renders-the-chapters)
+  defines its renderer's source paths, and [Page types](#page-types) defines
+  the chapter slugs; preserve those contracts when adding route mappings.
 - Run the parser tests, site types and build/link checks as well as
   `bun run gates`. `scripts/check-voice.ts` holds the visitor documents;
   review holds the copy in `website/src`. Advance the site's sync record
@@ -262,7 +264,7 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
 | `/adopt/existing/`, `/adopt/greenfield/` | adoption/*.md, profiles | the guides with the plan rail: the chosen profile's modules in order, linked to their levels, and a hand-off link that keeps the profile (`?profile=`) |
 | `/adopt/plugin/`, `/adopt/configuration/`, `/adopt/extending/`, `/adopt/mechanisms/` | plugin/README.md, CONFIGURATION.md, EXTENDING.md, MECHANISMS.md | the plugin README's sections getting started does not render; the configuration reference; the extending guide; the map of the deterministic and reasoned parts |
 | `/skills/`, `/skills/<name>/`, `/skills/<name>/skill/` | plugin README tables, each skill's README or SKILL.md | what each skill runs (stations and modules), the stations no skill runs, each skill's own page, and its agent contract where the page is its README |
-| `/protocol/`, `/protocol/<chapter>/` | the Jig Protocol's index and generated chapter Markdown in `plugin/protocol/`; existing chapter filename stems are the agreed slugs | reference in the “what it is built from” layer: the index links to each chapter; each chapter has a status badge, prose and tables with a link target per value. Data is published at `/protocol/<chapter>/v<version>/data.json`, and schemas at `/protocol/<chapter>/v<version>/schemas/<filename>.json`, for the current version only (an earlier version is withdrawn), as [the Protocol design](protocol.md#how-the-site-renders-the-chapters) defines |
+| `/protocol/`, `/protocol/<chapter>/` | the Jig Protocol's index and generated chapter Markdown in `plugin/protocol/`; existing chapter filename stems are the agreed slugs | reference in the “what it is built from” layer: the index links to each chapter; each chapter has a status badge, prose and tables with a link target per value. Data is published at `/protocol/<chapter>/v<version>/data.json`, and schemas at `/protocol/<chapter>/v<version>/schemas/<filename>.json`, for the current version only (an earlier version is withdrawn), as the Protocol maintainer reference's rendering overview defines |
 | `/principles/`, `/principles/<n>/` | principles/ | the index shows each principle's statement and the first paragraph of its why, with a link to where it is visible on the site; each principle's page has its statement, why and consequences; principle 4 draws the ladder |
 | `/glossary/` | GLOSSARY.md | every term in its group, an anchor per term, a find filter |
 | `/whats-new/` | CHANGELOG.md, ROADMAP.md | every release beside the roadmap, each item foldable and anchored (`#rm-item-<n>`) |
@@ -598,8 +600,8 @@ design round and visitor-page work under that epic, in this order:
    position or the status of a capability.
 3. **Build the visitor pages and site together.** Apply the accepted design
    to README.md, FACTORY.md, FEATURES.md and `website/src`, with the parser
-   and test changes above. The Protocol routes follow its design's
-   agreed contract. Keep planned autonomy claims in On the roadmap until
+   and test changes above. The Protocol routes follow the
+   [maintainer reference](../tools/protocol/README.md). Keep planned autonomy claims in On the roadmap until
    item 33's live-host checks are recorded. The direct audit path remains.
 
 When the page work finishes, remove item 52 from the plan and roadmap and
