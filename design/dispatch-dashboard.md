@@ -260,6 +260,43 @@ same place to paste the comment; the card’s pull-request identity link
 opens the pull request itself. The For everyone filter uses the line's
 answer state. Counts marked “here” reflect answers kept by this browser, and the decision totals count every card, so they are hidden while a filter is on.
 
+**One card for an identical question.** Needs whose decisions are identical
+apart from their own target are one card, a [question group](../GLOSSARY.md)
+([need-classes.md § Identical questions fold](need-classes.md#identical-questions-fold)).
+The card asks the question once, with the target replaced by "each item" or
+"each pull request", says how many it covers ("8 items"), and lists every
+target with its repository, link, age and what became of its answer; the
+opened card shows each target's own evidence, what was already done and the
+reason. A box beside each target leaves it out ("all but these"); the ones
+left out stay open. A pick on the card is kept under the group's identity
+and the framing it was made for; the group's count and list change
+on the next read, and a change of membership changes the framing, which
+drops the pick. An answer covers exactly the targets listed when it
+was sent, which the confirmation names. Send posts one answer per target
+listed, each that target's own station answer with its own key and digest,
+as the person ([ADR-0019](../docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md)),
+so every station checks its answer on its own; a listed target with no Send
+holds the card's Send back until it is left out. A guarded option shows its
+check panel once, naming every target it covers. Copy takes one
+`jig send` command per target listed, since no one comment answers several
+pull requests or issues. A target whose comment GitHub refused, or may have
+posted, is left out of the next send until the person lists it again. One
+that may have posted is kept in the target's own record, the one its own
+card's Send keeps, so either card holds that answer back, says "Still
+unchecked" and offers "I checked the linked target; allow Send again"; a
+send that posted only some of a target's comments is kept as only those, and
+the target's row says "Sent here" only for the answer the card would send it
+now. A pick is kept for the targets and framings it was made for: a target
+joining or leaving, or one framed or parked again, drops it and says so, and
+a send that reached every target forgets it. A target whose answer the tick
+refused, or whose facts changed so it no longer matches, leaves the group and
+is a card of its own. The tab, the answer and
+each act's heading count needs, one per target, as `jig ask --waiting`
+lists one entry per target address. The filter shows a group's card when
+any of its targets' repositories, stages or people matches; the card still
+lists, counts and answers every target, so leave out the ones the filter
+would hide before sending.
+
 **Where the facts come from.** Merge, Needs you, Running, Queue and
 Hosts are drawn from the line each tick writes, with the forge facts its
 board read gathered, so drawing them makes no forge or tracker call, and
