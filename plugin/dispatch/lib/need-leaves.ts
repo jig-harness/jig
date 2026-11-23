@@ -236,7 +236,10 @@ export function leaveOf(
                 d.key === p.key &&
                 (d.digest === undefined ||
                   p.digest === null ||
-                  d.digest === p.digest),
+                  d.digest === p.digest) &&
+                (d.parkedAt === undefined ||
+                  p.parkedAt === null ||
+                  d.parkedAt === p.parkedAt),
             ),
         )
       : undefined;
@@ -378,6 +381,29 @@ function unsettledEntry(
   };
 }
 
+/** A newest-first read taken a page at a time: `frontier` is the time of the last row read, and nothing older has been read. */
+function pagedRows(
+  read: (offset: number) => {
+    rows: LineSettled[];
+    full: boolean;
+    lastMs: number | null;
+  },
+): { done: boolean; frontier: number; next: () => LineSettled[] } {
+  let offset = 0;
+  const source = {
+    done: false,
+    frontier: Number.POSITIVE_INFINITY,
+    next: (): LineSettled[] => {
+      const page = read(offset);
+      offset += UNSETTLED_PAGE;
+      if (page.lastMs !== null) source.frontier = page.lastMs;
+      if (!page.full) source.done = true;
+      return page.rows;
+    },
+  };
+  return source;
+}
+
 /**
  * The line's settled list: the needs that left in the window and the answers
  * taken and not carried out (their needs are open on `needs`), newest first.
@@ -388,22 +414,25 @@ export function readSettled(
   needs: readonly LineNeed[],
 ): LineSettled[] {
   const since = nowMs - SETTLED_WINDOW_MS;
-  const left = (
-    db
+  const leftPages = pagedRows((offset) => {
+    const page = db
       .query(
-        "SELECT value FROM need_leaves WHERE at_ms >= ? ORDER BY at_ms DESC, id DESC",
+        "SELECT value, at_ms AS atMs FROM need_leaves WHERE at_ms >= ? ORDER BY at_ms DESC, id DESC LIMIT ? OFFSET ?",
       )
-      .all(since) as Array<{ value: string }>
-  ).flatMap((r) => {
-    const entry = parsed(r.value);
-    return entry === null ? [] : [entry];
+      .all(since, UNSETTLED_PAGE, offset) as Array<{
+      value: string;
+      atMs: number;
+    }>;
+    return {
+      rows: page.flatMap((r) => {
+        const entry = parsed(r.value);
+        return entry === null ? [] : [entry];
+      }),
+      full: page.length === UNSETTLED_PAGE,
+      lastMs: page.at(-1)?.atMs ?? null,
+    };
   });
-  const unsettled: LineSettled[] = [];
-  for (
-    let offset = 0;
-    unsettled.length < SETTLED_LIMIT;
-    offset += UNSETTLED_PAGE
-  ) {
+  const unsettledPages = pagedRows((offset) => {
     const page = db
       .query(
         `SELECT repo, target, key, digest, author, option, answer, claimed_at AS claimedAt, outcome, detail
@@ -420,19 +449,40 @@ export function readSettled(
       .all(isoFromMs(since), UNSETTLED_PAGE, offset) as Array<
       AnswerSeen & { repo: string; target: string }
     >;
-    for (const a of page) {
-      // Its card stays open: an answer to a decision no open need carries is not listed as unsettled.
-      const need = needs.find(
-        (n) =>
-          n.repo === a.repo &&
-          n.target === a.target &&
-          n.decisions.some((d) => answersDecision(a, d)),
-      );
-      if (need !== undefined) unsettled.push(unsettledEntry(a, need));
-    }
-    if (page.length < UNSETTLED_PAGE) break;
+    return {
+      rows: page.flatMap((a) => {
+        // Its card stays open: an answer to a decision no open need carries is not listed as unsettled.
+        const need = needs.find(
+          (n) =>
+            n.repo === a.repo &&
+            n.target === a.target &&
+            n.decisions.some((d) => answersDecision(a, d)),
+        );
+        return need === undefined ? [] : [unsettledEntry(a, need)];
+      }),
+      full: page.length === UNSETTLED_PAGE,
+      lastMs:
+        page.length === 0
+          ? null
+          : parseMs(page[page.length - 1]?.claimedAt ?? ""),
+    };
+  });
+  // Both reads page newest first; read on until the grouped list is full and
+  // every source has gone past the oldest entry kept, so grouping sees the
+  // whole window it needs before the cap cuts.
+  const rows: LineSettled[] = [];
+  let kept: LineSettled[] = [];
+  for (;;) {
+    const sources = [leftPages, unsettledPages].filter((s) => !s.done);
+    if (sources.length === 0) break;
+    const edge =
+      kept.length >= SETTLED_LIMIT
+        ? parseMs(kept[SETTLED_LIMIT - 1]?.at ?? "")
+        : null;
+    const next = sources.filter((s) => edge === null || s.frontier >= edge);
+    if (next.length === 0) break;
+    for (const s of next) rows.push(...s.next());
+    kept = grouped(rows.sort((a, b) => parseMs(b.at) - parseMs(a.at)));
   }
-  return grouped(
-    [...left, ...unsettled].sort((a, b) => parseMs(b.at) - parseMs(a.at)),
-  ).slice(0, SETTLED_LIMIT);
+  return kept.slice(0, SETTLED_LIMIT);
 }

@@ -425,6 +425,54 @@ describe("what stays visible", () => {
     expect(only5.map((s) => s.targets[0])).toEqual(["ENG-5"]);
   });
 
+  it("pages past a page of rows that group into one entry", () => {
+    const db = stateDb(root);
+    const now = parseMs(NOW);
+    const targets = Array.from({ length: 250 }, (_, n) => `ENG-${n}`);
+    const open = targets.map((t) => need({ target: t, item: t }));
+    for (const t of targets) answer(t, "Leave it", "held", "later", "same");
+    answer("OLD-1", "Leave it", "held", "later", "older");
+    const older = need({ target: "OLD-1", item: "OLD-1" });
+    const settled = readSettled(db, Date.now() + 60_000, [...open, older]);
+    expect(settled.some((s) => s.targets.includes("OLD-1"))).toBe(true);
+    expect(settled.some((s) => s.targets.length === 250)).toBe(true);
+    expect(now).toBeGreaterThan(0);
+  });
+
+  it("does not credit an earlier park's receipt to a later park of the same decision", () => {
+    const later = need({
+      cause: "parked",
+      decisions: [
+        {
+          key: "k",
+          kind: "finding",
+          lines: [],
+          question: null,
+          recommendation: null,
+          decisionClass: null,
+          digest: "d",
+          parkedAt: "2026-11-22T00:00:00.000Z",
+        },
+      ],
+    });
+    const earlier = {
+      repo: REPO,
+      target: "ENG-4",
+      key: "k",
+      digest: "d",
+      parkedAt: "2026-11-21T00:00:00.000Z",
+      outcome: "answered",
+      at: NOW,
+      people: ["maintainer-a"],
+      option: "Leave it",
+      recommended: null,
+      words: [],
+      url: "https://forge.example/x",
+    } as unknown as LeaveEvidence["parks"][number];
+    const entry = leaveOf(later, [], { ...nothing, parks: [earlier] }, NOW);
+    expect(entry.by).not.toBe("person");
+  });
+
   it("does not list one answer's mixed outcomes as one entry", () => {
     const db = stateDb(root);
     const shared = { answer: "https://forge.example/comment/x" };
