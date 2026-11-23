@@ -20,7 +20,7 @@ import {
   skipLongDriveFixture,
   spawnDriveIn,
 } from "./drive-loop-harness.ts";
-import { readState, writeState } from "./state-rows.ts";
+import { readState, seedRounds as seedRoundsAt } from "./state-rows.ts";
 
 const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
   rawFixture(f, scratchClean.dir);
@@ -29,29 +29,8 @@ const MULTI_ROUND_TIMEOUT_MS = 60_000;
 
 useDrivePrSuite();
 
-/** Seed the durable state, to model a drive stopped at its bound. */
-function seedRounds(stateDir: string, rounds: number, head = HEAD) {
-  writeState(stateDir, "999", {
-    pr: 999,
-    rounds,
-    lastCountedHead: head,
-    attempts: 0,
-    attemptsHead: "",
-    lastReflectedRound: 0,
-    lastReflectedAttempts: 0,
-    readyMarkedRound: 0,
-    ciHold: null,
-    verifiedSha: "",
-    phase: "",
-    parked: [],
-    held: [],
-    lastEscalatedRound: 0,
-    lastEscalatedInvariant: "",
-    roundPaths: [],
-    lastProgressAt: "",
-    quotaPark: null,
-  });
-}
+const seedRounds = (stateDir: string, rounds: number, head = HEAD) =>
+  seedRoundsAt(stateDir, rounds, head);
 
 function fixture() {
   return writeFixture({ threads: [{ id: "PRRT_a", path: "a.ts", bot: true }] });
