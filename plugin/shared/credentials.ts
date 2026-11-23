@@ -94,13 +94,61 @@ function bracketedEnd(text: string, start: number): number {
   return i;
 }
 
-const ASSIGNMENT_START = new RegExp(`["']?(${KEY_CLASS}+)["']?\\s*[:=]`, "y");
+const ASSIGNMENT_START = new RegExp(
+  `(?:(["'])(${KEY_CLASS}+)\\1|(${KEY_CLASS}+))\\s*[:=]`,
+  "y",
+);
 
-/** Whether a credential-named assignment begins at `at`: a bare value never swallows the next assignment's key. */
+/**
+ * Whether a credential-named assignment begins at `at`, in the grammar
+ * `nameFinder` reads (a bare name, or a name inside matching quotes). Only a
+ * value that starts after whitespace can be the next assignment: with no
+ * boundary the text is the value itself.
+ */
 function startsAssignment(text: string, at: number): boolean {
+  if (!/\s/.test(text[at - 1] ?? "")) return false;
   ASSIGNMENT_START.lastIndex = at;
   const m = ASSIGNMENT_START.exec(text);
-  return m !== null && isCredentialKey(m[1] ?? "");
+  return m !== null && isCredentialKey(m[2] ?? m[3] ?? "");
+}
+
+/** End of the quoted segment opening at `start`: an unclosed one takes its line. */
+function quotedEnd(text: string, start: number): number {
+  const q = text[start];
+  for (let i = start + 1; i < text.length; i++) {
+    const c = text[i];
+    if (c === "\n") return i;
+    if (c === "\\") i++;
+    else if (c === q) {
+      if (text[i + 1] !== q) return i + 1;
+      i++;
+    }
+  }
+  return text.length;
+}
+
+/**
+ * End of an unquoted assignment's value: segments (bare, escaped, quoted)
+ * run on until whitespace. After a quoted segment closes, `,` `;` and `}`
+ * also end the value, so the neighbouring field survives; a bare run takes
+ * them as part of the secret.
+ */
+function valueEnd(text: string, start: number): number {
+  let afterQuote = false;
+  let i = start;
+  while (i < text.length) {
+    const c = text[i] ?? "";
+    if (/\s/.test(c)) break;
+    if (afterQuote && (c === "," || c === ";" || c === "}")) break;
+    if (c === '"' || c === "'") {
+      i = quotedEnd(text, i);
+      afterQuote = text[i - 1] === c;
+    } else {
+      i += c === "\\" ? 2 : 1;
+      afterQuote = false;
+    }
+  }
+  return Math.min(i, text.length);
 }
 
 /**
@@ -118,7 +166,6 @@ function maskValues(
 ): string {
   const quoted = new RegExp(QUOTED, "y");
   const plainY = new RegExp(plain.source, "y");
-  const glued = /\S*/y;
   let out = "";
   let last = 0;
   prefix.lastIndex = 0;
@@ -128,14 +175,12 @@ function maskValues(
     quoted.lastIndex = at;
     plainY.lastIndex = at;
     if (skip?.(text.slice(at))) continue;
-    if (quoted.test(text)) {
-      end = quoted.lastIndex;
-      // An unquoted assignment's value runs on through segments glued to the quote.
-      if (contiguous) {
-        glued.lastIndex = end;
-        if (glued.test(text)) end = glued.lastIndex;
-      }
-    } else if (text[at] === "[") end = bracketedEnd(text, at);
+    if (contiguous && text[at] !== "[") {
+      if (startsAssignment(text, at)) continue;
+      end = valueEnd(text, at);
+      if (end === at) end = -1;
+    } else if (quoted.test(text)) end = quoted.lastIndex;
+    else if (text[at] === "[") end = bracketedEnd(text, at);
     else if (startsAssignment(text, at)) continue;
     else if (plainY.test(text)) end = plainY.lastIndex;
     if (end < 0) continue;

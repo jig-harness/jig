@@ -52,3 +52,16 @@ test("segments glued to a quoted value are masked with it", () => {
     `password=${MARK}`,
   );
 });
+
+test("an unquoted value is masked through quoted and bare segments and stops at separators after a quote", () => {
+  const cases: [string, string][] = [
+    ["password=token'=opaque-fixture", `password=${MARK}`],
+    ["password=token:opaque-fixture", `password=${MARK}`],
+    ["password=\"alpha\"'beta gamma'", `password=${MARK}`],
+    ['password=pre"alpha beta"', `password=${MARK}`],
+    ['password="example",status=ready', `password=${MARK},status=ready`],
+    ['password="example"; status=ready', `password=${MARK}; status=ready`],
+  ];
+  for (const [input, want] of cases)
+    expect(maskCredentials(input, MARK)).toBe(want);
+});
