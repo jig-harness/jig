@@ -239,6 +239,20 @@ describe("the push output's tail", () => {
     expect(tail.text()).toContain("next line");
   });
 
+  it("keeps discarding an oversized escape through its terminator", () => {
+    const tail = outputTail();
+    const esc = String.fromCharCode(27);
+    tail.observe(Buffer.from(`pass${esc}[${"1".repeat(400)}`));
+    tail.observe(Buffer.from("1".repeat(400)));
+    tail.observe(Buffer.from("mword=hunter2secret\n"));
+    tail.observe(
+      Buffer.from(`pass${esc}[${"1".repeat(400)}mword=whole2secret\n`),
+    );
+    const out = tail.text();
+    expect(out).not.toContain("hunter2secret");
+    expect(out).not.toContain("whole2secret");
+  });
+
   it("reads a quote after a terminal escape as opening a value, across an overflow", () => {
     const tail = outputTail();
     const esc = String.fromCharCode(27);

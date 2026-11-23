@@ -60,7 +60,7 @@ function isUnconfirmedPush(line: string): boolean {
 const ESC = String.fromCharCode(27);
 const BEL = String.fromCharCode(7);
 
-/** The longest escape sequence read as one; a longer run is not an escape. */
+/** The longest cut escape sequence held across chunks; a longer one is discarded through its terminator. */
 const ESCAPE_MAX = 256;
 
 /**
@@ -70,7 +70,7 @@ const ESCAPE_MAX = 256;
  * a two-byte escape. A gate's output is often coloured.
  */
 const ANSI = new RegExp(
-  `${ESC}(?:\\[[0-?]{0,${ESCAPE_MAX}}[ -/]{0,${ESCAPE_MAX}}[@-~]|\\][^${ESC}${BEL}]{0,${ESCAPE_MAX}}(?:${BEL}|${ESC}\\\\)|[@-Z\\\\-_])`,
+  `${ESC}(?:\\[[0-?]*[ -/]*[@-~]|\\][^${ESC}${BEL}]*(?:${BEL}|${ESC}\\\\)|[@-Z\\\\-_])`,
   "g",
 );
 
@@ -194,14 +194,38 @@ export function outputTail(): {
   let skipping = false;
   // An escape sequence cut by the end of the last chunk, still to be completed.
   let carry = "";
+  // An escape sequence too long to hold, still being discarded: its kind.
+  let discarding: "csi" | "osc" | null = null;
+
+  /** Drop the rest of an oversized escape sequence from the front of `text`. */
+  const discard = (text: string): string => {
+    for (let i = 0; i < text.length; i++) {
+      const b = text.charCodeAt(i);
+      if (discarding === "csi") {
+        if (b >= 0x20 && b <= 0x3f) continue;
+        discarding = null;
+        return text.slice(b >= 0x40 && b <= 0x7e ? i + 1 : i);
+      }
+      if (b === 7 || b === 27) {
+        discarding = null;
+        return text.slice(b === 7 ? i + 1 : i);
+      }
+    }
+    return "";
+  };
 
   /** Strip terminal escapes from a chunk, as the masker reads the text, holding back a cut one. */
   const normalize = (input: Uint8Array): Buffer => {
-    const text = carry + Buffer.from(input).toString("latin1");
+    let text = Buffer.from(input).toString("latin1");
+    if (discarding) text = discard(text);
+    text = carry + text;
     const cut = CUT_ESCAPE.exec(text);
-    // A cut sequence is held only up to the longest escape; a longer one is
-    // dropped, so the held text stays bounded and nothing of it is published.
+    // A cut sequence is held only up to a bound; a longer one is dropped and
+    // the rest of it discarded as it arrives, so the held text stays bounded
+    // and nothing of it is published or read as text.
     carry = cut && cut[0].length <= ESCAPE_MAX ? cut[0] : "";
+    if (cut && cut[0].length > ESCAPE_MAX)
+      discarding = cut[0][1] === "]" ? "osc" : "csi";
     const whole = cut ? text.slice(0, cut.index) : text;
     return Buffer.from(stripEscapes(whole), "latin1");
   };
