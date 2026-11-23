@@ -183,8 +183,11 @@ write the plan on the repository and host's review surface. Only the first
 wave becomes tasks; give later waves one line each, so unstarted detail does
 not become stale. State a default for each choice the person left out in the plan;
 when the person approves it with such a choice unanswered, say that its stated
-default settles that choice, except a choice the person explicitly deferred or
-their replies conflict on, which waits for their explicit resolution. Request review on that surface, tell the person,
+default settles that choice, except a choice the person explicitly deferred,
+their replies conflict on, or answered in a way step 4 needed clarified (an
+invalid reply stays its own state, never an omission), which waits for their
+explicit resolution. Hold back each task that depends on such a choice and
+hand off only the independently approved work. Request review on that surface, tell the person,
 and end the turn; never poll for review. Without a configured review
 surface, present the plan in chat for explicit review and end the turn.
 
