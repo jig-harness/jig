@@ -168,6 +168,7 @@ for (const scenario of [
   "unreadable-entry",
   "unreadable-first-page",
   "deadline",
+  "null-rollup",
 ] as const) {
   it(`places a converged pull request using paginated checks (${scenario})`, async () => {
     const r = await run(
@@ -188,7 +189,7 @@ for (const scenario of [
       const placed = readiness({
         ...facts, slug: repo, converged: true, verifiedSha: facts.head, held: false,
       }, {
-        reviewerApp: "example-review", reviewerCheck: /^AI review$/, ciHoldLabel: null,
+        reviewerApp: ${JSON.stringify(scenario === "null-rollup" ? null : "example-review")}, reviewerCheck: ${scenario === "null-rollup" ? "null" : "/^AI review$/"}, ciHoldLabel: null,
       });
       console.log(JSON.stringify({ placed, partial: facts.partial, count: facts.checks.length, cost: read.value.cost }));
       `,
@@ -218,7 +219,10 @@ for (const scenario of [
       const contexts = {
         nodes: checks, pageInfo: { hasNextPage: !after || scenario === "capped", endCursor: String(after + 1) },
       };
-      const commit = { oid: after && scenario === "wrong-head" ? "b".repeat(40) : head, statusCheckRollup: { contexts } };
+      const commit = {
+        oid: after && scenario === "wrong-head" ? "b".repeat(40) : head,
+        statusCheckRollup: scenario === "null-rollup" ? null : { contexts },
+      };
       const none = { nodes: [], pageInfo: { hasNextPage: false } };
       const repository = after ? { head: commit } : {
         squashMergeAllowed: true,
@@ -234,9 +238,7 @@ for (const scenario of [
     expectSpawnExit(r, 0);
     const result = JSON.parse(r.stdout);
     const calls = r.calls.trim().split("\n");
-    expect(result.cost).toBe(
-      scenario === "deadline" ? calls.length - 1 : calls.length,
-    );
+    expect(result.cost).toBe(calls.length);
     const partialRequests = {
       capped: 4,
       "wrong-head": 2,
@@ -252,9 +254,13 @@ for (const scenario of [
       expect(result.partial).toContain("checks");
       if (scenario === "capped") expect(result.partial).toContain("4-page cap");
     } else {
-      expect(calls).toHaveLength(2);
-      expect(result).toMatchObject({ count: 140, partial: null });
-      expect(calls[1]).toContain(`head=${"a".repeat(40)}`);
+      expect(calls).toHaveLength(scenario === "null-rollup" ? 1 : 2);
+      expect(result).toMatchObject({
+        count: scenario === "null-rollup" ? 0 : 140,
+        partial: null,
+      });
+      if (scenario !== "null-rollup")
+        expect(calls[1]).toContain(`head=${"a".repeat(40)}`);
       if (scenario === "failing") {
         expect(result.placed).toMatchObject({
           lane: null,
@@ -264,7 +270,7 @@ for (const scenario of [
       } else {
         expect(result.placed).toMatchObject({
           place: "ready",
-          lane: "merge-now",
+          lane: scenario === "null-rollup" ? "approve-first" : "merge-now",
         });
       }
     }

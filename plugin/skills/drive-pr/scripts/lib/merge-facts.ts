@@ -243,7 +243,7 @@ function partialOf(
 
 /** A null rollup is a complete head with no check contexts; any other absent or malformed connection is incomplete. */
 function initialChecksIncomplete(commit: unknown, contexts: unknown): boolean {
-  if (at(commit, "statusCheckRollup") === null) return false;
+  if (at(commit, "commit", "statusCheckRollup") === null) return false;
   return (
     checkPageNodes(contexts) === null ||
     typeof at(contexts, "pageInfo", "hasNextPage") !== "boolean"
@@ -402,6 +402,9 @@ async function readCheckPage(
     "-f",
     `after=${after}`,
   ]);
+  // The forge charged a completed response even when it arrived too late for
+  // this shared read. Keep that observation before rejecting its evidence.
+  if (next.ok) addPart(read, parseAnswer(next.value, []));
   if (currentMs() >= deadline)
     return failed(
       "unreadable",
@@ -412,7 +415,6 @@ async function readCheckPage(
       "unreadable",
       `the forge did not return the next check page: ${next.failure.reason}`,
     );
-  addPart(read, parseAnswer(next.value, []));
   const head = at(next.value, "data", "repository", "head");
   if (at(head, "oid") !== facts.head || at(next.value, "errors") !== undefined)
     return failed(
