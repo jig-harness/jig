@@ -14,15 +14,62 @@
 /** The names a key carries when its value is a secret. */
 const KEY_CLASS = "[A-Za-z0-9_.-]";
 const KEY_WORDS = "token|secret|password|passwd|api[_-]?key|authorization";
-/** The longest run of name characters either side of the fragment that the text patterns read: a bounded scan, so a long word of credential-like fragments cannot make a pattern retry quadratically. */
-const KEY_SPAN = 256;
-const SECRET_KEY = `${KEY_CLASS}{0,${KEY_SPAN}}(?:${KEY_WORDS})${KEY_CLASS}{0,${KEY_SPAN}}`;
 const KEY_CHARS = new RegExp(`^${KEY_CLASS}*$`);
 const KEY_FRAGMENT = new RegExp(KEY_WORDS, "i");
 /** Whether a structured field's name identifies a credential. */
 export function isCredentialKey(key: string): boolean {
   // One pass over the allowed characters, then a plain fragment search: the single pattern backtracks over the whole name.
   return KEY_CHARS.test(key) && KEY_FRAGMENT.test(key);
+}
+
+/** What a name finder returns: the text it covers and the groups `maskValues` renders from. */
+interface NameMatch {
+  index: number;
+  0: string;
+  1: string;
+  2: string;
+}
+
+/** Finds credential-named keys followed by `=` or `:`; `maskValues` drives it like a global regular expression. */
+interface NameFinder {
+  lastIndex: number;
+  exec(text: string): NameMatch | null;
+}
+
+/**
+ * A finder that reads the text once: each maximal run of name characters is
+ * one candidate, tested with `isCredentialKey` and followed by its
+ * assignment. No name length matters and no position is scanned twice, so a
+ * long word of credential-like fragments costs one pass. A quoted finder
+ * wants the same quote either side of the name (groups: quote, name); an
+ * unquoted one wants the name alone (group: name).
+ */
+function nameFinder(quoted: boolean): NameFinder {
+  const run = /[A-Za-z0-9_.-]+/g;
+  const tail = /\s*[:=]\s*/y;
+  return {
+    lastIndex: 0,
+    exec(text) {
+      run.lastIndex = this.lastIndex;
+      for (let r = run.exec(text); r; r = run.exec(text)) {
+        if (!isCredentialKey(r[0])) continue;
+        const end = r.index + r[0].length;
+        const quote = quoted ? (text[r.index - 1] ?? "") : "";
+        if (quoted && (!/["']/.test(quote) || text[end] !== quote)) continue;
+        tail.lastIndex = quoted ? end + 1 : end;
+        if (!tail.test(text)) continue;
+        const index = quoted ? r.index - 1 : r.index;
+        this.lastIndex = tail.lastIndex;
+        return {
+          index,
+          0: text.slice(index, tail.lastIndex),
+          1: quoted ? quote : r[0],
+          2: r[0],
+        };
+      }
+      return null;
+    },
+  };
 }
 
 /** A quoted value, either quote, with its escapes. */
@@ -54,9 +101,9 @@ function bracketedEnd(text: string, start: number): number {
  */
 function maskValues(
   text: string,
-  prefix: RegExp,
+  prefix: NameFinder,
   plain: RegExp,
-  render: (m: RegExpExecArray) => string,
+  render: (m: NameMatch) => string,
   skip?: (rest: string) => boolean,
 ): string {
   const quoted = new RegExp(QUOTED, "y");
@@ -144,21 +191,16 @@ export function maskCredentials(text: string, mark: string): string {
 export function maskCredentialShapes(text: string, mark: string): string {
   const keyed = maskValues(
     text,
-    new RegExp(`(["'])(${SECRET_KEY})\\1\\s*[:=]\\s*`, "gi"),
+    nameFinder(true),
     /[^\s,}\]]+/,
     (m) => `${m[1]}${m[2]}${m[1]}: "${mark}"`,
   );
   return maskValues(
-    keyed
-      .replace(
-        /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi,
-        (_, scheme: string) => `${scheme} ${mark}`,
-      )
-      .replace(
-        new RegExp(`\\b(${SECRET_KEY})\\s*[=:]\\s*${QUOTED}`, "gi"),
-        (_, key: string) => `${key}=${mark}`,
-      ),
-    new RegExp(`\\b(${SECRET_KEY})\\s*[=:]\\s*`, "gi"),
+    keyed.replace(
+      /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi,
+      (_, scheme: string) => `${scheme} ${mark}`,
+    ),
+    nameFinder(false),
     /\S+/,
     (m) => `${m[1]}=${mark}`,
     (rest) => /^(?:<redacted>|\[(?:redacted|launch token)\])(?!\S)/.test(rest),
