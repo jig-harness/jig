@@ -36,6 +36,22 @@ How a drive reaches each state, and the evidence behind it:
 The same values, for a program in any language:
 [data/drive-exits.json](data/drive-exits.json).
 
+## When a converged pull request moves
+
+A converged pull request waits for a person to merge it. A clean merge of
+the base can carry forward the review of its unchanged contribution.
+The dispatcher holds the re-drive while required checks on the new head
+are pending. Once those checks pass, it refreshes the ledger and merge-ready
+claim for the new head, and the board pins the merge command to that head.
+The refresh runs without review rounds or commits.
+
+A changed contribution or an unreadable proof takes the ordinary stale
+re-drive path. A conflict re-drives once for the pull request head and
+base head, then goes to a person if it remains at that pair. An explicit
+rearm also starts a drive. Whenever a drive spends its round budget
+(`MAX_ROUNDS`, exit `6`), the ended row hands it to a person to investigate
+using the closing-report instruction below.
+
 ## The states and exits of `drive-status.ts` and `drive.ts`
 
 <!-- protocol:generated source=plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts#TERMINAL_STATES,DRIVE_EXIT -->

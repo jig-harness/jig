@@ -14,7 +14,9 @@
  * Merge now never rests on the drive's ledger alone. The ledger is a comment
  * any collaborator can write, so the forge must witness a review of the head:
  * the reviewer app's own check run on it, where the repository names an app,
- * else a person's approving review of that head. A pull request from outside
+ * else a person's approving review of that head. A clean base merge can
+ * carry an earlier app check once the caller independently confirms both the
+ * Git history and the app check. A pull request from outside
  * the repository needs a person's approval whatever the app says.
  *
  * The rows of the placement table are first match, and every blocker other
@@ -98,6 +100,7 @@ export interface HeadReview {
 export interface ForgeFacts {
   number: number;
   head: string;
+  base?: string;
   draft: boolean;
   /** `MERGEABLE`, `CONFLICTING` or `UNKNOWN`. */
   mergeable: string;
@@ -131,6 +134,10 @@ export interface MergeFacts extends ForgeFacts {
   converged: boolean;
   /** The head the drive verified. */
   verifiedSha: string;
+  /** Earlier app review independently confirmed against the current Git history. */
+  reviewCarriedFrom?: string;
+  /** The historical review exists, but this reader has no checkout to prove its history. */
+  reviewCarriedUnavailable?: true;
   /** A person's hold label stands the dispatcher down from it. */
   held: boolean;
 }
@@ -228,7 +235,10 @@ function latestChecks(facts: ForgeFacts, rules: ReadyRules): HeadCheck[] {
 }
 
 /** The latest attempt per reviewer check name; unread attempt order withholds the witness. */
-function reviewerRuns(facts: ForgeFacts, rules: ReadyRules): HeadCheck[] {
+function reviewerRuns(
+  facts: ForgeFacts,
+  rules: ReadyRules,
+): HeadCheck[] | null {
   const grouped = new Map<string, HeadCheck[]>();
   for (const check of facts.checks) {
     if (
@@ -242,7 +252,7 @@ function reviewerRuns(facts: ForgeFacts, rules: ReadyRules): HeadCheck[] {
   }
   const latest: HeadCheck[] = [];
   for (const attempts of grouped.values()) {
-    if (attempts.length > 1 && attempts.some((r) => r.id == null)) return [];
+    if (attempts.length > 1 && attempts.some((r) => r.id == null)) return null;
     attempts.sort((a, b) => (b.id ?? -1) - (a.id ?? -1));
     latest.push(...attempts.slice(0, 1));
   }
@@ -262,7 +272,7 @@ function approvedHere(facts: ForgeFacts): boolean {
 
 /** The witness of a review of the head: the reviewer app's check, else a person's approval. */
 function witness(
-  facts: ForgeFacts,
+  facts: MergeFacts,
   rules: ReadyRules,
 ): { met: boolean; fact: string; byApp: boolean } {
   if (rules.reviewerApp === null)
@@ -274,10 +284,25 @@ function witness(
           byApp: false,
         };
   const runs = reviewerRuns(facts, rules);
-  if (runs.length === 0)
+  if (
+    facts.reviewCarriedFrom !== undefined &&
+    facts.verifiedSha === facts.head &&
+    runs?.every((run) => run.state === "success" || run.state === "neutral")
+  )
+    return {
+      met: true,
+      fact: `the clean base merge preserved the change reviewed at ${facts.reviewCarriedFrom.slice(0, 7)}`,
+      byApp: true,
+    };
+  if (runs === null || runs.length === 0)
     return {
       met: false,
-      fact: `${rules.reviewerApp} posted no review check on this head`,
+      fact:
+        runs === null
+          ? `${rules.reviewerApp}'s review attempt order on this head could not be read`
+          : facts.reviewCarriedUnavailable
+            ? "the carried review could not be verified without a checkout"
+            : `${rules.reviewerApp} posted no review check on this head`,
       byApp: true,
     };
   const met = runs.every(

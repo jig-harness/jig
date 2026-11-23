@@ -17,7 +17,7 @@
  *   - no label of a `recommended` category.
  *
  * Given the issue's facets, the type, the size and the priority are checked
- * as the facets they are (design/tracker-facets.md in the Jig repository):
+ * as the facets they are (plugin/skills/file-issue/README.md):
  * the type a taxonomy type, the size a label of the `size` group, the
  * priority 1 (urgent) to 4 (low), each required (no size on an issue the
  * size group's `not_required_on` exempts); a type or size label among the

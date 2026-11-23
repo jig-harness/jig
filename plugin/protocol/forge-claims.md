@@ -33,7 +33,10 @@ This chapter covers these:
 - **The merge-ready announcement** (`drive-merge-ready`): a driver
   announces that one head of the pull request is converged, green, mergeable
   and clean. It stays only while that holds, and is withdrawn when it stops
-  holding.
+  holding. A dispatcher refresh can carry forward a trusted announcement
+  after proving that a clean base merge preserved the reviewed change and
+  verifying the required checks at the new head. Its claim names the new
+  head and says which head the reviewer saw.
 
 The follow-up claim, which claims a merged pull request's follow-up, is a
 forge claim too, with a chapter of its own:

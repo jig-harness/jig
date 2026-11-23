@@ -77,7 +77,11 @@ import {
   tabTitle,
 } from "./lib/arm.ts";
 import { drives } from "./lib/driver/paths.ts";
-import type { AccountVendor } from "./lib/identity.ts";
+import type { HarnessName } from "../../../shared/agent-harness/index.ts";
+import {
+  defaultHarness,
+  harnessFor,
+} from "../../../shared/agent-harness/index.ts";
 import {
   type ArmDriveMode,
   armDriveSetting,
@@ -225,7 +229,7 @@ function attempt<T>(read: () => T): T | Error {
 const PASS_FLAGS = new Set(["--pass-model", "--pass-args"]);
 
 /** The model a failed report's command is built on when the configured one could not be read. */
-function fallbackModel(vendor: AccountVendor): ArmModel {
+function fallbackModel(vendor: HarnessName): ArmModel {
   return vendor === "claude"
     ? {
         model: DEFAULT_PASS_MODEL,
@@ -250,11 +254,13 @@ async function readInputs(
   args: Args,
 ): Promise<ArmInputs | { report: ArmReport; exit: number }> {
   const tree = await workingTree();
-  const vendor = sessionVendor(process.env) ?? "claude";
+  const vendor = sessionVendor(process.env) ?? defaultHarness().name;
   const armDrive = attempt(() => setting(args.mode));
   const model = attempt(() => passModel(args.passModel, vendor));
   const passArgs = attempt(() => extraPassArgs(args.passArgs, vendor));
-  const codexBypass = attempt(() => vendor === "codex" && codexBypassSetting());
+  const codexBypass = attempt(
+    () => harnessFor(vendor).capabilities.bypassOptIn && codexBypassSetting(),
+  );
   const evidence = readableReviewer();
   const problems = [tree, armDrive, model, passArgs, codexBypass, evidence];
   const problem = problems.find((v) => v instanceof Error);
@@ -329,7 +335,7 @@ function setting(mode: ArmDriveMode | undefined): {
 }
 
 /** The pass's model: Claude Code's `--pass-model`, else `drive.pass_model`; a Codex pass's from `routing.models.codex`. */
-function passModel(flag: string | undefined, vendor: AccountVendor): ArmModel {
+function passModel(flag: string | undefined, vendor: HarnessName): ArmModel {
   if (vendor === "codex")
     return flag === undefined
       ? configuredCodexModel()
@@ -346,7 +352,7 @@ function passModel(flag: string | undefined, vendor: AccountVendor): ArmModel {
  */
 function extraPassArgs(
   flag: string | undefined,
-  vendor: AccountVendor,
+  vendor: HarnessName,
 ): PassArgs {
   if (vendor === "claude") return chosenPassArgs(flag);
   if (flag === undefined) return configuredCodexPassArgs();
@@ -452,7 +458,7 @@ async function main(): Promise<number> {
         {
           model: inputs.model,
           passArgs: inputs.passArgs,
-          vendor: sessionVendor(inputs.env) ?? "claude",
+          vendor: sessionVendor(inputs.env) ?? defaultHarness().name,
           codexBypass: inputs.codexBypass === true,
         },
         runtime,

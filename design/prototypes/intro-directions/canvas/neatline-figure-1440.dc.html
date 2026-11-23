@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Neatline figure and close, light, 1440</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#f9f6f1}
+a{color:#1a6444}a:hover{color:#005031}
+/* person's moment: a double bracket, ink (#251e18) */
+.dbr{position:relative;display:inline-block;padding:0 .4em}
+.dbr::before,.dbr::after{content:"";position:absolute;top:.16em;bottom:.02em;width:.2em;border:4px double #251e18;box-sizing:border-box}
+.dbr::before{left:0;border-right:0}
+.dbr::after{right:0;border-left:0}
+</style>
+</helmet>
+<div style="width:1440px; height:680px; box-sizing:border-box; position:relative; overflow:hidden; background:#f9f6f1; /* bg */ color:#251e18; /* ink */ font-family:'Iowan Old Style','Palatino Linotype',Palatino,'Book Antiqua','URW Palladio L',Georgia,serif;">
+
+  <!-- masthead -->
+  <header style="position:absolute; left:72px; top:0; width:1296px; height:72px; box-sizing:border-box; border-bottom:1px solid #d5d0c8; /* line */">
+    <a href="#" style="position:absolute; left:0; top:20px; display:flex; align-items:center; gap:12px; color:#251e18; text-decoration:none; height:32px;">
+      <img src="./logo.svg" width="32" height="32" alt="" style="display:block">
+      <span style="font-size:24px; line-height:32px; letter-spacing:.01em;">Jig</span>
+    </a>
+  </header>
+
+  <!-- plate: the line, step 1 frame, at the page's one engraving scale (662 wide, as on every plate) -->
+  <figure style="position:absolute; left:72px; top:120px; width:722px; height:448px; margin:0; box-sizing:border-box; background:#fffdfa; /* card */ border:1px solid #867f77; /* line-strong */">
+    <!-- neatline -->
+    <div style="position:absolute; left:28px; top:28px; width:664px; height:374px; box-sizing:border-box; border:1px solid #251e18; overflow:hidden; background:#f9f6f1;">
+      <img src="../figure/line-step1-light.svg" width="662" height="372" alt="Isometric engraving of the line: seven stations on a loop, pick up, build, open, drive, repair, merge and follow up; a person stands at merge, and the loop runs from follow up back to pick up." style="display:block; width:662px; height:372px;">
+      <!-- double bracket locating the person's merge -->
+      <div aria-hidden="true" style="position:absolute; left:400px; top:61px; width:12px; height:136px; box-sizing:border-box; border:4px double #251e18; border-right:0;"></div>
+      <div aria-hidden="true" style="position:absolute; left:483px; top:61px; width:12px; height:136px; box-sizing:border-box; border:4px double #251e18; border-left:0;"></div>
+    </div>
+    <!-- edge ticks on the neatline -->
+    <div aria-hidden="true" style="position:absolute; left:29px; top:21px; width:662px; height:6px; background:repeating-linear-gradient(to right,#867f77 0 1px,transparent 1px 41.375px);"></div>
+    <div aria-hidden="true" style="position:absolute; left:29px; top:403px; width:662px; height:6px; background:repeating-linear-gradient(to right,#867f77 0 1px,transparent 1px 41.375px);"></div>
+    <div aria-hidden="true" style="position:absolute; left:21px; top:29px; width:6px; height:372px; background:repeating-linear-gradient(to bottom,#867f77 0 1px,transparent 1px 41.333px);"></div>
+    <div aria-hidden="true" style="position:absolute; left:693px; top:29px; width:6px; height:372px; background:repeating-linear-gradient(to bottom,#867f77 0 1px,transparent 1px 41.333px);"></div>
+    <!-- the merge's reference on the right border: a doubled tick out to the plate edge -->
+    <div aria-hidden="true" style="position:absolute; left:693px; top:155px; width:27px; height:5px; box-sizing:border-box; border-top:1px solid #251e18; border-bottom:1px solid #251e18;"></div>
+    <!-- caption along the lower border -->
+    <figcaption style="position:absolute; left:28px; top:414px; width:664px; height:24px; display:flex; align-items:baseline; gap:12px; font-size:16px; line-height:24px; color:#59514a; /* muted */">
+      <span style="font-variant-numeric:lining-nums tabular-nums; letter-spacing:.04em; color:#251e18;">01</span>
+      <span style="font-style:italic;">The line</span>
+    </figcaption>
+  </figure>
+
+  <!-- leader from the merge's reference to the close -->
+  <div aria-hidden="true" style="position:absolute; left:794px; top:276px; width:82px; height:5px; box-sizing:border-box; border-top:1px solid #867f77; border-bottom:1px solid #867f77;"></div>
+
+  <!-- the close: the page's end -->
+  <section style="position:absolute; left:880px; top:238px; width:488px;">
+    <p style="margin:0; font-size:64px; line-height:80px; font-weight:400; letter-spacing:-.01em; color:#251e18;"><span class="dbr">You merge.</span></p>
+    <p style="margin:28px 0 0 0;"><a href="#" style="display:inline-block; font-size:19px; line-height:44px; color:#1a6444; /* accent */ text-decoration:underline; text-decoration-thickness:1px; text-underline-offset:5px;">Start with an audit</a></p>
+  </section>
+
+  <!-- the page's last rule -->
+  <div aria-hidden="true" style="position:absolute; left:72px; top:624px; width:1296px; height:1px; background:#d5d0c8;"></div>
+  <div aria-hidden="true" style="position:absolute; left:72px; top:618px; width:1px; height:7px; background:#867f77;"></div>
+  <div aria-hidden="true" style="position:absolute; left:1367px; top:618px; width:1px; height:7px; background:#867f77;"></div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":680}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

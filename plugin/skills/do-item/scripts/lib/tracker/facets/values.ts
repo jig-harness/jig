@@ -1,6 +1,6 @@
 /**
  * The facets' canonical values, and the maps between them and what a
- * tracker keeps (design/tracker-facets.md in the Jig repository).
+ * tracker keeps (plugin/protocol/tracker-facets.md).
  *
  * A priority is a number, 1 (urgent) to 4 (low), named `urgent`, `high`,
  * `medium` and `low` in the configuration (`PRIORITIES` in

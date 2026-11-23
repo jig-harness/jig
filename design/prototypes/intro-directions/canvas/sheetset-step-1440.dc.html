@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sheet Set: step 3, light, 1440</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#1a6444}a:hover{color:#005031}
+.ss-index a{color:#59514a;text-decoration:none}
+.ss-index a:hover{color:#251e18;text-decoration:underline}
+.ss-index a[aria-current]{color:#1a6444}
+/* scalloped revision outline around the planned clause (quiet sheet: muted #59514a) */
+.ss-cloud{position:relative; display:inline-block; padding:10px 16px;}
+.ss-cloud::before{content:""; position:absolute; inset:0; pointer-events:none; background:
+ radial-gradient(circle at 6px 6px, transparent 4.6px, #59514a 5px, #59514a 6px, transparent 6.4px) left top / 12px 6px repeat-x,
+ radial-gradient(circle at 6px 0px, transparent 4.6px, #59514a 5px, #59514a 6px, transparent 6.4px) left bottom / 12px 6px repeat-x,
+ radial-gradient(circle at 6px 6px, transparent 4.6px, #59514a 5px, #59514a 6px, transparent 6.4px) left top / 6px 12px repeat-y,
+ radial-gradient(circle at 0px 6px, transparent 4.6px, #59514a 5px, #59514a 6px, transparent 6.4px) right top / 6px 12px repeat-y;}
+</style>
+</helmet>
+<!-- light tokens: surround sunk #f0ece5 ; sheet card #fffdfa ; field bg #f9f6f1 ; ink #251e18 ; muted #59514a ; line #d5d0c8 ; line-strong #867f77 ; accent #1a6444 ; accent-soft #dbf2e4 -->
+<div style="position:relative; width:1440px; height:1500px; box-sizing:border-box; background:#f0ece5; font-family:system-ui,-apple-system,'Segoe UI',Ubuntu,Cantarell,'Noto Sans',sans-serif; color:#251e18; overflow:hidden;">
+
+ <!-- sheet list, held at the top of the viewport -->
+ <header style="position:relative; z-index:2; height:64px; box-sizing:border-box; display:flex; align-items:stretch; background:#fffdfa; border-bottom:2px solid #251e18;">
+  <div style="display:flex; align-items:center; gap:10px; padding:0 28px; border-right:1px solid #251e18;">
+   <img src="./logo.svg" width="34" height="34" alt="" style="display:block; width:34px; height:34px;">
+   <span style="font-size:20px; font-weight:800;">Jig</span>
+  </div>
+  <nav aria-label="Sheets" style="flex:1; display:flex;">
+   <ol class="ss-index" style="list-style:none; margin:0; padding:0; display:flex; flex:1; font-size:14px; font-weight:700; letter-spacing:0.12em; text-transform:uppercase;">
+    <li style="flex:1; display:flex; border-right:1px solid #d5d0c8;"><a href="#sheet-1" style="flex:1; display:flex; align-items:center; gap:14px; padding:0 24px;"><span style="font-variant-numeric:tabular-nums; letter-spacing:0.04em;">1/5</span><span>The line</span></a></li>
+    <li style="flex:1; display:flex; border-right:1px solid #d5d0c8;"><a href="#sheet-2" style="flex:1; display:flex; align-items:center; gap:14px; padding:0 24px;"><span style="font-variant-numeric:tabular-nums; letter-spacing:0.04em;">2/5</span><span>The tick</span></a></li>
+    <li style="flex:1; display:flex; border-right:1px solid #d5d0c8; background:#dbf2e4; box-shadow:inset 0 -5px 0 #251e18;"><a href="#sheet-3" aria-current="step" style="flex:1; display:flex; align-items:center; gap:14px; padding:0 24px;"><span style="font-variant-numeric:tabular-nums; letter-spacing:0.04em;">3/5</span><span>The slots</span></a></li>
+    <li style="flex:1; display:flex; border-right:1px solid #d5d0c8;"><a href="#sheet-4" style="flex:1; display:flex; align-items:center; gap:14px; padding:0 24px;"><span style="font-variant-numeric:tabular-nums; letter-spacing:0.04em;">4/5</span><span>The ledger</span></a></li>
+    <li style="flex:1; display:flex;"><a href="#sheet-5" style="flex:1; display:flex; align-items:center; gap:14px; padding:0 24px;"><span style="font-variant-numeric:tabular-nums; letter-spacing:0.04em;">5/5</span><span>The question</span></a></li>
+   </ol>
+  </nav>
+ </header>
+
+ <main style="padding:0 28px;">
+
+  <!-- SHEET 2 (neighbour, quiet): only its title block is still in view -->
+  <div style="position:relative; height:226px; overflow:hidden;">
+   <section id="sheet-2" aria-labelledby="t2" style="position:absolute; left:0; right:0; bottom:0; box-sizing:border-box; border:2px solid #867f77; border-top:0; background:#fffdfa; padding:0 7px 7px;">
+    <div style="border:1px solid #867f77; border-top:0;">
+     <div style="height:140px; background:#f9f6f1; border-bottom:1px solid #867f77;"></div>
+     <div style="display:grid; grid-template-columns:240px 1fr 380px 110px;">
+      <div style="padding:20px 22px; border-right:1px solid #867f77;">
+       <p style="margin:0; font-size:14px; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; color:#59514a;">The tick</p>
+      </div>
+      <div style="padding:18px 28px 22px; border-right:1px solid #867f77;">
+       <h2 id="t2" style="margin:0 0 10px; font-size:28px; line-height:1.2; font-weight:700; color:#59514a;">A timer wakes the dispatcher.</h2>
+       <p style="margin:0; font-size:16px; line-height:1.5; color:#59514a;">Every few minutes the dispatcher reads the tracker, the pull requests and the running sessions. Then it starts what should be running and is not.</p>
+      </div>
+      <div style="padding:18px 22px 22px; border-right:1px solid #867f77; font-size:16px; line-height:1.5; color:#59514a;">
+       <p style="margin:0 0 10px;">Machinery ships.</p>
+       <p style="margin:0;"><span class="ss-cloud">Running unattended is planned.</span></p>
+      </div>
+      <div style="display:flex; align-items:center; justify-content:center; font-size:28px; font-weight:800; font-variant-numeric:tabular-nums; color:#59514a;">2/5</div>
+     </div>
+    </div>
+   </section>
+  </div>
+
+  <!-- SHEET 3 (in view): drawing field above its own title block -->
+  <section id="sheet-3" aria-labelledby="t3" style="margin-top:28px; height:900px; box-sizing:border-box; border:2px solid #251e18; background:#fffdfa; padding:7px;">
+   <div style="height:100%; box-sizing:border-box; border:1px solid #251e18; display:flex; flex-direction:column;">
+    <div style="position:relative; flex:1; min-height:0; background:#f9f6f1; display:flex; align-items:center; justify-content:center; border-bottom:2px solid #251e18;">
+     <span style="position:absolute; top:0; left:0; padding:7px 14px; border-right:1px solid #251e18; border-bottom:1px solid #251e18; background:#fffdfa; font-size:14px; font-weight:800; letter-spacing:0.04em; font-variant-numeric:tabular-nums;">3/5</span>
+     <span aria-hidden="true" style="position:absolute; top:0; left:50%; margin-left:-7px; width:0; height:0; border-left:7px solid transparent; border-right:7px solid transparent; border-top:9px solid #251e18;"></span>
+     <span aria-hidden="true" style="position:absolute; bottom:0; left:50%; margin-left:-7px; width:0; height:0; border-left:7px solid transparent; border-right:7px solid transparent; border-bottom:9px solid #251e18;"></span>
+     <span aria-hidden="true" style="position:absolute; left:0; top:50%; margin-top:-7px; width:0; height:0; border-top:7px solid transparent; border-bottom:7px solid transparent; border-left:9px solid #251e18;"></span>
+     <span aria-hidden="true" style="position:absolute; right:0; top:50%; margin-top:-7px; width:0; height:0; border-top:7px solid transparent; border-bottom:7px solid transparent; border-right:9px solid #251e18;"></span>
+     <img src="../figure/line-step2-light.svg" width="900" height="506" alt="An isometric engraving of one account: a raised platform holding two slots, each with a session on it, and beside it the wall, which holds back a further session waiting on the track." style="display:block; width:900px; height:506px;">
+    </div>
+    <div style="display:grid; grid-template-columns:240px 1fr 110px; background:#fffdfa;">
+     <!-- first cell: the figure's caption, which is the step label -->
+     <div style="padding:22px 22px; border-right:1px solid #251e18; box-shadow:inset 5px 0 0 #1a6444;">
+      <p style="margin:0; font-size:14px; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; color:#1a6444;">The slots</p>
+     </div>
+     <div style="padding:20px 28px 24px; border-right:1px solid #251e18;">
+      <h2 id="t3" style="margin:0 0 10px; font-size:28px; line-height:1.2; font-weight:700;">Two slots per account, and the wall.</h2>
+      <p style="margin:0; font-size:16px; line-height:1.5; max-width:880px;">Each subscription account holds two sessions at once. When an account reaches its usage limit, that is the wall: the account stays out of every launch until the wall resets.</p>
+     </div>
+     <!-- narrow end cell: the sheet number -->
+     <div style="display:flex; align-items:center; justify-content:center; background:#dbf2e4; font-size:28px; font-weight:800; font-variant-numeric:tabular-nums; color:#1a6444;">3/5</div>
+    </div>
+   </div>
+  </section>
+
+  <!-- SHEET 4 (neighbour, quiet): its top edge comes into view -->
+  <section id="sheet-4" aria-label="4/5 The ledger" style="margin-top:28px; height:400px; box-sizing:border-box; border:2px solid #867f77; border-bottom:0; background:#fffdfa; padding:7px 7px 0;">
+   <div style="position:relative; height:100%; box-sizing:border-box; border:1px solid #867f77; border-bottom:0; background:#f9f6f1;">
+    <span style="position:absolute; top:0; left:0; display:flex; gap:14px; padding:7px 14px; border-right:1px solid #867f77; border-bottom:1px solid #867f77; background:#fffdfa; font-size:14px; font-weight:700; color:#59514a;"><span style="letter-spacing:0.04em; font-variant-numeric:tabular-nums; font-weight:800;">4/5</span><span style="letter-spacing:0.12em; text-transform:uppercase;">The ledger</span></span>
+    <span aria-hidden="true" style="position:absolute; top:0; left:50%; margin-left:-7px; width:0; height:0; border-left:7px solid transparent; border-right:7px solid transparent; border-top:9px solid #867f77;"></span>
+   </div>
+  </section>
+
+ </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1500}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
