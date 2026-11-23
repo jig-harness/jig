@@ -3920,7 +3920,9 @@ There is no API for it, so this skill does not pace against it. It does
 **detect** the wall after the fact, because the wall announces itself with a
 reset time: a Claude Code pass's transcript records
 `{"error":"rate_limit","apiErrorStatus":429,…}` whose text reads
-`You've hit your session limit · resets 3:20am (UTC)`, and Codex
+`You've hit your session limit · resets 3:20am (UTC)` (a short window) or
+`You've hit your weekly limit · resets Nov 27, 11am (UTC)` (a weekly window,
+with the dated reset it states), and Codex
 writes `used_percent`, `window_minutes` and an absolute `resets_at` epoch on
 every turn. `lib/quota/` reads it, one adapter per vendor, and the driver acts
 on the answer:
@@ -3966,7 +3968,12 @@ evidence immediately before the spawn:
   Claude adapter's `candidateFiles()` walks through
   `<project>/<session-id>/subagents/agent-*.jsonl`, with a directory-depth
   bound and one aggregate entry and time budget for the whole tree. The
-  snapshot and detection share that walk. Subagent records carry the parent
+  snapshot and detection share that walk. When the pass carries a session id,
+  detection also reads `<project>/<session-id>.jsonl` and its `subagents/`
+  by name, so a tree too large to walk within those bounds cannot hide the
+  pass's own wall; a pass failure whose walk was cut short before it found a
+  wall says so in the drive's closing report (cause `unknown`), since "no
+  wall found" was then not a finding. Subagent records carry the parent
   session id and use the same exact-id correlation below. Both vendors
   create a session's file when the session starts, so anything
   appearing afterwards is a session started during the pass — and, absent the
