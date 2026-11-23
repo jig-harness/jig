@@ -187,6 +187,12 @@
       "A person's answer to a need's decision that the tick acted on, claimed before the step runs so the step runs once, with how the step ended and the answer a later launch carries."
     ],
     [
+      "dispatch-need-leave",
+      "dispatch/lib/need-leaves.ts",
+      "need_leaves",
+      "A need that left the line, one row each: its target, its cause, when it left, by whom (the person who answered, a rule of the tick, the steward, or no one because its facts changed) and how. The tick writes a row when the line it writes no longer holds a need the line before held, whatever its notify stage did; rows older than a week are removed. The line's settled list, the dashboard's Settled recently and `jig ask --settled` read them."
+    ],
+    [
       "dispatch-steward-run",
       "dispatch/lib/steward.ts",
       "steward_runs",
