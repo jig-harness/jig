@@ -142,7 +142,7 @@ The contract of the command:
 - It runs with the host's environment (the 1Password session it needs is
   there), not the pass's.
 - Its standard output is the value. One trailing newline is removed. A value
-  that is empty, holds a newline or a NUL inside it, is under 8 characters or is over 4 KiB is refused.
+  that is empty, holds a newline or a null character inside it, is under 8 characters or is over 4 KiB is refused.
 - It succeeds with exit 0 within `credential_timeout` (10 seconds by
   default). A non-zero exit or an empty value is `unauthorized` for that
   account: the credential is missing, expired or refused. The account is held
