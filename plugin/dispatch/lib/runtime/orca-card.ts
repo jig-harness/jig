@@ -62,7 +62,7 @@ import {
   settledEntries,
   type Suppression,
 } from "../notice-records.ts";
-import { carries, holdsNotice } from "../notices.ts";
+import { carries, holdsNotice, workspaceLabel } from "../notices.ts";
 import { failureText } from "../text.ts";
 import { currentMs } from "../../../shared/time.ts";
 import type { NoticeCause, RepoReport, RepoTarget } from "../types.ts";
@@ -130,7 +130,10 @@ function located(
     .map((w) => w.path)
     .sort((a, b) => a.localeCompare(b));
   if (joined.length === 0) return cause;
-  const named = `${joined.length === 1 ? "Its workspace" : "Its workspaces"}: ${joined.join(", ")}`;
+  // Each path is bounded and at most a few are named, so the message stays within the comment's room.
+  const shown = joined.slice(0, 3).map((p) => workspaceLabel(p));
+  const more = joined.length > 3 ? ` and ${joined.length - 3} more` : "";
+  const named = `${joined.length === 1 ? "Its workspace" : "Its workspaces"}: ${shown.join(", ")}${more}`;
   return {
     ...cause,
     notice: { ...cause.notice, text: `${cause.notice.text}\n${named}` },

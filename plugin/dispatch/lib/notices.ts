@@ -68,7 +68,7 @@ const MAX_WORKSPACE = 1000;
 
 /** A workspace as a key names it: the path with the key line's opening broken, and a digest of the original when breaking it changed the path, so two paths stay two keys. */
 function workspaceKey(workspace: string): string {
-  const safe = unTagged(workspace);
+  const safe = unTagged(workspace).replace(/[\p{Cc}\u2028\u2029]/gu, " ");
   if (safe === workspace) return workspace;
   return `${safe} #${createHash("sha256").update(workspace).digest("hex").slice(0, 12)}`;
 }
@@ -79,7 +79,7 @@ function workspaceKey(workspace: string): string {
  * line's opening broken, marked as shortened. One bound for every message
  * that names a workspace, so no notice grows with the path.
  */
-function workspaceLabel(workspace: string): string {
+export function workspaceLabel(workspace: string): string {
   const cut =
     workspace.length > MAX_WORKSPACE
       ? `${workspace.slice(0, 100)}…${workspace.slice(workspace.length - (MAX_WORKSPACE - 101))}`
@@ -402,7 +402,7 @@ export function withUnreported(
   // What cannot fit loses its middle: its opening names the cause and the
   // question, its end carries the instruction and the link. The note says
   // so, since the question may sit in the cut part.
-  const note = `${extra} The original notice is shortened and its question may be cut; ask the line for the full question (jig ask) or read the launch's closing report.`;
+  const note = `${extra} The original notice is shortened and its question may be cut; run \`jig ask --waiting\` to list what waits on a person and find the full question, or read the launch's closing report.`;
   const left = MAX_TEXT - head.length - note.length - 3;
   const keepStart = Math.ceil(left / 2);
   const keepEnd = Math.max(0, left - keepStart);

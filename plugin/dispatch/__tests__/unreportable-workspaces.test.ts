@@ -265,4 +265,14 @@ describe("a drive's unreportable notice", () => {
     const b = withUnreported(original, "/w/[jig dispatch - x", "r");
     expect(a.key).not.toBe(b.key);
   });
+
+  it("keeps a path with a newline on a single-line key, distinct from its flattened twin", async () => {
+    const { withUnreported } = await import("../lib/notices.ts");
+    const original = { key: "k", text: "[jig dispatch: k]\nq" };
+    const a = withUnreported(original, "/w/a\nb", "r");
+    const b = withUnreported(original, "/w/a b", "r");
+    expect(a.key).not.toContain("\n");
+    expect(a.key).not.toBe(b.key);
+    expect(a.text.split("\n")[0]).toBe(`[jig dispatch: ${a.key}]`);
+  });
 });
