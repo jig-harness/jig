@@ -23,6 +23,7 @@
  * base in Ready order; every other one behind its base is in Coming,
  * updated after it.
  */
+import { confirmCarriedReview } from "../../skills/drive-pr/scripts/lib/carried-review.ts";
 import {
   type FactsRead,
   readMergeFacts,
@@ -79,6 +80,23 @@ export interface BoardCard {
   since: string;
 }
 
+function carriedBoardReview(
+  input: BoardInput,
+  drive: DrivenPr,
+  facts: ForgeFacts,
+  rules: ReadyRules,
+): Promise<{ reviewCarriedFrom?: string }> {
+  if (input.ended?.() === true) return Promise.resolve({});
+  return confirmCarriedReview(
+    input.checkout,
+    input.slug,
+    drive.evidence.reviewCarriedFrom,
+    facts.head,
+    facts.base,
+    rules,
+  );
+}
+
 /** One repository's board read. */
 export interface BoardRead {
   /** Whether the read placed its converged pull requests; `false` with `reason` when it did not. */
@@ -98,6 +116,7 @@ export interface BoardRead {
 /** What a board read is given. */
 export interface BoardInput {
   slug: string;
+  checkout?: string;
   /** The repository's configuration on its default branch. */
   values: Record<string, unknown>;
   drives: readonly DrivenPr[];
@@ -316,6 +335,7 @@ export async function readBoard(
         slug: input.slug,
         converged: true,
         verifiedSha,
+        ...(await carriedBoardReview(input, drive, facts, rules)),
         held: input.held.has(drive.number),
       },
       rules,

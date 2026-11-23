@@ -6,6 +6,8 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { registerHarness } from "../../../shared/agent-harness/index.ts";
+import { fakeHarness } from "../../../shared/__tests__/fake-harness.ts";
 import { diagLines, parseDiagText } from "../scripts/lib/claim.ts";
 import {
   effectivePass,
@@ -346,6 +348,23 @@ describe("the drives listing", () => {
     for (const model of [4, "", ["opus"]]) {
       const torn = parseDiagText(JSON.stringify({ ...diag, model }));
       expect(torn).toEqual(diag);
+    }
+  });
+});
+
+describe("withoutModel for a registered harness's compact short flag", () => {
+  it("removes -Mold and -M=old as it removes -M old", () => {
+    const off = registerHarness({ ...fakeHarness, modelFlags: ["-M"] });
+    try {
+      const prog = fakeHarness.program;
+      for (const own of [["-Mold"], ["-M=old"], ["-M", "old"]])
+        expect(withoutModel([prog, ...own, "-p", "x"])).toEqual([
+          prog,
+          "-p",
+          "x",
+        ]);
+    } finally {
+      off();
     }
   });
 });
