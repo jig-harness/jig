@@ -484,5 +484,50 @@ export function readSettled(
     for (const s of next) rows.push(...s.next());
     kept = grouped(rows.sort((a, b) => parseMs(b.at) - parseMs(a.at)));
   }
-  return kept.slice(0, SETTLED_LIMIT);
+  // A kept answer's other targets may have left before the point the paging
+  // stopped at: read every row of those answers so each entry lists them all.
+  const shown = kept.slice(0, SETTLED_LIMIT);
+  const occurrences = [
+    ...new Set(
+      shown.flatMap((e) => (e.occurrence == null ? [] : [e.occurrence])),
+    ),
+  ];
+  if (occurrences.length === 0) return shown;
+  const marks = occurrences.map(() => "?").join(", ");
+  const more = (
+    db
+      .query(
+        `SELECT value FROM need_leaves WHERE at_ms >= ? AND json_extract(value, '$.occurrence') IN (${marks})`,
+      )
+      .all(since, ...occurrences) as Array<{ value: string }>
+  ).flatMap((r) => {
+    const entry = parsed(r.value);
+    return entry === null ? [] : [entry];
+  });
+  const answered = db
+    .query(
+      `SELECT repo, target, key, digest, author, option, answer, claimed_at AS claimedAt, outcome, detail
+       FROM station_answers a
+       WHERE claimed_at >= ? AND outcome IN ('held', 'refused') AND answer IN (${marks})
+         AND NOT EXISTS (
+           SELECT 1 FROM station_answers b
+           WHERE b.repo = a.repo AND b.target = a.target AND b.key = a.key
+             AND b.digest = a.digest
+             AND b.outcome = 'done' AND b.claimed_at > a.claimed_at)`,
+    )
+    .all(isoFromMs(since), ...occurrences) as Array<
+    AnswerSeen & { repo: string; target: string }
+  >;
+  const extra = answered.flatMap((a) => {
+    const need = needs.find(
+      (n) =>
+        n.repo === a.repo &&
+        n.target === a.target &&
+        n.decisions.some((d) => answersDecision(a, d)),
+    );
+    return need === undefined ? [] : [unsettledEntry(a, need)];
+  });
+  return grouped(
+    [...rows, ...more, ...extra].sort((a, b) => parseMs(b.at) - parseMs(a.at)),
+  ).slice(0, SETTLED_LIMIT);
 }

@@ -393,6 +393,39 @@ describe("what stays visible", () => {
     expect(settled[0]?.targets.toSorted()).toEqual(["ENG-4", "ENG-5"]);
   });
 
+  it("lists every target of a kept answer, including one that left past the paged read", () => {
+    const db = stateDb(root);
+    const now = parseMs(NOW);
+    const shared = {
+      answer: "https://forge.example/comment/y",
+      occurrence: "https://forge.example/comment/y 2026-11-23T09:00:00.000Z",
+    };
+    const fillers = Array.from({ length: 450 }, (_, n) =>
+      leaveOf(
+        need({ target: `F-${n}`, item: `F-${n}` }),
+        [],
+        nothing,
+        isoFromMs(now - 60_000 - n * 1_000),
+      ),
+    );
+    insertLeaves(db, [
+      { ...leaveOf(need({ target: "ENG-8" }), [], nothing, NOW), ...shared },
+      ...fillers,
+      {
+        ...leaveOf(
+          need({ target: "ENG-9" }),
+          [],
+          nothing,
+          isoFromMs(now - 3_600_000),
+        ),
+        ...shared,
+      },
+    ]);
+    const settled = readSettled(db, now, []);
+    const entry = settled.find((s) => s.targets.includes("ENG-8"));
+    expect(entry?.targets.toSorted()).toEqual(["ENG-8", "ENG-9"]);
+  });
+
   it("keeps the window to a day, newest first, and writes one row per leave so a need that returns is two entries", () => {
     const db = stateDb(root);
     const now = parseMs(NOW);
