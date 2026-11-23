@@ -747,6 +747,15 @@ describe("the forge's facts", () => {
         },
       })?.partial,
     ).toContain("listed twice");
+    // The same two statuses with distinct node identities stay whole.
+    expect(
+      pull({
+        contexts: {
+          nodes: [sc, { ...sc, id: "SC_other", context: "other" }],
+          pageInfo: { hasNextPage: false },
+        },
+      })?.partial,
+    ).toBeNull();
     // Distinct node identities with distinct run ids stay whole, as do two
     // attempts with one name and app.
     expect(
@@ -868,6 +877,8 @@ describe("required checks and reviewer attempts", () => {
       );
       const r = readiness(f, RULES);
       expect(r.place).toBe("stay");
+      expect(r.lane).not.toBe("merge-now");
+      expect(r.lane).not.toBe("approve-first");
       expect(r.waitsOn.kind).toBe("waiting");
       // The same facts with the check green are not held back.
       f.checks = f.checks.map((c) =>
@@ -902,9 +913,9 @@ describe("required checks and reviewer attempts", () => {
           startedAt: "2026-11-08T10:00:00Z",
         },
       ];
-      expect(f.checks.some((c) => c.state === "pending" && !c.required)).toBe(
-        true,
-      );
+      const lint = f.checks.find((c) => c.name === "lint");
+      expect([lint?.state, lint?.required]).toEqual(["pending", false]);
+      expect(f.checks.filter((c) => c.state === "pending")).toHaveLength(1);
       expect(readiness(f, RULES).lane).toBe("approve-first");
     },
   );
@@ -971,6 +982,11 @@ it("judges a required reviewer check by its latest attempt only", () => {
     "needs-you",
     { kind: "person", act: "re-arm" },
   ]);
+  const witnessed = pending.conditions.find(
+    (c) => c.name === "review witnessed",
+  );
+  expect(witnessed?.met).not.toBe(true);
+  expect(witnessed?.fact).toMatch(/pending|running|attempt/i);
 });
 
 it("does not let an optional failing check borrow a failed reviewer attempt's required flag", () => {
@@ -988,7 +1004,9 @@ it("does not let an optional failing check borrow a failed reviewer attempt's re
       startedAt: "2026-11-08T10:00:00Z",
     },
   ];
-  expect(readiness(f, RULES).lane).toBe("merge-now");
+  const optional = readiness(f, RULES);
+  expect(optional.lane).toBe("merge-now");
+  expect(optional.failing).toEqual([base.name]);
   // The same ordinary failure, once required, stops a stale CLEAN state.
   f.checks = f.checks.map((c) =>
     c.app === "github-actions" ? { ...c, required: true } : c,
@@ -998,6 +1016,7 @@ it("does not let an optional failing check borrow a failed reviewer attempt's re
     "needs-you",
     { kind: "person", act: "re-run-check" },
   ]);
+  expect(required.failing).toEqual([base.name]);
 });
 
 it("keeps a clean review-required merge in merge-now while an optional check is pending", () => {
