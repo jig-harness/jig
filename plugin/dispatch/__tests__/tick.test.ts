@@ -161,7 +161,7 @@ describe("jig dispatch reports what it would start", () => {
       "workspace /ws/0 has 1 terminal(s) whose agents the runtime cannot report",
     );
     expect(need?.notice?.key).toContain(
-      "PR #7 workspace unreportable, ledger generation 3",
+      "PR #7 workspace /ws/0 unreportable, ledger generation 3",
     );
     expect(need?.notice?.text).toContain("Close the terminals in /ws/0");
   });

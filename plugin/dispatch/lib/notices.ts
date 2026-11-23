@@ -331,7 +331,7 @@ export function unreportedNotice(
 ): Notice {
   return {
     ...notice(
-      `${slug} PR #${pr.number} workspace unreportable, ledger generation ${generation(pr)}`,
+      `${slug} PR #${pr.number} workspace ${workspace} unreportable, ledger generation ${generation(pr)}`,
       [
         `PR #${pr.number} (${pr.title}): the dispatcher would act on it (${wanted}), but ${reason}, so it cannot tell whether a session still works on it and starts nothing.`,
         `Close the terminals in ${workspace} that run no agent, and the next tick acts on it; or run \`/jig:drive-pr ${pr.number}\` there yourself, or stop it.`,
@@ -339,6 +339,28 @@ export function unreportedNotice(
       ],
     ),
     ...driveFields(slug, pr, [`/jig:drive-pr ${pr.number}`]),
+  };
+}
+
+/**
+ * A stopped-pickup need carrying that a terminal the runtime cannot report
+ * sits in a workspace joined to the item: its text says an agent may already
+ * work there, and its key names the workspace so a change of workspace is
+ * delivered again.
+ */
+export function withUnreported(
+  n: Notice,
+  workspace: string,
+  reason: string,
+): Notice {
+  const key = boundedKey(`${n.key} unreportable in ${workspace}`);
+  const extra = unTagged(
+    `Note: ${reason}, so an agent may already work in ${workspace}; check it before picking the item up again.`,
+  );
+  return {
+    ...n,
+    key,
+    text: `${n.text.replace(keyLine(n.key), keyLine(key))}\n${extra}`,
   };
 }
 

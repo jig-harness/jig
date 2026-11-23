@@ -76,7 +76,7 @@ import {
 import { type Holding, holding, liveAgents } from "./holding.ts";
 import type { ReadRecord } from "./launches.ts";
 import { type Carriage, readCarriage } from "./carried-pr.ts";
-import { pickupNotice } from "./notices.ts";
+import { pickupNotice, withUnreported } from "./notices.ts";
 import { planWaiting } from "./plan-pickup-waiting.ts";
 import { testLockNote } from "./test-lock-waits.ts";
 import { unwrittenResult } from "./session-startup.ts";
@@ -308,9 +308,18 @@ function planWanted(
   }
   const before = plan.actions.length;
   planStopped(input, item, hold, plan);
-  if (held.kind === "unknown")
-    for (const need of plan.actions.slice(before))
-      need.evidence = { ...need.evidence, unreportedSessions: held.reason };
+  if (held.kind === "unknown" && held.workspace !== undefined) {
+    const { workspace, reason } = held;
+    for (const [i, need] of plan.actions.slice(before).entries())
+      plan.actions[before + i] = {
+        ...need,
+        reason: `${need.reason}; but ${reason}, so an agent may already work there`,
+        evidence: { ...need.evidence, unreportedSessions: reason },
+        ...(need.notice === undefined
+          ? {}
+          : { notice: withUnreported(need.notice, workspace, reason) }),
+      };
+  }
 }
 
 /** An item nothing holds: picked up, unless its host-fault hold says to wait or it has no priority to rank it by. */

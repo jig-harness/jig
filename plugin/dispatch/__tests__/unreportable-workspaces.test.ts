@@ -132,6 +132,18 @@ describe("a pickup whose workspace the runtime cannot vouch for", () => {
     expect(result.actions[0]?.evidence.unreportedSessions).toBe(REASON);
   });
 
+  it("tells the person the terminal may hold an agent, in the notice and the reason", () => {
+    const result = plan(
+      [endedPickup("#7")],
+      [workspace({ unverifiableTerminals: 1 })],
+    );
+    const need = result.actions[0];
+    expect(need?.reason).toContain(REASON);
+    expect(need?.notice?.text).toContain(REASON);
+    expect(need?.notice?.text).toContain("/work/w-7");
+    expect(need?.notice?.key).toContain("/work/w-7");
+  });
+
   it("starts no fresh pickup, and says why", () => {
     const result = plan([], [workspace({ unverifiableTerminals: 1 })]);
     expect(result.actions).toEqual([]);
@@ -150,5 +162,15 @@ describe("a pickup whose workspace the runtime cannot vouch for", () => {
     expect(result.unplaced).toEqual([
       { target: "#7", record: "runtime", reason: "the runtime did not answer" },
     ]);
+  });
+});
+
+describe("a drive's unreportable notice", () => {
+  it("is keyed by the workspace, so a second workspace is told again", async () => {
+    const { unreportedNotice } = await import("../lib/notices.ts");
+    const pr = { number: 5, title: "t", url: "u", evidence: {} } as never;
+    const a = unreportedNotice("s", pr, "re-arm", "/work/a", "r");
+    const b = unreportedNotice("s", pr, "re-arm", "/work/b", "r");
+    expect(a.key).not.toBe(b.key);
   });
 });
