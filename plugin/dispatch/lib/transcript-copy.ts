@@ -207,8 +207,10 @@ function holdsAfterUnescaping(
     if (next === layer) return false;
     layer = next;
   }
-  // Escaped deeper than is looked into counts as holding a secret, unless only a run of literal backslashes is left, which holds no encoding to look into.
-  return /\\[u"/bfnrt]/.test(layer);
+  // Escaped deeper than is looked into counts as holding a secret, unless nothing but literal backslashes is left: such a run holds no encoding and no secret to look into.
+  return (
+    secrets.some((secret) => layer.includes(secret)) || !/^\\+$/.test(layer)
+  );
 }
 
 /** The deepest structural nesting of arrays and objects that is walked; anything deeper counts as holding a secret. */

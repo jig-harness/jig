@@ -332,6 +332,9 @@ describe("keeping a run's transcript copy", () => {
     const config = join(root, "config");
     const secret = 'ab"cd\\ef-credential';
     const safe = { type: "assistant", message: "kept-evidence" };
+    // Nine encodings: the secret shows only in the layer after the last decode.
+    let layered = secret;
+    for (let i = 0; i < 9; i++) layered = JSON.stringify(layered).slice(1, -1);
     let deep: unknown = "x";
     for (let i = 0; i < 3000; i++) deep = [deep];
     claudeTranscript(config, [
@@ -347,6 +350,7 @@ describe("keeping a run's transcript copy", () => {
       },
       { deep },
       { out: "\\".repeat(512) },
+      { out: `layered ${layered} end` },
       { type: "jig-omitted", marker: "source-marker-xyz" },
     ]);
     holdCredential(ID, secret);
@@ -363,6 +367,7 @@ describe("keeping a run's transcript copy", () => {
       expect(text).not.toContain("opaque value");
       expect(text).not.toContain("ef-credential");
       expect(text).not.toContain("note ");
+      expect(text).not.toContain("layered");
       expect(text).toContain("9007199254740993");
       expect(text).not.toContain("source-marker-xyz");
       expect(text).not.toContain("trailing");
