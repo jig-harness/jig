@@ -23,11 +23,43 @@
  * bundles it, and `jig ask --waiting` names each need's group with the same
  * identity (`questionGroupId`).
  */
-import type {
-  LineDecision,
-  LineNeed,
-} from "../dispatch/lib/dashboard-contract.ts";
-import { actOfLineNeed } from "./acts.ts";
+import { actOfLineNeed, type NeedAct } from "./acts.ts";
+
+/** An option of a decision, as the key compares it (`LineOption` on the dispatcher's line). */
+interface GroupedOption {
+  name: string;
+  changes: string | null;
+  costs: string | null;
+  recommended: boolean;
+  details?: ReadonlyArray<{ label: string; text: string }>;
+}
+
+/** A need's decision, as the key compares it (`LineDecision` on the dispatcher's line). */
+interface GroupedDecision {
+  kind: string;
+  decisionClass: string | null;
+  question: string | null;
+  recommendation: string | null;
+  decision?: { interplay?: ReadonlyArray<{ text: string }> };
+  answer?: { station: string; on: string; framedBy: string };
+  options?: readonly GroupedOption[];
+  steps?: readonly string[];
+  answers?: readonly unknown[];
+  answerState?: string;
+  unread?: string;
+  acted?: { outcome: string | null };
+}
+
+/** A need on the dispatcher's line (`LineNeed`), as far as its group depends on it. */
+export interface GroupedNeed {
+  act?: NeedAct;
+  cause: string;
+  target: string;
+  item: string | null;
+  pr: number | null;
+  stuckRecord?: string | null;
+  decisions: readonly GroupedDecision[];
+}
 
 /** What stands in for the need's own target in the text the key compares. */
 const TARGET = "\u0000target\u0000";
@@ -38,7 +70,7 @@ function escaped(text: string): string {
 
 /** The forms of a need's own target identifier: its target, its item, and its pull request as `PR #n`, longest first. */
 function ownIdentifiers(
-  need: Pick<LineNeed, "target" | "item" | "pr">,
+  need: Pick<GroupedNeed, "target" | "item" | "pr">,
 ): string[] {
   const ids = [
     need.target,
@@ -55,7 +87,7 @@ function ownIdentifiers(
  */
 export function replaceOwnTarget(
   text: string,
-  need: Pick<LineNeed, "target" | "item" | "pr">,
+  need: Pick<GroupedNeed, "target" | "item" | "pr">,
   by: string,
 ): string {
   let out = text;
@@ -68,7 +100,7 @@ export function replaceOwnTarget(
 }
 
 /** Whether a person has more to read on the decision than its question. */
-function standsAlone(d: LineDecision): boolean {
+function standsAlone(d: GroupedDecision): boolean {
   return (
     (d.options ?? []).length === 0 ||
     (d.answers ?? []).length > 0 ||
@@ -79,7 +111,7 @@ function standsAlone(d: LineDecision): boolean {
 }
 
 /** One decision as the key compares it. */
-function decisionKey(d: LineDecision, own: (text: string) => string) {
+function decisionKey(d: GroupedDecision, own: (text: string) => string) {
   const or = (text: string | null) => (text === null ? null : own(text));
   return {
     kind: d.kind,
@@ -104,7 +136,7 @@ function decisionKey(d: LineDecision, own: (text: string) => string) {
 }
 
 /** What two needs of one group share, as text; `null` for a need that is always a card of its own. */
-export function questionGroupKey(need: LineNeed): string | null {
+export function questionGroupKey(need: GroupedNeed): string | null {
   if (need.decisions.length === 0 || need.decisions.some(standsAlone))
     return null;
   const own = (text: string) => replaceOwnTarget(text, need, TARGET);
@@ -137,7 +169,7 @@ function hash53(text: string, seed: number): string {
  * line: `q-` and a digest of its key. `null` for a need that is always a
  * card of its own. A group of one is an ordinary card.
  */
-export function questionGroupId(need: LineNeed): string | null {
+export function questionGroupId(need: GroupedNeed): string | null {
   const key = questionGroupKey(need);
   return key === null ? null : `q-${hash53(key, 1)}${hash53(key, 2)}`;
 }
@@ -147,7 +179,9 @@ export function questionGroupId(need: LineNeed): string | null {
  * group's needs in their order in `needs`. A need that never groups is a
  * group of its own.
  */
-export function questionGroups<T extends LineNeed>(needs: readonly T[]): T[][] {
+export function questionGroups<T extends GroupedNeed>(
+  needs: readonly T[],
+): T[][] {
   const groups: T[][] = [];
   const byKey = new Map<string, T[]>();
   for (const need of needs) {
