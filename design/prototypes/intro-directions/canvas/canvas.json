@@ -1,0 +1,215 @@
+{
+  "v": 3,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-11-20T13:32:30Z"
+  },
+  "title": "Jig intro: four directions",
+  "launch": {
+    "view": "canvas"
+  },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 300,
+      "w": 1440,
+      "h": 700,
+      "title": "Read me first"
+    },
+    "neatline-hero-1440.dc.html": {
+      "x": 0,
+      "y": 1360,
+      "w": 1440,
+      "h": 900,
+      "title": "Neatline \u00b7 Hero \u00b7 light \u00b7 1440"
+    },
+    "neatline-hero-390.dc.html": {
+      "x": 1520,
+      "y": 1360,
+      "w": 390,
+      "h": 844,
+      "title": "Neatline \u00b7 Hero \u00b7 dark \u00b7 390"
+    },
+    "neatline-step-1440.dc.html": {
+      "x": 2000,
+      "y": 1360,
+      "w": 1440,
+      "h": 1180,
+      "title": "Neatline \u00b7 Step 3 \u00b7 light \u00b7 1440"
+    },
+    "neatline-step-390.dc.html": {
+      "x": 3520,
+      "y": 1360,
+      "w": 390,
+      "h": 1600,
+      "title": "Neatline \u00b7 Step 3 \u00b7 dark \u00b7 390"
+    },
+    "neatline-figure-1440.dc.html": {
+      "x": 4000,
+      "y": 1360,
+      "w": 1440,
+      "h": 680,
+      "title": "Neatline \u00b7 Figure and close \u00b7 light \u00b7 1440"
+    },
+    "sheetset-hero-1440.dc.html": {
+      "x": 0,
+      "y": 3320,
+      "w": 1440,
+      "h": 900,
+      "title": "Sheet Set \u00b7 Hero \u00b7 light \u00b7 1440"
+    },
+    "sheetset-hero-390.dc.html": {
+      "x": 1520,
+      "y": 3320,
+      "w": 390,
+      "h": 844,
+      "title": "Sheet Set \u00b7 Hero \u00b7 dark \u00b7 390"
+    },
+    "sheetset-step-1440.dc.html": {
+      "x": 2000,
+      "y": 3320,
+      "w": 1440,
+      "h": 1500,
+      "title": "Sheet Set \u00b7 Step 3 \u00b7 light \u00b7 1440"
+    },
+    "sheetset-step-390.dc.html": {
+      "x": 3520,
+      "y": 3320,
+      "w": 390,
+      "h": 1534,
+      "title": "Sheet Set \u00b7 Step 3 \u00b7 dark \u00b7 390"
+    },
+    "sheetset-figure-1440.dc.html": {
+      "x": 4000,
+      "y": 3320,
+      "w": 1440,
+      "h": 880,
+      "title": "Sheet Set \u00b7 Figure and close \u00b7 light \u00b7 1440"
+    },
+    "stripboard-hero-1440.dc.html": {
+      "x": 0,
+      "y": 5214,
+      "w": 1440,
+      "h": 900,
+      "title": "Strip board \u00b7 Hero \u00b7 light \u00b7 1440"
+    },
+    "stripboard-hero-390.dc.html": {
+      "x": 1520,
+      "y": 5214,
+      "w": 390,
+      "h": 844,
+      "title": "Strip board \u00b7 Hero \u00b7 dark \u00b7 390"
+    },
+    "stripboard-step-1440.dc.html": {
+      "x": 2000,
+      "y": 5214,
+      "w": 1440,
+      "h": 980,
+      "title": "Strip board \u00b7 Step 3 \u00b7 light \u00b7 1440"
+    },
+    "stripboard-step-390.dc.html": {
+      "x": 3520,
+      "y": 5214,
+      "w": 390,
+      "h": 1600,
+      "title": "Strip board \u00b7 Step 3 \u00b7 dark \u00b7 390"
+    },
+    "stripboard-figure-1440.dc.html": {
+      "x": 4000,
+      "y": 5214,
+      "w": 1440,
+      "h": 760,
+      "title": "Strip board \u00b7 Figure and close \u00b7 light \u00b7 1440"
+    },
+    "broadside-hero-1440.dc.html": {
+      "x": 0,
+      "y": 7174,
+      "w": 1440,
+      "h": 900,
+      "title": "Broadside \u00b7 Hero \u00b7 light \u00b7 1440"
+    },
+    "broadside-hero-390.dc.html": {
+      "x": 1520,
+      "y": 7174,
+      "w": 390,
+      "h": 844,
+      "title": "Broadside \u00b7 Hero \u00b7 dark \u00b7 390"
+    },
+    "broadside-step-1440.dc.html": {
+      "x": 2000,
+      "y": 7174,
+      "w": 1440,
+      "h": 1320,
+      "title": "Broadside \u00b7 Step 3 \u00b7 light \u00b7 1440"
+    },
+    "broadside-step-390.dc.html": {
+      "x": 3520,
+      "y": 7174,
+      "w": 390,
+      "h": 1700,
+      "title": "Broadside \u00b7 Step 3 \u00b7 dark \u00b7 390"
+    },
+    "broadside-figure-1440.dc.html": {
+      "x": 4000,
+      "y": 7174,
+      "w": 1440,
+      "h": 900,
+      "title": "Broadside \u00b7 Figure and close \u00b7 light \u00b7 1440"
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "neatline-hero-1440.dc.html",
+    "neatline-hero-390.dc.html",
+    "neatline-step-1440.dc.html",
+    "neatline-step-390.dc.html",
+    "neatline-figure-1440.dc.html",
+    "sheetset-hero-1440.dc.html",
+    "sheetset-hero-390.dc.html",
+    "sheetset-step-1440.dc.html",
+    "sheetset-step-390.dc.html",
+    "sheetset-figure-1440.dc.html",
+    "stripboard-hero-1440.dc.html",
+    "stripboard-hero-390.dc.html",
+    "stripboard-step-1440.dc.html",
+    "stripboard-step-390.dc.html",
+    "stripboard-figure-1440.dc.html",
+    "broadside-hero-1440.dc.html",
+    "broadside-hero-390.dc.html",
+    "broadside-step-1440.dc.html",
+    "broadside-step-390.dc.html",
+    "broadside-figure-1440.dc.html"
+  ],
+  "notes": {
+    "t-neatline": {
+      "x": 0,
+      "y": 1100,
+      "text": "A \u00b7 Neatline (Astra): a sticky plate, a scrolling legend",
+      "kind": "title1",
+      "maxW": 5440
+    },
+    "t-sheetset": {
+      "x": 0,
+      "y": 3060,
+      "text": "B \u00b7 Sheet Set (Astra): a full sheet and title block per step",
+      "kind": "title1",
+      "maxW": 5440
+    },
+    "t-stripboard": {
+      "x": 0,
+      "y": 4954,
+      "text": "C \u00b7 Strip board (Claude): five strips on a rail, read across",
+      "kind": "title1",
+      "maxW": 5440
+    },
+    "t-broadside": {
+      "x": 0,
+      "y": 6914,
+      "text": "D \u00b7 Broadside (Claude): poster serif, numbered catalogue entries",
+      "kind": "title1",
+      "maxW": 5440
+    }
+  },
+  "designSystems": []
+}
