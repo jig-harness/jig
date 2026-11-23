@@ -404,6 +404,18 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.304.5] - 2026-11-23
+
+### Fixed
+
+- Merge-readiness facts preserve a final fractional-second budget, reject malformed first check pages, and retain continuation-query diagnostics. **Consumer action:** none.
+- Merge-readiness facts keep a pull request out of the Ready lane when a null check rollup is not tied to its current head commit. **Consumer action:** none.
+- The Ready board, merge-ready announcement and `jig ask` read additional
+  pages of checks on the verified pull request head. A pull request with
+  more than 100 checks can reach the merge lane once all required checks
+  pass. The shared reader leaves the pull request partial if it cannot
+  read the full connection within four pages or its deadline.
+
 ## [0.304.4] - 2026-11-23
 
 ### Fixed
@@ -10829,7 +10841,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.304.4...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.304.5...HEAD
+[0.304.5]: https://github.com/jig-harness/jig/compare/v0.304.4...v0.304.5
 [0.304.4]: https://github.com/jig-harness/jig/compare/v0.304.3...v0.304.4
 [0.304.3]: https://github.com/jig-harness/jig/compare/v0.304.2...v0.304.3
 [0.304.2]: https://github.com/jig-harness/jig/compare/v0.304.1...v0.304.2
