@@ -340,8 +340,10 @@ describe("keeping a run's transcript copy", () => {
       { out: JSON.stringify(JSON.stringify({ a: secret })) },
       { out: JSON.stringify({ password: "opaque value x" }) },
       { out: '{"big":9007199254740993}' },
+      { out: `\`\`\`json\n${JSON.stringify({ a: secret })}\n\`\`\`\ntrailing` },
+      { [JSON.stringify({ a: secret })]: 1 },
       { deep },
-      { type: "jig-omitted" },
+      { type: "jig-omitted", marker: "source-marker-xyz" },
     ]);
     holdCredential(ID, secret);
     try {
@@ -357,6 +359,8 @@ describe("keeping a run's transcript copy", () => {
       expect(text).not.toContain("opaque value");
       expect(text).not.toContain("ef-credential");
       expect(text).toContain("9007199254740993");
+      expect(text).not.toContain("source-marker-xyz");
+      expect(text).not.toContain("trailing");
       expect(
         text.split("\n").filter((l) => l.includes("jig-omitted")).length,
       ).toBeGreaterThan(0);

@@ -166,11 +166,25 @@ function embeddedJson(text: string): unknown {
   try {
     return JSON.parse(text.slice(start));
   } catch {
-    // Only a fixed diagnostic: the parser's own message can quote the text.
-    swallow(new SyntaxError("not JSON"), "a string that is not JSON is text");
+    // Text that is not JSON is the ordinary case; the parser's message can quote the text, so nothing of it is kept or logged.
     return undefined;
   }
 }
+
+/** The forms a secret takes when JSON escaping is applied to it up to `LOOK_DEPTH` times: a string that encodes JSON, however it is wrapped, holds one of them. */
+function escapedForms(secret: string): string[] {
+  const forms = [secret];
+  let form = secret;
+  for (let i = 0; i < LOOK_DEPTH; i++) {
+    form = JSON.stringify(form).slice(1, -1);
+    if (form === forms[forms.length - 1]) break;
+    forms.push(form);
+  }
+  return forms;
+}
+
+/** The deepest structural nesting of arrays and objects that is walked; anything deeper counts as holding a secret. */
+const NEST_LIMIT = 64;
 
 /** Whether `value`, or any JSON a string in it encodes at any depth, still holds a secret or a credential field that is not masked. Nothing is rewritten: a hit leaves the whole line out, so no number or property name is ever re-encoded. */
 function leaksDecoded(
@@ -178,27 +192,36 @@ function leaksDecoded(
   secrets: readonly string[],
   depth: number,
   decoded: boolean,
+  nest = 0,
 ): boolean {
-  if (depth > LOOK_DEPTH) return true;
+  if (depth > LOOK_DEPTH || nest > NEST_LIMIT) return true;
   if (typeof value === "string") {
-    if (secrets.some((secret) => value.includes(secret))) return true;
+    // A fenced block, a header or trailing text around encoded JSON does not parse, so every escaped form of a secret is looked for in the text itself.
+    if (
+      secrets.some((secret) =>
+        escapedForms(secret).some((f) => value.includes(f)),
+      )
+    )
+      return true;
     const inner = embeddedJson(value);
     return inner !== undefined && leaksDecoded(inner, secrets, depth + 1, true);
   }
   if (typeof value === "number")
     return secrets.some((secret) => String(value).includes(secret));
   if (Array.isArray(value))
-    return value.some((item) => leaksDecoded(item, secrets, depth, decoded));
+    return value.some((item) =>
+      leaksDecoded(item, secrets, depth, decoded, nest + 1),
+    );
   if (value !== null && typeof value === "object")
     return Object.entries(value).some(
       ([key, field]) =>
-        secrets.some((secret) => key.includes(secret)) ||
+        leaksDecoded(key, secrets, depth, decoded, nest + 1) ||
         (decoded &&
           isCredentialKey(key) &&
           field !== "<redacted>" &&
           field !== "" &&
           field !== null) ||
-        leaksDecoded(field, secrets, depth, decoded),
+        leaksDecoded(field, secrets, depth, decoded, nest + 1),
     );
   return false;
 }
@@ -364,7 +387,7 @@ export function keepTranscriptCopy(
       const surviving = text
         .split("\n")
         .filter((l) => l !== "" && l !== OMITTED_LINE).length;
-      if (surviving === 0 && (redacted.omitted > 0 || dropped))
+      if (surviving === 0 && (longer || redacted.omitted > 0 || dropped))
         copy = {
           ...copy,
           missing: "no line of the transcript could be kept safely",
