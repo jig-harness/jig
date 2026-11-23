@@ -67,12 +67,21 @@ export function registerWallReader(
   };
 }
 
-/** The adapters of every registered harness's wall reader. */
-function adapters(): QuotaAdapter[] {
+/** The registered wall reader under `key`, or `undefined`. */
+export function wallReaderFor(key: string): QuotaAdapter | undefined {
+  return READERS.get(key);
+}
+
+/**
+ * The adapters of every registered harness's wall reader, with the key each
+ * is registered under. With `only`, just the reader registered under that key.
+ */
+function adapters(only?: string): QuotaAdapter[] {
   const found: QuotaAdapter[] = [];
   for (const harness of harnesses()) {
-    const adapter =
-      harness.wallReader === null ? undefined : READERS.get(harness.wallReader);
+    const key = harness.wallReader;
+    if (key === null || (only !== undefined && key !== only)) continue;
+    const adapter = READERS.get(key);
     if (adapter !== undefined && !found.includes(adapter)) found.push(adapter);
   }
   return found;
@@ -144,8 +153,7 @@ export function detectQuotaBlock(
   only?: string,
 ): QuotaBlock | null {
   let best: QuotaBlock | null = null;
-  for (const adapter of adapters()) {
-    if (only !== undefined && adapter.vendor !== only) continue;
+  for (const adapter of adapters(only)) {
     const truncated =
       truncatedByVendor?.get(adapter.vendor) ??
       opts.preexistingSessionsTruncated;

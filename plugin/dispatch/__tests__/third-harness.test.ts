@@ -32,7 +32,10 @@ import {
   processSettings,
 } from "../lib/runtime/process-environment.ts";
 import { effectivePass } from "../../skills/drive-pr/scripts/lib/pass-model.ts";
-import { registerWallReader } from "../../skills/drive-pr/scripts/lib/quota/index.ts";
+import {
+  registerWallReader,
+  wallReaderFor,
+} from "../../skills/drive-pr/scripts/lib/quota/index.ts";
 import {
   followupPassArgv,
   pickupPassArgv,
@@ -189,6 +192,14 @@ describe("a harness registered only here", () => {
     const adapter = { vendor: "fake-reader" } as never;
     const remove = registerWallReader("fake-reader", adapter);
     expect(typeof remove).toBe("function");
+    remove();
+  });
+
+  it("finds a wall reader by its registered key, not its vendor", () => {
+    const adapter = { vendor: "provider-x" } as never;
+    const remove = registerWallReader("reader-x", adapter);
+    expect(wallReaderFor("reader-x")).toBe(adapter);
+    expect(wallReaderFor("provider-x")).toBeUndefined();
     remove();
   });
 });

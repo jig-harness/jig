@@ -10,8 +10,14 @@
  * wall: a session that went on after the wall (a person typed, the agent
  * resumed) is no longer waiting on it, and gets no nudge.
  */
-import { detectQuotaBlock } from "../../skills/drive-pr/scripts/lib/quota/index.ts";
-import { readBoundedTail } from "../../skills/drive-pr/scripts/lib/quota/types.ts";
+import {
+  detectQuotaBlock,
+  wallReaderFor,
+} from "../../skills/drive-pr/scripts/lib/quota/index.ts";
+import {
+  type QuotaBlock,
+  readBoundedTail,
+} from "../../skills/drive-pr/scripts/lib/quota/types.ts";
 import {
   defaultHarness,
   type HarnessName,
@@ -67,6 +73,24 @@ function isWall(
   );
 }
 
+/** Whether the session's last record is still `block`: the reader's own answer when it gives one, else Claude Code's record shape. */
+function stillWall(
+  reader: string,
+  block: QuotaBlock,
+  sessionId: string,
+): boolean {
+  const own = wallReaderFor(reader)?.isStillWall;
+  if (own !== undefined) {
+    try {
+      return own(block, sessionId);
+    } catch (error) {
+      swallow(error, `${reader}'s last-record check threw`);
+      return false;
+    }
+  }
+  return isWall(lastRecord(block.source), block.observedAt, sessionId);
+}
+
 /** The wall the session `sessionId` met in `cwd` since `since`, if any. */
 function probeWall(
   sessionId: string,
@@ -92,7 +116,7 @@ function probeWall(
     resetAt: block.resetAt === null ? null : isoOf(block.resetAt),
     window: block.window,
     evidence: block.evidence,
-    last: isWall(lastRecord(block.source), block.observedAt, sessionId),
+    last: stillWall(reader, block, sessionId),
   };
 }
 
