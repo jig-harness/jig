@@ -212,6 +212,19 @@ function fullyDecoded(text: string): string {
   return layer;
 }
 
+/** The one traversal both secret checks share: `hit` is asked of the text and of each layer as its JSON escapes are decoded, up to `LOOK_DEPTH` decodes. Where the last layer still holds a decodable escape (unless nothing but literal backslashes is left) the text counts as holding a secret, one policy for every check. */
+function walkLayers(text: string, hit: (layer: string) => boolean): boolean {
+  let layer = text;
+  for (let i = 0; i <= LOOK_DEPTH; i++) {
+    if (hit(layer)) return true;
+    const next = decodeOnce(layer);
+    if (next === layer) return false;
+    layer = next;
+  }
+  // One decode past the bound: that result is searched too, and counts as holding a secret only while a decodable escape is left.
+  return hit(layer) || (DECODABLE_ESCAPE.test(layer) && !/^\\+$/.test(layer));
+}
+
 /** Whether `text`, with JSON escapes of any spelling decoded up to `LOOK_DEPTH` times, holds one of `secrets`: wrapped JSON that does not parse as a whole is still looked into. */
 function holdsAfterUnescaping(
   text: string,
@@ -219,41 +232,49 @@ function holdsAfterUnescaping(
 ): boolean {
   // A canonically escaped credential is found at any offset, whatever surrounds it and however the surrounding backslashes would pair when decoding.
   if (secrets.some((secret) => text.includes(escapedForm(secret)))) return true;
-  let layer = text;
-  for (let i = 0; i <= LOOK_DEPTH; i++) {
-    if (secrets.some((secret) => layer.includes(secret))) return true;
-    if (!layer.includes("\\")) return false;
-    const next = decodeOnce(layer);
-    if (next === layer) return false;
-    layer = next;
-  }
-  // Decoded as deep as is looked into: the last layer is searched for each secret, and counts as holding one only while it still holds a decodable escape, unless nothing but literal backslashes is left.
-  return (
-    secrets.some((secret) => layer.includes(secret)) ||
-    (DECODABLE_ESCAPE.test(layer) && !/^\\+$/.test(layer))
+  return walkLayers(text, (layer) =>
+    secrets.some((secret) => layer.includes(secret)),
   );
 }
 
-/** Every layer of `text` as its JSON escapes are decoded, the original first, stopping where decoding changes nothing or after `LOOK_DEPTH` decodes: the one traversal both secret checks share. */
-function decodeLayers(text: string): string[] {
-  const layers = [text];
-  for (let i = 0; i < LOOK_DEPTH; i++) {
-    const next = decodeOnce(layers[layers.length - 1] as string);
-    if (next === layers[layers.length - 1]) break;
-    layers.push(next);
-  }
-  return layers;
+/** Whether the value written at `at` is one the masking left: `"<redacted>"`, `""` or `null`. A text that ends at `at` holds no value. */
+function isMaskedValue(layer: string, at: number): boolean {
+  if (at >= layer.length) return true;
+  if (layer.startsWith('"<redacted>"', at) || layer.startsWith('""', at))
+    return true;
+  return /^null(?![A-Za-z0-9_])/.test(layer.slice(at, at + 5));
 }
 
-const MEMBER = /"((?:[^"\\]|\\.)*)"\s*:\s*(?!"<redacted>"|""|null\b)/g;
+/** Whether `layer` holds a quoted member named like a credential whose value is not masked. Each quoted span is read once, left to right: a span that never closes ends the scan, since every later quote is escaped inside it and would never close either. */
+function layerHoldsCredentialMember(layer: string): boolean {
+  let at = layer.indexOf('"');
+  while (at !== -1) {
+    let end = at + 1;
+    while (end < layer.length && layer[end] !== '"')
+      end += layer[end] === "\\" ? 2 : 1;
+    if (end >= layer.length) return false;
+    let value = end + 1;
+    while (value < layer.length && /\s/.test(layer[value] as string)) value++;
+    if (layer[value] !== ":") {
+      // No member here; the closing quote may open the next span.
+      at = end;
+      continue;
+    }
+    value++;
+    while (value < layer.length && /\s/.test(layer[value] as string)) value++;
+    if (
+      !isMaskedValue(layer, value) &&
+      isCredentialKey(layer.slice(at + 1, end))
+    )
+      return true;
+    at = layer.indexOf('"', end + 1);
+  }
+  return false;
+}
 
 /** Whether any layer of `text` holds a credential-named member with a value that is not masked, wherever the member sits and however the text around it parses: no bracket, footer, duplicate member or decode depth hides one. */
 function holdsCredentialMember(text: string): boolean {
-  return decodeLayers(text).some((layer) =>
-    Array.from(layer.matchAll(MEMBER)).some((m) =>
-      isCredentialKey(m[1] as string),
-    ),
-  );
+  return walkLayers(text, layerHoldsCredentialMember);
 }
 
 /** The deepest structural nesting of arrays and objects that is walked; anything deeper counts as holding a secret. */

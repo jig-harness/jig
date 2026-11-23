@@ -450,11 +450,54 @@ describe("keeping a run's transcript copy", () => {
       const text = JSON.stringify(kept);
       expect(text).not.toContain("opaque-");
       expect(text).not.toContain("footer-a");
-      expect(kept.filter((e) => e.message !== undefined)).toEqual([
+      expect(kept).toEqual([
         { type: "assistant", message: "kept-between-a" },
+        { type: "jig-omitted" },
+        { out: '{"token": "<redacted>","token": "<redacted>"}' },
         { type: "assistant", message: "kept-between-b" },
       ]);
       expect(copy?.cut).toBe(true);
+    } finally {
+      holdCredential("none", "unused-placeholder");
+    }
+  });
+
+  it("scans members once, keeps masked values and leaves out a member that surfaces only past the decode bound", () => {
+    const root = scratch();
+    const config = join(root, "config");
+    const layer = (v: string, n: number) => {
+      let out = v;
+      for (let i = 0; i < n; i++) out = JSON.stringify(out).slice(1, -1);
+      return out;
+    };
+    claudeTranscript(config, [
+      { type: "assistant", message: "kept-a" },
+      { out: '{"token": null, "other": 1}' },
+      { out: '{"token": "", "x": "<redacted>"}' },
+      { out: '{"token": "<redacted>"}' },
+      { out: '{"token":' },
+      { out: layer('{"token":"opaque-nine"}', 9) },
+      { out: layer('{"token":"opaque-three"}', 3) },
+      { out: '\\"'.repeat(16000) },
+      { type: "assistant", message: "kept-b" },
+    ]);
+    holdCredential(ID, "some-other-credential");
+    try {
+      const started = performance.now();
+      const copy = keepTranscriptCopy(
+        record(config, {
+          provider: { provider: "p" },
+        } as unknown as Partial<LaunchRecord>),
+        SESSION,
+        root,
+      );
+      expect(performance.now() - started).toBeLessThan(2000);
+      const text = readFileSync(String(copy?.transcript), "utf8");
+      expect(text).not.toContain("opaque-");
+      expect(text).toContain('\\"other\\": 1');
+      expect(text).toContain('{\\"token\\":"}');
+      expect(text).toContain("kept-a");
+      expect(text).toContain("kept-b");
     } finally {
       holdCredential("none", "unused-placeholder");
     }
