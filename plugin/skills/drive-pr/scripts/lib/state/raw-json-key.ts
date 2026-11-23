@@ -1,3 +1,5 @@
+import { swallow } from "../../../../../shared/errors.ts";
+
 /** Index of the closing quote of the literal opened at `open`, or -1 when it never closes. */
 function closingQuote(text: string, open: number): number {
   let j = open + 1;
@@ -13,7 +15,8 @@ function closingQuote(text: string, open: number): number {
 function decodeLiteral(literal: string): unknown {
   try {
     return JSON.parse(literal);
-  } catch {
+  } catch (err) {
+    swallow(err, "a string literal that does not decode is not the key");
     return undefined;
   }
 }
