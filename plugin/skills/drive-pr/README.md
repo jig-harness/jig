@@ -660,7 +660,11 @@ the drive stops with [`STALLED`](../../protocol/drive-exits.md), and the stop pr
 recorded: the refusal that stops the round now. When every stalled pass's
 `finish-round.ts` ended on the same state (`CI_HOLD_WAIT`, say), the stop and
 its closing report name that state and its reason, and the report's cause
-follows from it (`environment` for `CI_HOLD_WAIT`) instead of `unknown`. A short usage
+follows from it (`environment` for `CI_HOLD_WAIT`) instead of `unknown`; the
+drive's ledger names them too. A failed push's reason says why it failed (a
+pre-push gate, the remote's rejection, the connection, a timeout) with the
+last lines the push wrote, and a stall whose every push failed is handed to a
+person to fix that before re-arming, never re-driven onto it. A short usage
 limit is slept through, as before.
 
 The driver disables Claude Code's background tasks in its spawned passes

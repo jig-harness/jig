@@ -112,6 +112,50 @@ describe("render and parse", () => {
     expect(parsed.ledger.decisions).toEqual([]);
   });
 
+  it("names a stall's shared push failure in the summary and the data, redacted", () => {
+    const state = driveState();
+    const reason =
+      "guarded-push.ts exited 1 (pre-push-gate): the pre-push hook's gates refused the push — typecheck failed, mailed to someone@example.com";
+    state.events = [
+      {
+        at: "2026-10-01T11:00:00.000Z",
+        round: 3,
+        kind: "stop",
+        cause: "14",
+        finish: { state: "PUSH_FAILED", reason },
+      },
+    ];
+    const stopped = (exit: number) =>
+      ledgerFromState(state, {
+        generation: 4,
+        driver: {
+          actor: ACTOR_A,
+          clone: "clone-a",
+          heartbeat: "2026-10-01T11:00:00.000Z",
+          state: "stopped",
+          exit,
+        },
+        narrative: [],
+        claims: [],
+      });
+    const rendered = renderLedger(stopped(14));
+    if ("error" in rendered) throw new Error(rendered.error);
+    expect(rendered.body).toContain(
+      "Every stalled pass ended `PUSH_FAILED`: guarded-push.ts exited 1 (pre-push-gate): the pre-push hook's gates refused the push — typecheck failed",
+    );
+    expect(rendered.body).not.toContain("someone@example.com");
+    const parsed = parseLedger(rendered.body);
+    if (parsed?.kind !== "ledger") throw new Error("the ledger did not parse");
+    expect(parsed.ledger.events?.at(-1)?.finish?.state).toBe("PUSH_FAILED");
+    expect(parsed.ledger.events?.at(-1)?.finish?.reason).toContain(
+      "typecheck failed",
+    );
+    // A later stop with another exit is not the stall's.
+    const later = renderLedger(stopped(1));
+    if ("error" in later) throw new Error(later.error);
+    expect(later.body).not.toContain("Every stalled pass ended");
+  });
+
   it("renders copyable current answers for a framed parked decision", () => {
     const decision: ParkedDecision = {
       schema: "parked-decision/v1",

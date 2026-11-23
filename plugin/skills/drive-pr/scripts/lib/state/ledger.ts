@@ -71,6 +71,8 @@ import {
   type DriveEvent,
   isOptionalEvents,
   lastStopEvent,
+  redactedFinish,
+  stopFinish,
 } from "./events.ts";
 import { probeStopOf } from "../status/probe-stop.ts";
 import {
@@ -240,16 +242,6 @@ export function ledgerFromState(
   };
 }
 
-/** `event` with its stall finish's reason redacted, as every reason the ledger carries is. */
-function redactedFinish(event: DriveEvent): DriveEvent {
-  return event.finish === undefined
-    ? event
-    : {
-        ...event,
-        finish: { ...event.finish, reason: redact(event.finish.reason) },
-      };
-}
-
 function ledgerDriverWithProbe(
   s: DriveState,
   driver: LedgerDriver,
@@ -331,23 +323,6 @@ function ciEventLines(actions: readonly CiAction[] | undefined): string[] {
     .flatMap((e) => ["", `CI ${e.action}: ${summaryText(e.detail)}`]);
 }
 
-/** What held a stopped drive's stalled passes, when its last stop recorded it: the state each ended `finish-round.ts` on, and why. */
-function stallFinishLines(l: Ledger): string[] {
-  if (l.driver.state !== "stopped") return [];
-  const stop = lastStopEvent(l.events ?? []);
-  if (
-    stop?.finish === undefined ||
-    l.driver.exit === undefined ||
-    l.driver.exit === null ||
-    stop.cause !== String(l.driver.exit)
-  )
-    return [];
-  return [
-    "",
-    `Every stalled pass ended \`${stop.finish.state}\`: ${summaryText(stop.finish.reason)}`,
-  ];
-}
-
 function driverSummary(l: Ledger): string {
   const d = l.driver;
   const state =
@@ -387,7 +362,12 @@ function ledgerBody(l: Ledger, parkedList: boolean, writer: Writer): string {
   ];
   if (d.personStop !== undefined)
     lines.push("", stopSummary(d.personStop, d.state));
-  lines.push(...stallFinishLines(l));
+  const held = d.state === "stopped" ? stopFinish(l.events, d.exit) : null;
+  if (held !== null)
+    lines.push(
+      "",
+      `Every stalled pass ended \`${held.state}\`: ${summaryText(held.reason)}`,
+    );
   lines.push(...ciEventLines(l.ciActions));
   if (parkedList && l.parked.length > 0) {
     lines.push("", "Parked, awaiting a person:");

@@ -204,7 +204,7 @@ import { DRIVE_EXIT } from "./lib/status/terminal-states.ts";
 import { writePassFinish } from "./lib/state/pass-finish.ts";
 import { resolveStateDir } from "./lib/state/store.ts";
 import { holdParkReason, isUnheldOutcome } from "./lib/missing-required-run.ts";
-import { outputTail, pushFailureReason } from "./lib/push-failure.ts";
+import { observedPush } from "./lib/push-failure.ts";
 import { roundFinishRecorder } from "./lib/state/round-finish.ts";
 import { TRUSTED_ASSOCIATIONS } from "./summary-findings.ts";
 
@@ -1346,22 +1346,13 @@ async function main(): Promise<number> {
   //
   // Undeadlined on purpose: $DRIVE_PR_PUSH_TIMEOUT is guarded-push.ts's own
   // bound and it covers the pre-push hook, so it is measured in tens of
-  // minutes. Its stderr is INHERITED so its refusals reach the operator as
-  // they happen, and its tail is observed on the way through, so a failed
-  // push's finish says why it failed (`push-failure.ts`); its stdout is
-  // captured and re-emitted on stderr, because this script's own stdout is a
-  // single-value channel (the report) and a child writing into it would make
-  // `--json` unparseable for the caller that most needs it.
-  const pushErr = outputTail();
-  const pushRes = await run(
+  // minutes. Its stderr reaches the operator as it is written, its tail kept
+  // for a failed push's reason (`push-failure.ts`); its stdout is captured and
+  // re-emitted on stderr, because this script's stdout is a single-value
+  // channel (the report) and a child writing into it would make `--json`
+  // unparseable for the caller that most needs it.
+  const { res: pushRes, failure: pushFailure } = await observedPush(
     tsArgv(guardedPush, [pr, "--expect-head", report.head]),
-    {
-      stdout: "pipe",
-      stderr: "inherit",
-      onInheritedOutput: (stream, bytes) => {
-        if (stream === "stderr") pushErr.observe(bytes);
-      },
-    },
   );
   if (pushRes.stdout !== "") process.stderr.write(pushRes.stdout);
   // `disabled`, `conflicting`, `workflow-change`, `timed-out` and `adopted` pushed without
@@ -1397,11 +1388,7 @@ async function main(): Promise<number> {
     );
   }
   if (pushRes.code !== 0) {
-    return done(
-      1,
-      "PUSH_FAILED",
-      pushFailureReason(pushRes.code, pushErr.text()),
-    );
+    return done(1, "PUSH_FAILED", pushFailure());
   }
   report.pushed = true;
 

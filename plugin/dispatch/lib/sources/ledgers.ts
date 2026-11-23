@@ -66,10 +66,7 @@
  * in its tree, or never measured it (the ledger's last `stop` event,
  * `leftWork`), names that tree, where its re-drive must run
  * (`stall-tree.ts`). One whose head is not known
- * is `unplaced`. A stall whose stop recorded that every stalled pass's push
- * failed (its last `stop` event's `finish`, `PUSH_FAILED`) is a person's
- * instead: what refused the push (a pre-push gate the base branch breaks,
- * the remote) refuses a re-drive's push too.
+ * is `unplaced`; one whose passes all failed to push is a person's.
 
  *
  * A ledger that stopped `PASS_DEADLINE`, the driver having spent its
@@ -158,6 +155,7 @@ import type {
 import { parseMs } from "../../../shared/time.ts";
 import { readFacts } from "./ledger-facts.ts";
 import { undecided } from "./ledger-undecided.ts";
+import { pushFailedStallClass } from "./push-failed-stall.ts";
 import {
   conflictNote,
   probeEvidence,
@@ -394,26 +392,6 @@ function diagnosedStopWhy(
     : `stopped ${exit} after escalating CI repair on head ${short(head)}: ${detail}`;
 }
 
-/** The longest part of a push failure's reason a class's `why` quotes. */
-const PUSH_REASON_QUOTED = 400;
-
-/**
- * Why a stall whose stop recorded that every stalled pass's push failed is a
- * person's, or `null` for any other stop: a re-drive meets the same refusal.
- */
-function pushFailedStallWhy(ledger: Ledger, exit: number): string | null {
-  if (exit !== DRIVE_EXIT.STALLED) return null;
-  const last = lastStopEvent(ledger.events ?? []);
-  if (last?.cause !== String(exit) || last.finish?.state !== "PUSH_FAILED")
-    return null;
-  const reason = last.finish.reason.replace(/\s+/g, " ").trim();
-  const quoted =
-    reason.length > PUSH_REASON_QUOTED
-      ? `${reason.slice(0, PUSH_REASON_QUOTED - 1)}…`
-      : reason;
-  return `stopped ${exit} (stalled: every stalled pass's push failed: ${quoted}); a re-drive fails the same push, so fix what refuses it (the base branch first when its gates fail there too), then re-arm`;
-}
-
 /**
  * A ledger that stopped `STALLED`, `CI_REPAIR_SPENT` or `PASS_DEADLINE`,
  * read beside its pull request's head: `stale`, keyed on that head and the
@@ -426,12 +404,8 @@ function mechanicalStopClass(
 ): Classified | null {
   const stop = MECHANICAL_STOPS.get(exit);
   if (stop === undefined) return null;
-  const pushFailed = pushFailedStallWhy(ledger, exit);
-  if (pushFailed !== null)
-    return {
-      class: "needs-person",
-      why: `${pushFailed}${conflictNote(forge.mergeable)}`,
-    };
+  const pushFailed = pushFailedStallClass(ledger, exit, forge.mergeable);
+  if (pushFailed !== null) return pushFailed;
   const head = forge.head;
   if (head === null || head === "")
     return {

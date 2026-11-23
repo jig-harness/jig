@@ -188,6 +188,47 @@ describe("classifyLedger", () => {
     ).toBeUndefined();
   });
 
+  it("hands a stall whose every pass's push failed to a person, naming why, instead of re-driving it", () => {
+    const ledger = stoppedLedger(7, 14);
+    const forge = { head: "c".repeat(40), mergeable: "MERGEABLE" };
+    const reason =
+      "guarded-push.ts exited 1 (pre-push-gate): the pre-push hook's gates refused the push — typecheck failed";
+    const stall = (state: string, cause = "14") => ({
+      at: new Date(NOW).toISOString(),
+      round: 3,
+      kind: "stop" as const,
+      cause,
+      leftWork: true,
+      finish: { state, reason },
+    });
+    ledger.events = [stall("PUSH_FAILED")];
+    const pushed = classifyLedger(ledger, NOW, WINDOW, undefined, forge);
+    expect(pushed.class).toBe("needs-person");
+    expect(pushed.stale).toBeUndefined();
+    expect(pushed.why).toContain("every stalled pass's push failed");
+    expect(pushed.why).toContain("typecheck failed");
+    expect(pushed.why).toContain("re-arm");
+    // Even with no head known: it waits on a person, not on the forge.
+    expect(
+      classifyLedger(ledger, NOW, WINDOW, undefined, {
+        head: null,
+        mergeable: null,
+      }).class,
+    ).toBe("needs-person");
+    // A stall held by another finish, or a push failure an earlier stop recorded, is re-driven as before.
+    ledger.events = [stall("CI_HOLD_WAIT")];
+    expect(classifyLedger(ledger, NOW, WINDOW, undefined, forge).class).toBe(
+      "stale",
+    );
+    ledger.events = [
+      stall("PUSH_FAILED"),
+      { at: new Date(NOW).toISOString(), round: 4, kind: "stop", cause: "14" },
+    ];
+    expect(classifyLedger(ledger, NOW, WINDOW, undefined, forge).class).toBe(
+      "stale",
+    );
+  });
+
   it("binds a stall whose stop never measured its tree, and frees one measured clean", () => {
     const ledger = stoppedLedger(7, 14);
     const forge = { head: "c".repeat(40), mergeable: "MERGEABLE" };

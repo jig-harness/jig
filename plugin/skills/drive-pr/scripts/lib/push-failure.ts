@@ -17,6 +17,7 @@
  * | `unknown` | anything else |
  */
 import { redactReportText } from "../../../../shared/closing-report.ts";
+import { run } from "./proc.ts";
 
 export type PushFailureKind =
   | "timeout"
@@ -114,4 +115,24 @@ export function pushFailureReason(code: number, output: string): string {
   const kind = pushFailureKind(output);
   const excerpt = failureExcerpt(output);
   return `guarded-push.ts exited ${code} (${kind}): ${PUSH_FAILURE_WORDS[kind]}${excerpt === "" ? "; it wrote nothing on stderr" : ` — ${excerpt}`}`;
+}
+
+/**
+ * Run `argv` (`guarded-push.ts`) with its stderr passed through as it is
+ * written and its stdout captured, keeping the stderr's tail: `failure` is
+ * the `PUSH_FAILED` reason for the exit it returned.
+ */
+export async function observedPush(argv: string[]): Promise<{
+  res: Awaited<ReturnType<typeof run>>;
+  failure: () => string;
+}> {
+  const tail = outputTail();
+  const res = await run(argv, {
+    stdout: "pipe",
+    stderr: "inherit",
+    onInheritedOutput: (stream, bytes) => {
+      if (stream === "stderr") tail.observe(bytes);
+    },
+  });
+  return { res, failure: () => pushFailureReason(res.code, tail.text()) };
 }

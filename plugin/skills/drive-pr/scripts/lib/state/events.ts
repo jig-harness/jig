@@ -38,6 +38,7 @@
  * state: a file written before the field existed reads as no events.
  */
 import { isRecord } from "../../../../../shared/guards.ts";
+import { redact } from "../../../../../shared/redact.ts";
 import { fail } from "../cli.ts";
 import type { StateStore } from "./store.ts";
 import { currentIso, parseMs } from "../../../../../shared/time.ts";
@@ -104,6 +105,26 @@ export function stopFinishOf(
         : finish.reason,
   };
   return isStopFinish(kept) ? kept : undefined;
+}
+
+/** The finish the drive's last stop recorded, when that stop is the one with `exit`; `null` otherwise. */
+export function stopFinish(
+  events: readonly DriveEvent[] | undefined,
+  exit: number | null | undefined,
+): StopFinish | null {
+  const stop = lastStopEvent(events ?? []);
+  if (stop?.finish === undefined || exit === null || exit === undefined)
+    return null;
+  return stop.cause === String(exit) ? stop.finish : null;
+}
+
+/** `event` with its stall finish's reason redacted, as every reason the ledger carries is. */
+export function redactedFinish(event: DriveEvent): DriveEvent {
+  if (event.finish === undefined) return event;
+  return {
+    ...event,
+    finish: { ...event.finish, reason: redact(event.finish.reason) },
+  };
 }
 
 /** Whether `cause` is one of the causes of an event of `kind`. */
