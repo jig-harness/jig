@@ -39,6 +39,7 @@
  * a takeover is admitted.
  */
 import { type DriveHold, driveHold, factsOf } from "./actions/drive-hold.ts";
+import { withArmedHolds } from "./armed-carriers.ts";
 import { type BoardRead, readyActions } from "./board.ts";
 import { type Contention, heldReason } from "./contention.ts";
 import { holding, liveAgents } from "./holding.ts";
@@ -182,7 +183,7 @@ const NOTIFY: ReadonlyMap<LedgerClass, NotifyCause> = new Map([
 export function planTick(input: PlanInput): Plan {
   const { sessions } = input;
   const plan: Plan = {
-    ...planPickups(input),
+    ...planPickups(withArmedHolds(input)),
     held: [],
     withheld: [],
     serialHeld: [],
