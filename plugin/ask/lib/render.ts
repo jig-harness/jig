@@ -12,7 +12,7 @@ import type {
   ThreadEntry,
   WaitsOn,
 } from "./answer.ts";
-import type { WaitingAnswer } from "./waiting.ts";
+import type { SettledAnswer, WaitingAnswer } from "./waiting.ts";
 
 /** `text` with every control character replaced by a space. */
 export function printable(text: string): string {
@@ -200,6 +200,26 @@ export function renderWaiting(w: WaitingAnswer): string {
       ...(e.url === null ? [] : [`    ${e.url}`]),
     ]),
     ...unread,
+  ].join("\n");
+}
+
+/** What left the line recently, as lines. */
+export function renderSettled(a: SettledAnswer): string {
+  if (a.tick === null) return a.unread ?? "there is no line to read";
+  const head = `settled in the last day, as the tick ${a.tick.runId} found it at ${a.tick.finishedAt}:`;
+  if (a.settled.length === 0) return [head, "  nothing"].join("\n");
+  return [
+    head,
+    ...a.settled.flatMap((e) => [
+      printable(
+        `  ${e.at}  ${e.repo} ${e.targets.join(", ")}  ${e.outcome === "left" ? "left" : `${e.outcome}, card open`}  by ${e.by}${e.who === null ? "" : ` (${e.who})`}${e.title === null ? "" : `  ${e.title}`}`,
+      ),
+      printable(`    ${e.how}`),
+      ...(e.question === null
+        ? []
+        : [printable(`    question: ${e.question}`)]),
+      ...(e.url === null ? [] : [`    ${e.url}`]),
+    ]),
   ].join("\n");
 }
 

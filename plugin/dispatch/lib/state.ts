@@ -605,6 +605,21 @@ export const MIGRATIONS: readonly Migration[] = [
     additive: true,
     sql: "ALTER TABLE release_needs ADD COLUMN plan_state TEXT;",
   },
+  {
+    // A need that left the line, with when, by whom and how (`need-leaves.ts`): the record "Settled recently" on the dashboard and `jig ask --settled` read.
+    additive: true,
+    sql: `
+  CREATE TABLE need_leaves (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo TEXT NOT NULL,
+    target TEXT NOT NULL,
+    cause TEXT NOT NULL,
+    at_ms INTEGER NOT NULL,
+    value TEXT NOT NULL
+  );
+  CREATE INDEX need_leaves_at ON need_leaves (at_ms);
+  `,
+  },
 ];
 
 /** The schema version this plugin writes. */

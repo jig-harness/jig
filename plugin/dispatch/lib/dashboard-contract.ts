@@ -569,6 +569,8 @@ export interface LineSnapshot {
   needs: LineNeed[];
   /** Decisions answered with hold, still visible until their facts change; absent in older snapshots. */
   answeredHolds?: Array<{ repo: string; target: string; why: string }>;
+  /** What left the line recently, newest first, and the answers that did not settle their need (`need-leaves.ts`); absent from a line written before leaves were kept. */
+  settled?: LineSettled[];
   /** Claimed items no session holds that an open pull request carries while its drive is live (`driving`) or converged, and so not asked about as stalled pickups; absent in older snapshots. */
   carried?: LineCarried[];
   queue: LineQueued[];
@@ -581,6 +583,41 @@ export interface LineSnapshot {
   parks?: LinePark[];
   /** The resolution receipts the tick has written to the outcome log, by park occurrence, while a ledger it read still lists them. */
   ingested?: string[];
+}
+
+/** Who settled a need that left the line: a person, the tick (a rule of the line), the steward (a record the tick applied), or no one (its facts changed). */
+export type SettledBy = "person" | "tick" | "steward" | "facts";
+
+/**
+ * One need that left the line, or an answer that did not settle its need
+ * (`outcome` held or refused: its card stays open). One answer that settles
+ * several needs is one entry listing every target.
+ */
+export interface LineSettled {
+  repo: string;
+  /** What it settled, one target or, for one answer that settled several, all of them. */
+  targets: string[];
+  cause: NeedCause | null;
+  /** The act the need asked of a person (`shared/acts.ts`), when the line knew it. */
+  act?: NeedAct;
+  title: string | null;
+  url: string | null;
+  /** The question or act the need carried. */
+  question: string | null;
+  /** When it left the line, or when the answer was taken. */
+  at: string;
+  outcome: "left" | "held" | "refused";
+  by: SettledBy;
+  /** The person's login, the rule's name, or the steward's record; `null` when its facts changed. */
+  who: string | null;
+  /** Where the person answered; `null` when it was not an answer. */
+  via: string | null;
+  option: string | null;
+  recommended: boolean | null;
+  /** What was done, or what changed, in words. */
+  how: string;
+  /** The answer's link, when it was an answer. */
+  answer: string | null;
 }
 
 /** A claimed item an open pull request carries, as the tick read it (`carried-pr.ts`). */

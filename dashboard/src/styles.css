@@ -154,6 +154,11 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
 .groupHead.first { border-top: 0; margin-top: 0; padding-top: 0; }
 /* the cards an answer hid: one quiet line, a full touch target at every width, that opens to their notes */
 .heldToggle { display: inline-flex; align-items: center; min-height: var(--tap); padding: 0; background: none; border: 0; cursor: pointer; font: inherit; font-size: var(--small); color: var(--muted); text-align: left; }
+.settled { margin-top: 10px; }
+.settled ul:not([hidden]) { margin: 0 0 6px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; overflow-wrap: anywhere; }
+.settledEntry { border-left: 2px solid var(--line-strong); padding-left: 8px; }
+.settledEntry p { margin: 0; }
+.settledEntry.held, .settledEntry.refused { border-left-color: var(--hl-line); }
 .answeredHolds ul:not([hidden]) { margin: 0 0 6px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
 .moreBtn { min-height: 44px; margin-top: 6px; width: 100%; background: transparent; color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--r); font: 400 15px var(--sans); cursor: pointer; }
 .moreRow { display: flex; gap: 8px; margin-top: 6px; }

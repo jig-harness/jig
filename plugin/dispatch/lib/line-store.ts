@@ -297,6 +297,25 @@ const LINE_FIELDS: Fields = {
   answeredHolds: (value) =>
     value === undefined ||
     listOf({ repo: isString, target: isString, why: isString })(value),
+  settled: (value) =>
+    value === undefined ||
+    listOf({
+      repo: isString,
+      targets: (v) => Array.isArray(v) && v.every(isString),
+      cause: nullOr(isString),
+      title: nullOr(isString),
+      url: nullOr(isString),
+      question: nullOr(isString),
+      at: isString,
+      outcome: oneOf(["left", "held", "refused"]),
+      by: oneOf(["person", "tick", "steward", "facts"]),
+      who: nullOr(isString),
+      via: nullOr(isString),
+      option: nullOr(isString),
+      recommended: (v) => v === null || typeof v === "boolean",
+      how: isString,
+      answer: nullOr(isString),
+    })(value),
   carried: (value) =>
     value === undefined ||
     listOf({

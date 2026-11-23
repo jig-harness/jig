@@ -1,0 +1,396 @@
+/**
+ * What left the line, and how: the dashboard's "Settled recently" and
+ * `jig ask --settled`. The line holds only what is open, so a need that leaves
+ * it leaves no trace there. Each tick compares the merged line it writes with
+ * the line before, whatever its notify stage did, and records every need that
+ * is gone as one row of `need_leaves` with when it left, by whom and how:
+ *
+ * | What the tick holds of the need | By | How |
+ * | --- | --- | --- |
+ * | a person's answer the tick carried out (`station_answers`), or the receipt of a park's answer | the person's login | the option chosen and what the step did |
+ * | a record the steward submitted and the tick applied to its target | the steward | its record |
+ * | another action of the tick on its target | the tick | the rule's stage and reason |
+ * | its pull request is no longer open, or nothing else is known | no one | what changed |
+ *
+ * A need that returns is a new need, so it leaves in a new row. The rows come
+ * from the tick's own reads and records: no forge or tracker call is made. The
+ * line's `settled` list is those rows of the last day, with the answers a
+ * station took and could not carry out (held or refused), whose cards stay
+ * open. One answer that settled several needs is one entry listing them all.
+ */
+import type { Database } from "bun:sqlite";
+import { actOfLineNeed } from "../../shared/acts.ts";
+import { isMapping } from "../../shared/config-layers.ts";
+import { swallow } from "../../shared/errors.ts";
+import { isoFromMs, parseMs } from "../../shared/time.ts";
+import type { LineNeed, LineSettled } from "./dashboard-contract.ts";
+import type { ParkLeft } from "./park-events.ts";
+
+/** How far back the line's settled list reaches. */
+const SETTLED_WINDOW_MS = 24 * 3_600_000;
+/** The most entries the line carries, newest first. */
+const SETTLED_LIMIT = 100;
+/** How long a leave row is kept. */
+const LEAVES_KEPT_MS = 7 * 24 * 3_600_000;
+
+/** A person's answer a station took, as `station_answers` holds it. */
+export interface AnswerSeen {
+  /** The decision it answers. */
+  key: string;
+  author: string;
+  option: string;
+  answer: string;
+  claimedAt: string;
+  outcome: "done" | "refused" | "held" | null;
+  detail: string | null;
+}
+
+/** What the tick did to one target this tick, besides notifying. */
+export interface ActionSeen {
+  repo: string;
+  target: string;
+  stage: string;
+  reason: string;
+  /** The steward record the action carries out. */
+  steward?: number;
+}
+
+/** What the tick holds that says how a need left. */
+export interface LeaveEvidence {
+  /** The answers taken for a target since a time, newest first. */
+  answers: (repo: string, target: string, since: string) => AnswerSeen[];
+  /** The parks that left the ledgers this tick. */
+  parks: readonly ParkLeft[];
+  actions: readonly ActionSeen[];
+  /** The open pull requests the forge listed by repository; absent or `null` when its listing did not read. */
+  open: ReadonlyMap<string, readonly number[] | null>;
+}
+
+const keyOf = (n: Pick<LineNeed, "repo" | "target" | "cause">): string =>
+  `${n.repo}\u0000${n.target}\u0000${n.cause}`;
+
+/** The items a need is about: its target, and for a group of releases every item it lists. */
+const itemsOf = (n: LineNeed): string[] => [n.target, ...(n.covers ?? [])];
+
+/** The needs of `before` that `after` no longer holds. A group of releases whose target moved on but still lists an item it did before is the same need. */
+export function leftNeeds(
+  before: readonly LineNeed[],
+  after: readonly LineNeed[],
+): LineNeed[] {
+  const kept = new Set(after.map(keyOf));
+  return before.filter(
+    (n) =>
+      !kept.has(keyOf(n)) &&
+      !after.some(
+        (a) =>
+          a.repo === n.repo &&
+          a.cause === n.cause &&
+          (n.covers ?? []).length > 0 &&
+          itemsOf(a).some((item) => itemsOf(n).includes(item)),
+      ),
+  );
+}
+
+/** The question or act a need carried, in the words it carries. */
+function questionOf(need: LineNeed): string | null {
+  const asked = need.question ?? need.decisions[0]?.question ?? null;
+  return asked ?? (need.reason === "" ? null : need.reason);
+}
+
+const where = (target: string): string =>
+  target.startsWith("PR #") ? "a comment on the pull request" : "a comment";
+
+/** Who settled a need and how: the part of an entry that differs by cause. */
+type Why = Pick<
+  LineSettled,
+  "by" | "who" | "via" | "option" | "recommended" | "how" | "answer"
+> & { at?: string };
+
+const NO_ONE = {
+  via: null,
+  option: null,
+  recommended: null,
+  answer: null,
+} as const;
+
+/** The comment link of an answer's identity (`<link> <time>`). */
+const linkOf = (answer: string): string => answer.split(" ")[0] ?? answer;
+
+/** A person's answer a station carried out. */
+function personAnswered(need: LineNeed, a: AnswerSeen): Why {
+  return {
+    by: "person",
+    who: a.author,
+    via: where(need.target),
+    option: a.option,
+    recommended: null,
+    how: `chose ${a.option}${a.detail === null ? "" : `: ${a.detail}`}`,
+    answer: linkOf(a.answer),
+  };
+}
+
+/** A park that left its ledger: answered by people, or handed on or withdrawn by the line's own rules. */
+function parkLeft(need: LineNeed, park: ParkLeft): Why {
+  if (park.outcome === "answered")
+    return {
+      at: park.at,
+      by: "person",
+      who: park.people.join(", ") || null,
+      via: where(need.target),
+      option: park.option,
+      recommended: park.recommended,
+      how: park.words.join("; ") || "answered",
+      answer: park.url,
+    };
+  return {
+    ...NO_ONE,
+    by: "tick",
+    who: "park rule",
+    how:
+      park.outcome === "provisional"
+        ? "handed on unanswered, to be decided provisionally"
+        : "the park left its ledger: it was withdrawn or framed again",
+  };
+}
+
+/** What the tick did to the target besides notifying: a steward's record, else a rule. */
+function tickActed(acted: readonly ActionSeen[]): Why | null {
+  const steward = acted.find((a) => a.steward !== undefined);
+  if (steward !== undefined)
+    return {
+      ...NO_ONE,
+      by: "steward",
+      who: `steward record #${steward.steward}`,
+      how: steward.reason,
+    };
+  const rule = acted[0];
+  return rule === undefined
+    ? null
+    : { ...NO_ONE, by: "tick", who: `${rule.stage} rule`, how: rule.reason };
+}
+
+/** No answer or action accounts for it: its facts changed. */
+function factsChanged(
+  need: LineNeed,
+  after: readonly LineNeed[],
+  open: readonly number[] | null | undefined,
+): Why {
+  const changed = after.find(
+    (n) => n.repo === need.repo && n.target === need.target,
+  );
+  const closed =
+    need.pr !== null && open !== undefined && open !== null
+      ? !open.includes(need.pr)
+      : false;
+  const what =
+    changed !== undefined
+      ? `it is now ${changed.cause}`
+      : closed
+        ? "its pull request is no longer open (merged or closed)"
+        : `the line no longer finds the cause (${need.cause})`;
+  return {
+    ...NO_ONE,
+    by: "facts",
+    who: null,
+    how: `its facts changed: ${what}`,
+  };
+}
+
+/** The entry that says `need` left the line at `at`. */
+export function leaveOf(
+  need: LineNeed,
+  after: readonly LineNeed[],
+  ev: LeaveEvidence,
+  at: string,
+): LineSettled {
+  // Only an answer to a decision this need carried settled it: another need on the target may have been answered.
+  const keys = need.decisions.map((d) => d.key);
+  const answered = ev
+    .answers(need.repo, need.target, need.since)
+    .find(
+      (a) =>
+        a.outcome === "done" && (keys.length === 0 || keys.includes(a.key)),
+    );
+  const park =
+    need.cause === "parked"
+      ? ev.parks.find((p) => p.repo === need.repo && p.target === need.target)
+      : undefined;
+  const open = ev.open.get(need.repo);
+  const gone = need.pr !== null && open != null && !open.includes(need.pr);
+  const acted = ev.actions.filter(
+    (a) => a.repo === need.repo && a.target === need.target,
+  );
+  // A pull request no longer open settles its needs whatever else the tick planned for it (a follow-up, say).
+  const why =
+    (answered === undefined ? null : personAnswered(need, answered)) ??
+    (park === undefined ? null : parkLeft(need, park)) ??
+    tickActed(acted.filter((a) => a.steward !== undefined)) ??
+    (gone ? null : tickActed(acted)) ??
+    factsChanged(need, after, open);
+  return {
+    repo: need.repo,
+    targets: [need.target],
+    cause: need.cause,
+    act: actOfLineNeed(need),
+    title: need.title,
+    url: need.url,
+    question: questionOf(need),
+    outcome: "left",
+    ...why,
+    at: why.at ?? at,
+  };
+}
+
+/** One row per need that left, written in the tick's transaction. */
+export function insertLeaves(
+  db: Database,
+  leaves: readonly LineSettled[],
+): void {
+  const add = db.query(
+    "INSERT INTO need_leaves (repo, target, cause, at_ms, value) VALUES (?, ?, ?, ?, ?)",
+  );
+  for (const leave of leaves)
+    add.run(
+      leave.repo,
+      leave.targets[0] ?? "",
+      leave.cause ?? "",
+      parseMs(leave.at),
+      JSON.stringify(leave),
+    );
+}
+
+/** Drop the rows older than the days they are kept. */
+export function pruneLeaves(db: Database, nowMs: number): void {
+  db.query("DELETE FROM need_leaves WHERE at_ms < ?").run(
+    nowMs - LEAVES_KEPT_MS,
+  );
+}
+
+/** The answers a station took for a target since a time, newest first. */
+export function answersFrom(
+  db: Database,
+): (repo: string, target: string, since: string) => AnswerSeen[] {
+  return (repo, target, since) =>
+    (
+      db
+        .query(
+          `SELECT key, author, option, answer, claimed_at AS claimedAt, outcome, detail
+           FROM station_answers
+           WHERE repo = ? AND target = ? AND claimed_at >= ?
+           ORDER BY claimed_at DESC, rowid DESC`,
+        )
+        .all(repo, target, since) as Array<
+        Omit<AnswerSeen, "outcome"> & { outcome: string | null }
+      >
+    ).map((r) => ({
+      ...r,
+      outcome:
+        r.outcome === "done" || r.outcome === "refused" || r.outcome === "held"
+          ? r.outcome
+          : null,
+    }));
+}
+
+function parsed(value: string): LineSettled | null {
+  try {
+    const found: unknown = JSON.parse(value);
+    return isMapping(found) &&
+      Array.isArray(found.targets) &&
+      typeof found.at === "string"
+      ? (found as unknown as LineSettled)
+      : null;
+  } catch (err) {
+    swallow(err, "a need's leave row does not read as JSON");
+    return null;
+  }
+}
+
+/** One answer that settled several needs is one entry listing every target. */
+function grouped(entries: readonly LineSettled[]): LineSettled[] {
+  const out: LineSettled[] = [];
+  const byAnswer = new Map<string, LineSettled>();
+  for (const e of entries) {
+    const key = e.answer === null ? null : `${e.repo} ${e.answer} ${e.outcome}`;
+    const same = key === null ? undefined : byAnswer.get(key);
+    if (same === undefined) {
+      const copy = { ...e, targets: [...e.targets] };
+      out.push(copy);
+      if (key !== null) byAnswer.set(key, copy);
+    } else
+      same.targets.push(...e.targets.filter((t) => !same.targets.includes(t)));
+  }
+  return out;
+}
+
+/** An answer a station took and could not carry out, as an entry; its need, when it is still on the line, gives the rest. */
+function unsettledEntry(
+  a: AnswerSeen & { repo: string; target: string },
+  needs: readonly LineNeed[],
+): LineSettled {
+  const need = needs.find((n) => n.repo === a.repo && n.target === a.target);
+  const outcome = a.outcome === "refused" ? "refused" : "held";
+  return {
+    repo: a.repo,
+    targets: [a.target],
+    cause: need?.cause ?? null,
+    ...(need === undefined ? {} : { act: actOfLineNeed(need) }),
+    title: need?.title ?? null,
+    url: need?.url ?? null,
+    question: need === undefined ? null : questionOf(need),
+    at: a.claimedAt,
+    outcome,
+    by: "person",
+    who: a.author,
+    via: where(a.target),
+    option: a.option,
+    recommended: null,
+    how: `chose ${a.option}, ${outcome}${a.detail === null ? "" : `: ${a.detail}`}; its card stays open`,
+    answer: linkOf(a.answer),
+  };
+}
+
+/**
+ * The line's settled list: the needs that left in the window and the answers
+ * taken and not carried out (their needs are open on `needs`), newest first.
+ */
+export function readSettled(
+  db: Database,
+  nowMs: number,
+  needs: readonly LineNeed[],
+): LineSettled[] {
+  const since = nowMs - SETTLED_WINDOW_MS;
+  const left = (
+    db
+      .query(
+        "SELECT value FROM need_leaves WHERE at_ms >= ? ORDER BY at_ms DESC, id DESC LIMIT ?",
+      )
+      .all(since, SETTLED_LIMIT) as Array<{ value: string }>
+  ).flatMap((r) => {
+    const entry = parsed(r.value);
+    return entry === null ? [] : [entry];
+  });
+  const unsettled = (
+    db
+      .query(
+        `SELECT repo, target, author, option, answer, claimed_at AS claimedAt, outcome, detail
+         FROM station_answers a
+         WHERE claimed_at >= ? AND outcome IN ('held', 'refused')
+           AND NOT EXISTS (
+             SELECT 1 FROM station_answers b
+             WHERE b.repo = a.repo AND b.target = a.target AND b.key = a.key
+               AND b.outcome = 'done' AND b.claimed_at > a.claimed_at)
+         ORDER BY claimed_at DESC, rowid DESC LIMIT ?`,
+      )
+      .all(isoFromMs(since), SETTLED_LIMIT) as Array<
+      AnswerSeen & { repo: string; target: string }
+    >
+  )
+    // Its card stays open: an answer whose need has left the line is not listed as unsettled.
+    .filter((a) =>
+      needs.some((n) => n.repo === a.repo && n.target === a.target),
+    )
+    .map((a) => unsettledEntry(a, needs));
+  return grouped(
+    [...left, ...unsettled].sort((a, b) => parseMs(b.at) - parseMs(a.at)),
+  ).slice(0, SETTLED_LIMIT);
+}
