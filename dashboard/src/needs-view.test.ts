@@ -118,7 +118,15 @@ describe("what each need asks of a person", () => {
       ...release,
       target: "PR #9",
       pr: 9,
-      decisions: [{ ...RELEASE, key: "PRRT_r2", person: "maintainer-b" }],
+      // Another release's question, so the two are not one question group.
+      decisions: [
+        {
+          ...RELEASE,
+          key: "PRRT_r2",
+          person: "maintainer-b",
+          question: "Tag v0.160.0 from a bypass account?",
+        },
+      ],
     };
     const line: LineSnapshot = {
       ...lineOf("quiet"),
