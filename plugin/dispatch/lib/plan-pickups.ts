@@ -279,9 +279,9 @@ function planWanted(
     });
     return;
   }
-  // A stopped pickup's need is only a notification: it goes out where a
-  // workspace joined to the item has terminals the runtime cannot report, as
-  // beside a running one.
+  // A stopped pickup's need is only a notification: it still goes out where
+  // the listing read and a workspace joined to the item has terminals the
+  // runtime cannot report, carrying that as evidence.
   if (
     held.kind === "unknown" &&
     (hold.kind === "none" || held.workspace === undefined)
@@ -302,8 +302,15 @@ function planWanted(
     });
     return;
   }
-  if (hold.kind !== "none") planStopped(input, item, hold, plan);
-  else if (held.kind === "free") planFresh(item, held.evidence, input, plan);
+  if (hold.kind === "none") {
+    if (held.kind === "free") planFresh(item, held.evidence, input, plan);
+    return;
+  }
+  const before = plan.actions.length;
+  planStopped(input, item, hold, plan);
+  if (held.kind === "unknown")
+    for (const need of plan.actions.slice(before))
+      need.evidence = { ...need.evidence, unreportedSessions: held.reason };
 }
 
 /** An item nothing holds: picked up, unless its host-fault hold says to wait or it has no priority to rank it by. */
@@ -637,16 +644,6 @@ function planClaimed(
   }
   if (held.kind === "unknown") {
     plan.idleKeep.push(item.key);
-    // The question its ended pickup asked is only a notification: it still
-    // reaches a person where only a workspace's terminals are unreported.
-    const asked =
-      pickup.kind === "ended" && held.workspace !== undefined
-        ? questionAsked(input, item, pickup.record)
-        : null;
-    if (asked !== null) {
-      plan.actions.push(asked);
-      return;
-    }
     plan.unplaced.push({
       target: item.key,
       record: "runtime",

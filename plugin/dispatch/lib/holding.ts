@@ -1,11 +1,12 @@
 /**
  * Whether a running session holds a target, from the workspaces the
  * runtime joins to it: running when an agent in one of them is working or
- * waiting (even beside a terminal the runtime cannot report), free when none is (its finished agents kept as evidence), and
- * unknown when the runtime's answer cannot be trusted for it. An unknown
- * names the workspace when the listing read but one of its terminals runs
- * an agent the runtime cannot report (an idle shell, an editor, a leftover
- * terminal look the same as an agent it cannot see): a notification still
+ * waiting (even beside a terminal the runtime cannot report), free when
+ * none is (its finished agents kept as evidence), and unknown when the
+ * runtime's answer cannot be trusted for it. An unknown names the
+ * workspace when the listing read but one of its terminals runs an agent
+ * the runtime cannot report (an idle shell, an editor or a leftover
+ * terminal looks the same as an agent it cannot see): a notification still
  * goes out there, and a launch becomes a person's need (`plan.ts`).
  */
 import {

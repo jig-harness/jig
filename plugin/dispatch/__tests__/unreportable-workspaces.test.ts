@@ -129,6 +129,7 @@ describe("a pickup whose workspace the runtime cannot vouch for", () => {
     expect(
       result.actions.map((a) => [a.stage, a.target, a.cause ?? null]),
     ).toEqual([["notify", "#7", "pickup-ended"]]);
+    expect(result.actions[0]?.evidence.unreportedSessions).toBe(REASON);
   });
 
   it("starts no fresh pickup, and says why", () => {
