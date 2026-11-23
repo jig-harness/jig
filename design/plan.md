@@ -662,8 +662,10 @@ sets the agent-harness interface, an amendment brings model providers under
 the credential reference, the spend cap, the open model vocabulary and the
 per-stage profile rule. What it will build, one pull request per step: the
 open model vocabulary; the provider account kind; the spend cap, cost
-ledger and provider failure classes; the harness interface with Claude Code
-and Codex behind it, and harness-neutral skill forms; an offline
+ledger and provider failure classes; harness-neutral skill forms on the
+harness interface, which has Claude Code and Codex behind it
+(`plugin/shared/agent-harness/`), with the call sites that still name a
+harness moving behind it as the `harness-type` ratchet counter falls; an offline
 measurement of a fast model against the steward's recorded decisions; then
 pi as an opt-in third harness on one stage, per-stage profiles, and the
 default-harness ruling from the trial.
