@@ -182,6 +182,27 @@ describe("judgeReceipt", () => {
       });
   });
 
+  it("keeps a filing parked at the instant the diagnosis started", async () => {
+    const receipt = await judge(
+      read({ diagnosis: "done", parked: FILING }),
+      stateWith([park({ at: STARTED_AT })]),
+    );
+    expect(receipt).toEqual({
+      text: "no issue filed (parked for a person). done",
+      pushedHead: undefined,
+    });
+  });
+
+  it("refuses a parked filing when no diagnosis of the head started", async () => {
+    const receipt = await judge(read({ diagnosis: "done", parked: FILING }), {
+      ...stateWith([park()]),
+      ciActions: [],
+    });
+    expect(receipt).toEqual({
+      refused: expect.stringContaining(`names the filing park ${FILING}`),
+    });
+  });
+
   it("refuses a parked filing when the drive state cannot be read", async () => {
     const receipt = await judge(
       read({ diagnosis: "done", parked: FILING }),
