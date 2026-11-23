@@ -404,6 +404,50 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.304.3] - 2026-11-23
+
+### Fixed
+
+- An explicit re-arm can restart a parked drive after its review thread is resolved on GitHub. When a park still needs attention, dispatch explains why the re-arm is held.
+
+## [0.304.2] - 2026-11-23
+
+### Fixed
+
+- The drive-pr suite's diagnosing CI repair tests no longer time out under a
+  loaded CI shard: the receipt rules (a tracker issue key or a filing parked
+  during the diagnosis) are unit tests against the driver's receipt reader,
+  and the end-to-end drives that remain have the 120-second headroom of the suite's
+  other multi-round drives. A drive behaves as before. **Consumer action:**
+  none.
+
+## [0.304.1] - 2026-11-23
+
+### Fixed
+
+- Re-arming a drive that stopped on its round budget (`MAX_ROUNDS`) now
+  runs review passes again instead of stopping with exit `6` on its first
+  check. A re-arm a person asks for (`jig send drive@<repo> <PR> rearm`) and
+  `arm-drive.ts --rearm-budget` grant the drive one more round budget:
+  `drive.max_rounds` (or `--max-rounds`) more distinct heads, counting the
+  head it resumes on, and a fresh count of passes on that head. The steward's
+  and the tick's re-drives never grant it. The grant is kept in the drive
+  state and published to the ledger so a restart or a takeover keeps it, and
+  is never renewed without another re-arm: the drive stops on `MAX_ROUNDS` again
+  once it spends it. `jig send … rearm` on such a stop says so.
+
+## [0.304.0] - 2026-11-23
+
+### Added
+
+- The dispatch dashboard's Send keeps one GitHub token per account in the browser, each naming the repository owners it answers for, and a card sends with the token for its target repository's owner, so answers on repositories reached as different accounts post as the right login. A token that names no owner answers for every owner no other token names, and a browser that kept one token keeps it that way. A card whose owner no token answers for has no Send and says so; Copy still works. The settings panel tests, shows and forgets each token on its own, and refuses a second token for one owner. The confirmation and the card's "Sent here" name the login that answered. Forgetting or replacing a token asks again for confirmation only on the cards it answered. The tokens still never reach the dashboard's server ([ADR-0019](docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md#which-token-a-card-sends-with)).
+
+## [0.303.1] - 2026-11-23
+
+### Fixed
+
+- `jig dispatch` no longer drops a stopped or parked pull request off the line's needs when a workspace joined to it has a terminal whose agent the session runtime cannot report, such as an idle shell or an editor. Its notification still goes out; a re-arm or takeover it cannot safely start becomes a need that names the workspace, and closing the terminals that run no agent lets the next tick act on it. A stopped pickup's need goes out the same way, and an agent the runtime reports working now holds its target even beside such a terminal. **Consumer action:** none.
+
 ## [0.303.0] - 2026-11-23
 
 The dispatch dashboard's Needs you view now shows what left it: who settled each need and how.
@@ -10769,7 +10813,12 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.303.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.304.3...HEAD
+[0.304.3]: https://github.com/jig-harness/jig/compare/v0.304.2...v0.304.3
+[0.304.2]: https://github.com/jig-harness/jig/compare/v0.304.1...v0.304.2
+[0.304.1]: https://github.com/jig-harness/jig/compare/v0.304.0...v0.304.1
+[0.304.0]: https://github.com/jig-harness/jig/compare/v0.303.1...v0.304.0
+[0.303.1]: https://github.com/jig-harness/jig/compare/v0.303.0...v0.303.1
 [0.303.0]: https://github.com/jig-harness/jig/compare/v0.302.0...v0.303.0
 [0.302.0]: https://github.com/jig-harness/jig/compare/v0.301.5...v0.302.0
 [0.301.5]: https://github.com/jig-harness/jig/compare/v0.301.4...v0.301.5

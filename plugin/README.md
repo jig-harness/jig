@@ -1571,11 +1571,18 @@ the outcome, and shows whether the step was carried out, refused with its
 reason, or held. With nothing picked, Send stays held back; Copy still takes the
 approval of a lone Decide decision's recommendation to paste. A guarded
 pick takes a second step to copy. Every Send first confirms the target,
-login and exact answer; changing the answer, target or token requires a new
-confirmation. The page tests the token by asking GitHub
+login and exact answer; changing the answer, target or the token the card
+sends with requires a new confirmation. The page keeps one token per GitHub
+account, each naming the repository owners it answers for (`example-org`
+for every `example-org/*` repository), and a card sends with the token for
+its target repository's owner, or else with the one token that names no
+owner, which answers for every owner no other token names; a card whose
+owner no token answers for has no Send and says so, and Copy still works.
+The settings panel refuses a second token for one owner, or a second token
+that names no owner. The page tests each token by asking GitHub
 which login it signs in as, names that login, keeps the token in that
-browser's local storage alone and forgets it on request; the dashboard's
-server never receives it and has no route that writes. Make a fine-grained
+browser's local storage alone and forgets each on request; the dashboard's
+server never receives one and has no route that writes. Make a fine-grained
 personal access token limited to the repositories the dashboard shows, with
 Issues and Pull requests set to read and write, and a short expiry. Its
 answers count as `jig send`'s do, by the drive's rule for an author. Any

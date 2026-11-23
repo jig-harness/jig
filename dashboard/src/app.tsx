@@ -14,6 +14,7 @@ import { PanelBoundary } from "./boundary.tsx";
 import { ReadyBadge } from "./badge.ts";
 import { tabCounts } from "./cards.ts";
 import { ClipParts, CopyButton, KeyToast } from "./copy.tsx";
+import { KeptTokenRecovery } from "./send-settings.tsx";
 import { KeyBar } from "./key-bar.tsx";
 import { FacetControls } from "./facet-controls.tsx";
 import {
@@ -55,7 +56,7 @@ import { Refused } from "./refused.tsx";
 import { type Steering, useSteering, ViewFilter } from "./steering.tsx";
 import { TicksPanel } from "./ticks.tsx";
 import { bindAnswersToPark, forgetOldAnswers } from "./answers.ts";
-import { useKeptToken } from "./forge-token.ts";
+import { storedListUntrusted, useKeptTokens } from "./forge-token.ts";
 import { forgetOldSends } from "./sent.ts";
 import { decisionRows } from "./picking.ts";
 import {
@@ -118,6 +119,9 @@ export function App() {
         Fold={Fold}
         copyCommand={<CopyButton text={COMMAND} idle="Copy command" />}
       >
+        <div className="main">
+          <KeptTokenRecovery />
+        </div>
         <ClipParts />
       </Refused>
     );
@@ -493,7 +497,8 @@ function ViewBody({
   );
   const forges = useMemo(() => forgesOf(line), [line]);
   if (tab === "help") return <HelpView Fold={Fold} />;
-  if (view.answer === null) return null;
+  // The needs view mounts without an answer: the token settings it holds must stay reachable when the first state read fails.
+  if (view.answer === null && tab !== "needs") return null;
   if (tab !== "history")
     return (
       <CardView
@@ -572,7 +577,7 @@ function CardView({
   grouping: QueueGrouping;
 }) {
   const { line, clock } = view;
-  const { kept } = useKeptToken();
+  const { tokens } = useKeptTokens();
   if (tab === "merge")
     return (
       <PanelBoundary name="Ready to merge" className="pMerge" reads={line}>
@@ -599,7 +604,9 @@ function CardView({
     );
   return (
     <>
-      {line !== null && (hasNeedRows(line, clock.nowMs) || kept !== null) ? (
+      {(line !== null && hasNeedRows(line, clock.nowMs)) ||
+      tokens.length > 0 ||
+      storedListUntrusted() ? (
         <PanelBoundary name="What needs you" className="pNeeds" reads={line}>
           <NeedsPanel
             line={line}
@@ -689,7 +696,7 @@ function Colophon({ view, token }: { view: PageView; token: string }) {
       <span>
         read-only for the host: this page sends it GET requests and writes
         nothing there; your theme, the answers you pick or draft and any GitHub
-        token you paste stay in this browser, and Send posts to GitHub directly
+        tokens you paste stay in this browser, and Send posts to GitHub directly
       </span>
     </div>
   );

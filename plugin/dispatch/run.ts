@@ -175,6 +175,7 @@ import {
 } from "./lib/session.ts";
 import { failureText } from "./lib/text.ts";
 import { configuredPassArgs } from "../skills/drive-pr/scripts/lib/pass-args.ts";
+import { RESOLVED_PARKS_PR_ENV } from "../skills/drive-pr/scripts/lib/driver/rearm.ts";
 import {
   enterAfterStage,
   newerStateRefusal,
@@ -236,6 +237,10 @@ function driveCommand(record: LaunchRecord, script: string): string[] {
     script,
     pr,
     ...(record.action === "takeover" ? ["--take-over"] : []),
+    // A re-arm a person asked for (their request label): a drive stopped on
+    // its round budget is granted one more instead of stopping on its first
+    // check. The steward's and the tick's re-drives never renew it.
+    ...(record.rearmLabel != null ? ["--rearm-budget"] : []),
     "--bots-only",
     ...(settleTree ? ["--settle-worktree"] : []),
     ...(pinned ? ["--pass-args", ""] : []),
@@ -245,6 +250,17 @@ function driveCommand(record: LaunchRecord, script: string): string[] {
     "--",
     ...pass,
   ];
+}
+
+/** Only a launch bound to a person's re-arm request can clear resolved parks. */
+function resolvedParkPr(record: LaunchRecord): string {
+  if (
+    record.action !== "rearm" ||
+    record.rearmLabel == null ||
+    typeof record.rearmRequestId !== "number"
+  )
+    return "";
+  return String(record.pr);
 }
 
 /** Whether the record's harness reads the host's extra pass words as the pass starts; one that fixed them at admission pins them. */
@@ -547,6 +563,7 @@ async function executeStage(
       ),
       ...(ownPass(record) ? NO_BACKGROUND_TASKS : {}),
       [LAUNCH_VARIABLE]: id,
+      [RESOLVED_PARKS_PR_ENV]: resolvedParkPr(record),
       JIG_OUTBOUND_CALLER: `pass:${record.action}:${record.id}`,
       ...(isDrive(record)
         ? { [DRIVER_REPORT_VARIABLE]: driverReportFile(id) }
