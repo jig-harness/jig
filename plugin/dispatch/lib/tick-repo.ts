@@ -51,6 +51,7 @@ import { readFailureOf } from "./read-failures.ts";
 import { planObserved } from "./tick-plan.ts";
 import { logRepo } from "./tick-settle.ts";
 import { sharedReport } from "./tick-shared.ts";
+import { refreshConverged } from "./refresh-converged.ts";
 import { recoverLedgers } from "./recover-ledgers.ts";
 import type { ApplyStage, RepoPhase, RepoReport } from "./types.ts";
 
@@ -234,6 +235,7 @@ export async function actTurn(
   const { report } = opened;
   if (context.apply !== null)
     await timer.time("apply", () => recoverLedgers(context, observation));
+  await timer.time("apply", () => refreshConverged(context, observation));
   await timer.time("plan", () => planObserved(context, observation));
   if (releaseStationOn(opened))
     await timer.time("plan", () => {
