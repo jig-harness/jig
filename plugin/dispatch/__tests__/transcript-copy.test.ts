@@ -348,9 +348,12 @@ describe("keeping a run's transcript copy", () => {
         SESSION,
         root,
       );
-      expect(readFileSync(String(copy?.transcript), "utf8")).toContain(
-        "benign-note",
-      );
+      const kept = readFileSync(String(copy?.transcript), "utf8")
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l));
+      expect(kept).toContainEqual({ out: `benign-note ${benign}` });
+      expect(copy?.cut).toBe(false);
     } finally {
       holdCredential("none", "unused-placeholder");
     }
@@ -379,6 +382,9 @@ describe("keeping a run's transcript copy", () => {
       },
       { deep },
       { out: "\\".repeat(512) },
+      {
+        out: `wrapped ${JSON.stringify(JSON.stringify({ token: "opaque-final-layer" })).slice(1, -1)}`,
+      },
       { out: `layered ${layered} end` },
       { type: "jig-omitted", marker: "source-marker-xyz" },
     ]);
@@ -402,7 +408,8 @@ describe("keeping a run's transcript copy", () => {
         .split("\n")
         .map((l) => JSON.parse(l))
         .filter((e) => typeof e.out === "string" && /^\\+$/.test(e.out));
-      expect(backslashed).toHaveLength(1);
+      expect(backslashed).toEqual([{ out: "\\".repeat(512) }]);
+      expect(text).not.toContain("opaque-final-layer");
       expect(text).toContain("9007199254740993");
       expect(text).not.toContain("source-marker-xyz");
       expect(text).not.toContain("trailing");
