@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { fixture } from "../fixtures.ts";
 import { confirmationSignature } from "./confirmation.ts";
-import { tokensFrom } from "./forge-token.ts";
+import { listRefused, tokensFrom } from "./forge-token.ts";
 import { needView } from "./needs-view.ts";
 import { rowAnswer } from "./picking.ts";
 import { NoSendReason } from "./send.tsx";
@@ -232,6 +232,17 @@ describe("a list that is stored but unreadable", () => {
       expect(
         tokensFrom({ tokens: [{ ...A, owners: [owner] }, ANY] }, null),
       ).toEqual([]);
+  });
+});
+
+describe("a refused stored list", () => {
+  test("is told apart from no tokens, so no token is added over it", () => {
+    expect(listRefused(null, null)).toBe(false);
+    expect(listRefused({ tokens: [] }, null)).toBe(false);
+    expect(listRefused({ tokens: [A] }, null)).toBe(false);
+    expect(listRefused("untrusted", null)).toBe(true);
+    expect(listRefused({ tokens: [{ ...A, owners: "x" }] }, null)).toBe(true);
+    expect(listRefused({ tokens: "x" }, null)).toBe(true);
   });
 });
 

@@ -12,6 +12,7 @@ import { announce } from "./copy.tsx";
 import {
   freshTokens,
   keepTokens,
+  storedListUntrusted,
   tokensSignature,
   useKeptTokens,
 } from "./forge-token.ts";
@@ -33,9 +34,7 @@ import {
 const NEW_TOKEN_URL = "https://github.com/settings/personal-access-tokens/new";
 
 type Test =
-  | { kind: "idle" }
-  | { kind: "testing" }
-  | { kind: "refused"; reason: string };
+  { kind: "idle" } | { kind: "testing" } | { kind: "refused"; reason: string };
 
 /** Invalidates a callback once its settings component no longer exists. */
 function useRequestGeneration(): () => boolean {
@@ -95,6 +94,13 @@ function TokenField({ more }: { more: boolean }) {
   const run = () => {
     const token = draft.trim();
     if (token === "" || test.kind === "testing") return;
+    if (storedListUntrusted()) {
+      setTest({
+        kind: "refused",
+        reason: UNTRUSTED_NOTE,
+      });
+      return;
+    }
     const named = parseOwners(owners);
     if (!named.ok) {
       setTest({ kind: "refused", reason: named.reason });
@@ -115,6 +121,10 @@ function TokenField({ more }: { more: boolean }) {
           kind: "refused",
           reason: `The kept tokens changed while this one was tested. Test it again.`,
         });
+        return;
+      }
+      if (storedListUntrusted()) {
+        setTest({ kind: "refused", reason: UNTRUSTED_NOTE });
         return;
       }
       const next = withToken(
@@ -285,9 +295,21 @@ function KeptTokenRow({ kept }: { kept: KeptToken }) {
   );
 }
 
+const UNTRUSTED_NOTE =
+  "The kept tokens could not be read in full, so none is used and no token can be added over them. Forget them, then paste the tokens again.";
+
 /** The kept tokens, and the owners of sendable repositories none answers for. */
 function KeptTokens({ repos }: { repos: string[] }) {
   const { tokens, saved } = useKeptTokens();
+  if (tokens.length === 0 && storedListUntrusted())
+    return (
+      <p className="sm decNote">
+        {UNTRUSTED_NOTE}{" "}
+        <button type="button" onClick={() => keepTokens([])}>
+          Forget the unreadable tokens
+        </button>
+      </p>
+    );
   if (tokens.length === 0) return null;
   const owners = [...new Set(repos.map(ownerOf))];
   const uncovered = owners.filter((o) => tokenFor(tokens, o) === null);

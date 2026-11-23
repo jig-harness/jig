@@ -144,6 +144,27 @@ function changed(): void {
   for (const listener of listeners) listener();
 }
 
+/**
+ * Whether storage holds a token list that was refused (an unreadable or
+ * ambiguous mapping), which reads as no tokens. Adding a token over it would
+ * overwrite the damaged mapping with a catch-all, so the panel refuses until
+ * the person forgets the list.
+ */
+export function storedListUntrusted(): boolean {
+  const earlier = readRecord(EARLIER_KEY);
+  return listRefused(readRecord(KEY), earlier === UNTRUSTED ? null : earlier);
+}
+
+/** Whether `list` is there but yields no tokens because it was refused. */
+export function listRefused(
+  list: Record<string, unknown> | null | typeof UNTRUSTED,
+  earlier: Record<string, unknown> | null,
+): boolean {
+  if (list === null) return false;
+  if (list === UNTRUSTED || !Array.isArray(list.tokens)) return true;
+  return list.tokens.length > 0 && tokensFrom(list, earlier).length === 0;
+}
+
 /** The tokens kept now. */
 export function keptTokens(): KeptToken[] {
   return now().tokens;
