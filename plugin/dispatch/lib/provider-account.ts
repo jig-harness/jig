@@ -38,8 +38,10 @@
  * `flat-rate` plan has no spend cap, since its own usage windows bound it
  * through the account's wall and `max_per_account`, as a subscription's do.
  *
- * Until the spend cap is enforced, a provider account is parsed and
- * reported and never admitted: `PROVIDER_ADMISSION_HOLD`.
+ * Until the spend cap (for a metered account), the endpoint routing, the
+ * redaction and the original-transcript handling are in place, a provider
+ * account is parsed and reported and never admitted:
+ * `PROVIDER_ADMISSION_HOLD`.
  */
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
@@ -64,12 +66,14 @@ import {
 import { type Harness, HARNESS_VENDOR } from "./provider-environment.ts";
 
 /**
- * Why a provider account is not admitted until the spend cap, the endpoint
- * routing, the redaction and the original-transcript work have landed;
+ * Why a provider account is not admitted until the spend cap (for a metered
+ * account), the endpoint routing, the redaction and the original-transcript
+ * work have landed. Lifting it removes the hold for flat-rate accounts too,
+ * so `null` waits for all of that work;
  * `null` lifts the hold. The one place that work changes.
  */
 export const PROVIDER_ADMISSION_HOLD: string | null =
-  "a provider account is not launched on until its spend cap, endpoint routing, redaction and original-transcript handling are in place";
+  "a provider account is not launched on until its endpoint routing, redaction and original-transcript handling (and, for a pay-per-token account, its spend cap) are in place";
 
 /** Why `account` is held back from every launch; `null` when it is not. */
 export function providerHold(
@@ -271,16 +275,11 @@ function urlFormRefusal(url: URL, where: string): string | null {
     return `${where} must carry no user name or password (its value is withheld)`;
   if (url.search !== "" || url.hash !== "" || /[?#]/.test(url.href))
     return `${where} must carry no query or fragment (its value is withheld)`;
-  // The path is checked as written and percent-decoded; one that cannot be decoded is refused, since a credential could hide in it.
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(url.pathname);
-  } catch {
-    return `${where} must carry a path that percent-decodes`;
-  }
-  for (const path of [url.pathname, decoded])
-    if (maskCredentialShapes(path, "\u0000") !== path)
-      return `${where} must carry no credential-shaped value in its path (its value is withheld)`;
+  // One accepted path form: a percent escape is refused outright, so nothing can decode (once or nested) into a credential shape the check below never saw.
+  if (url.pathname.includes("%"))
+    return `${where} must carry a path with no percent escapes (its value is withheld)`;
+  if (maskCredentialShapes(url.pathname, "\u0000") !== url.pathname)
+    return `${where} must carry no credential-shaped value in its path (its value is withheld)`;
   const loopbackHttp =
     url.protocol === "http:" && isLoopbackHost(url.hostname.toLowerCase());
   return url.protocol === "https:" || loopbackHttp

@@ -120,6 +120,20 @@ describe("a provider account", () => {
       );
   });
 
+  it("refuses a base URL path with a percent escape or a credential shape, naming neither", () => {
+    for (const path of [
+      "/api/%FF",
+      "/api/%2573k-AAAAAAAAAAAA",
+      "/api/sk-AAAAAAAAAAAA",
+    ]) {
+      const reason = refusal([
+        router({ base_url: `https://openrouter.ai${path}` }),
+      ]);
+      expect(reason).toMatch(/no percent escapes|no credential-shaped value/);
+      expect(reason).not.toContain("AAAAAAAAAAAA");
+    }
+  });
+
   it("keeps a base URL's path as written, dropping only the root slash", () => {
     const url = (base_url: string) => {
       const parsed = load([router({ base_url })]);

@@ -112,7 +112,7 @@ export async function resolveCredential(
   // A refused value is still remembered, so nothing this process records later can carry it.
   rememberSecret(value);
   // A value that is, or contains, a sink's replacement text could not be told apart from redacted output.
-  if (/<redacted>|\[redacted\]/i.test(value))
+  if (/<redacted>|\[redacted\]|\[launch token\]/i.test(value))
     return failed(
       "unauthorized",
       "the credential command printed a value that contains a redaction marker",
