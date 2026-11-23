@@ -8,6 +8,7 @@ import {
   driveRules,
 } from "./lib/announce-ready.ts";
 import {
+  type Announcement,
   announcedIds,
   announcements,
   headMarker,
@@ -92,6 +93,31 @@ async function liveBase(pr: string, head: string): Promise<string | null> {
   } catch (error) {
     swallow(error, "the refresh could not parse the live pull request");
     return null;
+  }
+}
+
+/**
+ * Read only the fact needed to retire an announcement for an older head.
+ *
+ * A refresh may no longer be eligible to publish (for example, checks can
+ * fail or a person can turn the pull request back into a draft), but that
+ * does not make an announcement for a different head current again. Keep
+ * cleanup independent from the stricter publication predicate in liveBase.
+ */
+async function liveHead(pr: string, expected: string): Promise<boolean> {
+  const result = await ghCall(["pr", "view", pr, "--json", "state,headRefOid"]);
+  if (result.code !== 0) {
+    diagnostic(`the cleanup pull request read exited ${result.code}`);
+    return false;
+  }
+  try {
+    const data: unknown = JSON.parse(result.stdout);
+    return (
+      isRecord(data) && data.state === "OPEN" && data.headRefOid === expected
+    );
+  } catch (error) {
+    swallow(error, "the refresh could not parse the cleanup pull request");
+    return false;
   }
 }
 
@@ -250,23 +276,6 @@ async function current(
   );
 }
 
-/**
- * Re-read the two observations that authorize a destructive announcement
- * cleanup. The PR lock is local to a clone, so another host can advance this
- * PR or its ledger while this refresh is running.
- */
-async function unchangedAtCleanup(candidate: Candidate): Promise<boolean> {
-  const snapshot = await readCompleteLedgerSnapshot(
-    candidate.pr,
-    candidate.login,
-  );
-  if (typeof snapshot === "string") return false;
-  return (
-    candidate.unchanged(snapshot) &&
-    (await liveBase(candidate.pr, candidate.head)) === candidate.base
-  );
-}
-
 /** The successful ledger write advances its generation, but not its authority. */
 async function publishedAtCleanup(candidate: Candidate): Promise<boolean> {
   const snapshot = await readCompleteLedgerSnapshot(
@@ -291,6 +300,26 @@ async function freshAnnouncements(
     standing.some((comment) => comment.unreadable !== undefined)
     ? null
     : standing;
+}
+
+/**
+ * Retire only claims for an older head, and re-read the current head directly
+ * before every destructive request. GitHub has no conditional delete for an
+ * issue comment, so a force-push immediately after this read can still win
+ * the race; treating that read as an eligibility check keeps ordinary draft
+ * and failed-check transitions from preserving known-stale claims.
+ */
+async function cleanStaleAnnouncements(
+  pr: string,
+  head: string,
+  standing: readonly Announcement[],
+): Promise<number> {
+  for (const stale of standing) {
+    if (stale.head === head) continue;
+    if (!(await liveHead(pr, head))) return FALLBACK;
+    if (!(await withdraw(pr, stale.id))) return FALLBACK;
+  }
+  return 0;
 }
 
 async function publishLedger(candidate: Candidate): Promise<number> {
@@ -323,15 +352,7 @@ async function cleanCurrentHead(candidate: Candidate): Promise<number> {
   const ready = await announceReady(pr, head, reviewed);
   if (ready.rc !== 0 || !(await current(candidate, ready.lane)))
     return FALLBACK;
-  const latest = await freshAnnouncements(pr);
-  if (latest === null || !(await unchangedAtCleanup(candidate)))
-    return FALLBACK;
-  const withdrawn = await Promise.all(
-    latest
-      .filter((comment) => comment.head !== head)
-      .map(({ id }) => withdraw(pr, id)),
-  );
-  return withdrawn.every(Boolean) ? 0 : FALLBACK;
+  return 0;
 }
 
 async function refreshAdvancedHead(
@@ -359,14 +380,17 @@ async function refreshAdvancedHead(
   const latest = await freshAnnouncements(pr);
   if (latest === null || !(await publishedAtCleanup(candidate)))
     return FALLBACK;
-  for (const stale of announcedIds(latest, verified)) await withdraw(pr, stale);
-  return 0;
+  return await cleanStaleAnnouncements(pr, head, latest);
 }
 
 async function refresh(request: Request): Promise<number> {
   const { pr, head, verified } = request;
   const standing = await freshAnnouncements(pr);
   if (standing === null) return FALLBACK;
+  // Do this before the publish/ledger eligibility checks: a stale claim must
+  // not survive merely because the current head has become draft or red.
+  if ((await cleanStaleAnnouncements(pr, head, standing)) !== 0)
+    return FALLBACK;
   const candidate = await readCandidate(request);
   if (typeof candidate === "number") return candidate;
   return head === verified

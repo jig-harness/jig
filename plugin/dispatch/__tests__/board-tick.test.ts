@@ -73,7 +73,7 @@ function boardAnswer(
   w: World,
   checked = true,
   head = HEAD_SHA,
-  ci?: "pending" | "success",
+  ci?: "pending" | "success" | "failure",
 ): void {
   const pr7 = {
     number: 7,
@@ -119,7 +119,12 @@ function boardAnswer(
                           name: "test",
                           status:
                             ci === "pending" ? "IN_PROGRESS" : "COMPLETED",
-                          conclusion: ci === "pending" ? null : "SUCCESS",
+                          conclusion:
+                            ci === "pending"
+                              ? null
+                              : ci === "failure"
+                                ? "FAILURE"
+                                : "SUCCESS",
                           startedAt: "2026-11-08T10:00:00Z",
                           isRequired: true,
                           checkSuite: { app: { slug: "example-ci" } },
@@ -304,11 +309,12 @@ function afterBaseMerge(edited = false): {
 function checkEvidence(
   w: World,
   head: string,
-  status: "pending" | "success" | "unregistered",
+  status: "pending" | "success" | "failure" | "unregistered",
 ): void {
   // The new head has CI evidence and no new reviewer-app check.
   boardAnswer(w, false, head, status === "unregistered" ? undefined : status);
   const pending = status === "pending";
+  const failure = status === "failure";
   writeFileSync(
     join(w.dir, `ci-${head}.json`),
     JSON.stringify(
@@ -320,7 +326,7 @@ function checkEvidence(
               name: "test",
               head_sha: head,
               status: pending ? "in_progress" : "completed",
-              conclusion: pending ? null : "success",
+              conclusion: pending ? null : failure ? "failure" : "success",
               started_at: "2026-11-08T10:00:00Z",
               completed_at: pending ? null : "2026-11-08T10:02:00Z",
               app: { slug: "example-ci", id: 19 },
@@ -442,6 +448,23 @@ describe("refreshing convergence after a base merge", () => {
         isDraft: true,
       },
     ]);
+
+    await apply(w);
+
+    expect(commentBodies(w).filter((body) => body.startsWith(OPENER))).toEqual([
+      expect.stringContaining(headMarker(head)),
+    ]);
+  }, 90_000);
+
+  it("withdraws a stale announcement when the current head's checks turn red", async () => {
+    const { w, verified, head } = afterBaseMerge();
+    checkEvidence(w, head, "success");
+    await apply(w);
+    w.setComments(7, [
+      ...comments(w),
+      forgeComment(704, `${OPENER}\n\n${headMarker(verified)}`, "drive-bot"),
+    ]);
+    checkEvidence(w, head, "failure");
 
     await apply(w);
 
