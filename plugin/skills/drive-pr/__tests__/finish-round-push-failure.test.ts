@@ -141,7 +141,7 @@ describe("the push output's tail", () => {
     expect(out).toContain("next line");
   });
 
-  it("drops an over-long line with an unclosed quoted value whole", () => {
+  it("drops everything after an unclosed quoted value that never closes", () => {
     const tail = outputTail();
     const enc = new TextEncoder();
     tail.observe(enc.encode('password="first '));
@@ -151,6 +151,26 @@ describe("the push output's tail", () => {
     expect(out).not.toContain("LATERSECRET");
     expect(out).not.toContain("first");
     expect(out).toContain("[over-long output omitted]");
+  });
+
+  it("keeps recent complete lines when short-line output passes the bound", () => {
+    const tail = outputTail();
+    const enc = new TextEncoder();
+    tail.observe(enc.encode("filler line\n".repeat(30 * 1024)));
+    tail.observe(enc.encode("error: failed to push some refs\n"));
+    const out = tail.text();
+    expect(out).toContain("[over-long output omitted]");
+    expect(out).toContain("error: failed to push some refs");
+  });
+
+  it("drops the kept lines through the close of a quote the dropped part left open", () => {
+    const tail = outputTail();
+    const enc = new TextEncoder();
+    tail.observe(enc.encode('password="first\n'));
+    tail.observe(enc.encode("filler line\n".repeat(30 * 1024)));
+    tail.observe(enc.encode('LATERSECRET"\nnext line\n'));
+    const out = tail.text();
+    expect(out).not.toContain("LATERSECRET");
     expect(out).toContain("next line");
   });
 

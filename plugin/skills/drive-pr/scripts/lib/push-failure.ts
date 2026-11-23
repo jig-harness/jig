@@ -79,13 +79,17 @@ const EXCERPT_MAX = 600;
 const RAW_MAX = 256 * 1024;
 
 /**
- * Keeps the last `TAIL_BYTES` of a stream observed chunk by chunk. The raw
- * bytes are held whole and masked and decoded once, when the text is read: a
- * credential, a multi-byte character or a quoted value that spans lines is
- * never read in pieces, and terminal escapes are stripped before masking, so
- * one inside a credential's key cannot hide it. Past `RAW_MAX` the held bytes
- * are dropped with a marker, together with the rest of the line they end in,
- * since any part of them could have lost the key or quote a value hangs on.
+ * Keeps the end of a stream observed chunk by chunk. The raw bytes are held
+ * whole and masked and decoded once, when the text is read: a credential, a
+ * multi-byte character or a quoted value that spans lines is never read in
+ * pieces, and terminal escapes are stripped before masking, so one inside a
+ * credential's key cannot hide it.
+ *
+ * Past `RAW_MAX` the older half is dropped, up to a line boundary, so the
+ * recent complete lines survive. A quote left open by the dropped part could
+ * hang a value on a key that is gone, so the kept bytes are dropped through
+ * the line that closes it; a drop that ended inside a line also drops the
+ * rest of that line.
  */
 export function outputTail(): {
   observe: (bytes: Uint8Array) => void;
@@ -93,22 +97,47 @@ export function outputTail(): {
 } {
   let raw: Buffer = Buffer.alloc(0);
   let omitted = false;
+  // Quote characters a dropped part left open, oldest first.
+  let pending: number[] = [];
+  // Whether the rest of the current line is still to be dropped.
   let skipping = false;
+
+  /** Drop what a drop left unsafe from the front of `buf`. */
+  const settle = (buf: Buffer): Buffer => {
+    let rest = buf;
+    while (pending.length > 0) {
+      const at = rest.indexOf(pending[0] as number);
+      if (at < 0) return Buffer.alloc(0);
+      pending.shift();
+      skipping = true;
+      rest = rest.subarray(at);
+    }
+    if (skipping) {
+      const nl = rest.indexOf(10);
+      if (nl < 0) return Buffer.alloc(0);
+      skipping = false;
+      rest = rest.subarray(nl + 1);
+    }
+    return rest;
+  };
+
+  /** The quotes `dropped` opens and does not close. */
+  const openQuotes = (dropped: Buffer): number[] =>
+    [34, 39].filter(
+      (q) => dropped.filter((byte) => byte === q).length % 2 === 1,
+    );
+
   return {
     observe(input) {
-      let bytes = input;
-      if (skipping) {
-        const nl = bytes.indexOf(10);
-        if (nl < 0) return;
-        skipping = false;
-        bytes = bytes.subarray(nl + 1);
-      }
-      raw = Buffer.concat([raw, bytes]);
-      if (raw.length > RAW_MAX) {
-        raw = Buffer.alloc(0);
-        omitted = true;
-        skipping = true;
-      }
+      raw = Buffer.concat([raw, settle(Buffer.from(input))]);
+      if (raw.length <= RAW_MAX) return;
+      omitted = true;
+      const nl = raw.indexOf(10, raw.length - RAW_MAX / 2);
+      const cut = nl < 0 ? raw.length : nl + 1;
+      const dropped = raw.subarray(0, cut);
+      pending = openQuotes(dropped);
+      skipping = dropped[dropped.length - 1] !== 10;
+      raw = settle(Buffer.from(raw.subarray(cut)));
     },
     text: () => {
       const masked = redactReportText(raw.toString("utf8").replace(ANSI, ""));
