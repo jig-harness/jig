@@ -139,7 +139,7 @@ credential_timeout: 10s
 The contract of the command:
 
 - It is an argument list, run without a shell. Jig appends the reference as
-  the last argument, as one argument, so a quote or other shell character in a reference is not interpreted. The loader itself refuses a reference with whitespace in it, so write one without a space (a vault item with a space in its name cannot be named until the loader widens).
+  the last argument, as one argument, so a quote or other shell character in a reference is not interpreted. The loader itself refuses a reference with whitespace in it, so address a vault item whose name has a space by its item ID, which 1Password's reference syntax accepts in place of the name.
 - It runs with a small base of the host's environment (`PATH`, the home, the
   user, the locale and the temporary directory) and the variables
   `credential_env` names, such as a vault's session or service-account token

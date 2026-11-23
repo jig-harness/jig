@@ -64,11 +64,12 @@ import {
 import { type Harness, HARNESS_VENDOR } from "./provider-environment.ts";
 
 /**
- * Why a provider account is not admitted while the spend cap is not
- * enforced; `null` lifts the hold. The one place the spend-cap task changes.
+ * Why a provider account is not admitted until the spend cap, the endpoint
+ * routing, the redaction and the original-transcript work have landed;
+ * `null` lifts the hold. The one place that work changes.
  */
 export const PROVIDER_ADMISSION_HOLD: string | null =
-  "a provider account is not launched on until its spend cap is enforced";
+  "a provider account is not launched on until its spend cap, endpoint routing, redaction and original-transcript handling are in place";
 
 /** Why `account` is held back from every launch; `null` when it is not. */
 export function providerHold(
@@ -264,26 +265,22 @@ function isLoopbackHost(host: string): boolean {
   );
 }
 
-/** `text` percent-decoded, or as written when it is not valid encoding. */
-function decodeURIComponentSafe(text: string): string {
-  try {
-    return decodeURIComponent(text);
-  } catch {
-    return text;
-  }
-}
-
 /** Why a parsed base URL's form is refused: credentials, a query, or a scheme other than `https:` (`http:` only on loopback); `null` when it is not. */
 function urlFormRefusal(url: URL, where: string): string | null {
   if (url.username !== "" || url.password !== "")
     return `${where} must carry no user name or password (its value is withheld)`;
   if (url.search !== "" || url.hash !== "" || /[?#]/.test(url.href))
     return `${where} must carry no query or fragment (its value is withheld)`;
-  if (
-    maskCredentialShapes(decodeURIComponentSafe(url.pathname), "\u0000") !==
-    decodeURIComponentSafe(url.pathname)
-  )
-    return `${where} must carry no credential-shaped value in its path (its value is withheld)`;
+  // The path is checked as written and percent-decoded; one that cannot be decoded is refused, since a credential could hide in it.
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(url.pathname);
+  } catch {
+    return `${where} must carry a path that percent-decodes`;
+  }
+  for (const path of [url.pathname, decoded])
+    if (maskCredentialShapes(path, "\u0000") !== path)
+      return `${where} must carry no credential-shaped value in its path (its value is withheld)`;
   const loopbackHttp =
     url.protocol === "http:" && isLoopbackHost(url.hostname.toLowerCase());
   return url.protocol === "https:" || loopbackHttp
