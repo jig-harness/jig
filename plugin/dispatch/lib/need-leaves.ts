@@ -163,7 +163,9 @@ function parkLeft(need: LineNeed, park: ParkLeft): Why {
     how:
       park.outcome === "provisional"
         ? "handed on unanswered, to be decided provisionally"
-        : "the park left its ledger: it was withdrawn or framed again",
+        : park.outcome === "resolved-thread"
+          ? "the thread was already resolved on the forge, without a human answer"
+          : "the park left its ledger: it was withdrawn or framed again",
   };
 }
 

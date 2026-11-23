@@ -190,12 +190,12 @@ function receiptOutcome(r: ResolutionReceipt): ResolutionReceipt["outcome"] {
     : r.outcome;
 }
 
-function receiptRow(
-  slug: string,
-  pr: number,
-  published: ResolutionReceipt,
-): EventRow {
-  const r = { ...published, outcome: receiptOutcome(published) };
+/** A receipt as readers of this release see it, the forge-resolved shape named. */
+function readReceipt(published: ResolutionReceipt): ResolutionReceipt {
+  return { ...published, outcome: receiptOutcome(published) };
+}
+
+function receiptRow(slug: string, pr: number, r: ResolutionReceipt): EventRow {
   const facts = choiceFacts(r);
   const waited = spanMs(r.parkedAt, r.answeredAt ?? r.resolvedAt);
   const said =
@@ -388,8 +388,12 @@ function repoOutcomes(
       const found = receipts.get(identity);
       return found === undefined ? [] : [found];
     });
-  const rows = fresh.map((f) => receiptRow(repo.slug, f.pr, f.receipt));
-  const left = fresh.map((f) => receiptLeft(repo.slug, f.pr, f.receipt));
+  const normalized = fresh.map((f) => ({
+    pr: f.pr,
+    receipt: readReceipt(f.receipt),
+  }));
+  const rows = normalized.map((f) => receiptRow(repo.slug, f.pr, f.receipt));
+  const left = normalized.map((f) => receiptLeft(repo.slug, f.pr, f.receipt));
   const gone = carriedParks(
     repo,
     read,

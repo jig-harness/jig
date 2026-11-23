@@ -159,6 +159,7 @@ describe("park outcomes", () => {
     );
     expect(events(got.rows)).toEqual([["park-resolved-thread", "A"]]);
     expect(got.rows[0]?.park?.outcome).toBe("resolved-thread");
+    expect(got.left[0]?.outcome).toBe("resolved-thread");
   });
 
   it("counts a held park that left with no receipt as removed, not answered", () => {

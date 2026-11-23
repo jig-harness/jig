@@ -336,6 +336,26 @@ describe("one park interpretation for local state and the published ledger", () 
     expect(result.notes).toMatchObject([{ author: "bob" }]);
   });
 
+  it("settles a note by its author's later answer", async () => {
+    const result = await parkAnswers(
+      12,
+      [item],
+      "example/repo",
+      [
+        conversation(
+          "note PRRT_a: after the migration",
+          "alice",
+          "2026-11-10T11:00:00Z",
+        ),
+        conversation("answer PRRT_a: approve", "alice", "2026-11-10T12:00:00Z"),
+      ],
+      { threadComments: async () => [] },
+    );
+    if ("unreadable" in result) throw new Error("fixture unreadable");
+    expect(result.notes).toEqual([]);
+    expect(result.answered).toHaveLength(1);
+  });
+
   it("keeps notes without answers visible while waiting for a decision", async () => {
     const result = await parkAnswers(
       12,

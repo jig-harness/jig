@@ -204,6 +204,21 @@ function sourceNotes(
   });
 }
 
+/** A note its author followed with an answer of their own is settled by that answer; others still stand. */
+function standingNotes(
+  notes: readonly ParkNote[],
+  answers: readonly PendingAnswer[],
+): ParkNote[] {
+  return notes.filter((n) => {
+    const at = Date.parse(n.at);
+    return !answers.some(
+      (a) =>
+        a.author.toLowerCase() === n.author.toLowerCase() &&
+        Date.parse(a.at) >= at,
+    );
+  });
+}
+
 function verdictOf(item: ParkedItem, answers: PendingAnswer[]): PendingVerdict {
   const decision = answerDecision(item);
   return {
@@ -325,7 +340,10 @@ export async function parkAnswers(
       return {
         unreadable: `thread ${item.key} (GitHub did not report its resolution status)`,
       };
-    const notes = sourceNotes(item, [...threadHistory, ...pullComments]);
+    const notes = standingNotes(
+      sourceNotes(item, [...threadHistory, ...pullComments]),
+      answers,
+    );
     result.notes.push(...notes);
     classifyPark(
       result,
