@@ -183,6 +183,35 @@ describe("the push output's tail", () => {
     expect(out).toContain("next line");
   });
 
+  it("does not read an escaped quote in the dropped part as a closing quote", () => {
+    const tail = outputTail();
+    const enc = new TextEncoder();
+    tail.observe(enc.encode('password="first \\"\n'));
+    tail.observe(enc.encode("filler line\n".repeat(30 * 1024)));
+    tail.observe(enc.encode('LATERSECRET"\nnext line\n'));
+    const out = tail.text();
+    expect(out).not.toContain("LATERSECRET");
+    expect(out).toContain("next line");
+  });
+
+  it("omits a quoted value still open at the end, with its key", () => {
+    const tail = outputTail();
+    tail.observe(Buffer.from("error: failed to push some refs\n"));
+    tail.observe(Buffer.from('password="first\nSECONDSECRET'));
+    const out = tail.text();
+    expect(out).not.toContain("SECONDSECRET");
+    expect(out).not.toContain("first");
+    expect(out).toContain("failed to push some refs");
+  });
+
+  it("keeps a line with an apostrophe in prose", () => {
+    const tail = outputTail();
+    tail.observe(
+      Buffer.from("hook: can't connect\nerror: failed to push some refs\n"),
+    );
+    expect(tail.text()).toContain("failed to push some refs");
+  });
+
   it("masks a credential whose key a terminal escape splits", () => {
     const tail = outputTail();
     const esc = String.fromCharCode(27);

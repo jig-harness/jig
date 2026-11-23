@@ -78,6 +78,55 @@ const EXCERPT_MAX = 600;
 /** The most raw bytes held before the whole of them is dropped, so a stream that never ends cannot grow without bound. */
 const RAW_MAX = 256 * 1024;
 
+/** Where a quote scan stands: the quote byte of an open value (0 for none) and whether a backslash is pending. */
+interface QuoteState {
+  q: number;
+  esc: boolean;
+}
+
+const isSpace = (b: number | undefined): boolean =>
+  b === 32 || b === 9 || b === 10 || b === 13;
+
+/**
+ * The quote state at the end of `buf`, started from `start`, and where the
+ * still-open quote began (`-1` when none opened inside `buf`). Only a quote
+ * in value position (after `=` or `:`, or with nothing before it) opens a
+ * value, as the masker reads one; inside it a backslash escapes the next
+ * byte and a doubled quote stays inside. With `stopAtClose` the scan ends at
+ * the byte after the quote that closes a value open on entry.
+ */
+function scanQuotes(
+  buf: Buffer,
+  start: QuoteState,
+  stopAtClose = false,
+): { state: QuoteState; openAt: number; end: number } {
+  let { q, esc } = start;
+  let openAt = -1;
+  for (let i = 0; i < buf.length; i++) {
+    const b = buf[i] as number;
+    if (q !== 0) {
+      if (esc) esc = false;
+      else if (b === 92) esc = true;
+      else if (b === q) {
+        if (buf[i + 1] === q) i++;
+        else {
+          q = 0;
+          openAt = -1;
+          if (stopAtClose) return { state: { q, esc }, openAt, end: i + 1 };
+        }
+      }
+    } else if (b === 34 || b === 39) {
+      let j = i - 1;
+      while (j >= 0 && isSpace(buf[j])) j--;
+      if (j < 0 || buf[j] === 61 || buf[j] === 58) {
+        q = b;
+        openAt = i;
+      }
+    }
+  }
+  return { state: { q, esc }, openAt, end: -1 };
+}
+
 /**
  * Keeps the end of a stream observed chunk by chunk. The raw bytes are held
  * whole and masked and decoded once, when the text is read: a credential, a
@@ -85,11 +134,12 @@ const RAW_MAX = 256 * 1024;
  * pieces, and terminal escapes are stripped before masking, so one inside a
  * credential's key cannot hide it.
  *
- * Past `RAW_MAX` the older half is dropped, up to a line boundary, so the
- * recent complete lines survive. A quote left open by the dropped part could
- * hang a value on a key that is gone, so the kept bytes are dropped through
- * the line that closes it; a drop that ended inside a line also drops the
- * rest of that line.
+ * A value is never published without its key. Past `RAW_MAX` the older half
+ * is dropped up to a line boundary; the quote state the dropped part ends in
+ * is tracked (escapes included), and a value it left open is dropped from
+ * the kept bytes through its closing quote and the rest of that line, as is
+ * the rest of a line the drop ended inside. When the text is read, a value
+ * still open at the end is dropped from its key's line on.
  */
 export function outputTail(): {
   observe: (bytes: Uint8Array) => void;
@@ -97,20 +147,20 @@ export function outputTail(): {
 } {
   let raw: Buffer = Buffer.alloc(0);
   let omitted = false;
-  // Quote characters a dropped part left open, oldest first.
-  let pending: number[] = [];
+  // The quote state a dropped part left, still to be closed in what follows.
+  let head: QuoteState = { q: 0, esc: false };
   // Whether the rest of the current line is still to be dropped.
   let skipping = false;
 
   /** Drop what a drop left unsafe from the front of `buf`. */
   const settle = (buf: Buffer): Buffer => {
     let rest = buf;
-    while (pending.length > 0) {
-      const at = rest.indexOf(pending[0] as number);
-      if (at < 0) return Buffer.alloc(0);
-      pending.shift();
+    if (head.q !== 0) {
+      const r = scanQuotes(rest, head, true);
+      head = r.state;
+      if (r.end < 0) return Buffer.alloc(0);
       skipping = true;
-      rest = rest.subarray(at);
+      rest = rest.subarray(r.end);
     }
     if (skipping) {
       const nl = rest.indexOf(10);
@@ -121,12 +171,6 @@ export function outputTail(): {
     return rest;
   };
 
-  /** The quotes `dropped` opens and does not close. */
-  const openQuotes = (dropped: Buffer): number[] =>
-    [34, 39].filter(
-      (q) => dropped.filter((byte) => byte === q).length % 2 === 1,
-    );
-
   return {
     observe(input) {
       raw = Buffer.concat([raw, settle(Buffer.from(input))]);
@@ -135,12 +179,19 @@ export function outputTail(): {
       const nl = raw.indexOf(10, raw.length - RAW_MAX / 2);
       const cut = nl < 0 ? raw.length : nl + 1;
       const dropped = raw.subarray(0, cut);
-      pending = openQuotes(dropped);
+      head = scanQuotes(dropped, { q: 0, esc: false }).state;
       skipping = dropped[dropped.length - 1] !== 10;
       raw = settle(Buffer.from(raw.subarray(cut)));
     },
     text: () => {
-      const masked = redactReportText(raw.toString("utf8").replace(ANSI, ""));
+      let bytes = raw;
+      const { state, openAt } = scanQuotes(raw, { q: 0, esc: false });
+      if (state.q !== 0 && openAt >= 0) {
+        let key = openAt - 1;
+        while (key >= 0 && isSpace(raw[key])) key--;
+        bytes = raw.subarray(0, key < 0 ? 0 : raw.lastIndexOf(10, key) + 1);
+      }
+      const masked = redactReportText(bytes.toString("utf8").replace(ANSI, ""));
       const kept =
         masked.length > TAIL_BYTES
           ? masked.slice(masked.length - TAIL_BYTES)
