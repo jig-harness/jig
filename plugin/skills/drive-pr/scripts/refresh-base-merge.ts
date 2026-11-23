@@ -250,6 +250,49 @@ async function current(
   );
 }
 
+/**
+ * Re-read the two observations that authorize a destructive announcement
+ * cleanup. The PR lock is local to a clone, so another host can advance this
+ * PR or its ledger while this refresh is running.
+ */
+async function unchangedAtCleanup(candidate: Candidate): Promise<boolean> {
+  const snapshot = await readCompleteLedgerSnapshot(
+    candidate.pr,
+    candidate.login,
+  );
+  if (typeof snapshot === "string") return false;
+  return (
+    candidate.unchanged(snapshot) &&
+    (await liveBase(candidate.pr, candidate.head)) === candidate.base
+  );
+}
+
+/** The successful ledger write advances its generation, but not its authority. */
+async function publishedAtCleanup(candidate: Candidate): Promise<boolean> {
+  const snapshot = await readCompleteLedgerSnapshot(
+    candidate.pr,
+    candidate.login,
+  );
+  if (typeof snapshot === "string") return false;
+  const ledger = snapshot.canonical?.parsed;
+  return (
+    ledger?.kind === "ledger" &&
+    ledger.ledger.verifiedSha === candidate.head &&
+    ledger.ledger.generation > candidate.old.generation &&
+    (await liveBase(candidate.pr, candidate.head)) === candidate.base
+  );
+}
+
+async function freshAnnouncements(
+  pr: string,
+): Promise<NonNullable<Awaited<ReturnType<typeof announcements>>> | null> {
+  const standing = await announcements(pr);
+  return standing === null ||
+    standing.some((comment) => comment.unreadable !== undefined)
+    ? null
+    : standing;
+}
+
 async function publishLedger(candidate: Candidate): Promise<number> {
   const { pr, head, reviewed, old, login, unchanged } = candidate;
   const written = await writeLedger(pr, login, (snapshot) =>
@@ -275,27 +318,30 @@ async function publishLedger(candidate: Candidate): Promise<number> {
     : FALLBACK;
 }
 
-async function refresh(request: Request): Promise<number> {
-  const { pr, head, verified } = request;
-  const standing = await announcements(pr);
-  if (
-    standing === null ||
-    standing.some((comment) => comment.unreadable !== undefined)
-  )
+async function cleanCurrentHead(candidate: Candidate): Promise<number> {
+  const { pr, head, reviewed } = candidate;
+  const ready = await announceReady(pr, head, reviewed);
+  if (ready.rc !== 0 || !(await current(candidate, ready.lane)))
     return FALLBACK;
-  if (head === verified) {
-    const stale = standing.filter((comment) => comment.head !== head);
-    const withdrawn = await Promise.all(
-      stale.map(({ id }) => withdraw(pr, id)),
-    );
-    return withdrawn.every(Boolean) ? 0 : FALLBACK;
-  }
-  const candidate = await readCandidate(request);
-  if (typeof candidate === "number") return candidate;
-  const history = await checkHistory(candidate);
-  if (history !== 0) return history;
-  if (announcedIds(standing, verified).length === 0) return FALLBACK;
+  const latest = await freshAnnouncements(pr);
+  if (latest === null || !(await unchangedAtCleanup(candidate)))
+    return FALLBACK;
+  const withdrawn = await Promise.all(
+    latest
+      .filter((comment) => comment.head !== head)
+      .map(({ id }) => withdraw(pr, id)),
+  );
+  return withdrawn.every(Boolean) ? 0 : FALLBACK;
+}
 
+async function refreshAdvancedHead(
+  candidate: Candidate,
+  standing: NonNullable<Awaited<ReturnType<typeof announcements>>>,
+): Promise<number> {
+  const { pr, head, verified } = candidate;
+  const history = await checkHistory(candidate);
+  if (history !== 0 || announcedIds(standing, verified).length === 0)
+    return history || FALLBACK;
   const ci = await checkCi(candidate);
   if (ci !== 0) return ci;
   const ready = await announceReady(pr, head, candidate.reviewed);
@@ -310,9 +356,22 @@ async function refresh(request: Request): Promise<number> {
   if (result === FALLBACK && announcement.postedId !== undefined)
     await withdraw(pr, announcement.postedId);
   if (result !== 0) return result;
-  for (const stale of announcedIds(standing, verified))
-    await withdraw(pr, stale);
+  const latest = await freshAnnouncements(pr);
+  if (latest === null || !(await publishedAtCleanup(candidate)))
+    return FALLBACK;
+  for (const stale of announcedIds(latest, verified)) await withdraw(pr, stale);
   return 0;
+}
+
+async function refresh(request: Request): Promise<number> {
+  const { pr, head, verified } = request;
+  const standing = await freshAnnouncements(pr);
+  if (standing === null) return FALLBACK;
+  const candidate = await readCandidate(request);
+  if (typeof candidate === "number") return candidate;
+  return head === verified
+    ? cleanCurrentHead(candidate)
+    : refreshAdvancedHead(candidate, standing);
 }
 
 runMain("refresh-base-merge.ts", async () => {
