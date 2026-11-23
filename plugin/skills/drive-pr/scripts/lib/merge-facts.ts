@@ -232,6 +232,8 @@ function partialOf(
   const long = parts.filter(([, c]) => more(c)).map(([name]) => name);
   const why =
     long.length === 0 ? [] : [`more ${long.join(", ")} than one read holds`];
+  if (checkPageNodes(contexts) === null)
+    why.push("its first check page was incomplete");
   // The checks belong to the head only when the commit they were read on is it.
   const checked = str(at(commit, "commit", "oid"));
   if (checked !== "" && checked !== head)
@@ -359,7 +361,7 @@ interface CheckPage {
 
 /** The forge transport requires at least one second for a call. */
 function wholeSecondsLeft(deadline: number): number {
-  return Math.floor((deadline - currentMs()) / 1000);
+  return Math.ceil((deadline - currentMs()) / 1000);
 }
 
 /** Read a continuation pinned to the original head, using the board's deadline. */
@@ -383,7 +385,10 @@ async function readCheckPage(
     `after=${after}`,
   ]);
   if (!next.ok)
-    return failed("unreadable", "the forge did not return the next check page");
+    return failed(
+      "unreadable",
+      `the forge did not return the next check page: ${next.failure.reason}`,
+    );
   addPart(read, parseAnswer(next.value, []));
   const head = at(next.value, "data", "repository", "head");
   if (at(head, "oid") !== facts.head || at(next.value, "errors") !== undefined)

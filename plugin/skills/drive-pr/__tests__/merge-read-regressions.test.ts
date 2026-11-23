@@ -93,7 +93,7 @@ it("stops paging once the shared merge-facts deadline is spent", async () => {
     import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
     const root = process.env.MERGE_FIXTURE;
     appendFileSync(root + "/calls", "query\\n");
-    writeFileSync(root + "/clock", String(Number(readFileSync(root + "/clock", "utf8")) + 14800));
+    writeFileSync(root + "/clock", String(Number(readFileSync(root + "/clock", "utf8")) + 15000));
     console.log(JSON.stringify({ data: { repository: {} } }));
   `,
   );
@@ -149,7 +149,7 @@ it("withdraws standing wording when the final readiness read changes", async () 
         reviewThreads: { ...none, nodes: ${JSON.stringify(changed === "thread" ? [{ isResolved: false }] : [])} },
         reviewRequests: none,
         latestReviews: { ...none, nodes: [{ state: "APPROVED", authorAssociation: "MEMBER", author: { __typename: "User", login: "maintainer" }, commit: { oid: head } }] },
-        commits: { nodes: [{ commit: { oid: head, statusCheckRollup: { contexts: { ...none, nodes: [{ __typename: "CheckRun", name: "AI review", status: "COMPLETED", conclusion: "SUCCESS", checkSuite: { app: { slug: "example-review" } } }] } } } }] }
+        commits: { nodes: [{ commit: { oid: head, statusCheckRollup: { contexts: { ...none, nodes: [{ __typename: "CheckRun", name: "AI review", status: "COMPLETED", conclusion: "SUCCESS", isRequired: false, checkSuite: { app: { slug: "example-review" } } }] } } } }] }
       } } } }));
       `,
     );
@@ -167,7 +167,6 @@ for (const scenario of [
   "wrong-head",
   "unreadable-entry",
   "unreadable-first-page",
-  "deadline",
 ] as const) {
   it(`places a converged pull request using paginated checks (${scenario})`, async () => {
     const r = await run(
@@ -240,7 +239,6 @@ for (const scenario of [
       "wrong-head": 2,
       "unreadable-entry": 2,
       "unreadable-first-page": 1,
-      deadline: 1,
     } as const;
     if (scenario in partialRequests) {
       expect(calls).toHaveLength(
@@ -248,7 +246,6 @@ for (const scenario of [
       );
       expect(result.placed).toMatchObject({ place: "stay", lane: null });
       expect(result.partial).toContain("checks");
-      if (scenario === "deadline") expect(result.partial).toContain("deadline");
       if (scenario === "capped") expect(result.partial).toContain("4-page cap");
     } else {
       expect(calls).toHaveLength(2);
