@@ -333,8 +333,10 @@ export function unreportedNotice(
     ...notice(
       `${slug} PR #${pr.number} workspace ${workspace} unreportable, ledger generation ${generation(pr)}`,
       [
-        `PR #${pr.number} (${pr.title}): the dispatcher would act on it (${wanted}), but ${reason}, so it cannot tell whether a session still works on it and starts nothing.`,
-        `Close the terminals in ${workspace} that run no agent, and the next tick acts on it; or run \`/jig:drive-pr ${pr.number}\` there yourself, or stop it.`,
+        `PR #${pr.number} (${compact(pr.title, 120)}): the dispatcher would act on it (${compact(wanted, 200)}), but ${compact(reason, 300)}, so it cannot tell whether a session still works on it and starts nothing.`,
+      ],
+      [
+        `Check what holds ${compact(workspace, 200)} and its terminals: close the ones that run no agent, or settle the one the runtime could not read, and the next tick acts on it; or run \`/jig:drive-pr ${pr.number}\` there yourself, or stop it.`,
         pr.url,
       ],
     ),
@@ -355,13 +357,14 @@ export function withUnreported(
 ): Notice {
   const key = boundedKey(`${n.key} unreportable in ${workspace}`);
   const extra = unTagged(
-    `Note: ${reason}, so an agent may already work in ${workspace}; check it before picking the item up again.`,
+    `Note: ${compact(reason, 300)}, so an agent may already work in ${compact(workspace, 200)}; check it before picking the item up again.`,
   );
-  return {
-    ...n,
-    key,
-    text: `${n.text.replace(keyLine(n.key), keyLine(key))}\n${extra}`,
-  };
+  const head = keyLine(key);
+  const rest = n.text.slice(keyLine(n.key).length + 1);
+  const room = MAX_TEXT - head.length - extra.length - 2;
+  const body =
+    rest.length > room ? `${rest.slice(0, Math.max(0, room - 1))}…` : rest;
+  return { ...n, key, text: `${head}\n${extra}\n${body}` };
 }
 
 /** A rearm refused before launch because this host's lock could not be read. */

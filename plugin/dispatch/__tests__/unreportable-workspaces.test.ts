@@ -173,4 +173,28 @@ describe("a drive's unreportable notice", () => {
     const b = unreportedNotice("s", pr, "re-arm", "/work/b", "r");
     expect(a.key).not.toBe(b.key);
   });
+
+  it("keeps its recovery and link whole when the reason is huge", async () => {
+    const { unreportedNotice, withUnreported } = await import(
+      "../lib/notices.ts"
+    );
+    const pr = {
+      number: 5,
+      title: "t",
+      url: "https://pr/5",
+      evidence: {},
+    } as never;
+    const long = "x".repeat(9000);
+    const a = unreportedNotice("s", pr, long, "/work/a", long);
+    expect(a.text.length).toBeLessThanOrEqual(4000);
+    expect(a.text).toContain("Check what holds /work/a");
+    expect(a.text.endsWith("https://pr/5")).toBe(true);
+    const b = withUnreported(
+      { key: "k", text: `[jig dispatch: k]\n${long}` },
+      "/work/a",
+      "r",
+    );
+    expect(b.text.length).toBeLessThanOrEqual(4000);
+    expect(b.text.split("\n")[1]).toContain("an agent may already work");
+  });
 });

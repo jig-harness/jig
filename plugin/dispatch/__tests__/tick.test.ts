@@ -163,7 +163,7 @@ describe("jig dispatch reports what it would start", () => {
     expect(need?.notice?.key).toContain(
       "PR #7 workspace /ws/0 unreportable, ledger generation 3",
     );
-    expect(need?.notice?.text).toContain("Close the terminals in /ws/0");
+    expect(need?.notice?.text).toContain("Check what holds /ws/0");
   });
 
   it("still notifies a parked drive whose workspace the runtime cannot vouch for", async () => {
