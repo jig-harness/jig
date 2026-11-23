@@ -356,6 +356,19 @@ function grouped(entries: readonly LineSettled[]): LineSettled[] {
   return out;
 }
 
+/** The open need whose decision an answer answers, if any. */
+function needOfAnswer(
+  needs: readonly LineNeed[],
+  a: AnswerSeen & { repo: string; target: string },
+): LineNeed | undefined {
+  return needs.find(
+    (n) =>
+      n.repo === a.repo &&
+      n.target === a.target &&
+      n.decisions.some((d) => answersDecision(a, d)),
+  );
+}
+
 /** An answer a station took and could not carry out, as an entry; its need, when it is still on the line, gives the rest. */
 function unsettledEntry(
   a: AnswerSeen & { repo: string; target: string },
@@ -454,12 +467,7 @@ export function readSettled(
     return {
       rows: page.flatMap((a) => {
         // Its card stays open: an answer to a decision no open need carries is not listed as unsettled.
-        const need = needs.find(
-          (n) =>
-            n.repo === a.repo &&
-            n.target === a.target &&
-            n.decisions.some((d) => answersDecision(a, d)),
-        );
+        const need = needOfAnswer(needs, a);
         return need === undefined ? [] : [unsettledEntry(a, need)];
       }),
       full: page.length === UNSETTLED_PAGE,
@@ -521,12 +529,7 @@ export function readSettled(
     AnswerSeen & { repo: string; target: string }
   >;
   const extra = answered.flatMap((a) => {
-    const need = needs.find(
-      (n) =>
-        n.repo === a.repo &&
-        n.target === a.target &&
-        n.decisions.some((d) => answersDecision(a, d)),
-    );
+    const need = needOfAnswer(needs, a);
     return need === undefined ? [] : [unsettledEntry(a, need)];
   });
   return grouped(

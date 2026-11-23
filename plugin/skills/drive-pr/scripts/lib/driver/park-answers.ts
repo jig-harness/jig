@@ -38,6 +38,35 @@ export interface ThreadComments {
   isResolved: boolean | null;
 }
 
+/** One comment of a thread response; `null` when a field it is judged by is missing or unreadable. */
+function parseComment(comment: unknown): CommentLike | null {
+  if (
+    !isRecord(comment) ||
+    typeof comment.url !== "string" ||
+    !isRecord(comment.author) ||
+    typeof comment.author.login !== "string" ||
+    typeof comment.authorAssociation !== "string" ||
+    typeof comment.createdAt !== "string" ||
+    typeof comment.body !== "string" ||
+    Number.isNaN(parseMs(comment.createdAt))
+  )
+    return null;
+  const edited = comment.lastEditedAt;
+  if (
+    edited !== null &&
+    (typeof edited !== "string" || Number.isNaN(parseMs(edited)))
+  )
+    return null;
+  return {
+    author: comment.author.login,
+    association: comment.authorAssociation,
+    at: comment.createdAt,
+    editedAt: edited,
+    url: comment.url,
+    body: comment.body,
+  };
+}
+
 /** Decode a complete thread response without silently losing evidence. */
 export function parseThreadComments(value: unknown): ThreadComments | null {
   let node = value;
@@ -53,29 +82,10 @@ export function parseThreadComments(value: unknown): ThreadComments | null {
   )
     return null;
   const parsed: CommentLike[] = [];
-  for (const comment of comments.nodes) {
-    if (
-      !isRecord(comment) ||
-      typeof comment.url !== "string" ||
-      !isRecord(comment.author) ||
-      typeof comment.author.login !== "string" ||
-      typeof comment.authorAssociation !== "string" ||
-      typeof comment.createdAt !== "string" ||
-      typeof comment.body !== "string" ||
-      Number.isNaN(parseMs(comment.createdAt)) ||
-      (comment.lastEditedAt !== null &&
-        (typeof comment.lastEditedAt !== "string" ||
-          Number.isNaN(parseMs(comment.lastEditedAt))))
-    )
-      return null;
-    parsed.push({
-      author: comment.author.login,
-      association: comment.authorAssociation,
-      at: comment.createdAt,
-      editedAt: comment.lastEditedAt,
-      url: comment.url,
-      body: comment.body,
-    });
+  for (const raw of comments.nodes) {
+    const comment = parseComment(raw);
+    if (comment === null) return null;
+    parsed.push(comment);
   }
   return {
     isResolved: typeof node.isResolved === "boolean" ? node.isResolved : null,
@@ -210,11 +220,10 @@ function standingNotes(
   answers: readonly PendingAnswer[],
 ): ParkNote[] {
   return notes.filter((n) => {
-    const at = Date.parse(n.at);
+    const at = parseMs(n.at);
     return !answers.some(
       (a) =>
-        a.author.toLowerCase() === n.author.toLowerCase() &&
-        Date.parse(a.at) > at,
+        a.author.toLowerCase() === n.author.toLowerCase() && parseMs(a.at) > at,
     );
   });
 }
