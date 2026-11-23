@@ -211,14 +211,32 @@ describe("a channel new to the host", () => {
     expect(phone.calls.flat()[0]?.notice.text).toContain("Sent again");
   });
 
-  it("starts each repository on its own first tick, not on the first repository's", async () => {
+  it("sends a cause on a repository that first runs after the channel started: the start is the host's", async () => {
     const h = host();
     const phone = fakeChannel("phone");
     await tick(h, [phone], causes(2));
     const other: RepoTarget = { ...h.repo, slug: "example-org/other-repo" };
     const later = await tick(h, [phone], causes(2, 10), h.state(), other);
-    expect(phone.calls).toEqual([]);
-    expect(later.channelStarts).toEqual([{ channel: "phone", causes: 2 }]);
+    expect(phone.calls.flat()).toHaveLength(2);
+    expect(later.channelStarts).toBeUndefined();
+  });
+
+  it("writes the event row when a cause recorded at the start is first delivered", async () => {
+    const h = host();
+    const phone = fakeChannel("phone");
+    const rows = () =>
+      (
+        stateDb(h.root)
+          .query("SELECT COUNT(*) AS n FROM log WHERE kind <> 'tick'")
+          .get() as { n: number }
+      ).n;
+    setSystemTime(new Date("2026-11-22T10:00:00.000Z"));
+    await tick(h, [phone], causes(1), h.state(), h.repo, 4 * HOUR);
+    stateDb(h.root).query("DELETE FROM log").run();
+    setSystemTime(new Date("2026-11-22T15:00:00.000Z"));
+    await tick(h, [phone], causes(1), h.state(), h.repo, 4 * HOUR);
+    expect(phone.calls.flat()).toHaveLength(1);
+    expect(rows()).toBeGreaterThan(0);
   });
 
   it("records the start as no send: no first-send time for what it recorded", async () => {
@@ -229,19 +247,28 @@ describe("a channel new to the host", () => {
     expect(firstSends(stateDb(h.root), SLUG).size).toBe(0);
   });
 
-  it("gives a channel that holds records but no start row its start row", async () => {
+  it("does not start a channel that holds a send record at another repository", async () => {
     const h = host();
     const phone = fakeChannel("phone");
     stateDb(h.root)
       .query(
-        "INSERT INTO notices (repo, key, target, workspace, at, lasting, channel) VALUES (?, ?, 'PR #1', '', '2026-01-01T00:00:00.000Z', 0, 'phone')",
+        "INSERT INTO notices (repo, key, target, workspace, at, lasting, channel) VALUES ('example-org/other-repo', ?, 'PR #1', '#notices', '2026-01-01T00:00:00.000Z', 0, 'phone')",
+      )
+      .run(`phone:example-org/other-repo PR #1`);
+    expect(channelStarted("phone", h.root)).toBe(true);
+    const after = await tick(h, [phone], causes(2));
+    expect(phone.calls.flat()).toHaveLength(2);
+    expect(after.channelStarts).toBeUndefined();
+  });
+
+  it("counts the silent records of an incomplete start as no start", async () => {
+    const h = host();
+    stateDb(h.root)
+      .query(
+        "INSERT INTO notices (repo, key, target, workspace, at, lasting, channel) VALUES (?, ?, 'PR #1', 'channel start', '2026-01-01T00:00:00.000Z', 0, 'phone')",
       )
       .run(SLUG, `phone:${keyOf(1)}`);
-    await tick(h, [phone], causes(1));
-    stateDb(h.root)
-      .query("DELETE FROM notices WHERE channel = 'phone' AND repo <> ''")
-      .run();
-    expect(channelStarted("phone", SLUG, h.root)).toBe(true);
+    expect(channelStarted("phone", h.root)).toBe(false);
   });
 
   it("does not resend the standing causes of a renamed channel", async () => {
@@ -262,7 +289,7 @@ describe("a channel new to the host", () => {
     const phone = fakeChannel("phone");
     await tick(h, [phone], causes(2));
     stateDb(h.root).query("DELETE FROM notices WHERE channel = ?").run("phone");
-    expect(channelStarted("phone", h.repo.slug, h.root)).toBe(false);
+    expect(channelStarted("phone", h.root)).toBe(false);
     const again = await tick(h, [phone], causes(2));
     expect(phone.calls).toEqual([]);
     expect(again.channelStarts).toEqual([{ channel: "phone", causes: 2 }]);
@@ -279,7 +306,7 @@ describe("a channel new to the host", () => {
         .filter((n) => n.channel === "phone")
         .map((n) => n.outcome),
     ).toEqual(["waits", "waits"]);
-    expect(channelStarted("phone", h.repo.slug, h.root)).toBe(false);
+    expect(channelStarted("phone", h.root)).toBe(false);
 
     phone.reachable = true;
     const started = await tick(h, [phone], causes(2));

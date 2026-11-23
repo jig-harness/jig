@@ -33,7 +33,7 @@
  *   that can send through a channel with no record on this host does not
  *   send the causes that already stand, one message each: it records them
  *   as known (`startFrom`), without sending, on every repository of that
- *   tick, and says once on the receipt how many (`channelStarts`). Only a
+ *   tick (the start is the host's, one row), and says once on the receipt how many (`channelStarts`). Only a
  *   cause that appears or changes afterwards is sent, and the causes
  *   recorded this way follow the usual rules: repeated on
  *   `dispatch.renotify_after` while they stand, dropped when they leave. A
@@ -79,6 +79,7 @@ import {
 import { holderRecordStands } from "../holder-notices.ts";
 import {
   channelStarted,
+  unmarkChannelStarted,
   dropSuppressions,
   ledgerKey,
   markChannelStarted,
@@ -618,16 +619,15 @@ function dueOn(
   return [];
 }
 
-/** Whether `channel` has yet to begin on this repository, or started this tick and so starts alike on every repository of it. A repository the channel already holds records for gets its start row now. */
+/** Whether `channel` has yet to begin on this host, or started this tick and so starts alike on every repository of it. */
 function startingChannel(
   channel: string,
-  { repo, root, report }: SendScope,
+  { root, report }: SendScope,
   state: ApplyState,
 ): boolean {
   if (state.channelStarts?.has(channel) === true) return true;
   try {
-    if (!channelStarted(channel, repo.slug, root)) return true;
-    markChannelStarted(channel, repo.slug, currentIso(), root);
+    return !channelStarted(channel, root);
   } catch (error) {
     outcomeLogFailed(report, `the start of the ${channel} channel`, error);
   }
@@ -637,9 +637,9 @@ function startingChannel(
 /**
  * Start `channel` from the causes that already stand: record each as known
  * without sending it, so only a cause that appears or changes afterwards is
- * sent, and tell the receipt once how many. The channel's start row goes in
- * after the records, per repository, and only once every record is in, so a
- * tick that fails part way starts it again. The records are silent: they
+ * sent, and tell the receipt once how many. The channel's start row, one for the host, goes in
+ * after a repository's records, and only while every record of the tick is
+ * in, so a tick that fails part way starts it again. The records are silent: they
  * are no send's history.
  */
 function startFrom(
@@ -672,9 +672,14 @@ function startFrom(
       ),
     );
   }
-  if (!complete) return [];
+  state.channelStartFailed ??= new Set();
   try {
-    markChannelStarted(channel, scope.repo.slug, currentIso(), scope.root);
+    if (!complete) {
+      // One repository's records are incomplete, so the host's start is: take back a row an earlier repository of the tick wrote.
+      state.channelStartFailed.add(channel);
+      unmarkChannelStarted(channel, scope.root);
+    } else if (!state.channelStartFailed.has(channel))
+      markChannelStarted(channel, currentIso(), scope.root);
   } catch (error) {
     outcomeLogFailed(
       scope.report,

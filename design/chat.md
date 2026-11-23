@@ -102,15 +102,17 @@ repeats on `dispatch.renotify_after` while it stands, and backs off in the
 failure ledger under `notice <channel> <key>` while delivery fails
 (`notice <key>` on `orca-card`, as today). A channel with no record on the
 host starts from what stands: its first tick that can send records the causes
-already standing as known, without sending them, and sends only what appears
-or changes afterwards, so adding a channel to a host with a backlog does not
-send the backlog one message at a time. A one-line summary message was the
-other option; recording silently is the default because the dashboard's Needs
-you is already where the backlog is read. A start row in the `notices` table
-(no repository, the key `channel started`) says the channel has begun, so a
-channel that had nothing to carry is not mistaken for a new one when its first
-cause appears; it goes with the channel's records, so a renamed channel, or
-one whose records were dropped, starts again.
+already standing, on every repository of that tick, as known, without sending
+them, and sends only what appears or changes afterwards, so adding a channel
+to a host with a backlog does not send the backlog one message at a time. The
+dashboard's Needs you is where the backlog is read. A start row in the
+`notices` table (no repository, the key `channel started`) says the channel
+has begun on the host, so a channel that had nothing to carry is not mistaken
+for a new one when its first cause appears; so does a record of a send at any
+repository. The silent records of a start that did not complete count for
+neither, and the start row goes in only while every repository's records of
+the tick are in. The row goes with the channel's records, so a renamed
+channel, or one whose records were dropped, starts again.
 
 A notice becomes structured, so each channel renders it in its own way.
 Beside today's text and key it carries the piece of work's

@@ -24,10 +24,11 @@
  *
  * A channel's first send on this host starts it from the causes that
  * already stand (`channelStarted`, `markChannelStarted`): one row under the
- * key `channel started <repository>`, at no repository, is the record that the
- * channel has begun on that repository, so that a channel which has sent nothing yet is not
- * mistaken for a new one when its first cause appears. A channel's records
- * and that row go together.
+ * key `channel started`, at no repository, is the record that the channel
+ * has begun on this host, so that a channel which has sent nothing yet is not
+ * mistaken for a new one when its first cause appears. A record of a send
+ * at any repository says the same; the silent records of a start that did
+ * not complete do not. A channel's records and that row go together.
  */
 import type { Database } from "bun:sqlite";
 import { insertRow, type LogRow } from "./log.ts";
@@ -55,30 +56,25 @@ function noticeKeyOf(channel: string, stored: string): string {
 /** The stored workspace of a record that only says a cause was known when its channel started: nothing was sent, so it is no send's history. */
 export const SILENT_START = "channel start";
 
-/** The stored key of the row that records a channel's start on one repository, at no repository: no notice's key reads like it, since a notice's key starts with a repository's `owner/name` or with `host `. */
-function startedKey(channel: string, repo: string): string {
-  return recordKey(channel, `channel started ${repo}`);
+/** The stored key of the row that records a channel's start on this host, at no repository: no notice's key reads like it, since a notice's key starts with a repository's `owner/name` or with `host `. */
+function startedKey(channel: string): string {
+  return recordKey(channel, "channel started");
 }
 
-/** Whether `channel` has begun on `repo`: its start row there, or any record the channel holds for it (one an earlier release wrote). */
-export function channelStarted(
-  channel: string,
-  repo: string,
-  root: string,
-): boolean {
+/** Whether `channel` has begun on this host: its start row, or a record of a send it holds at any repository (one an earlier release wrote). A silent record of an incomplete start is no send. */
+export function channelStarted(channel: string, root: string): boolean {
   return (
     stateDb(root)
       .query(
-        "SELECT 1 AS found FROM notices WHERE channel = ?1 AND (repo = ?2 OR (repo = '' AND key = ?3)) LIMIT 1",
+        "SELECT 1 AS found FROM notices WHERE channel = ?1 AND ((repo = '' AND key = ?2) OR (repo <> '' AND workspace <> ?3)) LIMIT 1",
       )
-      .get(channel, repo, startedKey(channel, repo)) !== null
+      .get(channel, startedKey(channel), SILENT_START) !== null
   );
 }
 
-/** Record that `channel` has begun on `repo`; the row stays, and the record's key never meets a notice's. */
+/** Record that `channel` has begun on this host; the row stays, and the record's key never meets a notice's. */
 export function markChannelStarted(
   channel: string,
-  repo: string,
   at: string,
   root: string,
 ): void {
@@ -87,7 +83,14 @@ export function markChannelStarted(
       `INSERT INTO notices (repo, key, target, workspace, at, lasting, channel)
        VALUES ('', ?, '', '', ?, 1, ?) ON CONFLICT (repo, key) DO NOTHING`,
     )
-    .run(startedKey(channel, repo), at, channel);
+    .run(startedKey(channel), at, channel);
+}
+
+/** Take back `channel`'s start row, so the next tick that can send starts it again. */
+export function unmarkChannelStarted(channel: string, root: string): void {
+  stateDb(root)
+    .query("DELETE FROM notices WHERE repo = '' AND key = ?")
+    .run(startedKey(channel));
 }
 
 /** The failure ledger's key of a delivery of the notice keyed `key` on `channel`. */
@@ -197,9 +200,20 @@ export function suppress(
   const db = stateDb(root);
   const key = recordKey(channel, record.key);
   if (repeat) {
-    db.query(
-      "UPDATE notices SET sent_at = ?1, at = CASE WHEN workspace = ?5 THEN ?1 ELSE at END, workspace = ?2 WHERE repo = ?3 AND key = ?4",
-    ).run(record.at, record.workspace, record.repo, key, SILENT_START);
+    inTransaction(db, () => {
+      const silent =
+        db
+          .query(
+            "SELECT 1 AS found FROM notices WHERE repo = ?1 AND key = ?2 AND workspace = ?3",
+          )
+          .get(record.repo, key, SILENT_START) !== null;
+      db.query(
+        "UPDATE notices SET sent_at = ?1, at = CASE WHEN workspace = ?5 THEN ?1 ELSE at END, workspace = ?2 WHERE repo = ?3 AND key = ?4",
+      ).run(record.at, record.workspace, record.repo, key, SILENT_START);
+      // The first real delivery of a cause only recorded silently writes its event row.
+      if (silent && event !== null && record.workspace !== SILENT_START)
+        insertRow(db, event);
+    });
     return;
   }
   inTransaction(db, () => {
