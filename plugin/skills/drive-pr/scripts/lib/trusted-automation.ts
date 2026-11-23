@@ -514,13 +514,6 @@ function changedPair(
   return ok({ side: m[1] ?? "", name, version: m[4] ?? "" });
 }
 
-/**
- * Removed and added key-version maps from a manifest patch. A key counts only
- * as a dependency: nested below the manifest's top level, and, where the
- * patch shows the section it sits in, in one of the dependency sections.
- * Keys are kept apart by that section, and a key the patch changes twice in
- * one section, or twice with the section unseen, is ambiguous.
- */
 type StackFrame = { name: string; root: boolean };
 
 /** Advance a manifest hunk's object stack on a non-change context line. */
@@ -563,6 +556,14 @@ function recordChangedPair(
   return ok(undefined);
 }
 
+/**
+ * Removed and added key-version maps from a manifest patch. A key counts only
+ * as a dependency: nested below the manifest's top level, and, where the
+ * patch shows the section it sits in, in one of the dependency sections; a
+ * section the patch does not show is unproven and changes nothing.
+ * Keys are kept apart by that section, and a key the patch changes twice in
+ * one section is ambiguous.
+ */
 function diffPairs(
   patch: string,
 ): Outcome<{ removed: Pairs; added: Pairs }, "unread"> {

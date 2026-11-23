@@ -20,15 +20,6 @@ import {
   trustedEntryFor,
 } from "./trusted-automation.ts";
 
-/**
- * A pull request's commits and files at `head`, from the forge's listings of
- * the pull request itself, so they describe the pull request's own diff and
- * commits and not a comparison the forge may compute from another merge
- * base. The commit listing ends at the head, which pins what it read; a
- * listing that fills its page does not read whole. With `slug` `null` the
- * repository is the one the forge client's own view of the working directory
- * names.
- */
 type BoundedGet = (
   path: string,
   label: string,
@@ -87,6 +78,11 @@ async function readPinnedPull(
   const pull = isRecord(read.value) ? read.value : {};
   const headSha = isRecord(pull.head) ? pull.head.sha : undefined;
   const baseSha = isRecord(pull.base) ? pull.base.sha : undefined;
+  if (typeof headSha !== "string" || typeof baseSha !== "string")
+    return failed(
+      "unreadable",
+      "the pull request's response carries no usable head or base commit id",
+    );
   if (headSha !== head || baseSha !== baseOid)
     return failed(
       "unreadable",
@@ -159,24 +155,29 @@ async function readCheckedCommits(
   return ok({ value: commits.value, count: commitsOk.value });
 }
 
+/** The listings must match the counts the closing read reports; the opening counts were checked as each page arrived. */
 function checkSnapshotCounts(
-  before: Record<string, unknown>,
   after: Record<string, unknown>,
   filesCount: number,
   commitsCount: number,
 ): Outcome<void, "unreadable"> {
-  for (const [pull, label] of [
-    [before, "before"],
-    [after, "after"],
-  ] as const)
-    if (pull.changed_files !== filesCount || pull.commits !== commitsCount)
-      return failed(
-        "unreadable",
-        `the listings do not match the pull request's counts ${label} they were read`,
-      );
+  if (after.changed_files !== filesCount || after.commits !== commitsCount)
+    return failed(
+      "unreadable",
+      "the listings do not match the pull request's counts after they were read",
+    );
   return ok(undefined);
 }
 
+/**
+ * A pull request's commits and files at `head`, from the forge's listings of
+ * the pull request itself, so they describe the pull request's own diff and
+ * commits and not a comparison the forge may compute from another merge
+ * base. The commit listing ends at the head, which pins what it read; a
+ * listing that fills its page does not read whole. With `slug` `null` the
+ * repository is the one the forge client's own view of the working directory
+ * names.
+ */
 export async function readAutomationFacts(
   slug: string | null,
   number: number,
@@ -216,7 +217,6 @@ export async function readAutomationFacts(
   const after = await readPinnedPull(get, repo, number, head, baseOid);
   if (!after.ok) return after;
   const matched = checkSnapshotCounts(
-    before.value,
     after.value,
     files.value.count,
     commits.value.count,
