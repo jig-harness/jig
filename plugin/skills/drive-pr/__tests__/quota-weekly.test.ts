@@ -202,6 +202,51 @@ describe("claude adapter: the weekly notice", () => {
     }
   });
 
+  it("reports no cut-short walk when the session's own transcript was read whole", () => {
+    const sid = "3c8a2f10-9b4d-4e6a-8c1f-0d2e4b6a8c10";
+    writeClaude(`${sid}.jsonl`, [
+      JSON.stringify({ type: "user", sessionId: sid, timestamp: AT }),
+    ]);
+    process.env.DRIVE_PR_QUOTA_MAX_SCAN_MS = "0";
+    const truncated: string[] = [];
+    expect(
+      claudeAdapter.detect({
+        cwd: CWD,
+        since: W_SINCE,
+        now: W_NOW,
+        correlation: { vendor: "claude", sessionId: sid },
+        onScanTruncated: (vendor) => truncated.push(vendor),
+      }),
+    ).toBeNull();
+    expect(truncated).toEqual([]);
+  });
+
+  it("still reports the cut-short walk when the session's transcript is nowhere to be read", () => {
+    process.env.DRIVE_PR_QUOTA_MAX_SCAN_MS = "0";
+    mkdirSync(join(root, "claude", "-Users-dev-workspaces-proj-alpha"), {
+      recursive: true,
+    });
+    const truncated: string[] = [];
+    const realError = console.error;
+    console.error = () => {
+      // The truncation line is expected here; keep the output quiet.
+    };
+    try {
+      expect(
+        claudeAdapter.detect({
+          cwd: CWD,
+          since: W_SINCE,
+          now: W_NOW,
+          correlation: { vendor: "claude", sessionId: "absent-session" },
+          onScanTruncated: (vendor) => truncated.push(vendor),
+        }),
+      ).toBeNull();
+    } finally {
+      console.error = realError;
+    }
+    expect(truncated).toEqual(["claude"]);
+  });
+
   it("keeps the bounded walk, its message and its signal for a pass with no session id", () => {
     writeClaude("s.jsonl", [weekly(WEEKLY)]);
     process.env.DRIVE_PR_QUOTA_MAX_SCAN_MS = "0";

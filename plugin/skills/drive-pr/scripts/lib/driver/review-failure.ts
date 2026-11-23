@@ -183,6 +183,8 @@ export async function handleFailedReviewPass(
     preexistingSnapshot.truncatedByVendor,
   );
   if (block !== null) {
+    // A wall was found, so no adapter's cut-short walk speaks for this stop.
+    driverRuntime.quotaScanTruncated = [];
     return await handleQuotaBlock(block, now, round, context);
   }
 

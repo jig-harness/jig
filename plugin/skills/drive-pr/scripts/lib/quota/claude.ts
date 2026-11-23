@@ -135,6 +135,18 @@ function recognisedNotice(
   return null;
 }
 
+/** What reading one session's transcripts by name found. */
+interface SessionLookup {
+  /** Its transcripts changed since the pass started. */
+  files: string[];
+  /**
+   * Whether the session's own transcript was found and every listing and
+   * file read in the lookup completed: then the walk's truncation hides
+   * nothing of this pass.
+   */
+  read: boolean;
+}
+
 /**
  * The transcripts of session `sessionId` changed since `sinceMs`, read
  * without walking the tree: `<project>/<sessionId>.jsonl` and the subagent
@@ -142,35 +154,42 @@ function recognisedNotice(
  * directory. Only the top level is listed, so the size of the rest of the
  * tree costs nothing and no walk bound applies. The file name only narrows
  * where to look: every record read is still matched on its own `sessionId`.
+ * A file that vanished is absent; any other failure to read one leaves the
+ * lookup incomplete, as it leaves the walk truncated.
  */
-function sessionFiles(sessionId: string, sinceMs: number): string[] {
+function sessionFiles(sessionId: string, sinceMs: number): SessionLookup {
   // A session id names a file; one that could name a path is not read.
-  if (!/^[A-Za-z0-9_-]+$/.test(sessionId)) return [];
+  if (!/^[A-Za-z0-9_-]+$/.test(sessionId)) return { files: [], read: false };
   const root = projectsRoot();
-  const out: string[] = [];
+  const files: string[] = [];
+  let found = false;
+  let complete = true;
   const keep = (path: string): void => {
     try {
-      if (statSync(path).mtimeMs >= sinceMs) out.push(path);
-    } catch {
-      // Gone or unreadable: it contributes nothing.
+      if (statSync(path).mtimeMs >= sinceMs) files.push(path);
+    } catch (err) {
+      if (!isConfirmedAbsence(err)) complete = false;
     }
   };
-  forEachDirEntry(root, (project) => {
+  const listed = forEachDirEntry(root, (project) => {
     if (!project.isDirectory()) return true;
     const dir = join(root, project.name);
     const transcript = join(dir, `${sessionId}.jsonl`);
-    if (existsSync(transcript)) keep(transcript);
-    const subagents = join(dir, sessionId, "subagents");
-    if (existsSync(subagents)) {
-      forEachDirEntry(subagents, (entry) => {
-        if (!entry.isDirectory() && entry.name.endsWith(".jsonl"))
-          keep(join(subagents, entry.name));
-        return true;
-      });
+    if (existsSync(transcript)) {
+      found = true;
+      keep(transcript);
     }
+    const subagents = join(dir, sessionId, "subagents");
+    if (!existsSync(subagents)) return true;
+    const all = forEachDirEntry(subagents, (entry) => {
+      if (!entry.isDirectory() && entry.name.endsWith(".jsonl"))
+        keep(join(subagents, entry.name));
+      return true;
+    });
+    if (!all) complete = false;
     return true;
   });
-  return out;
+  return { files, read: found && listed && complete };
 }
 
 /**
@@ -401,14 +420,18 @@ function blockOf(
   };
 }
 
-/** `walked`, with the transcripts of `sessionId` read by name when there is one (`sessionFiles`). */
+/**
+ * `walked`, with the transcripts of `sessionId` read by name when there is
+ * one (`sessionFiles`), and whether that lookup read the session whole.
+ */
 function withSessionFiles(
   walked: readonly string[],
   sessionId: string | null,
   sinceMs: number,
-): string[] {
-  if (sessionId === null) return [...walked];
-  return [...new Set([...sessionFiles(sessionId, sinceMs), ...walked])];
+): SessionLookup {
+  if (sessionId === null) return { files: [...walked], read: false };
+  const own = sessionFiles(sessionId, sinceMs);
+  return { files: [...new Set([...own.files, ...walked])], read: own.read };
 }
 
 /**
@@ -705,8 +728,8 @@ export const claudeAdapter: QuotaAdapter = {
     // cannot hide this pass's own wall. The walk still runs: a transcript in
     // a layout the lookup does not know is found there, and matched on the
     // same record id.
-    const files = withSessionFiles(scan.files, ourSessionId, sinceFloorMs);
-    for (const path of files) {
+    const lookup = withSessionFiles(scan.files, ourSessionId, sinceFloorMs);
+    for (const path of lookup.files) {
       const isPreexisting = opts.preexistingSessions?.has(path) ?? false;
       // A file that already existed when the pass was spawned ORDINARILY
       // belongs to a session that started before it — a human's chat in this
@@ -871,13 +894,15 @@ export const claudeAdapter: QuotaAdapter = {
         "  If this recurs, the ~/.claude/projects tree may be too large to scan within budget; DRIVE_PR_QUOTA_MAX_SCAN_MS raises the wall-clock allowance.",
       );
     }
-    if (best === null && scan.truncated) {
+    if (best === null && scan.truncated && !lookup.read) {
       // A DIFFERENT walk from the two above: this is the detection-time scan
       // itself giving up before reaching every transcript touched since the
       // pass started, not the pre-spawn snapshot. "No wall found" here is not
       // the same claim as "no wall exists" — the walk may simply not have
       // reached the transcript carrying one. Say so rather than letting the
-      // caller read this as an ordinary, fully-investigated pass failure.
+      // caller read this as an ordinary, fully-investigated pass failure;
+      // unless the session lookup read this pass's own transcripts whole,
+      // when the walk's truncation hides nothing of this pass.
       reportTruncatedScan(
         opts,
         claudeVendor,

@@ -134,12 +134,12 @@ export function composeDriverReport(input: {
   const { pr, code, state, round } = input;
   const stall = code === exitOf("STALLED") ? (input.stall ?? null) : null;
   const named = driveExitReport(code);
-  const unscanned = unscannedWall(code);
+  const probe = driverRuntime.stopProbe;
+  const failure = probe?.code === code ? probeFailure(probe) : null;
+  const unscanned = failure === null ? unscannedWall(code) : null;
   const stop = redactReportText(
     `${stopText(pr, code, state, stall)}${unscanned === null ? "" : unscanned.note}`,
   );
-  const probe = driverRuntime.stopProbe;
-  const failure = probe?.code === code ? probeFailure(probe) : null;
   const cause =
     failure !== null
       ? "environment"

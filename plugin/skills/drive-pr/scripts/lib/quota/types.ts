@@ -185,12 +185,13 @@ export interface DetectOpts {
    * would trade one misattribution for a blind spot. Adapters this does not
    * name fall back to `preexistingSessions` + `cwd` + `since`.
    */
-  correlation?: SpawnCorrelation /**
+  correlation?: SpawnCorrelation;
+  /**
    * Called with the adapter's vendor when its detection-time walk was cut
    * short by either bound and it found no wall: "no wall" is then not a
    * finding, and the caller says so where a person reads the stop (the
    * drive's closing report), beside the line the adapter prints.
-   */;
+   */
   onScanTruncated?: (vendor: string) => void;
 }
 

@@ -118,8 +118,11 @@ exit, followed by what the last
 the same launch concluded; its `cause` and `suggested_next` are the ones this
 table gives the exit. A park's text names the first parked decision's
 question and how many more wait, and a usage-limit stop's names the limit and
-when it resets. An exit this table does not list has cause `unknown` and a
-next step a person investigates. A `cause` is absent where the drive did not
+when it resets. A pass failure (exit `1`) whose usage-limit scan was cut
+short before it found a wall says so in its text, and has cause `unknown`
+and a next step that looks for a usage-limit notice first: a limit the scan
+did not reach is not a tool failure. An exit this table does not list has
+cause `unknown` and a next step a person investigates. A `cause` is absent where the drive did not
 fall short of its goal.
 
 <!-- protocol:generated source=plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts#TERMINAL_STATES.report -->
