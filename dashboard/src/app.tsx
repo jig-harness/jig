@@ -599,10 +599,9 @@ function CardView({
     );
   return (
     <>
-      {line !== null &&
-      (hasNeedRows(line, clock.nowMs) ||
-        tokens.length > 0 ||
-        storedListUntrusted()) ? (
+      {(line !== null && hasNeedRows(line, clock.nowMs)) ||
+      tokens.length > 0 ||
+      storedListUntrusted() ? (
         <PanelBoundary name="What needs you" className="pNeeds" reads={line}>
           <NeedsPanel
             line={line}

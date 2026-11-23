@@ -553,13 +553,14 @@ export function NeedsPanel({
   filterActive = false,
   filterKey = "",
 }: {
-  line: LineSnapshot;
+  /** Null before any tick has run: the panel then holds only the token settings. */
+  line: LineSnapshot | null;
   clock: Clock;
   filterActive?: boolean;
   /** Changes whenever the card filter does, reopening matching groups. */
   filterKey?: string;
 }) {
-  const allRows = needRows(line, clock);
+  const allRows = line === null ? [] : needRows(line, clock);
   const [everyone, setEveryone] = useState("any");
   const rows = filterAnswerStates(allRows, everyone);
   const groups = groupRows(rows);
@@ -600,7 +601,7 @@ export function NeedsPanel({
       </div>
       <DecisionCounts rows={rows} />
       {send.panel}
-      <AnsweredHolds line={line} />
+      {line === null ? null : <AnsweredHolds line={line} />}
       <div className="needList">
         {groups.map((group) => (
           <NeedGroup
