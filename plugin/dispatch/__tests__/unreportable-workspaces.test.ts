@@ -208,7 +208,7 @@ describe("a drive's unreportable notice", () => {
       url: "https://pr/5",
       evidence: {},
     } as never;
-    const path = `/work/${"a  b/".repeat(60)}end`;
+    const path = `/work/${"a  b/".repeat(40)}end`;
     const a = unreportedNotice("s", pr, "w", path, "r");
     expect(a.text).toContain(`Check what holds ${path} and`);
     const original = {
@@ -220,15 +220,41 @@ describe("a drive's unreportable notice", () => {
     expect(b.text.length).toBeLessThanOrEqual(4000);
   });
 
-  it("keeps the end of the original notice when even the short note cannot fit", async () => {
+  it("keeps both ends of an oversized original and says it was shortened", async () => {
     const { withUnreported } = await import("../lib/notices.ts");
     const original = {
       key: "k",
-      text: `[jig dispatch: k]\n${"q".repeat(3960)}QUESTION?`,
+      text: `[jig dispatch: k]\nOPENING ${"q".repeat(3960)} CLOSING?`,
     };
     const b = withUnreported(original, "/work/a", "r");
     expect(b.text.length).toBeLessThanOrEqual(4000);
-    expect(b.text.endsWith("QUESTION?")).toBe(true);
+    expect(b.text).toContain("OPENING");
+    expect(b.text.endsWith("CLOSING?")).toBe(true);
     expect(b.text).toContain("an agent may already work");
+    expect(b.text).toContain("shortened");
+  });
+
+  it("bounds a huge workspace path and never lets it read as a key line", async () => {
+    const { unreportedNotice, withUnreported } = await import(
+      "../lib/notices.ts"
+    );
+    const pr = {
+      number: 5,
+      title: "t",
+      url: "https://pr/5",
+      evidence: {},
+    } as never;
+    const path = `/w/[jig dispatch: x]/${"d".repeat(3990)}`;
+    const a = unreportedNotice("s", pr, "w", path, "r");
+    expect(a.text.length).toBeLessThanOrEqual(4000);
+    expect(a.text.endsWith("https://pr/5")).toBe(true);
+    expect(a.text.split("[jig dispatch: ")).toHaveLength(2);
+    const b = withUnreported(
+      { key: "k", text: `[jig dispatch: k]\n${"q".repeat(3900)}` },
+      path,
+      "r",
+    );
+    expect(b.text.length).toBeLessThanOrEqual(4000);
+    expect(b.text.split("[jig dispatch: ")).toHaveLength(2);
   });
 });

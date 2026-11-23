@@ -63,6 +63,24 @@ function unTagged(text: string): string {
   return text.replaceAll(TAG, "[jig dispatch - ");
 }
 
+/** The most of a workspace's path a message shows; the notify step names the workspace whole. */
+const MAX_WORKSPACE = 300;
+
+/**
+ * A workspace as a message shows it: the path itself when it is short and
+ * cannot be read as a key line, otherwise its start and end with the key
+ * line's opening broken, marked as shortened. One bound for every message
+ * that names a workspace, so no notice grows with the path.
+ */
+function workspaceLabel(workspace: string): string {
+  const cut =
+    workspace.length > MAX_WORKSPACE
+      ? `${workspace.slice(0, 100)}…${workspace.slice(workspace.length - (MAX_WORKSPACE - 101))}`
+      : workspace;
+  const safe = unTagged(cut);
+  return safe === workspace ? workspace : `${safe} (shortened)`;
+}
+
 /** A message: its key, reserved priority lines, bounded detail, and its uncut tail. */
 function notice(
   fullKey: string,
@@ -329,14 +347,15 @@ export function unreportedNotice(
   workspace: string,
   reason: string,
 ): Notice {
+  const shown = workspaceLabel(workspace);
   return {
     ...notice(
-      `${slug} PR #${pr.number} workspace ${workspace} unreportable, ledger generation ${generation(pr)}`,
+      `${slug} PR #${pr.number} workspace ${unTagged(workspace)} unreportable, ledger generation ${generation(pr)}`,
       [
         `PR #${pr.number} (${compact(pr.title, 120)}): the dispatcher would act on it (${compact(wanted, 200)}), but ${compact(reason, 300)}, so it cannot tell whether a session still works on it and starts nothing.`,
       ],
       [
-        `Check what holds ${unTagged(workspace)} and its terminals: close the ones that run no agent, or settle the one the runtime could not read, and the next tick acts on it; or run \`/jig:drive-pr ${pr.number}\` there yourself, or stop it.`,
+        `Check what holds ${shown} and its terminals: close the ones that run no agent, or settle the one the runtime could not read, and the next tick acts on it; or run \`/jig:drive-pr ${pr.number}\` there yourself, or stop it.`,
         pr.url,
       ],
     ),
@@ -355,33 +374,33 @@ export function withUnreported(
   workspace: string,
   reason: string,
 ): Notice {
-  const key = boundedKey(`${n.key} unreportable in ${workspace}`);
+  const key = boundedKey(`${n.key} unreportable in ${unTagged(workspace)}`);
   const head = keyLine(key);
   const rest = n.text.slice(keyLine(n.key).length + 1);
+  const shown = workspaceLabel(workspace);
   const fits = (note: string): boolean =>
     head.length + note.length + rest.length + 2 <= MAX_TEXT;
   const full = unTagged(
-    `Note: ${compact(reason, 300)}, so an agent may already work in ${unTagged(workspace)}; check it before picking the item up again.`,
+    `Note: ${compact(reason, 300)}, so an agent may already work in ${shown}; check it before picking the item up again.`,
   );
-  // The original notice carries its question whole: a long reason gives way
-  // to the short note before any of the original is cut.
+  // A long reason gives way to the short note before any of the original is cut.
   const short = unTagged(
-    `Note: a terminal in ${unTagged(workspace)} could not be read; an agent may already work there.`,
+    `Note: a terminal in ${shown} could not be read; an agent may already work there.`,
   );
-  // Smallest form: the workspace alone, for an original that nearly fills
-  // the limit.
-  const least = unTagged(
-    `Note: an agent may already work in ${unTagged(workspace)}.`,
-  );
+  const least = unTagged(`Note: an agent may already work in ${shown}.`);
   const extra = [full, short, least].find(fits) ?? least;
   const room = MAX_TEXT - head.length - extra.length - 2;
-  // What still cannot fit loses its start, never its end: the question and
-  // the link close the notice.
-  const body =
-    rest.length > room
-      ? `…${rest.slice(rest.length - Math.max(0, room - 1))}`
-      : rest;
-  return { ...n, key, text: `${head}\n${extra}\n${body}` };
+  if (rest.length <= room)
+    return { ...n, key, text: `${head}\n${extra}\n${rest}` };
+  // What cannot fit loses its middle: its opening names the cause and the
+  // question, its end carries the instruction and the link. The note says
+  // so, since the question may sit in the cut part.
+  const note = `${extra} The original notice is shortened; read the full question on the item.`;
+  const left = MAX_TEXT - head.length - note.length - 3;
+  const keepStart = Math.ceil(left / 2);
+  const keepEnd = Math.max(0, left - keepStart);
+  const body = `${rest.slice(0, keepStart)}…${rest.slice(rest.length - keepEnd)}`;
+  return { ...n, key, text: `${head}\n${note}\n${body}` };
 }
 
 /** A rearm refused before launch because this host's lock could not be read. */
