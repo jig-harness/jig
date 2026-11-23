@@ -142,6 +142,18 @@ export function groupCommit(
         .map((f) => ({ ...f, fault: `${member.target}: ${f.fault}` })),
     ),
   ];
+  for (const { commit: own } of perTarget) {
+    const free = own.answers.find((answer) => answer.answer.kind === "free");
+    const row =
+      free === undefined ? undefined : rows.find((r) => r.key === free.key);
+    if (free !== undefined && row !== undefined)
+      faults.push({
+        key: free.key,
+        place: row.place,
+        fault:
+          "your own words cannot be copied as a station answer; pick an option instead",
+      });
+  }
   const [first] = rows;
   if (perTarget.length === 0 && first !== undefined)
     faults.push({

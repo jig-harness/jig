@@ -26,13 +26,17 @@ import { frameStationDecision } from "../../plugin/shared/decisions/station.ts";
 import { dispatcherDecisionDigest } from "../../plugin/shared/decisions/station-digest.ts";
 import { fixture } from "../fixtures.ts";
 import { type NeedView, needRows } from "./needs-view.ts";
-import { type KeptAnswer, rowAnswer, withPick } from "./picking.ts";
+import { type KeptAnswer, rowAnswer, withPick, withText } from "./picking.ts";
 import {
   groupCommit,
   groupSends,
   postedText,
 } from "./question-group-commit.ts";
-import { sendToTarget, uncheckedTargets } from "./question-group-send.ts";
+import {
+  leftAfterSend,
+  sendToTarget,
+  uncheckedTargets,
+} from "./question-group-send.ts";
 import { targetWords } from "./question-group-words.ts";
 import {
   finishSend,
@@ -173,6 +177,26 @@ describe("a pick kept on a question group's card", () => {
   });
 });
 
+describe("a group card's Copy", () => {
+  it("holds back own words that jig send cannot submit", () => {
+    const card = cardOf([
+      stalledPickup("example-org/words", 17),
+      stalledPickup("example-org/words", 27),
+    ]);
+    const group = card.group;
+    const row = card.rows[0];
+    if (group === undefined || row === undefined)
+      throw new Error("no group row");
+    const commit = groupCommit(
+      group,
+      card.rows,
+      [withText(row, null, "free", "please investigate", CLOCK.nowMs)],
+      new Set(),
+    );
+    expect(commit.faults[0]?.fault).toContain("cannot be copied");
+  });
+});
+
 describe("a send with no answer from GitHub, on a question group's card", () => {
   it("is kept in the target's own record, held back on the next send until checked", async () => {
     const repo = "example-org/unsure";
@@ -309,6 +333,25 @@ describe("a partial send of a target with several decisions", () => {
     expect(targetWords(s.member, undefined, { text: kept }, s.text)?.text).toBe(
       "An earlier answer was sent here; the next tick reads it.",
     );
+  });
+});
+
+describe("a group send retry", () => {
+  it("leaves both sent and refused targets out until a person lists one again", () => {
+    const left = leftAfterSend(
+      new Set(["already-left"]),
+      new Map([
+        ["sent", { kind: "sent", urls: [] }],
+        ["refused", { kind: "refused", reason: "no", uncertain: false }],
+        ["not-attempted", { kind: "not attempted", reason: "no token" }],
+      ]),
+    );
+    expect([...left]).toEqual([
+      "already-left",
+      "sent",
+      "refused",
+      "not-attempted",
+    ]);
   });
 });
 

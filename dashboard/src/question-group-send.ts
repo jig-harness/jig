@@ -49,6 +49,19 @@ export type TargetOutcome =
   | { kind: "refused"; reason: string; uncertain: boolean }
   | { kind: "not attempted"; reason: string };
 
+/**
+ * Targets a group has already sent stay out of an immediate retry too. A
+ * person can list one again explicitly when another answer is wanted.
+ */
+export function leftAfterSend(
+  left: ReadonlySet<string>,
+  outcomes: ReadonlyMap<string, TargetOutcome>,
+): Set<string> {
+  const next = new Set(left);
+  for (const key of outcomes.keys()) next.add(key);
+  return next;
+}
+
 interface GroupState {
   sending: boolean;
   /** By the target's own card key. */
@@ -286,9 +299,11 @@ export function useGroupSend(
         update(id, (was) => ({ ...was, outcomes: new Map(outcomes) }));
       }
       update(id, (was) => {
-        const left = new Set(was.left);
-        for (const [key, o] of outcomes) if (o.kind !== "sent") left.add(key);
-        return { sending: false, outcomes, left };
+        return {
+          sending: false,
+          outcomes,
+          left: leftAfterSend(was.left, outcomes),
+        };
       });
       // Every target has its answer: the pick has done its work, unless it changed while sending.
       if ([...outcomes.values()].every((o) => o.kind === "sent")) {
