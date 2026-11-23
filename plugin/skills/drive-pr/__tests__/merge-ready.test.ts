@@ -870,26 +870,30 @@ describe("required checks and reviewer attempts", () => {
       );
     }
   });
-  it("does not let an optional pending check hide an approval request", () => {
-    const f = facts({
-      mergeState: "BLOCKED",
-      reviewDecision: "REVIEW_REQUIRED",
-    });
-    f.checks = [
-      ...f.checks,
-      {
-        name: "lint",
-        app: "github-actions",
-        required: false,
-        state: "pending",
-        startedAt: "2026-11-08T10:00:00Z",
-      },
-    ];
-    expect(f.checks.some((c) => c.state === "pending" && !c.required)).toBe(
-      true,
-    );
-    expect(readiness(f, RULES).lane).toBe("approve-first");
-  });
+  it.each([false, true])(
+    "does not let an optional pending check hide an approval request (mergeQueue %p)",
+    (mergeQueue) => {
+      const f = facts({
+        mergeQueue,
+        mergeState: "BLOCKED",
+        reviewDecision: "REVIEW_REQUIRED",
+      });
+      f.checks = [
+        ...f.checks,
+        {
+          name: "lint",
+          app: "github-actions",
+          required: false,
+          state: "pending",
+          startedAt: "2026-11-08T10:00:00Z",
+        },
+      ];
+      expect(f.checks.some((c) => c.state === "pending" && !c.required)).toBe(
+        true,
+      );
+      expect(readiness(f, RULES).lane).toBe("approve-first");
+    },
+  );
   it("takes the newest attempt id regardless of its start time", () => {
     const f = facts();
     f.checks = [

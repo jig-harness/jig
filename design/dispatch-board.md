@@ -183,7 +183,9 @@ Ready to merge, lane **merge now**, when all of these hold at the tick:
    types, whose manifest diff classifies every dependency change as one of
    them (a change to a lockfile alone classifies as the single type
    `lockfile`, so an entry that names update types admits it only when it
-   lists `lockfile`).
+   lists `lockfile`; a lockfile renamed from a file that is not a lockfile
+   does not classify, so its update type is unread even when its paths pass
+   the `paths` allowlist).
 9. It carries neither the `hold` label nor the
    [CI hold](../GLOSSARY.md) label (`ci.hold_label`), under which its
    required checks fail on purpose.
@@ -248,7 +250,7 @@ this order. The table lists the rows a reader most often needs, not every
 blocker: the predicate also places a dispatch `hold` label after the CI
 hold and before unresolved threads, lets a failing required check override a
 stale `CLEAN` state, applies failures on the merge-queue path too, and
-makes a pending required check wait whatever the merge state says, once check attempts are reduced to the latest per name and the earlier blockers (a draft, a hold, a confirmed failure) have not claimed the card.
+makes a pending required check wait whatever the merge state says, once an attempt that a later non-skipped attempt of the same name and app replaced (by their timestamps) is dropped, so a required pending attempt still waits when no such replacement is established, and the earlier blockers (a draft, a hold, a confirmed failure) have not claimed the card.
 Where the card names a hold, a failing check or a wait, that reason
 comes before the approval and merge rows below:
 
