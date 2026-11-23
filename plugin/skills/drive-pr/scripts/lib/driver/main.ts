@@ -599,7 +599,7 @@ async function drive(ctx: DriveContext): Promise<number> {
   // The budget the rounds enforce: the base plus what a re-arm granted, and
   // under `--rearm-budget` another grant when the counters spent it.
   const budget = await roundBudget(pr, maxRoundsN, options.rearmBudget, dryRun);
-  await announceRoundBudget(pr, budget, handoffAt);
+  await announceRoundBudget(pr, budget.rounds, handoffAt);
 
   await capturePickup(pr, dryRun, diag);
 
@@ -611,7 +611,8 @@ async function drive(ctx: DriveContext): Promise<number> {
     dryRun,
     agent,
     held,
-    maxRoundsN: budget,
+    maxRoundsN: budget.rounds,
+    maxAttemptsN: budget.attempts,
     forward,
     probeFlags,
     markReadyPolicy,

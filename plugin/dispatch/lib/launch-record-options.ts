@@ -82,7 +82,6 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
     ].every(optionalPositiveInteger) &&
     optionalBooleans(value, [
       "rearmConsumed",
-      "rearm",
       "pooled",
       "codexBypass",
       "headless",

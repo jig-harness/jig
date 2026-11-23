@@ -140,7 +140,7 @@
  *                                     # stamp progress — parking is its opposite.
  *   drive-state.ts takeover     [PR]                 # record a drive.ts --take-over (JSON on stdin)
  *   drive-state.ts deadline-retries [PR] --set bump|clear  # the drive's pass-deadline restarts
- *   drive-state.ts grant-rounds [PR] --set N      # raise the rounds a re-arm added to the budget
+ *   drive-state.ts grant-rounds [PR] --set N [--reset-attempts]  # raise the rounds a re-arm added to the budget
  *   drive-state.ts handoff      [PR]                 # (re)write the handoff file, and the ledger under a driver
  *   drive-state.ts seed-ledger  [PR]                 # lay a newer ledger over this state (its body on stdin)
  *   drive-state.ts lease        [PR]                 # who is driving this PR from this
@@ -395,8 +395,10 @@ function usage(): void {
   deadline-retries [PR] --set bump|clear
                                     count a pass-deadline restart (prints the
                                     count), or clear it when the drive ends
-  grant-rounds [PR] --set N         raise the rounds a re-arm added to the round
-                                    budget to N (never lowers it; prints the grant)
+  grant-rounds [PR] --set N [--reset-attempts]
+                                    raise the rounds a re-arm added to the round
+                                    budget to N (never lowers it; prints the grant);
+                                    --reset-attempts zeroes the passes counted on the head
   handoff      [PR]                 (re)write the handoff file, and the ledger under a driver
   seed-ledger  [PR]                 lay a newer ledger over this state (its body on stdin)
   admit        [PR]                 exit 0 if this tree may act on this PR, 13 if
@@ -442,6 +444,8 @@ interface Args {
   phaseName: string;
   outcome: string;
   unconfirmed: boolean;
+  /** `grant-rounds --reset-attempts`: zero the passes counted on the current head. */
+  resetAttempts: boolean;
   commentUrl: string;
   all: boolean;
   pushedSha: string;
@@ -527,6 +531,7 @@ const ARG_DEFAULTS: Omit<Args, "cmd" | "paths" | "keys" | "parkedAts"> = {
   phaseName: "",
   outcome: "",
   unconfirmed: false,
+  resetAttempts: false,
   commentUrl: "",
   all: false,
   pushedSha: "",
@@ -578,6 +583,9 @@ function parseArgs(argv: string[]): Args {
         break;
       case "--unconfirmed":
         a.unconfirmed = true;
+        break;
+      case "--reset-attempts":
+        a.resetAttempts = true;
         break;
       case "--if-present":
         a.ifPresent = true;
@@ -2725,7 +2733,7 @@ async function main(): Promise<number> {
       return deadlineRetries(store, a.phaseName);
 
     case "grant-rounds":
-      return grantRounds(store, a.phaseName);
+      return grantRounds(store, a.phaseName, a.resetAttempts);
 
     case "handoff":
       return handoff(pr, store);

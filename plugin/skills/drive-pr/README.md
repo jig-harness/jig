@@ -714,13 +714,16 @@ mechanical state rather than on anyone's judgement:
   the skill forbids an agent to, as it does for `clear-lease`.
 - **Round budget spent ([`MAX_ROUNDS`](../../protocol/drive-exits.md)).** Read the handoff file for what keeps the review
   open first. A re-arm with `--rearm-budget` grants one more round budget:
-  as many rounds past those the drive spent as `drive.max_rounds` (or
-  `--max-rounds`), on both the distinct heads reviewed and the passes on one
-  head. The grant is kept in the drive state and ledger, so a later restart
-  keeps it, and it is never renewed without another re-arm: the drive stops
-  on `MAX_ROUNDS` again once it spends it. A plain re-arm keeps the spent
-  budget and stops at once. `jig send drive@<repo> <PR> rearm` asks the
-  dispatcher for such a re-arm, and so does the steward's.
+  `drive.max_rounds` (or `--max-rounds`) more distinct heads, counting the
+  head the drive resumes on, and a fresh count of passes on that head, still
+  bounded by the same number. The grant is kept in the drive state and
+  published to the ledger, so a later restart or a takeover keeps it, and it
+  is never renewed without another re-arm: the drive stops on `MAX_ROUNDS`
+  again once it spends it. A plain re-arm keeps the spent budget and stops
+  at once. Only a person asks for the flag: `jig send drive@<repo> <PR>
+  rearm` asks the dispatcher for such a re-arm; the steward's and the tick's
+  re-drives never pass it, so an unconverging drive is never renewed without
+  someone reading its handoff.
 - **HITL-parked ([`HITL_PARKED`](../../protocol/drive-exits.md)).** Only decisions the repository's
   human-in-the-loop registry reserves are parked, each under its class, and
   the stop prints each in full: the question, the options with what each

@@ -966,9 +966,6 @@ export function seedFromLedger(
     attempts: l.attempts,
     attemptsHead: l.attemptsHead,
     deadlineRetries: l.deadlineRetries,
-    ...(l.roundsGranted === undefined
-      ? {}
-      : { roundsGranted: l.roundsGranted }),
     phase: l.phase === CONVERGED_CI_PHASE ? local.phase : l.phase,
     lastCountedHead: l.lastCountedHead,
     verifiedSha: l.verifiedSha,
@@ -992,6 +989,10 @@ export function seedFromLedger(
       : {}),
     ledgerGeneration: l.generation,
   };
+  // The ledger is the history being resumed: an absent grant means none,
+  // whatever this clone's older state held.
+  if (l.roundsGranted === undefined) delete state.roundsGranted;
+  else state.roundsGranted = l.roundsGranted;
   if (!isUsableState(state, local.pr))
     return {
       error: `the ledger (generation ${l.generation}) does not describe a usable drive state`,

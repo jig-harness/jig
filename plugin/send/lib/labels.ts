@@ -271,7 +271,7 @@ function rearmNotice(facts: PullFacts): string | null {
   const tree = treeNotice(facts.tree);
   if (facts.budgetSpent !== true) return tree;
   const budget =
-    "The drive stopped on its round budget (MAX_ROUNDS): the re-armed drive is granted one more round budget, as many rounds past those it spent as its drive.max_rounds, and stops on MAX_ROUNDS again if it spends them without converging.";
+    "The drive stopped on its round budget (MAX_ROUNDS): the re-armed drive is granted one more round budget, drive.max_rounds more heads counting the one it resumes on, and stops on MAX_ROUNDS again if it spends them without converging.";
   return tree === null ? budget : `${tree} ${budget}`;
 }
 

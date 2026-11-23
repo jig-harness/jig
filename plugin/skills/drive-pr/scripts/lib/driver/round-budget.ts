@@ -348,7 +348,7 @@ export async function readRoundBudget(
   const countedRaw = countedRes.stdout.trim();
   const counted = isDigits(countedRaw) ? Number.parseInt(countedRaw, 10) : 0;
   const round = Math.max(counted, peekedAttempts);
-  if (counted > context.maxRoundsN || peekedAttempts > context.maxRoundsN) {
+  if (counted > context.maxRoundsN || peekedAttempts > context.maxAttemptsN) {
     console.error(
       `hit --max-rounds (${context.maxRoundsN}) on PR #${context.pr} without converging`,
     );
@@ -360,6 +360,8 @@ export async function readRoundBudget(
     return MAX_ROUNDS_EXIT;
   }
 
+  context.budgetAtLimit =
+    counted >= context.maxRoundsN || peekedAttempts >= context.maxAttemptsN;
   console.error(
     `--- round ${round}/${context.maxRoundsN} on PR #${context.pr} ---`,
   );

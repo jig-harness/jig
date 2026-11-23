@@ -90,13 +90,13 @@ async function launched(w: World) {
 it("passes --rearm-budget to the drive a person re-armed after MAX_ROUNDS", async () => {
   const w = fixture(DRIVE_EXIT.MAX_ROUNDS, true);
   const record = await launched(w);
-  expect(record?.rearm).toBe(true);
+  expect(record?.rearmLabel).toBe("jig:rearm");
   expect(driveRuns(w)[0]?.argv).toContain("--rearm-budget");
 });
 
 it("grants no budget to a re-drive no one asked for", async () => {
   const w = fixture(DRIVE_EXIT.WORKTREE_UNCLEAN, false);
   const record = await launched(w);
-  expect(record?.rearm).toBeUndefined();
+  expect(record?.rearmLabel ?? null).toBeNull();
   expect(driveRuns(w)[0]?.argv).not.toContain("--rearm-budget");
 });

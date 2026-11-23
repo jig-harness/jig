@@ -1082,12 +1082,13 @@ stops admit it on a mechanical state:
   with `--window-reopened` only if you know the window has reopened: a person
   passes it, never an agent, as with `clear-lease`.
 - **[`MAX_ROUNDS`](../../protocol/drive-exits.md).** A re-arm with `--rearm-budget` (`arm-drive.ts`
-  forwards it; the dispatcher passes it on a re-arm a person or the steward
-  asked for) grants one more round budget when the durable counters spent
-  it: the drive state records the rounds spent as
-  `roundsGranted`, and the budget becomes those plus `--max-rounds`, on
-  both `rounds` and the per-head `attempts`. The grant survives a restart
-  and is never renewed without the flag, so the drive stops on
+  forwards it; the dispatcher passes it only on a re-arm a person asked for,
+  never on the steward's or the tick's) grants one more round budget when
+  the durable counters spent it: the drive state records the heads spent as
+  `roundsGranted`, so `--max-rounds` more distinct heads are allowed, counting
+  the head the drive resumes on, and the passes counted on that head restart
+  at zero, still bounded by `--max-rounds`. The grant survives a restart and
+  a takeover (it is published to the ledger) and is never renewed without the flag, so the drive stops on
   [`MAX_ROUNDS`](../../protocol/drive-exits.md) again once it spends it. Without the flag the re-arm stops
   at once on the spent budget. Pass the flag only on a person's re-arm,
   after the handoff file was read.

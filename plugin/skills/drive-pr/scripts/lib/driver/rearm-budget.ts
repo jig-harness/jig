@@ -17,6 +17,16 @@ function count(v: unknown): number | null {
   return typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : null;
 }
 
+/** The pull request's head, or `null` when it did not read. */
+async function currentHead(pr: string): Promise<string | null> {
+  const res = await run(
+    ["gh", "pr", "view", pr, "--json", "headRefOid", "--jq", ".headRefOid"],
+    { stderr: "ignore", timeoutSec: helperTimeoutSeconds() },
+  );
+  const head = res.stdout.trim();
+  return res.code === 0 && /^[0-9a-f]{7,64}$/.test(head) ? head : null;
+}
+
 /** The durable counters, read the way `readRoundBudget` reads them; an unreadable one stops the drive. */
 async function spentRounds(pr: string): Promise<SpentRounds> {
   const opts = {
@@ -33,46 +43,75 @@ async function spentRounds(pr: string): Promise<SpentRounds> {
     state = null;
   }
   const roundsRaw = rounds.stdout.trim();
-  const attempts = isRecord(state) ? count(state.attempts) : null;
+  const stored = isRecord(state) ? count(state.attempts) : null;
   const granted = isRecord(state) ? count(state.roundsGranted ?? 0) : null;
   if (
     rounds.code !== 0 ||
     !isDigits(roundsRaw) ||
-    attempts === null ||
+    stored === null ||
     granted === null
   )
     return fail(
       1,
       `cannot read the durable round budget for PR #${pr}; refusing to drive on an unknown round budget`,
     );
-  return { rounds: Number.parseInt(roundsRaw, 10), attempts, granted };
+  // Passes count per head and restart at one on another head, as the round
+  // gate reads them; an unreadable head keeps the stored figures.
+  const head = await currentHead(pr);
+  const rec = isRecord(state) ? state : {};
+  return {
+    rounds: Number.parseInt(roundsRaw, 10),
+    attempts: head === null || rec.attemptsHead === head ? stored : 0,
+    granted,
+    headCounted: head === null || rec.lastCountedHead === head,
+  };
+}
+
+/** The limits a drive enforces on its two counters. */
+export interface RoundLimits {
+  /** Distinct reviewed heads: the base plus what re-arms granted. */
+  rounds: number;
+  /** Passes on one head: the base. */
+  attempts: number;
 }
 
 /**
  * The budget this drive enforces. With `rearm`, a spent budget is extended
- * by `base` rounds past what the drive spent, recorded durably (except on a
- * dry run, which only says what it would grant) and announced.
+ * by `base` rounds, recorded durably (except on a dry run, which only says
+ * what it would grant), published to the drive ledger so a takeover keeps it,
+ * and announced.
  */
 export async function roundBudget(
   pr: string,
   base: number,
   rearm: boolean,
   dryRun: boolean,
-): Promise<number> {
+): Promise<RoundLimits> {
   const spent = await spentRounds(pr);
-  if (!rearm) return base + spent.granted;
-  const granted = rearmGrant(spent, base);
-  if (granted === spent.granted) return base + granted;
+  const limits = (granted: number) => ({
+    rounds: base + granted,
+    attempts: base,
+  });
+  if (!rearm) return limits(spent.granted);
+  const grant = rearmGrant(spent, base);
+  if (grant.granted === spent.granted && !grant.resetAttempts)
+    return limits(spent.granted);
   const was = base + spent.granted;
-  const budget = base + granted;
+  const budget = base + grant.granted;
   if (dryRun) {
     console.error(
       `re-arm: PR #${pr} has spent its round budget of ${was}; a re-arm would grant ${base} more rounds (budget ${budget}) [dry run: not recorded]`,
     );
-    return budget;
+    return limits(grant.granted);
   }
   const res = await run(
-    tsArgv(driveState, ["grant-rounds", pr, "--set", String(granted)]),
+    tsArgv(driveState, [
+      "grant-rounds",
+      pr,
+      "--set",
+      String(grant.granted),
+      ...(grant.resetAttempts ? ["--reset-attempts"] : []),
+    ]),
     { stdout: "ignore", stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
   );
   if (res.code !== 0)
@@ -80,8 +119,20 @@ export async function roundBudget(
       1,
       `drive.ts: could not record the re-arm's round grant for PR #${pr} (drive-state.ts exited ${res.code}); the drive would stop on its spent budget`,
     );
+  // The grant reaches the ledger before the drive relies on it: a takeover
+  // seeds from the ledger, and a drive that died first would lose it.
+  const published = await run(tsArgv(driveState, ["handoff", pr]), {
+    stdout: "ignore",
+    stderr: "inherit",
+    timeoutSec: helperTimeoutSeconds(),
+  });
+  if (published.code !== 0)
+    return fail(
+      1,
+      `drive.ts: could not publish the re-arm's round grant for PR #${pr} to the drive ledger (drive-state.ts handoff exited ${published.code}); re-arm again`,
+    );
   console.error(
-    `re-arm: PR #${pr} had spent its round budget of ${was}; granted ${base} more rounds: the budget is now ${budget}, and the drive stops on MAX_ROUNDS again when it spends them`,
+    `re-arm: PR #${pr} had spent its round budget of ${was}; the budget is now ${budget} heads (${base} more, counting the head it resumes on) and ${base} passes on a head, and the drive stops on MAX_ROUNDS again when it spends them`,
   );
-  return budget;
+  return limits(grant.granted);
 }

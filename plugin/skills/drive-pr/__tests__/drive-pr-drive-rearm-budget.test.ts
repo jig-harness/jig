@@ -95,22 +95,53 @@ function storedGrant(stateDir: string): unknown {
 }
 
 describe("rearmGrant", () => {
-  it("leaves the grant alone while the counters fit the budget", () => {
-    expect(rearmGrant({ rounds: 3, attempts: 2, granted: 0 }, 10)).toBe(0);
-    expect(rearmGrant({ rounds: 12, attempts: 4, granted: 5 }, 10)).toBe(5);
+  const spent = (
+    rounds: number,
+    attempts: number,
+    granted = 0,
+    headCounted = true,
+  ) => ({ rounds, attempts, granted, headCounted });
+
+  it("leaves the grant alone and the passes counted while the counters fit the budget", () => {
+    expect(rearmGrant(spent(3, 2), 10)).toEqual({
+      granted: 0,
+      resetAttempts: false,
+    });
+    expect(rearmGrant(spent(12, 4, 5), 10)).toEqual({
+      granted: 5,
+      resetAttempts: false,
+    });
   });
 
-  it("grants the rounds spent when the distinct heads passed the budget", () => {
-    // 11 of 10: the 11th head was counted, then refused, so 10 were spent.
-    expect(rearmGrant({ rounds: 11, attempts: 1, granted: 0 }, 10)).toBe(10);
+  it("grants the heads spent before the one it resumes on when the budget refused it", () => {
+    // 11 of 10: the 11th head was counted, then refused: it is the first of the new budget.
+    expect(rearmGrant(spent(11, 1), 10)).toEqual({
+      granted: 10,
+      resetAttempts: false,
+    });
   });
 
-  it("grants the rounds spent when the passes on one head reached it", () => {
-    expect(rearmGrant({ rounds: 4, attempts: 10, granted: 0 }, 10)).toBe(10);
+  it("counts the heads spent in full when a new head was pushed before the re-arm", () => {
+    expect(rearmGrant(spent(11, 0, 0, false), 10).granted).toBe(11);
   });
 
-  it("extends an earlier grant once that is spent too", () => {
-    expect(rearmGrant({ rounds: 21, attempts: 1, granted: 10 }, 10)).toBe(20);
+  it("treats a head count equal to the budget as spent (a quota stop on the last head)", () => {
+    expect(rearmGrant(spent(10, 3), 10)).toEqual({
+      granted: 9,
+      resetAttempts: false,
+    });
+  });
+
+  it("restarts the passes on one head instead of granting them, leaving the heads' allowance alone", () => {
+    expect(rearmGrant(spent(4, 10), 10)).toEqual({
+      granted: 0,
+      resetAttempts: true,
+    });
+  });
+
+  it("extends an earlier grant once that is spent too, and never lowers it", () => {
+    expect(rearmGrant(spent(21, 1, 10), 10).granted).toBe(20);
+    expect(rearmGrant(spent(2, 1, 10), 10).granted).toBe(10);
   });
 });
 
@@ -143,7 +174,7 @@ describe("drive.ts --rearm-budget", () => {
 
       const rearmed = await driveAt(f, "1", true);
       expectSpawnExit(rearmed, 6);
-      expect(rearmed.stderr).toContain("granted 1 more rounds");
+      expect(rearmed.stderr).toContain("the budget is now 2 heads");
       expect(rearmed.stderr).toContain("--- round 2/2 on PR #999 ---");
       expect(rearmed.passes).toBeGreaterThan(0);
       expect(rearmed.stderr).toContain("hit --max-rounds (2)");
@@ -175,19 +206,24 @@ describe("drive.ts --rearm-budget", () => {
 
       const rearmed = await driveAt(f, "1", true);
       expectSpawnExit(rearmed, 6);
-      expect(rearmed.stderr).toContain("granted 1 more rounds");
+      expect(rearmed.stderr).toContain("passes on a head");
+      // Exactly the base budget of passes, not the heads' allowance on top.
       expect(rearmed.passes).toBe(1);
-      expect(rearmed.stderr).toContain("hit --max-rounds (2)");
-      expect(rearmed.stderr).not.toContain("round 3/");
+      expect(rearmed.stderr).toContain("hit --max-rounds (1)");
+      expect(storedGrant(f.stateDir)).toBe(0);
     },
     MULTI_ROUND_TIMEOUT_MS,
   );
 
-  it("grants nothing to a drive that has budget left", async () => {
-    const f = fixture();
-    const r = await driveAt(f, "1", true);
-    expectSpawnExit(r, 6);
-    expect(r.stderr).not.toContain("granted");
-    expect(r.passes).toBe(1);
-  });
+  it(
+    "grants nothing to a drive that has budget left",
+    async () => {
+      const f = fixture();
+      const r = await driveAt(f, "1", true);
+      expectSpawnExit(r, 6);
+      expect(r.stderr).not.toContain("granted");
+      expect(r.passes).toBe(1);
+    },
+    MULTI_ROUND_TIMEOUT_MS,
+  );
 });
