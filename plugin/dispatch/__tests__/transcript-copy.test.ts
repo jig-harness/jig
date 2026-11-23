@@ -422,6 +422,44 @@ describe("keeping a run's transcript copy", () => {
     }
   });
 
+  it("leaves out text that names a credential field in any layer, whatever surrounds it or repeats it", () => {
+    const root = scratch();
+    const config = join(root, "config");
+    const enc = (v: string) => JSON.stringify(v).slice(1, -1);
+    const inner = enc(JSON.stringify({ token: "opaque-one" }));
+    claudeTranscript(config, [
+      { type: "assistant", message: "kept-between-a" },
+      { out: `[2026-01-01 log] ${enc(inner)} footer-a` },
+      { out: `${enc(JSON.stringify(`{"token":"opaque-two","token":null}`))}` },
+      { out: `{"token":"opaque-three","token":null}` },
+      { type: "assistant", message: "kept-between-b" },
+    ]);
+    holdCredential(ID, "some-other-credential");
+    try {
+      const copy = keepTranscriptCopy(
+        record(config, {
+          provider: { provider: "p" },
+        } as unknown as Partial<LaunchRecord>),
+        SESSION,
+        root,
+      );
+      const kept = readFileSync(String(copy?.transcript), "utf8")
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l));
+      const text = JSON.stringify(kept);
+      expect(text).not.toContain("opaque-");
+      expect(text).not.toContain("footer-a");
+      expect(kept.filter((e) => e.message !== undefined)).toEqual([
+        { type: "assistant", message: "kept-between-a" },
+        { type: "assistant", message: "kept-between-b" },
+      ]);
+      expect(copy?.cut).toBe(true);
+    } finally {
+      holdCredential("none", "unused-placeholder");
+    }
+  });
+
   it("redacts structured tool inputs by their secret keys", () => {
     const root = scratch();
     const config = join(root, "config");

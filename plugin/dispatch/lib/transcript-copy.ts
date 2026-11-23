@@ -234,6 +234,28 @@ function holdsAfterUnescaping(
   );
 }
 
+/** Every layer of `text` as its JSON escapes are decoded, the original first, stopping where decoding changes nothing or after `LOOK_DEPTH` decodes: the one traversal both secret checks share. */
+function decodeLayers(text: string): string[] {
+  const layers = [text];
+  for (let i = 0; i < LOOK_DEPTH; i++) {
+    const next = decodeOnce(layers[layers.length - 1] as string);
+    if (next === layers[layers.length - 1]) break;
+    layers.push(next);
+  }
+  return layers;
+}
+
+const MEMBER = /"((?:[^"\\]|\\.)*)"\s*:\s*(?!"<redacted>"|""|null\b)/g;
+
+/** Whether any layer of `text` holds a credential-named member with a value that is not masked, wherever the member sits and however the text around it parses: no bracket, footer, duplicate member or decode depth hides one. */
+function holdsCredentialMember(text: string): boolean {
+  return decodeLayers(text).some((layer) =>
+    Array.from(layer.matchAll(MEMBER)).some((m) =>
+      isCredentialKey(m[1] as string),
+    ),
+  );
+}
+
 /** The deepest structural nesting of arrays and objects that is walked; anything deeper counts as holding a secret. */
 const NEST_LIMIT = 64;
 
@@ -249,6 +271,8 @@ function leaksDecoded(
   if (typeof value === "string") {
     // A fenced block, a header or trailing text around encoded JSON does not parse, so the text is unescaped, in any spelling, and searched for each secret.
     if (holdsAfterUnescaping(value, secrets)) return true;
+    // Text in which any decode layer names a credential field with a live value is left out whole, parsed or not.
+    if (holdsCredentialMember(value)) return true;
     // JSON that only parses once the escapes around it are decoded is looked into the same way, so a credential field it reveals is not kept.
     for (const text of new Set([value, fullyDecoded(value)])) {
       const inner = embeddedJson(text);
