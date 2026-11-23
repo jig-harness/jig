@@ -21,14 +21,14 @@ function count(v: unknown): number | null {
 async function currentHead(pr: string): Promise<string | null> {
   const res = await run(
     ["gh", "pr", "view", pr, "--json", "headRefOid", "--jq", ".headRefOid"],
-    { stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
+    { stderr: "inherit", timeoutSec: Math.min(15, helperTimeoutSeconds()) },
   );
   const head = res.stdout.trim();
   return res.code === 0 && /^[0-9a-f]{7,64}$/.test(head) ? head : null;
 }
 
 /** The durable counters, read the way `readRoundBudget` reads them; an unreadable one stops the drive. */
-async function spentRounds(pr: string): Promise<SpentRounds> {
+async function spentRounds(pr: string, rearm: boolean): Promise<SpentRounds> {
   const opts = {
     stderr: "inherit" as const,
     timeoutSec: helperTimeoutSeconds(),
@@ -57,7 +57,7 @@ async function spentRounds(pr: string): Promise<SpentRounds> {
     );
   // Passes count per head and restart at one on another head, as the round
   // gate reads them; an unreadable head keeps the stored figures.
-  const head = await currentHead(pr);
+  const head = rearm ? await currentHead(pr) : null;
   const rec = isRecord(state) ? state : {};
   return {
     rounds: Number.parseInt(roundsRaw, 10),
@@ -87,7 +87,7 @@ export async function roundBudget(
   rearm: boolean,
   dryRun: boolean,
 ): Promise<RoundLimits> {
-  const spent = await spentRounds(pr);
+  const spent = await spentRounds(pr, rearm);
   const limits = (granted: number) => ({
     rounds: base + granted,
     attempts: base,
