@@ -154,12 +154,12 @@ async function existingReply(
   const comments = await threadComments(thread);
   if (comments === null)
     fail(1, `provisional-reply: could not read thread ${thread}`);
-  const found = comments.findLast(
+  const found = comments.comments.findLast(
     (c) =>
       TRUSTED_ASSOCIATIONS.has(c.association) && isProvisionalReply(c.body),
   );
   if (found === undefined) return null;
-  const listed = comments.map((c) => ({
+  const listed = comments.comments.map((c) => ({
     authorAssociation: c.association,
     body: c.body,
   }));

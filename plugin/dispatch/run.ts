@@ -174,6 +174,7 @@ import {
 } from "./lib/session.ts";
 import { failureText } from "./lib/text.ts";
 import { configuredPassArgs } from "../skills/drive-pr/scripts/lib/pass-args.ts";
+import { RESOLVED_PARKS_PR_ENV } from "../skills/drive-pr/scripts/lib/driver/rearm.ts";
 import {
   enterAfterStage,
   newerStateRefusal,
@@ -251,6 +252,17 @@ function driveCommand(record: LaunchRecord, script: string): string[] {
     "--",
     ...pass,
   ];
+}
+
+/** Only a launch bound to a person's re-arm request can clear resolved parks. */
+function resolvedParkPr(record: LaunchRecord): string {
+  if (
+    record.action !== "rearm" ||
+    record.rearmLabel == null ||
+    typeof record.rearmRequestId !== "number"
+  )
+    return "";
+  return String(record.pr);
 }
 
 /** The drive script: `drive-pr`'s, unless a test names another. */
@@ -536,6 +548,7 @@ async function executeStage(
       ...withoutRunTabMarker(passEnvironment(process.env, record)),
       ...(ownPass(record) ? NO_BACKGROUND_TASKS : {}),
       [LAUNCH_VARIABLE]: id,
+      [RESOLVED_PARKS_PR_ENV]: resolvedParkPr(record),
       JIG_OUTBOUND_CALLER: `pass:${record.action}:${record.id}`,
       ...(isDrive(record)
         ? { [DRIVER_REPORT_VARIABLE]: driverReportFile(id) }

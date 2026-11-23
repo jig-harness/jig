@@ -133,6 +133,7 @@ import { ended, passedBefore, type TickBound } from "./bounded.ts";
 import { commandLabel, hasCommand, type LabelConfig } from "../labels.ts";
 import {
   rearmableStop,
+  classifyRearm,
   rearmBinding,
   type RearmStop,
 } from "../rearm-binding.ts";
@@ -850,6 +851,10 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
       readFailed: true,
     };
   const ledger = snapshot.canonical.parsed.ledger;
+  const stop = rearmableStop(ledger)
+    ? { comment: snapshot.canonical.comment.id, generation: ledger.generation }
+    : null;
+  const request = rearmRequest(pr, r, listing.value, stop);
   const park = await readPark(
     pr.number,
     ledger,
@@ -857,6 +862,7 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
     listing.value,
     {},
     r.bound,
+    request.rearm === true,
   );
   const forge = await factsOf(pr, ledger, r);
   const reviewer = await r.admit(() =>
@@ -872,28 +878,11 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
       r.bound,
     ),
   );
-  let classified =
+  const classified = classifyRearm(
     reviewer?.classified ??
-    classifyLedger(ledger, nowMs, windowMs, park, forge);
-  const stop = rearmableStop(ledger)
-    ? { comment: snapshot.canonical.comment.id, generation: ledger.generation }
-    : null;
-  const request = rearmRequest(pr, r, listing.value, stop);
-  if (
-    request.rearm === true &&
-    classified.class !== "parked" &&
-    classified.class !== "unplaced"
-  )
-    classified = {
-      class: "re-armable",
-      why: "a person's rearm request asks to restart this stopped drive in its existing tree",
-    };
-  if (
-    typeof request.rearmFailure === "string" &&
-    classified.class !== "parked" &&
-    classified.class !== "unplaced"
-  )
-    classified = { class: "needs-person", why: request.rearmFailure };
+      classifyLedger(ledger, nowMs, windowMs, park, forge),
+    request,
+  );
   return {
     ...base,
     ...classified,

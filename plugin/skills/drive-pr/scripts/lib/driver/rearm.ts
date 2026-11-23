@@ -14,16 +14,17 @@
  *     equal, refuses with the wall's account named, because a successor on
  *     the same subscription is behind the same wall. A reset already past,
  *     or a person's `--window-reopened`, admits any account.
- *   - HITL_PARKED. Once EVERY parked item has an answer — a comment by an
+ *   - HITL_PARKED. An answer is a comment by an
  *     author GitHub vouches for as an owner, member or collaborator
  *     (`TRUSTED_ASSOCIATIONS`, the summary-finding guard's rule), later than
  *     the park, on the item's thread or as a pull-request comment with a line
  *     `answer <key>: …` — the re-arm keeps the answers in the state directory,
  *     unparks every item in one state mutation, and hands the answers to
  *     every pass until one completes, across later arms too, as human
- *     verdicts. With any item unanswered nothing is
- *     unparked, and the drive stops `HITL_PARKED` at its first gate as
- *     before. A comment the drive itself writes (one opening with an outcome
+ *     verdicts. A review thread already resolved on GitHub can settle its
+ *     park when there are no answers to account for. With any item still
+ *     waiting the drive leaves every item parked. A comment the drive
+ *     itself writes (one opening with an outcome
  *     token, or carrying a hidden marker other than the record of an answer
  *     `jig send` wrote, `answer-comment.ts`) is never read as an answer, and a
  *     pull-request comment counts only in the stated `answer <key>:` form:
@@ -75,6 +76,9 @@ import { provisionalDuties, provisionalNotice } from "./rearm-provisional.ts";
 import { humanVerdictNotice } from "./human-answer-notice.ts";
 import { parseMs } from "../../../../../shared/time.ts";
 export { humanVerdictNotice, NOTICE_MAX } from "./human-answer-notice.ts";
+
+/** A dispatcher launch bound to a person's explicit re-arm names its target. */
+export const RESOLVED_PARKS_PR_ENV = "DRIVE_PR_RESOLVED_PARKS_PR";
 
 /**
  * The arm command, in the drive's own mode, for a person to copy: with the
@@ -217,6 +221,7 @@ export {
   parkAnswers,
   prComments,
   threadComments,
+  type ThreadComments,
   type ParkAnswersResult,
 } from "./park-answers.ts";
 
@@ -226,8 +231,17 @@ export {
  */
 async function answeredParks(
   state: DriveState,
-): Promise<PendingVerdict[] | null> {
-  const found = await parkAnswers(state.pr, state.parked);
+  acceptResolvedThreads: boolean,
+): Promise<{ verdicts: PendingVerdict[]; resolved: PendingVerdict[] } | null> {
+  const found = await parkAnswers(
+    state.pr,
+    state.parked,
+    undefined,
+    undefined,
+    {
+      acceptResolvedThreads,
+    },
+  );
   if ("unreadable" in found) {
     console.error(
       `re-arm: could not read the comments that would answer parked ${found.unreadable}; leaving every item parked.`,
@@ -255,7 +269,15 @@ async function answeredParks(
     console.error(
       `re-arm: stale answers name an earlier decision framing for ${found.stale.map((v) => v.item.key).join(", ")}; copy a current answer line with its digest. Every item stays parked.`,
     );
-  if (waiting.length === 0 && unread.length === 0) return answered;
+  const resolved = found.resolved.map((item) => ({
+    kind: item.kind,
+    key: item.key,
+    reason: item.reason,
+    answers: [],
+    ...(item.digest === undefined ? {} : { digest: item.digest }),
+  }));
+  if (waiting.length === 0 && unread.length === 0)
+    return { verdicts: answered, resolved };
   // At the wide level, the unanswered items a provisional decision may take:
   // only once every place a person's answer could be was read, since an
   // answer in an unread one must never be decided over.
@@ -273,9 +295,9 @@ async function answeredParks(
     return null;
   }
   const duties = provisionalDuties(waiting);
-  if (duties !== null) return [...answered, ...duties];
+  if (duties !== null) return { verdicts: [...answered, ...duties], resolved };
   console.error(
-    `re-arm: ${answered.length} of ${state.parked.length} parked item(s) answered; still waiting on ${waiting.map((p) => `${p.kind} ${p.key}`).join(", ")}. Nothing is unparked until every one is.`,
+    `re-arm: ${answered.length + resolved.length} of ${state.parked.length} parked item(s) settled; still waiting on ${waiting.map((p) => `${p.kind} ${p.key}`).join(", ")}. Nothing is unparked until every one is.`,
   );
   return null;
 }
@@ -296,6 +318,8 @@ export async function admitAnsweredParks(
   dryRun: boolean,
 ): Promise<string> {
   const pr = String(state.pr);
+  const clearResolvedParks = process.env[RESOLVED_PARKS_PR_ENV] === pr;
+  delete process.env[RESOLVED_PARKS_PR_ENV];
   const stateDir = await resolveStateDir();
   const file = answersFile(stateDir, pr);
   const kept = readPendingVerdicts(stateDir, pr);
@@ -313,12 +337,19 @@ export async function admitAnsweredParks(
       `re-arm: ${carried.length} answered item(s) an earlier arm unparked are still owed to a pass (${file}).`,
     );
   if (!dryRun) await grantAnsweredRerun(pr, carried);
-  const fresh = state.parked.length === 0 ? [] : await answeredParks(state);
-  if (fresh === null || fresh.length === 0)
+  const found =
+    state.parked.length === 0
+      ? null
+      : await answeredParks(state, clearResolvedParks);
+  if (
+    found === null ||
+    (found.verdicts.length === 0 && found.resolved.length === 0)
+  )
     return dryRun ? "" : rearmNotice(carried, file);
+  const fresh = [...found.verdicts, ...found.resolved];
   if (dryRun) {
     console.error(
-      `(dry-run) re-arm would unpark ${fresh.length} answered item(s) and hand the answers to the first round.`,
+      `(dry-run) re-arm would unpark ${fresh.length} settled item(s) and hand any answers to the first round.`,
     );
     return "";
   }
@@ -326,7 +357,7 @@ export async function admitAnsweredParks(
   try {
     writePendingVerdicts(stateDir, pr, [
       ...kept.filter((v) => !keys.has(v.key)),
-      ...fresh,
+      ...found.verdicts,
     ]);
   } catch (err) {
     console.error(
@@ -336,7 +367,8 @@ export async function admitAnsweredParks(
   }
   // Bound to the parks whose answers were read: a park replaced under the
   // same key, or added, while the comments were read refuses the whole set.
-  // The consumed verdicts on stdin become each park's resolution receipt.
+  // The consumed verdicts on stdin become each human-answer receipt;
+  // resolved review threads are checked separately and leave no handoff.
   const parkedAt = new Map(state.parked.map((p) => [p.key, p.at ?? ""]));
   const res = await run(
     tsArgv(driveState, [
@@ -352,16 +384,30 @@ export async function admitAnsweredParks(
       ]),
     ]),
     {
-      stdin: JSON.stringify(fresh.map(consumedOf)),
+      stdin: JSON.stringify([
+        ...found.verdicts.map(consumedOf),
+        ...found.resolved.map((v) => ({
+          key: v.key,
+          answers: [],
+          resolvedThread: true,
+        })),
+      ]),
       stderr: "inherit",
       timeoutSec: helperTimeoutSeconds(),
     },
   );
   if (res.code !== 0)
-    return recoverFailedUnpark(pr, res.code, carried, fresh, file);
-  await grantAnsweredRerun(pr, fresh);
-  await announceUnparked(pr, fresh, file);
-  return rearmNotice([...carried, ...fresh], file);
+    return recoverFailedUnpark(
+      pr,
+      res.code,
+      carried,
+      fresh,
+      new Set(found.resolved.map((v) => v.key)),
+      file,
+    );
+  await grantAnsweredRerun(pr, found.verdicts);
+  await announceUnparked(pr, found.verdicts, file, found.resolved.length);
+  return rearmNotice([...carried, ...found.verdicts], file);
 }
 
 /**
@@ -406,6 +452,7 @@ async function recoverFailedUnpark(
   code: number | null,
   carried: readonly PendingVerdict[],
   fresh: readonly PendingVerdict[],
+  resolvedKeys: ReadonlySet<string>,
   file: string,
 ) {
   const gone = unparkedAfterFailure(await readDriveState(pr), fresh);
@@ -414,16 +461,17 @@ async function recoverFailedUnpark(
       1,
       `re-arm: drive-state.ts unpark exited ${code}, and the drive state cannot be read to tell whether the answered items were unparked; stopping with the answers kept in ${file}. Re-arm once the state reads.`,
     );
+  const humanGone = gone.filter((v) => !resolvedKeys.has(v.key));
   console.error(
     gone.length > 0
-      ? `re-arm: drive-state.ts unpark exited ${code}, but the answered items are unparked; handing their answers on.`
-      : `re-arm: could not unpark the answered items (drive-state.ts exited ${code}); every one stays parked, and the next arm reads their answers again.`,
+      ? `re-arm: drive-state.ts unpark exited ${code}, but the settled items are unparked.`
+      : `re-arm: could not unpark the settled items (drive-state.ts exited ${code}); every one stays parked, and the next arm reads them again.`,
   );
   if (gone.length > 0) {
-    await grantAnsweredRerun(pr, gone);
-    await announceUnparked(pr, gone, file);
+    await grantAnsweredRerun(pr, humanGone);
+    await announceUnparked(pr, humanGone, file, gone.length - humanGone.length);
   }
-  return rearmNotice([...carried, ...gone], file);
+  return rearmNotice([...carried, ...humanGone], file);
 }
 
 /** Say what the re-arm unparked, and record it (`events.ts`). */
@@ -431,11 +479,19 @@ async function announceUnparked(
   pr: string,
   fresh: readonly PendingVerdict[],
   file: string,
+  resolved: number,
 ): Promise<void> {
+  if (resolved > 0)
+    console.error(
+      `re-arm: cleared ${resolved} parked review thread(s) already resolved on GitHub.`,
+    );
+  if (fresh.length === 0) return;
   const duties = fresh.filter((v) => v.provisional === true).length;
+  const answered =
+    resolved === 0 ? "every parked item" : "every remaining parked item";
   console.error(
     duties === 0
-      ? `re-arm: every parked item on PR #${pr} is answered — unparked ${fresh.length} and handing the answers to the first round as human verdicts (kept in ${file} until a pass completes).`
+      ? `re-arm: ${answered} on PR #${pr} is answered — unparked ${fresh.length} and handing the answers to the first round as human verdicts (kept in ${file} until a pass completes).`
       : `re-arm: PR #${pr} re-armed at the wide level — unparked ${fresh.length}: ${fresh.length - duties} answered, handed on as human verdicts, and ${duties} to decide provisionally (kept in ${file} until a pass completes).`,
   );
   await recordDriveEvent(

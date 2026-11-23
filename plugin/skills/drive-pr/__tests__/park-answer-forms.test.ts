@@ -175,6 +175,60 @@ describe("one park interpretation for local state and the published ledger", () 
     expect(result.responded).toEqual([item]);
   });
 
+  it("settles an already-resolved thread without inventing a human verdict", async () => {
+    const result = await parkAnswers(12, [item], "example/repo", [], {
+      acceptResolvedThreads: true,
+      threadComments: async () => ({ comments: [], isResolved: true }),
+    });
+    if ("unreadable" in result) throw new Error("fixture unreadable");
+    expect(result.waiting).toEqual([]);
+    expect(result.answered).toEqual([]);
+    expect(result.resolved).toEqual([item]);
+  });
+
+  it("keeps a resolved thread parked when its answer evidence is disputed", async () => {
+    const result = await parkAnswers(
+      12,
+      [item],
+      "example/repo",
+      [
+        conversation("answer PRRT_a: approve", "alice"),
+        conversation(
+          "answer PRRT_a: choose Remove",
+          "bob",
+          "2026-11-10T12:00:00Z",
+        ),
+      ],
+      {
+        acceptResolvedThreads: true,
+        threadComments: async () => ({ comments: [], isResolved: true }),
+      },
+    );
+    if ("unreadable" in result) throw new Error("fixture unreadable");
+    expect(result.resolved).toEqual([]);
+    expect(result.waiting).toEqual([item]);
+    expect(result.disputed).toHaveLength(1);
+  });
+
+  it("keeps a resolved park waiting on an ordinary read", async () => {
+    const result = await parkAnswers(12, [item], "example/repo", [], {
+      threadComments: async () => ({ comments: [], isResolved: true }),
+    });
+    if ("unreadable" in result) throw new Error("fixture unreadable");
+    expect(result.waiting).toEqual([item]);
+    expect(result.resolved).toEqual([]);
+  });
+
+  it("reports missing resolution evidence when reading an explicit re-arm", async () => {
+    const result = await parkAnswers(12, [item], "example/repo", [], {
+      acceptResolvedThreads: true,
+      threadComments: async () => ({ comments: [], isResolved: null }),
+    });
+    expect(result).toEqual({
+      unreadable: "thread PRRT_a (GitHub did not report its resolution status)",
+    });
+  });
+
   it("leaves disagreements waiting and agrees across raw and redacted decisions", async () => {
     const listing = [
       conversation(

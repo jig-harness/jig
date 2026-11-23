@@ -32,6 +32,12 @@ function json(value: string): unknown {
 const THREAD_QUERY =
   "query($id:ID!){node(id:$id){... on PullRequestReviewThread{isResolved comments(first:100){pageInfo{hasNextPage} nodes{url author{login} authorAssociation createdAt lastEditedAt body}}}}}";
 
+/** A complete review-thread read, including its current resolution state. */
+export interface ThreadComments {
+  comments: CommentLike[];
+  isResolved: boolean | null;
+}
+
 /**
  * A review thread's comments; `null` when they did not read, the failed
  * call's class told to `failed`. An incomplete thread can hide a dispute,
@@ -48,7 +54,7 @@ export async function threadComments(
   timeoutSec?: number,
   failed?: (failure: OutboundFailure) => void,
   repo?: string,
-): Promise<CommentLike[] | null> {
+): Promise<ThreadComments | null> {
   const began = currentMs();
   const res = await ghCall(
     ["api", "graphql", "-f", `query=${THREAD_QUERY}`, "-f", `id=${key}`],
@@ -63,24 +69,29 @@ export async function threadComments(
     if (failure !== null) failed?.(failure);
     return null;
   }
-  let comments = json(res.stdout);
-  for (const key of ["data", "node", "comments"])
-    comments = isRecord(comments) ? comments[key] : undefined;
+  let node = json(res.stdout);
+  for (const key of ["data", "node"])
+    node = isRecord(node) ? node[key] : undefined;
+  const comments = isRecord(node) ? node.comments : undefined;
   if (
+    !isRecord(node) ||
     !isRecord(comments) ||
     !isRecord(comments.pageInfo) ||
     comments.pageInfo.hasNextPage !== false ||
     !Array.isArray(comments.nodes)
   )
     return null;
-  return comments.nodes.filter(isRecord).map((n) => ({
-    author: isRecord(n.author) ? text(n.author.login) : "",
-    association: text(n.authorAssociation),
-    at: text(n.createdAt),
-    editedAt: typeof n.lastEditedAt === "string" ? n.lastEditedAt : null,
-    url: text(n.url),
-    body: text(n.body),
-  }));
+  return {
+    isResolved: typeof node.isResolved === "boolean" ? node.isResolved : null,
+    comments: comments.nodes.filter(isRecord).map((n) => ({
+      author: isRecord(n.author) ? text(n.author.login) : "",
+      association: text(n.authorAssociation),
+      at: text(n.createdAt),
+      editedAt: typeof n.lastEditedAt === "string" ? n.lastEditedAt : null,
+      url: text(n.url),
+      body: text(n.body),
+    })),
+  };
 }
 
 /**
@@ -139,6 +150,8 @@ export type ParkAnswersResult =
       /** Each item with any answer, with every person's latest answer to it, stale ones included. */
       responses: ParkDispute[];
       notes: ParkNote[];
+      /** Thread parks a person already resolved without leaving an answer. */
+      resolved: ParkedItem[];
     }
   | { unreadable: string };
 
@@ -186,6 +199,7 @@ function classifyPark(
   item: ParkedItem,
   answers: PendingAnswer[],
   incomplete: boolean,
+  resolved: boolean,
 ): void {
   if (answers.length > 0) {
     result.responded.push(item);
@@ -196,6 +210,12 @@ function classifyPark(
   if (stale.length > 0) result.stale.push({ item, answers: stale });
   const disputed = disputedAnswers(answers);
   if (disputed) result.disputed.push({ item, answers });
+  // Resolution is sufficient only where it does not erase evidence of an
+  // answer or a dispute. Those still need the ordinary answer safeguards.
+  if (resolved && answers.length === 0 && !incomplete) {
+    result.resolved.push(item);
+    return;
+  }
   if (incomplete) {
     result.unread.push(item);
     if (answers.length > 0) result.partial.push(verdict);
@@ -205,6 +225,21 @@ function classifyPark(
   else result.waiting.push(item);
 }
 
+type ThreadLoader = (
+  key: string,
+) => Promise<ThreadComments | CommentLike[] | null>;
+
+async function loadParkThread(
+  item: ParkedItem,
+  loader: ThreadLoader,
+): Promise<ThreadComments | null> {
+  if (item.kind !== "thread") return { comments: [], isResolved: false };
+  const loaded = await loader(item.key);
+  return Array.isArray(loaded)
+    ? { comments: loaded, isResolved: false }
+    : loaded;
+}
+
 /** The optional loader lets read-only commands keep their deadline/cache policy. */
 export async function parkAnswers(
   pr: number,
@@ -212,7 +247,9 @@ export async function parkAnswers(
   repo?: string,
   listing?: readonly unknown[],
   loaders: {
-    threadComments?: (key: string) => Promise<CommentLike[] | null>;
+    acceptResolvedThreads?: boolean;
+    /** Arrays are accepted for callers from before resolution state was read; they never certify resolution. */
+    threadComments?: ThreadLoader;
   } = {},
 ): Promise<ParkAnswersResult> {
   const conversation =
@@ -229,29 +266,38 @@ export async function parkAnswers(
     responded: [],
     responses: [],
     notes: [],
+    resolved: [],
   };
+  const loadThread =
+    loaders.threadComments ??
+    ((key) => threadComments(key, undefined, undefined, repo));
+  const pullComments = conversation ?? [];
   for (const item of parked) {
-    const thread =
-      item.kind === "thread"
-        ? await (
-            loaders.threadComments ??
-            ((key) => threadComments(key, undefined, undefined, repo))
-          )(item.key)
-        : [];
+    const thread = await loadParkThread(item, loadThread);
     if (thread === null && conversation === null)
       return { unreadable: `${item.kind} ${item.key}` };
+    const threadHistory = thread?.comments ?? [];
     const answers = latestAnswers([
-      ...sourceAnswers(item, thread ?? [], "thread"),
-      ...sourceAnswers(item, conversation ?? [], "conversation"),
+      ...sourceAnswers(item, threadHistory, "thread"),
+      ...sourceAnswers(item, pullComments, "conversation"),
     ]);
+    if (
+      loaders.acceptResolvedThreads &&
+      thread?.isResolved === null &&
+      answers.length === 0
+    )
+      return {
+        unreadable: `thread ${item.key} (GitHub did not report its resolution status)`,
+      };
     result.notes.push(
-      ...sourceNotes(item, [...(thread ?? []), ...(conversation ?? [])]),
+      ...sourceNotes(item, [...threadHistory, ...pullComments]),
     );
     classifyPark(
       result,
       item,
       answers,
       item.at === undefined || thread === null || conversation === null,
+      loaders.acceptResolvedThreads === true && thread?.isResolved === true,
     );
   }
   return result;

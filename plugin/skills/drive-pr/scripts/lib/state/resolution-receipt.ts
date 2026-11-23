@@ -10,8 +10,8 @@
  * parked again, so a decision parked and answered twice has two receipts. It
  * carries the answers the re-arm consumed, without their bodies (the pass
  * reads those from the kept answers, `pass-handoff.ts`), the outcome and the
- * times. `unpark --stdin` writes them in the same state mutation that removes
- * the parks, so a park never leaves the state without its receipt. The state
+ * times. `unpark --stdin` writes them in the same mutation that removes
+ * answered and provisional parks. The state
  * keeps the newest `RESOLVED_PARKS_KEPT`; optional in a stored state and a
  * ledger, where an older file reads as none.
  */
@@ -54,6 +54,8 @@ export interface ResolutionReceipt {
 export interface ConsumedVerdict {
   key: string;
   provisional?: true;
+  /** The forge already confirmed closure. This transient verdict has no human answer receipt. */
+  resolvedThread?: true;
   answers: PendingAnswer[];
 }
 
@@ -126,6 +128,21 @@ function isConsumedAnswer(v: unknown): v is PendingAnswer {
   return isRecord(v) && isText(v.body) && isReceiptAnswer(v);
 }
 
+const CONSUMED_FIELDS = {
+  key: isText,
+  provisional: optional((value) => value === true),
+  resolvedThread: optional((value) => value === true),
+};
+
+function isConsumedVerdict(v: unknown): boolean {
+  if (!isRecord(v) || !Array.isArray(v.answers)) return false;
+  if (!hasFields(v, CONSUMED_FIELDS)) return false;
+  return v.resolvedThread === true
+    ? v.provisional === undefined && v.answers.length === 0
+    : (v.provisional === true || v.answers.length > 0) &&
+        v.answers.every(isConsumedAnswer);
+}
+
 /** The verdicts `unpark --stdin` reads; a reason when the text is not them. */
 export function parseConsumed(raw: string): ConsumedVerdict[] | string {
   let value: unknown;
@@ -134,21 +151,10 @@ export function parseConsumed(raw: string): ConsumedVerdict[] | string {
   } catch {
     return "unpark --stdin reads a JSON list of the verdicts the re-arm consumed";
   }
-  const ok =
-    Array.isArray(value) &&
-    value.every(
-      (v) =>
-        isRecord(v) &&
-        isText(v.key) &&
-        (v.provisional === undefined || v.provisional === true) &&
-        Array.isArray(v.answers) &&
-        // Only a provisional verdict consumed no answer; an answered one names at least one.
-        (v.provisional === true || v.answers.length > 0) &&
-        v.answers.every(isConsumedAnswer),
-    );
+  const ok = Array.isArray(value) && value.every(isConsumedVerdict);
   return ok
     ? (value as ConsumedVerdict[])
-    : "unpark --stdin: each verdict needs a key and its answers (an empty list only with provisional: true)";
+    : "unpark --stdin: each verdict needs a key and answers (an empty list requires provisional: true or resolvedThread: true)";
 }
 
 /** An answer without its body: the receipt names the comment, the pass reads the words. */
@@ -169,7 +175,12 @@ export function receiptsFor(
 ): ResolutionReceipt[] {
   return removed.flatMap((p) => {
     const verdict = consumed.find((v) => v.key === p.key);
-    if (p.at === undefined || verdict === undefined) return [];
+    if (
+      p.at === undefined ||
+      verdict === undefined ||
+      verdict.resolvedThread === true
+    )
+      return [];
     const answers = verdict.answers.map(withoutBody);
     const answeredAt = answers
       .map((a) => a.at)
