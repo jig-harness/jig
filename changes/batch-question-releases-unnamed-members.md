@@ -12,3 +12,10 @@ release: patch
   A question that names no member is one need on the batch's anchor, the other
   members wait on it with no need of their own, and answering it releases
   every member the pass never claimed.
+- **Dispatch:** a batch whose pass stopped on a fault of its host keeps its
+  members held while the host's health check fails, even when the stop's text
+  names a member, and a legacy record that cannot say which member it claimed
+  stays conservative after one claim is observed. A claimed member of a batch
+  with a whole-batch question waits on the anchor's need with no need of its
+  own, and an anchor carried by an open pull request stays quiet as any
+  carried item does.

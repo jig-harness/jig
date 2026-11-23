@@ -257,3 +257,44 @@ it("holds the unanswered members of a batch when one member is released alone", 
     w.close();
   }
 });
+
+it("keeps a legacy record's unclaimed members after one claimed member is observed", () => {
+  const w = world();
+  try {
+    const record = earlierRecord(w, {
+      id: "2026-11-09T00-00-00-000Z-legacy-observed",
+      account: "a",
+      action: "pickup",
+      pr: null,
+      item: "#1",
+      claimedSeen: true,
+      batchItems: [
+        { key: "#1", person: "alex" },
+        { key: "#2", person: "alex" },
+        { key: "#3", person: "alex" },
+      ],
+    });
+    const read: ReadRecord = {
+      record,
+      state: {
+        kind: "ended",
+        exit: { at: "2026-11-09T00:00:00Z", code: 0, signal: null },
+        process: null,
+      },
+      result: "failed",
+    };
+    releaseEnded(
+      [read],
+      SLUG,
+      new Set(["#1", "#2", "#3"]),
+      new Set(["#1"]),
+      new Set(),
+      dispatchState(w),
+    );
+    expect(record.released).toBeFalsy();
+    expect(record.releasedItems ?? []).toEqual([]);
+    expect(pickupHold("#2", [read]).kind).toBe("ended");
+  } finally {
+    w.close();
+  }
+});

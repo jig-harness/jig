@@ -308,6 +308,8 @@ function leftUnclaimed(r: ReadRecord, item: string): boolean {
   // A legacy record cannot say which member it claimed: any may have been.
   if (record.claimedItems === undefined && record.claimedSeen === true)
     return false;
+  // A pass stopped by a host fault asks no question about its members: they wait for the host.
+  if (hostFault(r) !== null) return false;
   const named = namedMembers(r);
   if (named === null) return claimed.some((key) => members.includes(key));
   if (named.length > 0) return !named.includes(item);
@@ -516,6 +518,8 @@ function noteClaims(
   claimed: string[],
   root?: string,
 ): void {
+  // A legacy record cannot say which member it claimed; observing one must not make it say so.
+  if (record.claimedItems === undefined && record.claimedSeen === true) return;
   const seen = new Set(record.claimedItems ?? []);
   let changed = false;
   for (const item of claimed) {

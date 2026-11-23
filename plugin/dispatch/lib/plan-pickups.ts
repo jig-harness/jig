@@ -664,18 +664,6 @@ function planIdleClaimed(
 ): void {
   const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
   const latest = latestPickupFor(item.key, input.launches);
-  // A whole-batch question is shown on the anchor even where a pull request carries it: the siblings wait on it.
-  if (
-    pickup.kind === "ended" &&
-    wholeBatchQuestion(pickup.record) &&
-    pickup.record.record.item === item.key
-  ) {
-    const asked = questionAsked(input, item, pickup.record);
-    if (asked !== null) {
-      plan.actions.push(asked);
-      return;
-    }
-  }
   if (quietByPr(item, input, pr, plan, asksPerson(latest))) return;
   if (hostFaultStop(item, input, plan, latest, pr)) return;
   if (lockWaitStop(item, input, plan, latest, pr)) return;
@@ -690,6 +678,15 @@ function planIdleClaimed(
     pickup.kind === "ended" &&
     batchQuestionForSibling(pickup.record, item.key)
   ) {
+    // A question about the whole batch is one need, on its anchor: a claimed sibling waits on it quietly.
+    if (wholeBatchQuestion(pickup.record)) {
+      plan.quiet.push({
+        target: item.key,
+        class: "pickup-ended",
+        why: `waits on the question its batch's pass asked on ${pickup.record.record.item}, which names no member; the answer releases every member the record holds (launch record ${pickup.record.record.id})`,
+      });
+      return;
+    }
     plan.actions.push(endedNeed(input.slug, item, pickup.record, pickup.why));
     return;
   }
