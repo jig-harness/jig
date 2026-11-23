@@ -43,8 +43,9 @@ whether they are built is decided once the first is in use
 ([Build order](#build-order)). It grows from today's
 dispatch dashboard and the line it serves
 ([dark-factory-dispatch.md § Control](dark-factory-dispatch.md#control-observe-record-report-steer),
-item 33), from `jig ask`, `jig send` and `/jig:operator`
-([addresses.md](addresses.md), item 39), and from the Jig plugin for Orca
+item 33), from [the address commands](../plugin/protocol/addresses.md) and
+the [operator skill](../plugin/skills/operator/SKILL.md),
+and from the Jig plugin for Orca
 ([orca-integration.md](orca-integration.md#the-jig-plugin-for-orca),
 item 34). Most of its status per pull request is the
 [dispatch board](dispatch-board.md), item 36, partly built, which
@@ -424,15 +425,24 @@ until stage 2, a host's page sees only the pickups that host runs.
 
 A **thread** is one piece of work's correspondence: the entries
 `jig ask --thread` derives for each of its addresses, in one list
-([addresses.md § The thread](addresses.md#the-thread-of-an-address)). The
+([thread design](addresses.md#what-the-thread-gains-for-the-dashboard)). The
 dashboard stores none of it. Its entries grow under `ask`'s version 1:
 
 - **Each entry gets a stable id.** A question gets its key, its class and a
   status (open, answered, acted on, expired); an answer gets `inReplyTo`,
-  who answered and that person's permission on the repository.
-- **An answered park stays.** The ledger keeps resolved parks
-  (`resolvedParks[]`, the last 10), so a park stays in the thread, with its
-  answer, after the re-arm clears it.
+  who answered and the permission evidence recorded when it counted. A legacy
+  receipt without that evidence reports the historical permission as unknown.
+- **An answered park stays.** The ledger keeps recent resolved parks
+  (`resolvedParks[]`), so a park stays in the thread after the re-arm clears
+  it. Count-based retention can evict older receipts, and byte-limit trimming
+  can retain only part of a batch or none of it; either eviction marks that
+  history incomplete. It reads source text only from the configured forge after
+  validating the receipt URL's repository and pull request, compares it with
+  the retained body hash, and shows later edits as later than the retained
+  verdict. A legacy receipt without a hash leaves fetched source text marked
+  unverified; an absent source, or a read that expires or is cancelled, leaves
+  the retained metadata visible and the source text unavailable. That lookup
+  shares the thread read's deadline and cancellation signal.
 - **One thread per piece of work.** Its addresses fold by the aliases the
   source feed joins, and a work-batch's batch key is its members' thread.
 
@@ -742,12 +752,32 @@ envelope: the value, or a coded failure with a reason.
 - **`hello`** returns `{protocol {major, minor}, instance, jig {version,
   channel}, now, viewer {login per forge, proof}, front {kind, login,
   capabilities}?, sources[] {host, name, state, since, protocol, jig,
-  clockOffsetMs, capabilities[]}, scope}`. A source is fresh, overdue,
+  clockOffsetMs, capabilities[]}, scope {laptop {instance, revision, expiresAt}, hub {instance, revision, expiresAt}?}}`.
+  A source is fresh, overdue,
   unreachable, refused or incompatible. A different major version is
   refused, naming the side to update; minor versions only add, and unknown
   fields are ignored. Version 1's scope is what the person's machine
   reads, narrowed, for a viewer a front names, by that viewer's grant
-  ([A front on a private network](#a-front-on-a-private-network)).
+  ([A front on a private network](#a-front-on-a-private-network)). Every
+  protected response and stream event also carries the viewer and the laptop
+  binding that authorized its delivery; hub-backed data carries its hub binding
+  too. Before display or caching, the page checks every applicable binding
+  against its current `hello` scope and the earlier expiry; an older request
+  that finishes after either grant narrows or either issuing authority instance
+  changes is discarded. The page binds each `hello` to the request and
+  connection generation that issued it. The page serializes handshakes per
+  binding: starting one supersedes every earlier outstanding handshake for that
+  binding. A response is usable only by that live handshake and generation. A
+  combined `hello` response that updates more than one binding is usable only
+  when the handshake for every binding it updates is still live; a separately
+  renewed hub scope is bound again to the current viewer and laptop
+  authorization before it can be installed;
+  accepting a replacement authority instance retires every prior
+  instance for that binding before it installs the new grant. Either instance
+  change clears the affected cache and requires a fresh `hello` handshake
+  before another protected result is shown. A delayed response from a retired
+  instance therefore cannot restore its grant, whether it is the laptop or hub
+  grant.
 - **Changes**: an opaque cursor that combines one per source. One watch per
   dashboard, shared by every open stream, produces the notices: it checks the
   records' versions (the database's data version, the drive and pickup
@@ -820,7 +850,18 @@ own machine only.
 
 - **`snapshot()` and `changes(since)`** return records in their
   [envelope](../GLOSSARY.md), each with `{host, incarnation, kind, key,
-  generation, at, visibility}`. The incarnation is an id the dispatcher's
+  generation, at, visibility}`. A settlement record also carries the source
+  authority's attestation of its [occurrence identity](../GLOSSARY.md#occurrence-identity),
+  observation time, [coverage revision](../GLOSSARY.md#coverage-revision) and
+  [authority epoch](../GLOSSARY.md#authority-epoch), plus the hub-recorded
+  acceptance time and epoch fence, all bound to the exact repository, occurrence
+  and settlement facts; the hub checks the applicable authority record and
+  persists that exact accepted settlement and fence in the same transaction,
+  serialized with handoff. An epoch mismatch rejects the report without
+  replacing an existing accepted settlement; the fold verifies both bindings
+  against the authority record before it settles anything. With no hub, the local source authority
+  records and verifies the same evidence; the hub fence applies only to
+  hub-backed replay. The incarnation is an id the dispatcher's
   state database gets when it is created, so records from a recreated
   database are told apart. A snapshot holds the live work the newest line
   names: the line, each live drive's ledger (at most 64 KiB, about 2 KiB on
@@ -829,14 +870,45 @@ own machine only.
   ledgers a host, about 1 MiB, and 32 MiB only if every ledger were at
   its cap. History is read when the page asks, never sent in a snapshot.
   `changes(since)` derives what changed from the records the hub holds of
-  each host: each record written after the cursor, and the newest line, so
-  a drive or a pickup the line no longer names is sent as gone. A cursor
+  each host: each record written after the cursor, and the newest line. A
+  drive or pickup is sent as `gone` only after a complete authoritative read
+  identifies its occurrence, proves the source's coverage and establishes
+  settlement; an incomplete read or ordinary record removal reports
+  incompleteness and never emits `gone`, while scope removal emits a distinct
+  scope invalidation that removes the row without settling its occurrence. Any
+  cursor that can no longer be served gets `reset` and a replacement snapshot that
+  either includes authoritative settlement evidence for each previously open
+  omitted occurrence or leaves it internally unresolved for the bounded
+  `settlement.get(occurrence)` read; the hub retains the evidence for that
+  lookup window. The page displays an omitted unresolved row only when its
+  current grant and visibility class still permit it. A cursor
   names a point in those records, not a connection, so it stays servable
-  across reconnects; one from another incarnation gets `reset` and a new
-  snapshot. One fold library turns records and forge and tracker reads
+  across reconnects. One fold library turns records and forge and tracker reads
   into the work and host views, and every dashboard and a shared control plane
   run it.
-- **Bounded reads besides.** The hub also answers `log.rows` (one page
+- **Bounded reads besides.** The hub also answers `settlement.get(occurrence)`,
+  which returns retained authoritative settlement evidence, `history-pending`
+  when the source can still reconcile it, or `history-exhausted` with a reason
+  when that recovery window is over. A client keeps the occurrence unresolved
+  for either non-evidence result; `history-pending` is retryable, while
+  `history-exhausted` is terminal for the lookup rather than evidence of
+  settlement. The hub places the reconciliation obligation on the affected
+  current authorized host's authenticated poll path, with the occurrence,
+  deadline and required completion result. On authority handoff the hub moves
+  an unfinished observation obligation to the successor while retaining any
+  exact original accepted record for replay. That host recovers that record and
+  republishes it when it remains available; otherwise its current authority
+  takes a fresh authoritative observation. A successor never attests to its
+  predecessor's observation under a new epoch. The hub admits every completion,
+  including a no-evidence completion, only in the transaction that still names
+  the current obligation assignment; a delayed former host therefore cannot
+  settle its successor's obligation. The hub records the outcome on
+  that host-facing path before it reports `history-exhausted`. If no admissible
+  completion arrives by the deadline, the hub itself records the terminal
+  timeout outcome rather than continuing to return `history-pending`. The
+  deadline belongs durably to the occurrence, so reassignment, repeated lookups,
+  and hub restart do not start a new recovery window; a dashboard only
+  reads that result through the viewer feed. Other bounded reads are `log.rows` (one page
   through a host's reported outcome rows), `receipt.get(run)` and
   `thread.get(address)`, the thread derived with the same fold as
   `jig ask --thread`, each with the views API's envelope and the feed
@@ -1430,9 +1502,11 @@ phone measurement and acceptance fixture follows 3 and precedes 5; 5 needs
 that fixture; 8 needs 3, 6 and 7; 9 needs 8's fixtures; 10 needs 9.
 
 1. **Rounds and resolved parks in the drive ledger**, under its current
-   version, the last 10 of each, cut first as the ledger nears its
-   65,536-byte cap. A reader takes a missing field as unknown, never as zero
-   rounds, and the previous release's takeover keeps the drive running.
+   version, with the oldest receipts cut first as the ledger nears its
+   65,536-byte cap; count-based retention keeps a fresh receipt batch whole,
+   while byte-limit trimming can retain only part of it or none of it. A reader
+   takes a missing field as unknown, never as zero rounds, and the previous
+   release's takeover keeps the drive running.
 2. **The Orca plugin reads any line whose `minReader` it meets**, ignoring
    fields it does not know, and otherwise says to update the plugin.
 3. **The board read, with the marks**: item 36's step 2

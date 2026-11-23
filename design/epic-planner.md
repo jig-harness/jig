@@ -137,7 +137,7 @@ structure hash no longer matches the tracker.
 | The strict `plan.json` parser, its schema document and its reasons | Moves as it is, with keys of every tracker (`ENG-12`, `#12`) instead of one key shape |
 | Lint, the changeset and its two parts, the approval digest, apply and its check afterwards, the audit comment | Moves as it is |
 | The renderer and the stamp | Moves as it is, the stamp unchanged, so a section the consumer's copy wrote stays the planner's own; the graph (a Mermaid diagram) is drawn only where the tracker renders Mermaid, and the step table always carries the links |
-| The priority rule | Moves as it is, written through the priority facet's store ([tracker-facets.md](tracker-facets.md)); the declared priorities that Task 4 of #1177 designs decide whether a ranker reads the rule or replaces it |
+| The priority rule | Moves as it is, written through the priority facet's store ([Tracker facets chapter](../plugin/protocol/tracker-facets.md#stores)); the declared priorities that Task 4 of #1177 designs decide whether a ranker reads the rule or replaces it |
 | `sweep` | Moves as it is, over the repository's tracker scope |
 | The tracker client | Replaced by Jig's tracker interface (below) |
 | Its own copy of the `execution-plan-v1` writer | Joins Jig's format module, which stays in `plugin/skills/do-item/scripts/lib/execution-plan.ts`; the planner imports it by its sibling path, as `file-issue` imports the tracker, so one module holds the reader and the writer and nothing under `plugin/shared/` imports a skill |

@@ -5,7 +5,7 @@ status: draft
 description: "Each contract Jig's parts and outside readers share has one chapter of the Jig Protocol, whose values are generated from the code's own tables and whose gate fails the build when the chapter and the code disagree; the chapter's authority is its gate, a stable chapter only grows within its own chapter version, and no specification is written by hand"
 lifecycle: permanent
 version: "1.0"
-last_updated: 2026-11-13
+last_updated: 2026-11-22
 owner: maintainers
 decision_date: 2026-11-13
 supersedes: ~
@@ -79,8 +79,9 @@ The forces:
 6. **No specification is written by hand**, and the word "spec" is not used
    for the Protocol: it means the spec a work item links.
 
-How it works, the chapter list and the build order are in
-[design/protocol.md](../../design/protocol.md).
+See the [maintainer reference](../../tools/protocol/README.md) for the
+generator and the [chapter index](../../plugin/protocol/README.md) for
+the published contracts.
 
 ## Alternatives considered
 

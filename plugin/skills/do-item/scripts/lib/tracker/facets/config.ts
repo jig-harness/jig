@@ -2,7 +2,7 @@
  * Where each facet is kept: `issue_tracker.facets`, the stores each adapter
  * can hold (`ADAPTER_FACET_STORES` in `facet-values.ts`), every adapter's
  * default (today's stores), and today's keys read as their facet's form
- * (design/tracker-facets.md in the Jig repository).
+ * (plugin/protocol/tracker-facets.md).
  *
  *   issue_tracker:
  *     facets:

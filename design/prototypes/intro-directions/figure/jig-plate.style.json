@@ -1,0 +1,30 @@
+{
+  "name": "jig-plate",
+  "font": "system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif",
+  "radius": 4,
+  "stroke": 1,
+  "motion": {
+    "enter": [0, 0, 0.2, 1],
+    "move": [0.4, 0, 0.2, 1]
+  },
+  "light": {
+    "bg": "#f9f6f1",
+    "surface": "#fffdfa",
+    "ink": "#251e18",
+    "muted": "#59514a",
+    "line": "#867f77",
+    "accent": "#1a6444",
+    "onAccent": "#dbf2e4",
+    "emphasis": "#f7e8af"
+  },
+  "dark": {
+    "bg": "#1a1713",
+    "surface": "#23201c",
+    "ink": "#ebe7e0",
+    "muted": "#b8b3ac",
+    "line": "#847f78",
+    "accent": "#82d2a8",
+    "onAccent": "#1b3427",
+    "emphasis": "#4e3e09"
+  }
+}
