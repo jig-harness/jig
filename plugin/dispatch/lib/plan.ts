@@ -203,12 +203,7 @@ export function planTick(input: PlanInput): Plan {
   ): void {
     const held = holding(sessions, joined);
     if (held.kind === "unknown") {
-      const need =
-        held.workspace === undefined
-          ? null
-          : action.stage === "notify"
-            ? action
-            : (recover?.(held.workspace, held.reason) ?? null);
+      const need = unreportedAction(action, held, recover);
       if (need !== null) {
         plan.actions.push({
           ...need,
@@ -388,6 +383,17 @@ export function holdBack(
       plan.withheld?.push(action.target);
     } else kept.push(action);
   plan.actions = kept;
+}
+
+/** What goes out where the listing read but a joined workspace cannot be vouched for: a notification as it is, a launch as its recovery need, else nothing. */
+function unreportedAction(
+  action: Action,
+  held: { workspace?: string; reason: string },
+  recover: Recover | undefined,
+): Action | null {
+  if (held.workspace === undefined) return null;
+  if (action.stage === "notify") return action;
+  return recover?.(held.workspace, held.reason) ?? null;
 }
 
 /** The need that stands in for a launch whose workspace the runtime cannot vouch for, from that workspace and the reason. */

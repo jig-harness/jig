@@ -308,18 +308,26 @@ function planWanted(
   }
   const before = plan.actions.length;
   planStopped(input, item, hold, plan);
-  if (held.kind === "unknown" && held.workspace !== undefined) {
-    const { workspace, reason } = held;
-    for (const [i, need] of plan.actions.slice(before).entries())
-      plan.actions[before + i] = {
-        ...need,
-        reason: `${need.reason}; but ${reason}, so an agent may already work there`,
-        evidence: { ...need.evidence, unreportedSessions: reason },
-        ...(need.notice === undefined
-          ? {}
-          : { notice: withUnreported(need.notice, workspace, reason) }),
-      };
-  }
+  if (held.kind === "unknown" && held.workspace !== undefined)
+    annotateUnreported(plan, before, held.workspace, held.reason);
+}
+
+/** The needs a stopped pickup just planned, each saying a workspace joined to the item has terminals the runtime cannot report. */
+function annotateUnreported(
+  plan: PickupPlan,
+  from: number,
+  workspace: string,
+  reason: string,
+): void {
+  for (const [i, need] of plan.actions.slice(from).entries())
+    plan.actions[from + i] = {
+      ...need,
+      reason: `${need.reason}; but ${reason}, so an agent may already work there`,
+      evidence: { ...need.evidence, unreportedSessions: reason },
+      ...(need.notice === undefined
+        ? {}
+        : { notice: withUnreported(need.notice, workspace, reason) }),
+    };
 }
 
 /** An item nothing holds: picked up, unless its host-fault hold says to wait or it has no priority to rank it by. */
