@@ -4,7 +4,7 @@
  * forms, and the order within Ready to merge.
  */
 import { describe, expect, it } from "bun:test";
-import { parseAnswer } from "../scripts/lib/merge-facts.ts";
+import { factsQuery, parseAnswer } from "../scripts/lib/merge-facts.ts";
 import {
   checkPattern,
   type MergeFacts,
@@ -713,12 +713,30 @@ describe("the forge's facts", () => {
         { ...good, databaseId: null },
         { ...good, databaseId: null },
       ],
+      // Distinct node identities sharing one run identity are listed twice too.
+      [good, { ...good, id: "CR_other" }],
     ])
       expect(
         pull({
           contexts: { nodes: rows, pageInfo: { hasNextPage: false } },
         })?.partial,
       ).toContain("listed twice");
+    // Two commit statuses sharing a node identity are one entry listed twice.
+    const sc = {
+      __typename: "StatusContext",
+      id: "SC_deploy",
+      context: "deploy",
+      state: "SUCCESS",
+      isRequired: false,
+    };
+    expect(
+      pull({
+        contexts: {
+          nodes: [sc, { ...sc, context: "other" }],
+          pageInfo: { hasNextPage: false },
+        },
+      })?.partial,
+    ).toContain("listed twice");
     // Distinct node identities with distinct run ids stay whole, as do two
     // attempts with one name and app.
     expect(
@@ -760,8 +778,10 @@ describe("the forge's facts", () => {
         nodes: [
           {
             commit: {
+              oid: HEAD,
               statusCheckRollup: {
                 contexts: {
+                  pageInfo: { hasNextPage: false },
                   nodes: [
                     {
                       __typename: "CheckRun",
@@ -782,6 +802,7 @@ describe("the forge's facts", () => {
                       status: "IN_PROGRESS",
                       conclusion: null,
                       isRequired: true,
+                      checkSuite: { app: { slug: "ci" } },
                     },
                     {
                       __typename: "StatusContext",
@@ -802,13 +823,22 @@ describe("the forge's facts", () => {
       { data: { repository: { pr12: node } } },
       [12],
     ).pulls.get(12);
+    expect(pull?.partial).toBeNull();
     expect(
       pull?.checks.map((c) => [c.name, c.app, c.state, c.required]),
     ).toEqual([
       ["AI review", "example-review", "neutral", false],
-      ["test", null, "pending", true],
+      ["test", "ci", "pending", true],
       ["deploy", null, "failure", false],
     ]);
+  });
+});
+
+describe("the board query", () => {
+  it("selects the node identity of both check variants the parser requires", () => {
+    const q = factsQuery([12]);
+    expect(q).toContain("... on CheckRun { id databaseId name");
+    expect(q).toContain("... on StatusContext { id context state");
   });
 });
 
