@@ -30,6 +30,9 @@ import type { ParkLeft } from "./park-events.ts";
 export const SETTLED_WINDOW_MS = 24 * 3_600_000;
 /** The most entries the line carries, newest first. */
 const SETTLED_LIMIT = 100;
+/** Held and refused answers are read in pages of this many rows, until the list is full or the scan bound is reached. */
+const UNSETTLED_PAGE = 200;
+const UNSETTLED_SCAN_MAX = 5_000;
 /** How long a leave row is kept. */
 const LEAVES_KEPT_MS = 7 * 24 * 3_600_000;
 
@@ -37,12 +40,22 @@ const LEAVES_KEPT_MS = 7 * 24 * 3_600_000;
 export interface AnswerSeen {
   /** The decision it answers. */
   key: string;
+  /** The framing it answers: a key can be framed again with another digest. */
+  digest: string;
   author: string;
   option: string;
   answer: string;
   claimedAt: string;
   outcome: "done" | "refused" | "held" | null;
   detail: string | null;
+}
+
+/** Whether the answer is to this occurrence of the decision: its key, and its digest when the framing carries one. */
+function answersDecision(
+  a: { key: string; digest: string },
+  d: LineNeed["decisions"][number],
+): boolean {
+  return d.key === a.key && (d.digest === undefined || d.digest === a.digest);
 }
 
 /** What the tick did to one target this tick, besides notifying. */
@@ -204,17 +217,20 @@ export function leaveOf(
   at: string,
 ): LineSettled {
   // Only an answer or a park of a decision this need carried settled it: another need on the target may have been answered, and a need with no decision has no answer to credit.
-  const keys = need.decisions.map((d) => d.key);
   const answered = ev
     .answers(need.repo, need.target, need.since)
-    .find((a) => a.outcome === "done" && keys.includes(a.key));
+    .find(
+      (a) =>
+        a.outcome === "done" &&
+        need.decisions.some((d) => answersDecision(a, d)),
+    );
   const park =
     need.cause === "parked"
       ? ev.parks.find(
           (p) =>
             p.repo === need.repo &&
             p.target === need.target &&
-            keys.includes(p.key),
+            need.decisions.some((d) => d.key === p.key),
         )
       : undefined;
   const open = ev.open.get(need.repo);
@@ -276,7 +292,7 @@ export function answersFrom(
     (
       db
         .query(
-          `SELECT key, author, option, answer, claimed_at AS claimedAt, outcome, detail
+          `SELECT key, digest, author, option, answer, claimed_at AS claimedAt, outcome, detail
            FROM station_answers
            WHERE repo = ? AND target = ? AND claimed_at >= ?
            ORDER BY claimed_at DESC, rowid DESC`,
@@ -312,11 +328,11 @@ function grouped(entries: readonly LineSettled[]): LineSettled[] {
   const out: LineSettled[] = [];
   const byAnswer = new Map<string, LineSettled>();
   for (const e of entries) {
-    // One answer: the same comment, the same choice, taken at the same time.
+    // One answer: the same comment and the same choice. Its targets leave in different ticks, so the time is not part of it; the entry keeps the newest.
     const key =
       e.answer === null
         ? null
-        : `${e.repo} ${e.answer} ${e.outcome} ${e.option ?? ""} ${e.at}`;
+        : `${e.repo} ${e.answer} ${e.outcome} ${e.option ?? ""}`;
     const same = key === null ? undefined : byAnswer.get(key);
     if (same === undefined) {
       const copy = { ...e, targets: [...e.targets] };
@@ -374,31 +390,40 @@ export function readSettled(
     const entry = parsed(r.value);
     return entry === null ? [] : [entry];
   });
-  const unsettled = (
-    db
+  const unsettled: LineSettled[] = [];
+  for (
+    let offset = 0;
+    unsettled.length < SETTLED_LIMIT && offset < UNSETTLED_SCAN_MAX;
+    offset += UNSETTLED_PAGE
+  ) {
+    const page = db
       .query(
-        `SELECT repo, target, key, author, option, answer, claimed_at AS claimedAt, outcome, detail
+        `SELECT repo, target, key, digest, author, option, answer, claimed_at AS claimedAt, outcome, detail
          FROM station_answers a
          WHERE claimed_at >= ? AND outcome IN ('held', 'refused')
            AND NOT EXISTS (
              SELECT 1 FROM station_answers b
              WHERE b.repo = a.repo AND b.target = a.target AND b.key = a.key
+               AND b.digest = a.digest
                AND b.outcome = 'done' AND b.claimed_at > a.claimed_at)
-         ORDER BY claimed_at DESC, rowid DESC`,
+         ORDER BY claimed_at DESC, rowid DESC
+         LIMIT ? OFFSET ?`,
       )
-      .all(isoFromMs(since)) as Array<
+      .all(isoFromMs(since), UNSETTLED_PAGE, offset) as Array<
       AnswerSeen & { repo: string; target: string }
-    >
-  ).flatMap((a) => {
-    // Its card stays open: an answer to a decision no open need carries is not listed as unsettled. The window bounds the rows, so the limit applies after this filter.
-    const need = needs.find(
-      (n) =>
-        n.repo === a.repo &&
-        n.target === a.target &&
-        n.decisions.some((d) => d.key === a.key),
-    );
-    return need === undefined ? [] : [unsettledEntry(a, need)];
-  });
+    >;
+    for (const a of page) {
+      // Its card stays open: an answer to a decision no open need carries is not listed as unsettled.
+      const need = needs.find(
+        (n) =>
+          n.repo === a.repo &&
+          n.target === a.target &&
+          n.decisions.some((d) => answersDecision(a, d)),
+      );
+      if (need !== undefined) unsettled.push(unsettledEntry(a, need));
+    }
+    if (page.length < UNSETTLED_PAGE) break;
+  }
   return grouped(
     [...left, ...unsettled].sort((a, b) => parseMs(b.at) - parseMs(a.at)),
   ).slice(0, SETTLED_LIMIT);

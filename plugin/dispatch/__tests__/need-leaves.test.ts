@@ -295,6 +295,54 @@ describe("what stays visible", () => {
     expect(refused?.title).toBe("Fix the thing");
   });
 
+  it("does not credit an answer to an earlier framing of the same decision key", () => {
+    answer("ENG-4", "Release the pickup", "done", "moved ENG-4 to todo");
+    const entry = leaveOf(
+      need({
+        decisions: [
+          {
+            key: "k",
+            digest: "other",
+            kind: "finding",
+            lines: [],
+            question: null,
+            recommendation: null,
+            decisionClass: null,
+          },
+        ],
+      }),
+      [],
+      { ...nothing, answers: answersFrom(stateDb(root)) },
+      NOW,
+    );
+    expect(entry.by).toBe("facts");
+  });
+
+  it("lists one answer as one entry although its targets left at different times", () => {
+    const shared = {
+      by: "person" as const,
+      who: "maintainer-a",
+      option: "Release the pickup",
+      answer: "https://forge.example/comment/x",
+    };
+    const db = stateDb(root);
+    insertLeaves(
+      db,
+      [
+        leaveOf(need({ target: "ENG-4" }), [], nothing, NOW),
+        leaveOf(
+          need({ target: "ENG-5" }),
+          [],
+          nothing,
+          isoFromMs(parseMs(NOW) - 60_000),
+        ),
+      ].map((e) => ({ ...e, ...shared })),
+    );
+    const settled = readSettled(db, parseMs(NOW), []);
+    expect(settled).toHaveLength(1);
+    expect(settled[0]?.targets.toSorted()).toEqual(["ENG-4", "ENG-5"]);
+  });
+
   it("lists a merged card, one answer that settled several targets, as one entry", () => {
     const shared = {
       by: "person" as const,
