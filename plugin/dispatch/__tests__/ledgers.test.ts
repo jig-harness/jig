@@ -216,6 +216,21 @@ describe("classifyLedger", () => {
         mergeable: null,
       }).class,
     ).toBe("needs-person");
+    // An empty head is no head: unknown, like null.
+    expect(
+      classifyLedger(ledger, NOW, WINDOW, undefined, {
+        head: "",
+        mergeable: null,
+      }).class,
+    ).toBe("needs-person");
+    // A long reason keeps its start and its last line.
+    ledger.events = [stall("PUSH_FAILED")];
+    (ledger.events[0] as { finish: { reason: string } }).finish.reason =
+      `guarded-push.ts exited 1 (pre-push-gate): ${"x".repeat(900)} FINAL-ERROR-LINE`;
+    const longWhy = classifyLedger(ledger, NOW, WINDOW, undefined, forge).why;
+    expect(longWhy).toContain("guarded-push.ts exited 1");
+    expect(longWhy).toContain("FINAL-ERROR-LINE");
+    ledger.events = [stall("PUSH_FAILED")];
     // A push to the pull request since the stall is what a person's fix looks like: it is re-driven once for that head.
     const moved = classifyLedger(ledger, NOW, WINDOW, undefined, {
       ...forge,

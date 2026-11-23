@@ -72,14 +72,11 @@ const EXCERPT_MAX = 600;
 /** The longest unfinished line held raw, so a credential or a character split across chunks is still read whole. */
 const PENDING_MAX = 256 * 1024;
 
-/** The raw bytes a forced flush of an over-long line keeps, as context for what follows. */
-const PENDING_KEEP = 4 * 1024;
-
 /**
  * Keeps the last `TAIL_BYTES` of a stream observed chunk by chunk. Bytes are
  * held raw until their line is complete, and masked and decoded whole: a
  * credential or a multi-byte character split between chunks is never read in
- * halves. Only a line longer than `PENDING_MAX` is masked before it ends.
+ * halves. A line longer than `PENDING_MAX` is masked and flushed, and the rest of that line is discarded unread: a continuation without its key could not be masked.
  */
 export function outputTail(): {
   observe: (bytes: Uint8Array) => void;
@@ -87,12 +84,20 @@ export function outputTail(): {
 } {
   let done = "";
   let pending: Buffer = Buffer.alloc(0);
+  let skipping = false;
   const settle = (raw: Buffer): void => {
     done += redactReportText(raw.toString("utf8"));
     if (done.length > TAIL_BYTES) done = done.slice(done.length - TAIL_BYTES);
   };
   return {
-    observe(bytes) {
+    observe(input) {
+      let bytes = input;
+      if (skipping) {
+        const nl = bytes.indexOf(10);
+        if (nl < 0) return;
+        skipping = false;
+        bytes = bytes.subarray(nl + 1);
+      }
       pending = Buffer.concat([pending, bytes]);
       const end = pending.lastIndexOf(10);
       if (end >= 0) {
@@ -100,11 +105,9 @@ export function outputTail(): {
         pending = pending.subarray(end + 1);
       }
       if (pending.length > PENDING_MAX) {
-        // Cut at a character boundary: back over UTF-8 continuation bytes.
-        let cut = pending.length - PENDING_KEEP;
-        while (cut > 0 && ((pending[cut] ?? 0) & 0xc0) === 0x80) cut--;
-        settle(pending.subarray(0, cut));
-        pending = pending.subarray(cut);
+        settle(pending);
+        pending = Buffer.alloc(0);
+        skipping = true;
       }
     },
     text: () => done + redactReportText(pending.toString("utf8")),

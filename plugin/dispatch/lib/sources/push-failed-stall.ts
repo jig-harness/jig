@@ -18,6 +18,9 @@ import { conflictNote } from "./ledger-probe.ts";
 /** The longest part of a push failure's reason a class's `why` quotes. */
 const PUSH_REASON_QUOTED = 400;
 
+/** The start of a long reason kept (the diagnostic that names the kind); the rest of the quote is its end, where the failing line is. */
+const PUSH_HEAD_QUOTED = 100;
+
 /**
  * The class of a ledger that stopped `exit` on a stall whose every pass's
  * push failed: `needs-person`, naming why; `null` for any other stop, and
@@ -34,12 +37,17 @@ export function pushFailedStallClass(
   const finish = stopFinish(ledger.events, exit);
   if (finish?.state !== "PUSH_FAILED") return null;
   const stalledOn = ledger.lastCountedHead;
-  if (forge.head !== null && stalledOn !== "" && forge.head !== stalledOn)
+  if (
+    forge.head !== null &&
+    forge.head !== "" &&
+    stalledOn !== "" &&
+    forge.head !== stalledOn
+  )
     return null;
   const reason = withoutMentions(finish.reason.replace(/\s+/g, " ").trim());
   const quoted =
     reason.length > PUSH_REASON_QUOTED
-      ? `${reason.slice(0, PUSH_REASON_QUOTED - 1)}…`
+      ? `${reason.slice(0, PUSH_HEAD_QUOTED)}…${reason.slice(reason.length - (PUSH_REASON_QUOTED - PUSH_HEAD_QUOTED - 1))}`
       : reason;
   return {
     class: "needs-person",

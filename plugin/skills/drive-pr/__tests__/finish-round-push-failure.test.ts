@@ -128,6 +128,20 @@ describe("a failed push's reason", () => {
   });
 });
 
+describe("the push output's tail", () => {
+  it("never publishes the continuation of an over-long line whose key was flushed", () => {
+    const tail = outputTail();
+    const enc = new TextEncoder();
+    tail.observe(enc.encode("password="));
+    tail.observe(enc.encode("s".repeat(300 * 1024)));
+    tail.observe(enc.encode("TOPSECRETVALUE"));
+    tail.observe(enc.encode("\nnext line\n"));
+    const out = tail.text();
+    expect(out).not.toContain("TOPSECRETVALUE");
+    expect(out).toContain("next line");
+  });
+});
+
 describe("finish-round.ts on a failed push", () => {
   const { finishRound } = createFindingsFinishRoundFixtures();
 
