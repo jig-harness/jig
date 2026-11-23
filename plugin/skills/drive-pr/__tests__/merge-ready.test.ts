@@ -966,7 +966,11 @@ it("judges a required reviewer check by its latest attempt only", () => {
     { ...base, id: 10, required: true, state: "success" },
     { ...base, id: 12, required: true, state: "pending" },
   ];
-  expect(readiness(f, RULES).place).not.toBe("ready");
+  const pending = readiness(f, RULES);
+  expect([pending.place, pending.waitsOn]).toEqual([
+    "needs-you",
+    { kind: "person", act: "re-arm" },
+  ]);
 });
 
 it("does not let an optional failing check borrow a failed reviewer attempt's required flag", () => {
@@ -985,6 +989,13 @@ it("does not let an optional failing check borrow a failed reviewer attempt's re
     },
   ];
   expect(readiness(f, RULES).lane).toBe("merge-now");
+  // The same ordinary failure, once required, stops a stale CLEAN state.
+  f.checks[2] = { ...f.checks[2], required: true };
+  const required = readiness(f, RULES);
+  expect([required.place, required.waitsOn]).toEqual([
+    "needs-you",
+    { kind: "person", act: "re-run-check" },
+  ]);
 });
 
 it("keeps a clean review-required merge in merge-now while an optional check is pending", () => {
