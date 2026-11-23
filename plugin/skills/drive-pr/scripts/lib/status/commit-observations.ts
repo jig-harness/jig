@@ -92,7 +92,10 @@ function identified(c: Record<string, unknown>): boolean {
     c.name !== "" &&
     typeof c.status === "string" &&
     (c.conclusion === null || typeof c.conclusion === "string") &&
-    (app === null || app === undefined || typeof app.slug === "string")
+    (app === null ||
+      (typeof app === "object" &&
+        typeof app.slug === "string" &&
+        app.slug !== ""))
   );
 }
 
@@ -113,7 +116,14 @@ export async function checkRunsFor(
   const pages = await commitPages(owner, repo, sha, "check-runs", read, env);
   if (pages === null) return null;
   const runs: CheckRun[] = [];
+  const seen = new Set<number>();
+  let total: number | null = null;
   for (const page of pages) {
+    const count = (page as { total_count?: unknown } | null)?.total_count;
+    // Every page reports the whole listing's count, and they must agree.
+    if (typeof count !== "number" || !Number.isSafeInteger(count)) return null;
+    if (total !== null && total !== count) return null;
+    total = count;
     const list = (page as { check_runs?: unknown } | null)?.check_runs;
     // A missing field, a list that is not one, or entries that are not
     // records, is not a read.
@@ -121,8 +131,14 @@ export async function checkRunsFor(
     for (const c of list) {
       if (typeof c !== "object" || c === null || Array.isArray(c)) return null;
       if (!identified(c as Record<string, unknown>)) return null;
-      runs.push(checkRunOf(c as Record<string, unknown>));
+      const run = checkRunOf(c as Record<string, unknown>);
+      // A repeated id means pages overlapped, so the set is not the listing.
+      if (seen.has(run.id)) return null;
+      seen.add(run.id);
+      runs.push(run);
     }
   }
+  // Fewer records than the listing reports means an attempt went unread.
+  if (total !== null && runs.length !== total) return null;
   return runs;
 }

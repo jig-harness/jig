@@ -647,6 +647,34 @@ describe("the forge's facts", () => {
         },
       })?.partial,
     ).toContain("could not be classified");
+    // One evidence field varied at a time: each leaves the page partial.
+    const good = {
+      __typename: "CheckRun",
+      name: "gates",
+      databaseId: 1,
+      status: "COMPLETED",
+      conclusion: "SUCCESS",
+      isRequired: true,
+      checkSuite: { app: { slug: "example-review" } },
+    };
+    const partial = (node: Record<string, unknown>) =>
+      pull({
+        contexts: { nodes: [node], pageInfo: { hasNextPage: false } },
+      })?.partial;
+    expect(partial(good)).toBeNull();
+    // A run with no publisher is whole; unread publisher data is not.
+    expect(partial({ ...good, checkSuite: { app: null } })).toBeNull();
+    for (const bad of [
+      { checkSuite: {} },
+      { checkSuite: { app: { slug: "" } } },
+      { __typename: undefined },
+      { __typename: "Other" },
+      { isRequired: undefined },
+      { isRequired: "true" },
+      { status: undefined },
+      { databaseId: undefined },
+    ])
+      expect(partial({ ...good, ...bad })).toContain("could not be classified");
   });
 
   it("reads check runs and commit statuses with their app and state", () => {

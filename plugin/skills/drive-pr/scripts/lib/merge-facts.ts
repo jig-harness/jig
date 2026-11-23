@@ -104,6 +104,42 @@ function checkState(node: Record<string, unknown>): HeadCheck["state"] {
   return "failure";
 }
 
+/**
+ * Whether a rollup node carries, in its own JSON types, every field the
+ * decision reads from its variant: an explicit `CheckRun` or `StatusContext`,
+ * a name, a state, a boolean required flag, and for a run its identity and a
+ * suite whose app is either explicitly null (a run with no publisher) or a
+ * record with a non-empty slug. Anything else is not classifiable evidence.
+ */
+function wellFormedCheck(node: unknown): boolean {
+  if (!isRecord(node)) return false;
+  if (typeof node.isRequired !== "boolean") return false;
+  if (node.__typename === "StatusContext")
+    return (
+      typeof node.context === "string" &&
+      node.context !== "" &&
+      typeof node.state === "string"
+    );
+  if (node.__typename !== "CheckRun") return false;
+  const suite = node.checkSuite;
+  if (!isRecord(suite) || !("app" in suite)) return false;
+  const app = suite.app;
+  const appOk =
+    app === null ||
+    (isRecord(app) && typeof app.slug === "string" && app.slug !== "");
+  return (
+    appOk &&
+    typeof node.name === "string" &&
+    node.name !== "" &&
+    typeof node.databaseId === "number" &&
+    Number.isSafeInteger(node.databaseId) &&
+    typeof node.status === "string" &&
+    (node.conclusion === null ||
+      node.conclusion === undefined ||
+      typeof node.conclusion === "string")
+  );
+}
+
 function checkOf(node: unknown): HeadCheck | null {
   if (!isRecord(node)) return null;
   const status = node.__typename === "StatusContext";
@@ -243,13 +279,7 @@ function partialOf(
       typeof at(contexts, "pageInfo", "hasNextPage") !== "boolean"
     )
       why.push("its checks did not read as a page");
-    else if (
-      page.some(
-        (c) =>
-          checkOf(c)?.app === null && at(c, "__typename") !== "StatusContext",
-      ) ||
-      page.some((c) => checkOf(c) === null)
-    )
+    else if (page.some((c) => !wellFormedCheck(c) || checkOf(c) === null))
       why.push("a check on its head could not be classified");
   } else if (at(commit, "commit", "statusCheckRollup") !== null)
     why.push("its checks did not read");
