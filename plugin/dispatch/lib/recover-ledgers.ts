@@ -6,6 +6,7 @@ import {
   tsArgv,
 } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import { adoptionOf } from "./adopt.ts";
+import { canReconcileDriveLedgers } from "./reconcile-drive-ledgers.ts";
 import { readDrives } from "./sources/ledgers.ts";
 import { allRecords, type TickContext } from "./tick-context.ts";
 import { settleDrives } from "./tick-shared.ts";
@@ -16,15 +17,8 @@ export async function recoverLedgers(
   context: TickContext,
   observation: RepoObservation,
 ): Promise<void> {
-  const { opened, forge, ctx, held, drives } = observation;
-  if (
-    context.apply === null ||
-    !opened.listed ||
-    !opened.stages.has("rearm") ||
-    !ctx.owner ||
-    !forge.ok
-  )
-    return;
+  const { opened, forge, held, drives } = observation;
+  if (!canReconcileDriveLedgers(context, observation)) return;
   for (let i = 0; i < drives.length; i++) {
     const drive = drives[i];
     if (

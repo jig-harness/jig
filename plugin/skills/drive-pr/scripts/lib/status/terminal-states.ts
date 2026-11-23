@@ -477,12 +477,12 @@ export const TERMINAL_STATES: Readonly<
     terminal: true,
     emittedBy: "drive.ts only (MAX_ROUNDS_EXIT)",
     meaning:
-      "The drive spent its round budget (`--max-rounds`) without converging. Read the handoff file before re-arming.",
+      "The drive spent its round budget (`--max-rounds`, with any rounds a re-arm granted) without converging. Read the handoff file before re-arming: a re-arm a person asks for grants one more round budget.",
     report: {
       stop: "used its round budget without converging",
       cause: "deadline",
       next: {
-        step: "Read the handoff file for what keeps the review open, then re-arm the drive or take the work over.",
+        step: "Read the handoff file for what keeps the review open, then re-arm the drive, which grants it one more round budget (`jig send drive@<repo> <PR> rearm`, or `--rearm-budget` on the arm command), or take the work over.",
         owner: "person",
         act: "Investigate",
       },

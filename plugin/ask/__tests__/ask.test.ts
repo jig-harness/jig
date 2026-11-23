@@ -18,7 +18,7 @@ import {
   recordExit,
   writeRecord,
 } from "../../dispatch/lib/launches.ts";
-import { writeRow } from "../../dispatch/lib/log.ts";
+import { endedRow, writeRow } from "../../dispatch/lib/log.ts";
 import type { ProcessIdentity } from "../../shared/liveness.ts";
 import { claimBody } from "../../shared/records/forge-claims.ts";
 import {
@@ -397,6 +397,91 @@ describe("jig ask", () => {
     // A dispatching host's claim is on the pull request, so the wall settles by itself.
     expect(answer.waitsOn).toHaveProperty("waiting");
   });
+
+  it.each([
+    { action: "rearm" },
+    {
+      action: "rearm",
+      redrive: { cause: "the verified head moved", change: "head b" },
+    },
+    { action: "takeover" },
+  ] satisfies Array<
+    Pick<LaunchDraft, "action"> & Pick<LaunchRecord, "redrive">
+  >)(
+    "hands a drive that reached its round limit to a person",
+    async (extra) => {
+      const w = world();
+      const launch = record(w, 9, extra);
+      const at = "2026-11-05T11:00:00.000Z";
+      const exit = { at, code: 6, signal: null };
+      recordExit(launch.id, exit, w.state);
+      const row = endedRow(
+        {
+          record: launch,
+          state: {
+            kind: "ended",
+            exit,
+            process: null,
+          },
+          result: null,
+        },
+        at,
+        { takenOver: false, merged: null },
+        null,
+      );
+      writeRow(row, w.state);
+      w.api(`repos/${REPO}/pulls/9`, pullDoc(9));
+      w.api(`repos/${REPO}/issues/9/comments`, [
+        comment(901, ledgerBody(stoppedLedger(9, 6))),
+      ]);
+      const { r, answer } = await askJson(w, [`drive@${REPO}#9`]);
+      expectSpawnExit(r, 0);
+      expect(answer.last).toMatchObject({
+        class: "stalled",
+        next: {
+          person: "repository maintainer",
+          act: "Investigate: Read the handoff file for what keeps the review open, then re-arm the drive, which grants it one more round budget (`jig send drive@<repo> <PR> rearm`, or `--rearm-budget` on the arm command), or take the work over.",
+        },
+      });
+      expect(answer.last?.next).toEqual(row.next);
+      expect(answer.waitsOn).toMatchObject({
+        person: "re-arm",
+        needAct: "Investigate",
+      });
+
+      const writer = localWriter("forge", "drive-bot");
+      const posted = launchClaim({ ...draft(9), action: extra.action }, 1);
+      const claimed = endedClaim(
+        "drive",
+        {
+          key: posted.key,
+          generation: 1,
+          at: launch.createdAt,
+          writer,
+          payload: posted.payload,
+          legacy: false,
+        },
+        9,
+        {
+          state: "ended",
+          at: "2026-11-05T11:01:00.000Z",
+          exit: exit.code,
+          outcome: null,
+        },
+        writer,
+      );
+      w.api(`repos/${REPO}/issues/9/comments`, [
+        comment(901, ledgerBody(stoppedLedger(9, 6))),
+        comment(902, claimBody(LAUNCH_CLAIM, claimed)),
+      ]);
+      const remote = await askJson(w, [`drive@${REPO}#9`], w.away);
+      expectSpawnExit(remote.r, 0);
+      expect(remote.answer.last).toMatchObject({
+        from: "launch claim",
+        next: row.next,
+      });
+    },
+  );
 
   it("exits 1 when the key names no pull request", async () => {
     const w = world();

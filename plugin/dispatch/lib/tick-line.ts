@@ -19,8 +19,18 @@ import { readNudges } from "./actions/steer.ts";
 import type {
   LineAccount,
   LineDriver,
+  LineNeed,
   LineSnapshot,
 } from "./dashboard-contract.ts";
+import {
+  answersFrom,
+  insertLeaves,
+  leaveOf,
+  leftNeeds,
+  type LeaveEvidence,
+  pruneLeaves,
+  readSettled,
+} from "./need-leaves.ts";
 import {
   driversOf,
   type HostDriver,
@@ -67,7 +77,7 @@ import { tickHealthOf, withTick } from "./tick-health.ts";
 import { readStateStorage, stateStorageNeeds } from "./state-storage-need.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
 import type { TickReceipt } from "../receipts.ts";
-import type { ClaimedItem, DrivenPr, WantedItem } from "./types.ts";
+import type { ClaimedItem, DrivenPr, RepoReport, WantedItem } from "./types.ts";
 import { type PrLinkText, workLinks } from "./work-links.ts";
 import type { IssueKeys } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 import { parseMs } from "../../shared/time.ts";
@@ -246,15 +256,68 @@ function writeWithParks(
   line: LineSnapshot,
   parked: ParkOutcomes,
   receipt: string,
+  before: readonly LineNeed[] | null,
+  evidence: Omit<LeaveEvidence, "answers">,
 ): void {
   const db = stateDb();
   inTransaction(db, () => {
     for (const row of parked.rows) insertRow(db, row);
+    const nowMs = parseMs(line.finishedAt);
+    // Every need the line no longer holds leaves one row, whatever the notify stage did.
+    if (before !== null) {
+      const ev = { ...evidence, answers: answersFrom(db) };
+      insertLeaves(
+        db,
+        leftNeeds(before, line.needs).map((need) =>
+          leaveOf(need, line.needs, ev, line.finishedAt),
+        ),
+      );
+    }
+    pruneLeaves(db, nowMs);
     writeLine(
-      { ...line, parks: parked.parks, ingested: parked.ingested },
+      {
+        ...line,
+        parks: parked.parks,
+        ingested: parked.ingested,
+        settled: readSettled(db, nowMs, line.needs),
+      },
       receipt,
     );
   });
+}
+
+/** What the tick did to each target and which pull requests the forge listed open, for the needs that left. */
+function leaveEvidence(
+  reports: readonly RepoReport[],
+  inputs: Map<string, RepoLineInput>,
+  parked: ParkOutcomes,
+  apply: boolean,
+): Omit<LeaveEvidence, "answers"> {
+  return {
+    parks: parked.left,
+    // Only what `--apply` did counts: a dry run plans actions it does not take, and a hold label withholds a target's.
+    actions: reports.flatMap((r) =>
+      r.slug === null || !apply
+        ? []
+        : r.actions
+            .filter((a) => !(r.withheld ?? []).includes(a.target))
+            .filter((a) => a.stage !== "notify" || a.steward !== undefined)
+            .map((a) => ({
+              repo: r.slug as string,
+              target: a.target,
+              stage: a.stage,
+              reason: a.reason,
+              ...(a.steward === undefined ? {} : { steward: a.steward.id }),
+            })),
+    ),
+    open: new Map(
+      reports.flatMap((r) =>
+        r.slug === null
+          ? []
+          : [[r.slug, inputs.get(r.path)?.open ?? null] as const],
+      ),
+    ),
+  };
 }
 
 /** Each repository the tick read, as the park outcomes compare it: its owner flag, its open pull requests and its drives. */
@@ -522,6 +585,8 @@ function writeKept(
         withLoad({ ...line, ticks }, receipt),
         parked,
         receiptText ?? JSON.stringify(receipt, null, 2),
+        before?.needs ?? null,
+        leaveEvidence(reports, tick.inputs, parked, receipt.apply),
       );
     },
   );

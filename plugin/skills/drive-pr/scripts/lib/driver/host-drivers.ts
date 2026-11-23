@@ -28,7 +28,7 @@ import {
 import { openReadOnly } from "../../../../../shared/records/db.ts";
 import { currentMs, parseMs } from "../../../../../shared/time.ts";
 import { heartbeatStaleMs, samePidNamespace } from "../claim.ts";
-import type { AccountVendor } from "../identity.ts";
+import type { HarnessName } from "../../../../../shared/agent-harness/index.ts";
 import { DB_FILE, dbPathFor, MIGRATIONS } from "../state/db.ts";
 import type { LockRow } from "../state/lock.ts";
 import { stateRoot } from "../state/store.ts";
@@ -48,7 +48,7 @@ export interface HostDriver {
   since: string;
   /** The account identity its passes bill, as the driver last resolved it; `null` when unresolved. */
   identity: string | null;
-  vendor: AccountVendor | null;
+  vendor: HarnessName | null;
 }
 
 /** A pull request's lock name: `pr-drive-` and the number's digits. */

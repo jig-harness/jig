@@ -13,19 +13,17 @@ import { resolve } from "node:path";
 import { isRecord } from "../../shared/guards.ts";
 import { run } from "../../shared/proc.ts";
 import type { PoolIssue } from "../../skills/do-item/scripts/lib/tracker/port.ts";
-import type { AccountVendor } from "../../skills/drive-pr/scripts/lib/identity.ts";
+import {
+  type HarnessName,
+  harnessOrDefault,
+  isSessionMarker,
+} from "../../shared/agent-harness/index.ts";
 
 const DETERMINE_ROUTE = resolve(
   import.meta.dir,
   "../../skills/do-item/scripts/determine_route.ts",
 );
 const BUNFIG = resolve(import.meta.dir, "../bunfig.toml");
-
-/** Each vendor's agent as a person reads it in a launch's report. */
-const AGENT_NAME: Record<AccountVendor, string> = {
-  claude: "Claude Code",
-  codex: "Codex",
-};
 
 export interface PickupRoute {
   model: string | null;
@@ -36,19 +34,23 @@ export interface PickupRoute {
 
 /**
  * The environment the route is derived in: the one the harness of
- * `account`'s vendor sets (Claude Code's `CLAUDECODE`, Codex's `CODEX_HOME`,
- * the account's own directory), with the other's removed, so the route is
- * translated for the agent the session runs in.
+ * `account`'s vendor sets in its own sessions (Claude Code's `CLAUDECODE`,
+ * Codex's `CODEX_HOME`, the account's own directory), with every registered
+ * harness's markers removed, so the route is translated for the agent the
+ * session runs in.
  */
 function harnessEnvironment(account: {
-  vendor: AccountVendor;
+  vendor: HarnessName;
   configDir: string;
 }): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { ...process.env };
   for (const name of Object.keys(env))
-    if (name === "CLAUDECODE" || name.startsWith("CODEX_")) delete env[name];
-  if (account.vendor === "claude") env.CLAUDECODE = "1";
-  else env.CODEX_HOME = account.configDir;
+    if (isSessionMarker(name)) delete env[name];
+  const harness = harnessOrDefault(account.vendor);
+  Object.assign(env, harness.environment.sessionMarkers(account.configDir));
+  // The route's own detector knows only the built-in harnesses' markers, so
+  // the registered harness names its runtime.
+  env.JIG_ROUTE_RUNTIME = harness.runtime;
   return env;
 }
 
@@ -58,7 +60,7 @@ export async function pickupRoute(
     Partial<Pick<PoolIssue, "type" | "size">>,
   workspace: string,
   timeoutSec: number,
-  account: { vendor: AccountVendor; configDir: string },
+  account: { vendor: HarnessName; configDir: string },
 ): Promise<PickupRoute> {
   // The workspace's own bunfig and env files are not this process's to load.
   const argv = [
@@ -104,7 +106,7 @@ export async function pickupRoute(
   const route = parsed;
   if (route.declared !== true)
     return none(
-      `the repository declares no routing: ${AGENT_NAME[account.vendor]}'s defaults`,
+      `the repository declares no routing: ${harnessOrDefault(account.vendor).label}'s defaults`,
     );
   // The model the runtime takes: Codex's model id for a family alias.
   const model =
@@ -118,6 +120,6 @@ export async function pickupRoute(
   return {
     model,
     effort,
-    detail: `route ${String(route.tier)} for ${AGENT_NAME[account.vendor]}, ${effort ?? "default effort"}, ${model ?? "default model"}`,
+    detail: `route ${String(route.tier)} for ${harnessOrDefault(account.vendor).label}, ${effort ?? "default effort"}, ${model ?? "default model"}`,
   };
 }

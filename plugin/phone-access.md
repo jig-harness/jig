@@ -250,7 +250,7 @@ passes only when the result is the one in the table.
 | Tap a copy control on a merge command or an answer line | The page confirms the copy, and pasting elsewhere gives the complete line |
 | Refuse the browser's clipboard permission, then tap copy again | The page offers the complete text for selecting by hand |
 | Tap a pull request or issue link | The forge or tracker opens in its own page and its own sign-in |
-| Under Send from here on Needs you, paste a fine-grained token and tap Test and keep | The panel names the login GitHub gives for the token; on a parked drive's card, Send appears beside Copy |
+| Under Send from here on Needs you, paste a fine-grained token, name the repository owners it answers for (or leave them blank) and tap Test and keep | The panel names the login GitHub gives for the token and the owners it answers for; on a parked drive's card of those owners, Send appears beside Copy |
 | Pick an option on a parked card and tap Send | The card links the comment it posted for each decision, whose answer line reads as the copy would on the pull request |
 | Open the menu in Chrome and choose Install app (tokenless path only) | The offer appears, the installed app opens in its own window with no browser bar, and no token is in any address it shows, and copying a command still works |
 

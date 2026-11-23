@@ -7,6 +7,10 @@ import {
 import { swallow } from "../../shared/errors.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { actOfClass } from "../../shared/acts.ts";
+import {
+  DRIVE_EXIT,
+  driveExitReport,
+} from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import type { FramedResult } from "./framed-result.ts";
 import type { LaunchAction } from "./launches.ts";
 import type { SessionResult } from "./session-result-types.ts";
@@ -64,9 +68,20 @@ export function derivedNext(
   stage: LaunchAction,
   cls: string,
   reason: string,
+  driveExit?: number | null,
 ): NextOwner {
-  if ((stage === "rearm" || stage === "takeover") && cls === "converged")
-    return { person: "repository maintainer", act: "merge the pull request" };
+  if (stage === "rearm" || stage === "takeover") {
+    if (driveExit === DRIVE_EXIT.MAX_ROUNDS) {
+      const next = driveExitReport(driveExit)?.report.next;
+      if (next?.owner === "person")
+        return {
+          person: "repository maintainer",
+          act: `${next.act}: ${next.step}`,
+        };
+    }
+    if (cls === "converged")
+      return { person: "repository maintainer", act: "merge the pull request" };
+  }
   if (stage === "followup" && cls === "converged")
     return { none: "the follow-up is complete" };
   if (cls === "merged")
@@ -95,6 +110,7 @@ export interface EndedAnswer {
   framed?: FramedResult | undefined;
   class: string;
   reason: string;
+  driveExit?: number | null;
   probeStopped?: boolean;
 }
 
@@ -114,9 +130,13 @@ export function endedNext(
     (ended.result === "done" || ended.result === "waits")
   )
     return ended.next;
-  if (ended.probeStopped && ended.class !== "merged")
+  if (
+    ended.probeStopped &&
+    ended.class !== "merged" &&
+    ended.driveExit !== DRIVE_EXIT.MAX_ROUNDS
+  )
     return { none: ended.reason };
-  return derivedNext(stage, ended.class, ended.reason);
+  return derivedNext(stage, ended.class, ended.reason, ended.driveExit);
 }
 
 /** Text form shared by the operator's answer and the outcome's readers. */

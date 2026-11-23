@@ -24,12 +24,13 @@ import type { DriveRoundContext } from "./round-context.ts";
 import { driverRuntime } from "./runtime.ts";
 import { CI_REPAIR_SPENT_EXIT } from "./settings.ts";
 import { HUMAN_DECISION_CLASS } from "../state/rulings.ts";
+import type { DriveState } from "../state/schema.ts";
 import { parseMs } from "../../../../../shared/time.ts";
 
 const REPORT_BYTES = 4096;
 const DIAGNOSIS_CHARS = 400;
 const PARK_KEY_CHARS = 200;
-type DiagnosisReport =
+export type DiagnosisReport =
   | { staleHead: true }
   | { standDown: true }
   | {
@@ -91,7 +92,7 @@ function fullReport(value: unknown): DiagnosisReport | null {
 }
 
 /** The report supplied by this pass, bounded and read from a regular file. */
-function readDiagnosis(path: string): DiagnosisReport | null {
+export function readDiagnosis(path: string): DiagnosisReport | null {
   try {
     const text = readBoundedText(path, REPORT_BYTES);
     const value: unknown = text === null ? null : JSON.parse(text);
@@ -151,7 +152,7 @@ const INCOMPLETE =
   "The diagnosing repair report must contain a diagnosis and either a tracker issue key or the key of the filing it parked.";
 
 /** A receipt the driver accepted, a refused one, or a report of a moved head. */
-type Receipt =
+export type Receipt =
   | { text: string; pushedHead: string | undefined }
   | { refused: string }
   | { staleHead: true }
@@ -161,19 +162,22 @@ type Receipt =
  * Judge the pass's receipt. Its diagnosis is prefixed with the tracker issue,
  * or with the filing the pass parked: a receipt that names no issue is
  * accepted only when the drive state holds a `human-decision` park of the key
- * it names, recorded after this diagnosis was reserved.
+ * it names, recorded after this diagnosis was reserved. `readState` reads
+ * the drive state, `drive-state.ts get` by default.
  */
-async function judgeReceipt(
+export async function judgeReceipt(
   pr: string,
   head: string,
   answer: DiagnosisReport | null,
+  readState: (pr: string) => Promise<DriveState | null> = (p) =>
+    readDriveState(p, true),
 ): Promise<Receipt> {
   if (answer === null) return { refused: INCOMPLETE };
   if ("staleHead" in answer || "standDown" in answer) return answer;
   const { diagnosis, pushedHead } = answer;
   if (answer.issue !== undefined)
     return { text: `issue ${answer.issue}. ${diagnosis}`, pushedHead };
-  const state = await readDriveState(pr, true);
+  const state = await readState(pr);
   if (state === null)
     return {
       refused:

@@ -51,7 +51,11 @@ import {
 } from "./drive-loop-harness.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
-import { lockRow, writeState } from "./state-rows.ts";
+import {
+  lockRow,
+  seedRounds as seedRoundsAt,
+  writeState,
+} from "./state-rows.ts";
 
 const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
   rawFixture(f, scratchClean.dir);
@@ -910,29 +914,8 @@ describe("drive.ts loop control", () => {
     });
   });
 
-  /** Seed the durable state directly, to model a drive resumed at its bound. */
-  function seedRounds(stateDir: string, rounds: number, head = HEAD) {
-    writeState(stateDir, "999", {
-      pr: 999,
-      rounds,
-      lastCountedHead: head,
-      attempts: 0,
-      attemptsHead: "",
-      lastReflectedRound: 0,
-      lastReflectedAttempts: 0,
-      readyMarkedRound: 0,
-      ciHold: null,
-      verifiedSha: "",
-      phase: "",
-      parked: [],
-      held: [],
-      lastEscalatedRound: 0,
-      lastEscalatedInvariant: "",
-      roundPaths: [],
-      lastProgressAt: "",
-      quotaPark: null,
-    });
-  }
+  const seedRounds = (stateDir: string, rounds: number, head = HEAD) =>
+    seedRoundsAt(stateDir, rounds, head);
 
   it.skipIf(skipLongDriveFixture)(
     "RAISING --max-rounds admits the round the previous bound rejected",

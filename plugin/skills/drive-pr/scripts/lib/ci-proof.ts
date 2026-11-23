@@ -3,10 +3,20 @@ import { fail } from "./cli.ts";
 import type { ListingCutShort } from "./paged-read.ts";
 import { DRIVE_EXIT } from "./status/terminal-states.ts";
 
+import {
+  checkRunListing,
+  ciVerdictOf,
+  commitStatusesFor,
+  hasNonReviewerCi,
+} from "./status/evidence.ts";
+import { workflowRunsBehind } from "./status/workflow-runs.ts";
+
 /** A proof read that held, or that did not and says whether its listing was cut short. */
 export type ProofRead =
   | { ok: true }
-  | { ok: false; cutShort?: ListingCutShort };
+  | { ok: false; cutShort?: ListingCutShort; pending?: boolean };
+
+export const BASE_MERGE_CI_PENDING = "base-merge-ci-pending";
 
 /** A script's stdout record of the pages a cut-short listing read, and the drive's exit for it. */
 export function listingStopExit(pagesRead: number | null): number {
@@ -48,4 +58,50 @@ export function exitOnProof(
   if (proof.cutShort === undefined) return fail(code, message(proof.reason));
   listingStopExit(proof.cutShort.pagesRead);
   return fail(DRIVE_EXIT.CHECK_RUNS_UNREADABLE, message(proof.cutShort.reason));
+}
+
+/** A head's check runs and commit statuses, or the refusal that read ended in. */
+async function readHeadCi(head: string): Promise<
+  | ProofRead
+  | {
+      allRuns: NonNullable<Awaited<ReturnType<typeof checkRunListing>>["runs"]>;
+      statuses: NonNullable<Awaited<ReturnType<typeof commitStatusesFor>>>;
+    }
+> {
+  const [{ runs: allRuns, cutShort }, statuses] = await Promise.all([
+    checkRunListing("{owner}", "{repo}", head),
+    commitStatusesFor("{owner}", "{repo}", head),
+  ]);
+  if (cutShort !== null) return { ok: false, cutShort };
+  if (allRuns === null || statuses === null) return { ok: false };
+  return { allRuns, statuses };
+}
+
+/** Strict success requires both check runs and attributed legacy statuses to be green. */
+export async function requiredCiAggregateIsGreen(
+  head: string,
+): Promise<ProofRead> {
+  const read = await readHeadCi(head);
+  if ("ok" in read) return read;
+  const { allRuns, statuses } = read;
+  const workflowRuns = await workflowRunsBehind(
+    "{owner}",
+    "{repo}",
+    head,
+    allRuns,
+  );
+  const verdict = ciVerdictOf(allRuns, statuses, false, head, workflowRuns);
+  return verdict === "green"
+    ? { ok: true }
+    : { ok: false, pending: verdict.startsWith("pending:") };
+}
+
+/** Has any non-reviewer check run or commit status registered on `head`? */
+export async function anyCiOnHead(head: string): Promise<ProofRead> {
+  const read = await readHeadCi(head);
+  if ("ok" in read) return read;
+  const { allRuns, statuses } = read;
+  return hasNonReviewerCi(allRuns, statuses)
+    ? { ok: true }
+    : { ok: false, pending: true };
 }

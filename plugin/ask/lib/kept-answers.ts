@@ -57,8 +57,8 @@ async function verdictEntries(
   const thread =
     verdict.kind === "thread" && missing
       ? await readParkThread(ctx, verdict.key)
-      : [];
-  const comments = [...conversation, ...(thread ?? [])];
+      : null;
+  const comments = [...conversation, ...(thread?.comments ?? [])];
   return verdict.answers.map((answer) => {
     const current = comments.find((c) => c.url !== "" && c.url === answer.url);
     const edited =

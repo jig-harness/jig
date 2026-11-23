@@ -1,7 +1,7 @@
 /**
- * The page's own calls to GitHub's REST API, made from this browser with the
- * token the person pasted (`forge-token.ts`): who the token signs in as, and
- * one answer comment on a pull request. The dashboard's server never sees the
+ * The page's own calls to GitHub's REST API, made from this browser with a
+ * token the person pasted (`forge-token.ts`): who a token signs in as, and
+ * one answer comment on a pull request, with the token for its owner. The dashboard's server never sees the
  * token or the call; the page's content security policy lets it reach its own
  * server and `api.github.com` alone. Nothing here logs the token or puts it
  * anywhere but the `Authorization` header of a call to GitHub.
