@@ -105,6 +105,32 @@ function endsParagraph(line: string, continued: boolean): boolean {
 }
 
 /**
+ * Where the first comment opener at or after `from` sits on a line (the
+ * line's length when there is none), skipping escapes and code spans. A run
+ * with no closer on the line but one later in its paragraph opens a span that
+ * goes on past the line: `span` is its length then.
+ */
+function scanToComment(
+  line: string,
+  from: number,
+  runs: ReturnType<typeof runMatcher>,
+  closesLater: (n: number) => boolean,
+): { at: number; span: number } {
+  let i = from;
+  while (i < line.length && !line.startsWith("<!--", i)) {
+    if (line[i] === "\\") i += 2;
+    else if (line[i] === "`") {
+      const n = runLength(line, i);
+      const close = runs.closeOf(i);
+      if (close >= 0) i = close;
+      else if (closesLater(n)) return { at: line.length, span: n };
+      else i += n;
+    } else i += 1;
+  }
+  return { at: i, span: 0 };
+}
+
+/**
  * Blank out HTML comments, which no reader sees, keeping every line break.
  * A comment opens at the first `<!--` that is neither backslash-escaped nor
  * inside a code span (a backtick run closed by a run of the same length, on
@@ -115,87 +141,92 @@ function endsParagraph(line: string, continued: boolean): boolean {
  */
 function withoutComments(source: string): string {
   const lines = source.split("\n");
+  const state: CommentState = { open: false, span: 0 };
   let fence: string | undefined;
-  let open = false;
-  let span = 0;
-  let paragraphEnd = -1;
-  // The last line of the current paragraph holding a run of each length.
-  let lastWith = new Map<number, number>();
-  const endOf = (from: number): number => {
-    if (from >= paragraphEnd) {
-      let end = from;
-      while (
-        end < lines.length &&
-        !endsParagraph(lines[end] as string, end > from)
-      )
-        end++;
-      paragraphEnd = end;
-      lastWith = new Map();
-      for (let j = from; j < end; j++) {
-        const line = lines[j] as string;
-        for (let at = line.indexOf("`"); at >= 0; ) {
-          const n = runLength(line, at);
-          lastWith.set(n, j);
-          at = line.indexOf("`", at + n);
-        }
-      }
-    }
-    return paragraphEnd;
-  };
+  let paragraph = { end: -1, lastWith: new Map<number, number>() };
   // Whether a run of `n` ticks opened on `index` is closed on a later line of
   // its paragraph.
   const closesLater = (index: number, n: number): boolean => {
-    endOf(index);
-    return (lastWith.get(n) ?? -1) > index;
+    if (index >= paragraph.end) paragraph = paragraphRuns(lines, index);
+    return (paragraph.lastWith.get(n) ?? -1) > index;
   };
   return lines
     .map((line, index) => {
-      if (!open) {
+      if (!state.open) {
         const after = fenceAfter(fence, unquote(line).content);
         if (fence !== undefined || after !== undefined) {
           fence = after;
-          span = 0;
+          state.span = 0;
           return line;
         }
       }
-      let out = "";
-      let pos = 0;
-      const runs = runMatcher(line);
-      for (;;) {
-        if (open) {
-          const end = line.indexOf("-->", pos);
-          if (end < 0) return out + " ".repeat(line.length - pos);
-          out += " ".repeat(end + 3 - pos);
-          pos = end + 3;
-          open = false;
-        } else if (span > 0) {
-          const close = runs.firstFrom(pos, span);
-          if (close < 0) return out + line.slice(pos);
-          out += line.slice(pos, close);
-          pos = close;
-          span = 0;
-        } else {
-          let i = pos;
-          while (i < line.length && !line.startsWith("<!--", i)) {
-            if (line[i] === "\\") i += 2;
-            else if (line[i] === "`") {
-              const n = runLength(line, i);
-              const close = runs.closeOf(i);
-              if (close >= 0) i = close;
-              else if (closesLater(index, n)) {
-                span = n;
-                return out + line.slice(pos);
-              } else i += n;
-            } else i += 1;
-          }
-          if (i >= line.length) return out + line.slice(pos);
-          out += line.slice(pos, i) + "    ";
-          pos = i + 4;
-          open = true;
-        }
-      }
+      return maskLine(line, state, (n) => closesLater(index, n));
     })
     .join("\n");
+}
+
+/** Whether a comment, or a code span running on from an earlier line, is open. */
+interface CommentState {
+  open: boolean;
+  span: number;
+}
+
+/**
+ * The paragraph that starts at line `from`: where it ends and the last line
+ * holding a backtick run of each length.
+ */
+function paragraphRuns(
+  lines: string[],
+  from: number,
+): { end: number; lastWith: Map<number, number> } {
+  let end = from;
+  while (end < lines.length && !endsParagraph(lines[end] as string, end > from))
+    end++;
+  const lastWith = new Map<number, number>();
+  for (let j = from; j < end; j++) {
+    const line = lines[j] as string;
+    for (let at = line.indexOf("`"); at >= 0; ) {
+      const n = runLength(line, at);
+      lastWith.set(n, j);
+      at = line.indexOf("`", at + n);
+    }
+  }
+  return { end, lastWith };
+}
+
+/** One line with its comments blanked, updating what stays open past it. */
+function maskLine(
+  line: string,
+  state: CommentState,
+  closesLater: (n: number) => boolean,
+): string {
+  const runs = runMatcher(line);
+  let out = "";
+  let pos = 0;
+  for (;;) {
+    let end: number;
+    if (state.open) {
+      end = line.indexOf("-->", pos);
+      if (end < 0) return out + " ".repeat(line.length - pos);
+      out += " ".repeat(end + 3 - pos);
+      pos = end + 3;
+      state.open = false;
+    } else if (state.span > 0) {
+      end = runs.firstFrom(pos, state.span);
+      if (end < 0) return out + line.slice(pos);
+      out += line.slice(pos, end);
+      pos = end;
+      state.span = 0;
+    } else {
+      const found = scanToComment(line, pos, runs, closesLater);
+      state.span = found.span;
+      if (found.span > 0 || found.at >= line.length)
+        return out + line.slice(pos);
+      out += `${line.slice(pos, found.at)}    `;
+      pos = found.at + 4;
+      state.open = true;
+    }
+  }
 }
 
 /**
@@ -444,6 +475,34 @@ function codeSpans(
   return spans;
 }
 
+/** The end of the double-quoted string opening at `at`, or -1 if it never closes. */
+function titleEnd(text: string, at: number): number {
+  for (let end = at + 1; end < text.length; end++) {
+    if (text[end] === '"') return end;
+    if (text[end] === "\\") end += 1;
+  }
+  return -1;
+}
+
+/** Which characters are inside a code span or are a backslash and what it escapes. */
+function inertCharacters(text: string, spans: [number, number][]): Uint8Array {
+  const inert = new Uint8Array(text.length);
+  for (const [start, end] of spans) inert.fill(1, start, end);
+  for (let i = 0; i < text.length; i++) {
+    if (inert[i] || text[i] !== "\\") continue;
+    inert.fill(1, i, i + 2);
+    i += 1;
+  }
+  return inert;
+}
+
+/** `at`, or the end of the link title that opens there: a quote after whitespace. */
+function afterTitle(text: string, at: number): number {
+  if (text[at] !== '"' || !/\s/.test(text[at - 1] ?? "")) return at;
+  const end = titleEnd(text, at);
+  return end < 0 ? at : end;
+}
+
 /**
  * Each `open` character's matching `close` index, by one stack pass that
  * skips backslash escapes and code spans: nested pairs balance, an unmatched
@@ -459,30 +518,15 @@ function pairsOf(
 ): Map<number, number> {
   const pairs = new Map<number, number>();
   const stack: number[] = [];
-  let next = 0;
+  const inert = inertCharacters(text, spans);
   for (let i = 0; i < text.length; i++) {
-    while (next < spans.length && (spans[next] as [number, number])[1] <= i)
-      next += 1;
-    const span = spans[next];
-    if (span && span[0] <= i) {
-      i = span[1] - 1;
-      continue;
-    }
+    if (inert[i]) continue;
     const c = text[i];
-    if (c === "\\") i += 1;
-    else if (c === open) stack.push(i);
-    else if (c === close && stack.length) pairs.set(stack.pop() as number, i);
-    else if (
-      titles &&
-      c === '"' &&
-      stack.length &&
-      /\s/.test(text[i - 1] ?? "")
-    ) {
-      let end = i + 1;
-      while (end < text.length && text[end] !== '"')
-        end += text[end] === "\\" ? 2 : 1;
-      if (end < text.length) i = end;
-    }
+    if (c === open) stack.push(i);
+    else if (c === close) {
+      const start = stack.pop();
+      if (start !== undefined) pairs.set(start, i);
+    } else if (titles && stack.length) i = afterTitle(text, i);
   }
   return pairs;
 }
@@ -492,6 +536,30 @@ function spanText(raw: string): string {
   return raw.startsWith(" ") && raw.endsWith(" ") && /[^ ]/.test(raw)
     ? raw.slice(1, -1)
     : raw;
+}
+
+/**
+ * The links of a text by the index of their `[`, as `[label end, destination
+ * end]`. A label holding another link is no link (CommonMark does not nest
+ * them), so only the innermost count.
+ */
+function innermostLinks(
+  brackets: Map<number, number>,
+  parens: Map<number, number>,
+): Map<number, [number, number]> {
+  const links = new Map<number, [number, number]>();
+  for (const [start, label] of [...brackets].sort((a, b) => a[0] - b[0])) {
+    const paren = parens.get(label + 1);
+    if (paren !== undefined) links.set(start, [label, paren]);
+  }
+  const starts = [...links.keys()];
+  const inner = new Map<number, [number, number]>();
+  starts.forEach((start, k) => {
+    const next = starts[k + 1];
+    const link = links.get(start) as [number, number];
+    if (next === undefined || next >= link[0]) inner.set(start, link);
+  });
+  return inner;
 }
 
 /**
@@ -508,24 +576,10 @@ function spanText(raw: string): string {
 export function recipientText(text: string): string {
   const runs = runMatcher(text);
   const spans = codeSpans(text, runs);
-  const brackets = pairsOf(text, spans, "[", "]", false);
-  const parens = pairsOf(text, spans, "(", ")", true);
-  // The links, by the index of their `[`: a label holding another link is no
-  // link itself (CommonMark does not nest them), so only the innermost count.
-  const links = new Map<number, [number, number]>();
-  const starts = [...brackets.keys()].sort((a, b) => a - b);
-  for (const start of starts) {
-    const label = brackets.get(start) as number;
-    const paren = parens.get(label + 1);
-    if (paren !== undefined) links.set(start, [label, paren]);
-  }
-  const linkStarts = [...links.keys()].sort((a, b) => a - b);
-  const innermost = new Set<number>();
-  linkStarts.forEach((start, k) => {
-    const next = linkStarts[k + 1];
-    if (next === undefined || next >= (links.get(start) as [number, number])[0])
-      innermost.add(start);
-  });
+  const links = innermostLinks(
+    pairsOf(text, spans, "[", "]", false),
+    pairsOf(text, spans, "(", ")", true),
+  );
   // A label's closing bracket, mapped to where its link's destination ends.
   const skipFrom = new Map<number, number>();
   let out = "";
@@ -534,46 +588,40 @@ export function recipientText(text: string): string {
     out += plain.replace(/\*+/g, "").replace(UNDERSCORE, "");
     plain = "";
   };
-  let i = 0;
-  while (i < text.length) {
-    const c = text[i] as string;
+  const step = (i: number): number => {
     const skip = skipFrom.get(i);
-    if (skip !== undefined) {
-      i = skip;
-      continue;
-    }
+    if (skip !== undefined) return skip;
+    const c = text[i] as string;
     if (c === "\\") {
       plain += text.slice(i, i + 2);
-      i += 2;
-    } else if (c === "`") {
-      const n = runLength(text, i);
-      const close = runs.closeOf(i);
-      if (close < 0) {
-        plain += text.slice(i, i + n);
-        i += n;
-      } else {
-        flush();
-        out += spanText(text.slice(i + n, close - n));
-        i = close;
-      }
-    } else {
-      const link = c === "[" && innermost.has(i) ? links.get(i) : undefined;
-      if (link !== undefined) {
-        const [label, paren] = link;
-        flush();
-        if (namesAgentFile(text.slice(label + 2, paren))) {
-          out += "review-arbiter.md";
-          i = paren + 1;
-        } else {
-          skipFrom.set(label, paren + 1);
-          i += 1;
-        }
-      } else {
-        plain += c;
-        i += 1;
-      }
+      return i + 2;
     }
-  }
+    if (c === "`") return codeAt(i);
+    const link = c === "[" ? links.get(i) : undefined;
+    if (link === undefined) {
+      plain += c;
+      return i + 1;
+    }
+    flush();
+    if (namesAgentFile(text.slice(link[0] + 2, link[1]))) {
+      out += "review-arbiter.md";
+      return link[1] + 1;
+    }
+    skipFrom.set(link[0], link[1] + 1);
+    return i + 1;
+  };
+  const codeAt = (i: number): number => {
+    const n = runLength(text, i);
+    const close = runs.closeOf(i);
+    if (close < 0) {
+      plain += text.slice(i, i + n);
+      return i + n;
+    }
+    flush();
+    out += spanText(text.slice(i + n, close - n));
+    return close;
+  };
+  for (let i = 0; i < text.length; ) i = step(i);
   flush();
   return out;
 }
