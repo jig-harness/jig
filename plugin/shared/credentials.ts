@@ -112,26 +112,63 @@ function startsAssignment(text: string, at: number): boolean {
   return m !== null && isCredentialKey(m[2] ?? m[3] ?? "");
 }
 
-/** End of the quoted segment opening at `start`: an unclosed one takes its line. */
-function quotedEnd(text: string, start: number): number {
+/**
+ * End of the quoted segment opening at `start`. A value's leading quote may
+ * span lines and ends at its closing quote; with none, it takes its first
+ * physical line. A quote glued to a bare prefix takes its line only, which
+ * is all a line-cutting reader can track.
+ */
+function quotedEnd(text: string, start: number, multiline: boolean): number {
   const q = text[start];
+  let firstBreak = -1;
   for (let i = start + 1; i < text.length; i++) {
     const c = text[i];
-    if (c === "\n") return i;
-    if (c === "\\") i++;
-    else if (c === q) {
+    if (c === "\n") {
+      if (!multiline) return i;
+      if (firstBreak < 0) firstBreak = i;
+    } else if (c === "\\") {
+      i++;
+      if (text[i] === "\n") {
+        if (!multiline) return i;
+        if (firstBreak < 0) firstBreak = i;
+      }
+    } else if (c === q) {
       if (text[i + 1] !== q) return i + 1;
       i++;
     }
   }
-  return text.length;
+  return firstBreak >= 0 ? firstBreak : text.length;
+}
+
+/** Whether text at `at` starts a field of any name: evidence of a boundary. */
+function startsField(text: string, at: number): boolean {
+  ASSIGNMENT_START.lastIndex = at;
+  return ASSIGNMENT_START.test(text);
+}
+
+/**
+ * After a closed quote, whether the separator at `i` ends the value: only
+ * when a boundary follows (end, whitespace, another separator or a field),
+ * so a suffix of the same word stays masked.
+ */
+function separatorEnds(text: string, i: number): boolean {
+  const next = text[i + 1];
+  return (
+    next === undefined ||
+    /\s/.test(next) ||
+    next === "," ||
+    next === ";" ||
+    next === "}" ||
+    startsField(text, i + 1)
+  );
 }
 
 /**
  * End of an unquoted assignment's value: segments (bare, escaped, quoted)
  * run on until whitespace. After a quoted segment closes, `,` `;` and `}`
- * also end the value, so the neighbouring field survives; a bare run takes
- * them as part of the secret.
+ * also end the value when a boundary follows, so the neighbouring field
+ * survives; a bare run takes them as part of the secret. A backslash before
+ * a line break does not continue the value past it.
  */
 function valueEnd(text: string, start: number): number {
   let afterQuote = false;
@@ -139,12 +176,20 @@ function valueEnd(text: string, start: number): number {
   while (i < text.length) {
     const c = text[i] ?? "";
     if (/\s/.test(c)) break;
-    if (afterQuote && (c === "," || c === ";" || c === "}")) break;
+    if (
+      afterQuote &&
+      (c === "," || c === ";" || c === "}") &&
+      separatorEnds(text, i)
+    )
+      break;
     if (c === '"' || c === "'") {
-      i = quotedEnd(text, i);
+      i = quotedEnd(text, i, i === start);
       afterQuote = text[i - 1] === c;
+    } else if (c === "\\") {
+      i += text[i + 1] === "\n" || text[i + 1] === "\r" ? 1 : 2;
+      afterQuote = false;
     } else {
-      i += c === "\\" ? 2 : 1;
+      i++;
       afterQuote = false;
     }
   }

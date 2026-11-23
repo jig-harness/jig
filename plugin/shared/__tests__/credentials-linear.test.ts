@@ -66,3 +66,18 @@ test("an unquoted value is masked through quoted and bare segments and stops at 
   for (const [input, want] of cases)
     expect(maskCredentials(input, MARK)).toBe(want);
 });
+
+test("a quoted value spans lines to its close, takes its first line when unclosed, and a suffix without a field boundary stays masked", () => {
+  const cases: [string, string][] = [
+    ['password="alpha\nbeta"\nnext', `password=${MARK}\nnext`],
+    ['password="alpha\r\nbeta" next', `password=${MARK} next`],
+    ['password="alpha\\\nstatus line', `password=${MARK}\nstatus line`],
+    ["password=abc\\\nstatus line", `password=${MARK}\nstatus line`],
+    ['password="example",suffix', `password=${MARK}`],
+    ['password="example"}tail', `password=${MARK}`],
+    ['password="example"}\n', `password=${MARK}}\n`],
+    ['password="example";status=ready', `password=${MARK};status=ready`],
+  ];
+  for (const [input, want] of cases)
+    expect(maskCredentials(input, MARK)).toBe(want);
+});
