@@ -341,7 +341,52 @@ test("a comment opener in inline code or after an escape hides nothing", () => {
 });
 
 test("a reference page named SKILL.md is judged as a reference", () => {
+  const path = "plugin/skills/x/references/SKILL.md";
+  const text = `Write <skill-dir>, the directory of the skill; ${DIR} is only named here.\n`;
+  expect(formFindings(path, text, false).map((f) => f.rule)).toEqual([]);
+  expect(formFindings(path, text, true).map((f) => f.rule)).toEqual([
+    "skill-dir-form",
+  ]);
+});
+
+test("a link names the agent only by the whole basename of its file", () => {
+  for (const text of [
+    "Hand it to [x](../archived-review-arbiter.md).\n",
+    "Hand it to [x](../review-arbiter.md.bak).\n",
+    "Hand it to the [Review Arbiter](../../agents/review-arbiter.md)'s maintainer.\n",
+    "Hand it to the [Review Arbiter](../../agents/review-arbiter.md)\u2019s maintainer.\n",
+    "Invoke `jig:review-*arbiter`.\n",
+  ])
+    expect(arbiter(text)).toEqual([]);
+  expect(arbiter("Hand it to [x](../agents/review-arbiter.md#top).\n")).toEqual(
+    ["subagent-form"],
+  );
+});
+
+test("a path token or a descriptive recipient is a handoff", () => {
+  for (const text of [
+    "Give the finding to `../../agents/review-arbiter.md`.\n",
+    "Send the finding to the read-only jig:review-arbiter.\n",
+    "Ask the plugin\u2019s jig:review-arbiter to rule.\n",
+  ])
+    expect(arbiter(text)).toEqual(["subagent-form"]);
+});
+
+test("a code span of another length or on another line is read as CommonMark does", () => {
+  const fallback = "plain-text numbered question, marked as the default";
+  // A longer run is no closer: the comment is real and hides the fallback.
   expect(
-    formFindings("plugin/skills/x/references/SKILL.md", "Plain.\n", false),
-  ).toEqual([]);
+    arbiter(`Use AskUserQuestion \`x <!-- ${fallback} \`\`\` z\n`),
+  ).toEqual(["question-form"]);
+  // A span that closes on the next line holds the opener: the fallback shows.
+  expect(arbiter(`Use AskUserQuestion \`x\n<!-- ${fallback} \` end\n`)).toEqual(
+    [],
+  );
+});
+
+test("unmatched brackets, ticks and openers scan in linear time", () => {
+  const started = performance.now();
+  for (const unit of ["[", "[a](", "`` ` ", "<!-- "])
+    arbiter(`Send it to ${unit.repeat(16000)}\n`);
+  expect(performance.now() - started).toBeLessThan(2000);
 });

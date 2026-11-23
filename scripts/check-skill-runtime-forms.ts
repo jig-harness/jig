@@ -37,49 +37,69 @@ interface Paragraph {
   line: number;
 }
 
+/** The length of the backtick run that starts at `at`. */
+function runLength(text: string, at: number): number {
+  let n = 1;
+  while (text[at + n] === "`") n += 1;
+  return n;
+}
+
 /**
- * Where a comment opens in a line of prose: the first `<!--` that is neither
- * backslash-escaped nor inside an inline code span (a backtick run closed by
- * a run of the same length on the line; an unpaired run is literal text).
+ * The index just past the first backtick run of exactly `n` ticks at or after
+ * `from`, or -1. A longer or shorter run is skipped whole, never entered.
  */
-function commentStart(line: string): number {
-  let i = 0;
-  while (i < line.length) {
-    if (line[i] === "\\") i += 2;
-    else if (line[i] === "`") i = afterCodeSpan(line, i);
-    else if (line.startsWith("<!--", i)) return i;
-    else i += 1;
+function closeOfRun(text: string, from: number, n: number): number {
+  let at = text.indexOf("`", from);
+  while (at >= 0) {
+    const length = runLength(text, at);
+    if (length === n) return at + length;
+    at = text.indexOf("`", at + length);
   }
   return -1;
 }
 
-/** The index after the backtick run at `at` and the code span it opens, if any. */
-function afterCodeSpan(line: string, at: number): number {
-  let n = 1;
-  while (line[at + n] === "`") n += 1;
-  const run = "`".repeat(n);
-  let close = line.indexOf(run, at + n);
-  while (close >= 0 && line[close + n] === "`")
-    close = line.indexOf(run, close + n + 1);
-  return close < 0 ? at + n : close + n;
-}
-
 /**
  * Blank out HTML comments, which no reader sees, keeping every line break.
+ * A comment opens at the first `<!--` that is neither backslash-escaped nor
+ * inside a code span (a backtick run closed by a run of the same length, on
+ * its line or later in the same paragraph; an unpaired run is literal text).
  * A comment stays opaque until it closes, even across a fence-like line;
  * fenced code outside a comment is left whole, since inside it `<!--` and
  * `-->` are literal text.
  */
 function withoutComments(source: string): string {
+  const lines = source.split("\n");
   let fence: string | undefined;
   let open = false;
-  return source
-    .split("\n")
-    .map((line) => {
+  let span = 0;
+  let paragraphEnd = -1;
+  const unclosed = new Map<number, number>();
+  const endOf = (from: number): number => {
+    if (from >= paragraphEnd) {
+      let end = from;
+      while (end < lines.length && (lines[end] as string).trim() !== "") end++;
+      paragraphEnd = end;
+      unclosed.clear();
+    }
+    return paragraphEnd;
+  };
+  // Whether a run of `n` ticks opened on `index` is closed on a later line of
+  // its paragraph; a run found unclosed stays so for the rest of it.
+  const closesLater = (index: number, n: number): boolean => {
+    const end = endOf(index);
+    if (unclosed.get(n) === end) return false;
+    for (let j = index + 1; j < end; j++)
+      if (closeOfRun(lines[j] as string, 0, n) >= 0) return true;
+    unclosed.set(n, end);
+    return false;
+  };
+  return lines
+    .map((line, index) => {
       if (!open) {
         const after = fenceAfter(fence, unquote(line).content);
         if (fence !== undefined || after !== undefined) {
           fence = after;
+          span = 0;
           return line;
         }
       }
@@ -92,11 +112,29 @@ function withoutComments(source: string): string {
           out += " ".repeat(end + 3);
           rest = rest.slice(end + 3);
           open = false;
+        } else if (span > 0) {
+          const close = closeOfRun(rest, 0, span);
+          if (close < 0) return out + rest;
+          out += rest.slice(0, close);
+          rest = rest.slice(close);
+          span = 0;
         } else {
-          const start = commentStart(rest);
-          if (start < 0) return out + rest;
-          out += rest.slice(0, start) + "    ";
-          rest = rest.slice(start + 4);
+          let i = 0;
+          while (i < rest.length && !rest.startsWith("<!--", i)) {
+            if (rest[i] === "\\") i += 2;
+            else if (rest[i] === "`") {
+              const n = runLength(rest, i);
+              const close = closeOfRun(rest, i + n, n);
+              if (close >= 0) i = close;
+              else if (closesLater(index, n)) {
+                span = n;
+                return out + rest;
+              } else i += n;
+            } else i += 1;
+          }
+          if (i >= rest.length) return out + rest;
+          out += rest.slice(0, i) + "    ";
+          rest = rest.slice(i + 4);
           open = true;
         }
       }
@@ -302,32 +340,89 @@ const AGENT = String.raw`(?<![\w-])(?:jig:review-arbiter|review-arbiter\.md)(?![
 // The words that may name the recipient before its ID: an article, and the
 // words agent or Review Arbiter. Anything else (a maintainer, a clause such as
 // `whether` or `if`) means the ID is only mentioned, not handed to.
-const LEAD = String.raw`\(?(?:(?:the|a|an|our|this|fresh|new|configured|plugin's|plugin|jig|review[- ]arbiter|arbiter|agent|subagent)\s+\(?){0,6}`;
+const LEAD = String.raw`\(?(?:(?:the|a|an|our|this|fresh|new|configured|read-only|plugin['\u2019]s|plugin|jig|review[- ]arbiter|arbiter|agent|subagent)\s+\(?){0,6}`;
+// A path to the agent's file may stand in for its name.
+const PATH = String.raw`(?:[\w.~-]*/)*`;
 // A sentence's own words: a period inside a path or a name is not its end.
 const GAP = String.raw`(?:[^.!?]|\.(?=\S)){0,80}?`;
 // The agent is the recipient: it follows the verb directly (`invoke`), or the
 // `to`/`from` the verb takes, through nothing but the lead-in above.
 const HANDS_OVER = new RegExp(
-  String.raw`\b(?:(?:spawn|invoke|ask)\s+|(?:delegate|hand|give|send|route|pass)\b${GAP}\bto\s+|delegate\s+to\s+|request\b${GAP}\bfrom\s+|go(?:es)?\s+to\s+)${LEAD}${AGENT}`,
+  String.raw`\b(?:(?:spawn|invoke|ask)\s+|(?:delegate|hand|give|send|route|pass)\b${GAP}\bto\s+|delegate\s+to\s+|request\b${GAP}\bfrom\s+|go(?:es)?\s+to\s+)${LEAD}${PATH}${AGENT}`,
   "i",
 );
 
+const UNDERSCORE = /(?<![A-Za-z0-9])_|_(?![A-Za-z0-9])/g;
+
+/** Whether a link destination names the agent's own file, by its whole basename. */
+function namesAgentFile(destination: string): boolean {
+  const target = (
+    destination.trim().replace(/^</, "").split(/[\s>]/)[0] ?? ""
+  ).split(/[#?]/)[0] as string;
+  return (
+    target.slice(target.lastIndexOf("/") + 1).toLowerCase() ===
+    "review-arbiter.md"
+  );
+}
+
 /**
- * A paragraph reduced to the words a reader sees, for recognising a recipient:
- * a link to the agent's own file becomes that file's name (its label is
- * prose), any other link keeps its label and loses its destination, and code
- * ticks and emphasis marks around a token are dropped, so none of them
- * breaks the phrase between a verb and its recipient.
+ * A paragraph reduced to the words a reader sees, for recognising a recipient,
+ * in one left-to-right pass: a link to the agent's own file becomes that
+ * file's name (its label is prose), any other link keeps its label and loses
+ * its destination, a code span keeps its contents untouched, and emphasis
+ * marks outside code are dropped, so none of them breaks the phrase between a
+ * verb and its recipient. Each `[`, `]` and `)` is searched for once.
  */
 export function recipientText(text: string): string {
-  return text
-    .replace(
-      /\[[^\]]*\]\(\s*<?[^)\s>]*?review-arbiter\.md(?:#[^)\s>]*)?>?[^)]*\)/gi,
-      " review-arbiter.md ",
-    )
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/[`*]/g, "")
-    .replace(/(?<![A-Za-z0-9])_|_(?![A-Za-z0-9])/g, "");
+  let out = "";
+  let plain = "";
+  let i = 0;
+  let bracket = -1;
+  let paren = -1;
+  const flush = () => {
+    out += plain.replace(/\*+/g, "").replace(UNDERSCORE, "");
+    plain = "";
+  };
+  while (i < text.length) {
+    const c = text[i] as string;
+    if (c === "`") {
+      const n = runLength(text, i);
+      const close = closeOfRun(text, i + n, n);
+      if (close < 0) {
+        i += n;
+      } else {
+        flush();
+        out += text.slice(i + n, close - n);
+        i = close;
+      }
+    } else if (c === "[" && bracket !== -2) {
+      if (bracket <= i) {
+        bracket = text.indexOf("]", i + 1);
+        if (bracket < 0) bracket = -2;
+      }
+      if (bracket >= 0 && text[bracket + 1] === "(" && paren !== -2) {
+        if (paren < bracket + 2) {
+          paren = text.indexOf(")", bracket + 2);
+          if (paren < 0) paren = -2;
+        }
+      }
+      if (bracket >= 0 && paren >= 0 && text[bracket + 1] === "(") {
+        flush();
+        out += namesAgentFile(text.slice(bracket + 2, paren))
+          ? "review-arbiter.md"
+          : recipientText(text.slice(i + 1, bracket));
+        i = paren + 1;
+      } else {
+        plain += c;
+        i += 1;
+      }
+    } else {
+      plain += c;
+      i += 1;
+    }
+  }
+  flush();
+  return out;
 }
 
 const NO_SUBAGENTS = /\bno subagents?\b/i;
