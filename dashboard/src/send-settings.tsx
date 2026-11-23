@@ -105,9 +105,13 @@ function TokenField({ more }: { more: boolean }) {
       }
       // Checked against the tokens kept when GitHub answered, which another tab may have changed.
       const login = answer.value;
-      const atOf = (list: KeptToken[]) =>
-        list.find((t) => t.login.toLowerCase() === login.toLowerCase())?.at ??
-        null;
+      // The account's replacement, removal or owner change while the test ran.
+      const atOf = (list: KeptToken[]) => {
+        const t = list.find(
+          (k) => k.login.toLowerCase() === login.toLowerCase(),
+        );
+        return t === undefined ? null : `${t.at} ${t.owners.join(",")}`;
+      };
       if (atOf(before) !== atOf(keptTokens())) {
         setTest({
           kind: "refused",

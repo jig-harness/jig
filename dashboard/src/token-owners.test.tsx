@@ -181,31 +181,24 @@ describe("what a browser has stored", () => {
         {
           tokens: [
             A,
-            { ...B, owners: ["second-org", 7] },
+            B,
             { token: "", login: "x", at: 1, owners: [] },
             { ...A, token: "pat-dup" },
           ],
         },
         { token: "pat-old", login: "old", at: 1 },
       ),
-    ).toEqual([A]);
+    ).toEqual([A, B]);
     expect(tokensFrom(null, null)).toEqual([]);
   });
 
-  test("a list entry whose owners are missing or malformed is dropped, never read as every owner", () => {
-    expect(
-      tokensFrom(
-        {
-          tokens: [
-            { token: "p", login: "a", at: 1 },
-            { token: "q", login: "b", at: 1, owners: "example-org" },
-            { token: "r", login: "c", at: 1, owners: [7] },
-            ANY,
-          ],
-        },
-        null,
-      ),
-    ).toEqual([ANY]);
+  test("a list entry whose owners are missing or malformed makes the list untrusted, so a catch-all cannot answer for its owners", () => {
+    for (const bad of [
+      { token: "p", login: "a", at: 1 },
+      { token: "q", login: "b", at: 1, owners: "example-org" },
+      { token: "r", login: "c", at: 1, owners: ["example-org", 7] },
+    ])
+      expect(tokensFrom({ tokens: [bad, ANY] }, null)).toEqual([]);
   });
 });
 

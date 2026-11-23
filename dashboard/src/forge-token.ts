@@ -31,18 +31,25 @@ const EARLIER_KEY = "github-token";
 
 const isText = (v: unknown): v is string => typeof v === "string" && v !== "";
 
+/** Stored data whose owner mappings cannot be trusted: no token it holds may be used. */
+const UNTRUSTED = "untrusted";
+
 /**
  * One stored token, when what is there is one. An empty `owners` means every
  * owner no other token names, so a list entry whose `owners` is missing or
- * malformed is dropped whole; only the earlier single token, which never named
- * owners, reads as naming none.
+ * malformed makes the whole list untrusted, since dropping it would let a
+ * catch-all token answer for the owners it named; only the earlier single
+ * token, which never named owners, reads as naming none.
  */
-function storedToken(value: unknown, legacy = false): KeptToken | null {
+function storedToken(
+  value: unknown,
+  legacy = false,
+): KeptToken | null | "untrusted" {
   if (!isRecord(value)) return null;
   const { token, login, at, owners } = value;
   if (!isText(token) || !isText(login) || typeof at !== "number") return null;
   if (legacy) return { token, login, at, owners: [] };
-  if (!Array.isArray(owners) || !owners.every(isText)) return null;
+  if (!Array.isArray(owners) || !owners.every(isText)) return UNTRUSTED;
   return { token, login, at, owners };
 }
 
@@ -55,9 +62,12 @@ export function tokensFrom(
     list !== null && Array.isArray(list.tokens)
       ? list.tokens.map((t) => storedToken(t))
       : [storedToken(earlier, true)];
+  // A mapping that cannot be read fails closed: nothing is kept until the person pastes the tokens again.
+  if (read.includes(UNTRUSTED)) return [];
   const tokens: KeptToken[] = [];
   for (const token of read)
     if (
+      token !== UNTRUSTED &&
       token !== null &&
       !tokens.some((t) => t.login.toLowerCase() === token.login.toLowerCase())
     )
