@@ -129,6 +129,20 @@ const PROVIDER_PROFILE_HOSTS: Record<string, readonly string[]> = {
   gemini: ["generativelanguage.googleapis.com"],
 };
 
+/** The provider each harness program reaches when no endpoint is set. */
+const DEFAULT_ENDPOINT_PROVIDER: Record<Harness, string> = {
+  "claude-code": "anthropic",
+  codex: "openai",
+};
+
+/** The list `table` holds for `key` itself, never one an object inherits (`constructor`). */
+function ownEntry(
+  table: Record<string, readonly string[]>,
+  key: string,
+): readonly string[] {
+  return Object.hasOwn(table, key) ? (table[key] ?? []) : [];
+}
+
 const PROVIDER_KEYS = [
   "name",
   "kind",
@@ -267,8 +281,16 @@ function baseUrl(
   where: string,
   provider: string,
   settings: CredentialSettings,
+  harness: Harness,
 ): Checked<string | null> {
-  if (value === undefined || value === null) return ok(null);
+  if (value === undefined || value === null) {
+    // An omitted endpoint is the harness program's own default, which only a known pairing verifies.
+    return DEFAULT_ENDPOINT_PROVIDER[harness] === provider
+      ? ok(null)
+      : invalid(
+          `${where} is required for ${provider} on ${harness}: only ${DEFAULT_ENDPOINT_PROVIDER[harness]} is that harness's own default endpoint`,
+        );
+  }
   const raw = text(value, where);
   if (!raw.ok) return raw;
   if (!URL.canParse(raw.value))
@@ -278,8 +300,8 @@ function baseUrl(
   if (refused !== null) return invalid(refused);
   const host = url.hostname.toLowerCase();
   const allowed = [
-    ...(PROVIDER_PROFILE_HOSTS[provider] ?? []),
-    ...(settings.providerHosts[provider] ?? []),
+    ...ownEntry(PROVIDER_PROFILE_HOSTS, provider),
+    ...ownEntry(settings.providerHosts, provider),
   ];
   if (!allowed.includes(host))
     return invalid(
@@ -444,6 +466,7 @@ function providerFields(
     `${where}.base_url`,
     provider.value,
     settings,
+    program.value,
   );
   if (!url.ok) return url;
   const reference = credential(value.credential, where);

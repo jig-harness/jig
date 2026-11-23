@@ -6,8 +6,8 @@
  * appended as one last argument, with the environment of the process that
  * resolves it (the host's, where a vault's session lives), within
  * `credential_timeout`. Its standard output is the value, one trailing
- * newline removed; an empty value, one with a line break inside it, one
- * under 8 bytes or one over 4 KiB is refused. It runs with the base and the
+ * newline (LF or CRLF) removed; an empty value, one with a line break inside it, one
+ * under 8 characters or one over 4 KiB is refused. It runs with the base and the
  * `credential_env` variables of the resolving process's environment
  * (`credential-env.ts`), the same in the tick and in the wrapper.
  *
@@ -20,14 +20,9 @@
  *
  * The value stays in the resolving process's memory, remembered so every
  * mask there replaces it (`shared/credentials.ts`); no reason, wall or need
- * carries it, and the command's error output is masked for it before a
- * reason quotes it.
+ * carries it, and the command's error output is never quoted in a reason.
  */
-import {
-  maskCredentials,
-  redactExact,
-  rememberSecret,
-} from "../../shared/credentials.ts";
+import { isMaskable, rememberSecret } from "../../shared/credentials.ts";
 import { swallow } from "../../shared/errors.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { run } from "../../shared/proc.ts";
@@ -46,25 +41,16 @@ export type CredentialCode = "unauthorized" | "unreachable";
 
 /** The longest value a credential command may print. */
 const LONGEST_VALUE = 4096;
-/** The shortest: exact masking leaves shorter text alone, so a shorter value could not be kept out of what is recorded. */
-const SHORTEST_VALUE = 8;
 
-const MARK = "<redacted>";
-
-/** The command's error output, short and masked, for a reason to quote. */
-function errorTail(stderr: string, stdout: string): string {
-  // Whatever the command printed may be the value, whole or one line of it.
-  const printed = [
-    stdout.trim(),
-    ...stdout.split(/\r?\n/).map((l) => l.trim()),
-  ];
-  for (const part of printed) rememberSecret(part);
-  const line = stderr.trim().split("\n").at(-1) ?? "";
-  const shown = maskCredentials(redactExact(line, MARK, printed), MARK).slice(
-    0,
-    200,
-  );
-  return shown === "" ? "" : `: ${shown}`;
+/**
+ * What a failed command's output teaches this process: every line it printed
+ * on standard output is remembered, so no later record carries it. Its error
+ * output is never quoted, since an opaque secret printed only there could not
+ * be recognised.
+ */
+function learnPrinted(stdout: string): void {
+  for (const part of [stdout.trim(), ...stdout.split(/\r?\n/)])
+    rememberSecret(part.trim());
 }
 
 /**
@@ -97,18 +83,23 @@ export async function resolveCredential(
       "unreachable",
       `the credential command did not answer within ${timeoutSec}s; a later tick tries again`,
     );
-  if (done.code !== 0)
+  if (done.code !== 0) {
+    learnPrinted(done.stdout);
     return failed(
       "unauthorized",
-      `the credential command ${done.spawnFailed === true ? "could not start" : `exited ${done.code}`}${errorTail(done.stderr, done.stdout)}`,
+      `the credential command ${done.spawnFailed === true ? "could not start" : `exited ${done.code}`}; its error output is not recorded`,
     );
-  const value = done.stdout.endsWith("\n")
-    ? done.stdout.slice(0, -1)
-    : done.stdout;
+  }
+  const value = done.stdout.replace(/\r?\n$/, "");
   if (value === "")
     return failed("unauthorized", "the credential command printed no value");
   // A refused value is still remembered, so nothing this process records later can carry it.
   rememberSecret(value);
+  if (value.includes("\0"))
+    return failed(
+      "unauthorized",
+      "the credential command printed a value with a NUL character in it",
+    );
   if (/[\r\n]/.test(value))
     return failed(
       "unauthorized",
@@ -119,10 +110,10 @@ export async function resolveCredential(
       "unauthorized",
       "the credential command printed a value over 4 KiB",
     );
-  if (Buffer.byteLength(value) < SHORTEST_VALUE)
+  if (!isMaskable(value))
     return failed(
       "unauthorized",
-      "the credential command printed a value under 8 bytes, too short to keep out of what is recorded",
+      "the credential command printed a value under 8 characters, too short to keep out of what is recorded",
     );
   return ok(value);
 }

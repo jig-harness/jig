@@ -21,6 +21,7 @@ import {
   providerIdentity,
 } from "../lib/provider-account.ts";
 import { type AllowList, providerRefusal } from "../lib/provider-allow.ts";
+import { waitsForRearmSlot } from "../lib/actions/admission.ts";
 import { dispatchSection } from "../lib/section.ts";
 import type { Action } from "../lib/types.ts";
 
@@ -260,5 +261,45 @@ describe("dispatch.allowed_providers", () => {
       if (!refused.ok)
         expect(refused.failure.reason).toContain("dispatch.allowed_providers");
     }
+  });
+});
+
+describe("the capacity a bound re-arm waits on", () => {
+  it("counts a full account only where the repository's provider policy admits it", () => {
+    const slots = table([subscription("work")]);
+    for (const s of slots) s.held = s.account.maxPerAccount;
+    const state = {
+      table: slots,
+      last: null,
+      records: [],
+      codexOptIn: ON,
+      passDeadlineSec: 5400,
+    };
+    const action = { evidence: { rearm: true } } as unknown as Action;
+    const openaiOnly: AllowList = {
+      repo: "example-org/alpha",
+      providers: ["openai"],
+    };
+    expect(waitsForRearmSlot(state, action, new Set())).toBe(true);
+    expect(waitsForRearmSlot(state, action, new Set(), openaiOnly)).toBe(false);
+    expect(
+      waitsForRearmSlot(state, action, new Set(), {
+        repo: "example-org/alpha",
+        providers: ["anthropic"],
+      }),
+    ).toBe(true);
+  });
+
+  it("names the allow list when it refuses an account beside a closed allowed one", () => {
+    const slots = table([subscription("work"), subscription("other", "codex")]);
+    const waits = admitRearm(
+      slots,
+      null,
+      pass({ repo: "example-org/alpha", providers: ["openai"] }),
+      new Set(["other"]),
+    );
+    expect(waits).toEqual({
+      waits: expect.stringContaining("provider-not-allowed"),
+    });
   });
 });

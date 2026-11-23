@@ -52,6 +52,28 @@ const ROUTER: MachineAccount = {
 };
 
 describe("resolving a credential reference", () => {
+  it("removes one CRLF, refuses a NUL, and counts the length masking counts", async () => {
+    const crlf = await resolveCredential(
+      command("process.stdout.write('crlf-secret-value\\r\\n')"),
+      "ref",
+      process.env,
+    );
+    expect(crlf.ok && crlf.value).toBe("crlf-secret-value");
+    const nul = await resolveCredential(
+      command("process.stdout.write('nul-secret\\0value')"),
+      "ref",
+      process.env,
+    );
+    expect(!nul.ok && nul.failure.reason).toContain("NUL");
+    // Three characters, nine bytes: exact masking could not replace it.
+    const wide = await resolveCredential(
+      command("process.stdout.write('\\u20ac\\u20ac\\u20ac')"),
+      "ref",
+      process.env,
+    );
+    expect(!wide.ok && wide.failure.reason).toContain("8 characters");
+  });
+
   it("prints the value for the reference appended as one argument, one trailing newline removed", async () => {
     const value = await resolveCredential(
       command(ECHO_REFERENCE),
@@ -70,10 +92,10 @@ describe("resolving a credential reference", () => {
       ["process.stdout.write('\\n')", "printed no value"],
       ["process.stdout.write('one\\ntwo')", "line break inside it"],
       ["process.stdout.write('x'.repeat(4097))", "over 4 KiB"],
-      ["process.stdout.write('short')", "under 8 bytes"],
+      ["process.stdout.write('short')", "under 8 characters"],
       [
         "process.stdout.write('half-printed-secret-line-one\\nhalf-printed-secret-line-two'); process.stderr.write('refused half-printed-secret-line-two\\n'); process.exit(1)",
-        "the credential command exited 1: refused <redacted>",
+        "the credential command exited 1; its error output is not recorded",
       ],
     ];
     for (const [script, why] of cases) {

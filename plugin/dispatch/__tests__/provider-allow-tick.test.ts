@@ -37,12 +37,32 @@ function fixture(allowed: string[], branchConfig?: string) {
   w.setComments(7, [ledgerComment(701, stoppedLedger(7, 16))]);
   const path = join(w.root, "ws-7");
   mkdirSync(path);
-  // The pull request's own branch, checked out in its workspace, may carry a list of its own.
+  w.setWorkspaces([{ branch: "feature/7-parked", linkedPR: 7, path }]);
+  // The pull request's own branch, checked out in its workspace, carries a list of its own, committed and published.
   if (branchConfig !== undefined) {
     mkdirSync(join(path, ".config"), { recursive: true });
     writeFileSync(join(path, ".config", "jig.yaml"), branchConfig);
+    const git = (...args: string[]) =>
+      Bun.spawnSync(
+        [
+          "git",
+          "-C",
+          path,
+          "-c",
+          "user.name=t",
+          "-c",
+          "user.email=t@t",
+          ...args,
+        ],
+        { stdout: "pipe", stderr: "pipe" },
+      );
+    expectSpawnExit(git("add", ".config/jig.yaml"), 0);
+    expectSpawnExit(git("commit", "-q", "-m", "widen the allow list"), 0);
+    expectSpawnExit(
+      git("push", "-q", "-f", "origin", "HEAD:feature/7-parked"),
+      0,
+    );
   }
-  w.setWorkspaces([{ branch: "feature/7-parked", linkedPR: 7, path }]);
   return w;
 }
 
@@ -93,6 +113,7 @@ it("launches when the default branch's list names the account's provider", async
   const launch = receipt.repos[0]?.launches[0];
   expect(launch).toMatchObject({ outcome: "launched", account: "work" });
   const id = launch?.record;
+  expect(typeof id).toBe("string");
   if (typeof id === "string")
     await waitFor("the re-arm to finish", () => exitWritten(w, id));
 });

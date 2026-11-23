@@ -15,6 +15,7 @@ function router(fields: Record<string, unknown> = {}): Record<string, unknown> {
     kind: "provider",
     harness: "claude-code",
     provider: "openrouter",
+    base_url: "https://openrouter.ai/api",
     credential: "op://Jig/router/credential",
     spend_cap: { daily: "20.00" },
     ...fields,
@@ -107,9 +108,17 @@ describe("a provider account", () => {
   });
 
   it("loads a flat-rate plan with no spend cap, and refuses one given a cap", () => {
-    const flat = load([
-      router({ billing: "flat-rate", spend_cap: undefined, provider: "zai" }),
-    ]);
+    const flat = load(
+      [
+        router({
+          billing: "flat-rate",
+          spend_cap: undefined,
+          provider: "zai",
+          base_url: "https://api.z.ai/api",
+        }),
+      ],
+      { ...COMMAND, provider_hosts: { zai: ["api.z.ai"] } },
+    );
     expect(flat.ok).toBe(true);
     if (flat.ok)
       expect(flat.value.accounts[0]?.provider).toMatchObject({
@@ -261,5 +270,29 @@ describe("a subscription account", () => {
         {},
       ),
     ).toContain("harness must be claude-code");
+  });
+
+  it("refuses an omitted base_url unless the harness's own default is the provider", () => {
+    expect(refusal([router({ base_url: undefined })])).toContain(
+      "base_url is required for openrouter on claude-code",
+    );
+    expect(
+      load([
+        router({ provider: "anthropic", base_url: undefined, name: "own" }),
+      ]).ok,
+    ).toBe(true);
+  });
+
+  it("reads a provider named like an inherited property as unknown, not as its host list", () => {
+    const outcome = load([
+      router({
+        provider: "constructor",
+        base_url: "https://openrouter.ai/api",
+      }),
+    ]);
+    expect(outcome.ok).toBe(false);
+    expect(refusal([router({ provider: "constructor" })])).toContain(
+      "provider_hosts.constructor",
+    );
   });
 });

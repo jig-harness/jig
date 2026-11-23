@@ -9,5 +9,5 @@ release: minor
 
 ### Security
 
-- A dispatched pass's environment removes the vendors' credential and directory variables whatever their letter case, so a mixed-case name such as `Anthropic_Api_Key` no longer reaches a subscription account's pass on a platform whose names ignore case. This is the case-insensitive removal #860 asks for.
+- A subscription account's pass environment removes `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and each vendor's directory variable whatever their letter case, so a mixed-case name such as `Anthropic_Api_Key` no longer reaches it on a platform whose names ignore case.
 - A dispatched pass's environment no longer carries `JIG_PROVIDER_CREDENTIAL`, `JIG_PROVIDER_IDENTITY` or `JIG_SECRET_VARIABLES` from the environment it starts from; a provider account's pass gets the last two from its own launch. Nor does it carry a variable the machine file's `credential_env` names for the credential command.

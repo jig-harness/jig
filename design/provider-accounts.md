@@ -27,7 +27,10 @@ failures and costs are governed is in
 page holds the account schema and everything else the build steps read.
 The account kind, the credential command, the identity forms and the
 provider allow list are built; a provider account is reported as configured
-and not admitted until the spend cap is enforced. The rest is not built yet.
+and not admitted until the spend cap is enforced. The rest is not built yet:
+the credential command still runs with the host's environment, redirect
+refusal and a minimum length beyond 8 characters are not enforced, and the
+spend cap below is the design, not a shipped control.
 
 ## How it works
 
@@ -58,7 +61,7 @@ unknown key in the file is.
 | `kind` | `provider` | required for this kind | |
 | `harness` | a registered harness (`claude-code`, `codex`, and `pi` once built) | required | The agent harness the account's passes run in |
 | `provider` | lowercase name, `^[a-z][a-z0-9-]*$` | required | The provider the account bills, spelled as a repository's allow list spells it (`openrouter`, `gemini`, `anthropic`) |
-| `base_url` | an `https://` URL | the harness's default for the provider | Where the harness sends its requests. A non-HTTPS URL is refused, except a loopback address. The host must be one the provider's profile names, or be named in the machine file's `provider_hosts` for that provider. Redirects to another host are refused, and a loopback or private-network address is admitted only when the machine file names it for the account |
+| `base_url` | an `https://` URL | the harness's own default, allowed only for `anthropic` on `claude-code` and `openai` on `codex`; otherwise required | Where the harness sends its requests. A non-HTTPS URL is refused, except a loopback address. The host must be one the provider's profile names, or be named in the machine file's `provider_hosts` for that provider. Refusing a redirect to another host is deferred and not enforced today. A loopback or private-network address is admitted only when the machine file names it for the account |
 | `credential` | a [credential reference](#the-credential-reference) | required | Never the credential itself |
 | `billing` | `pay-per-token` or `flat-rate` | `pay-per-token` | A `flat-rate` plan has no `spend_cap`: its own usage windows bound it, through the account's wall and `max_per_account` |
 | `spend_cap.daily` | decimal US dollars, as a string | required for `pay-per-token` | The day's [spend cap](#the-spend-cap) |
@@ -139,7 +142,7 @@ The contract of the command:
 - It runs with the host's environment (the 1Password session it needs is
   there), not the pass's.
 - Its standard output is the value. One trailing newline is removed. A value
-  that is empty, holds a newline inside it or is over 4 KiB is refused.
+  that is empty, holds a newline or a NUL inside it, is under 8 characters or is over 4 KiB is refused.
 - It succeeds with exit 0 within `credential_timeout` (10 seconds by
   default). A non-zero exit or an empty value is `unauthorized` for that
   account: the credential is missing, expired or refused. The account is held
@@ -185,8 +188,9 @@ the file's author declared to be it.
 
 ### The spend cap
 
-Every provider account has a **daily cap** and may have a **per-run ceiling**.
-A subscription account has neither: its limit is the vendor's.
+Every pay-per-token provider account has a **daily cap** and may have a
+**per-run ceiling**. A flat-rate provider account takes no cap, and a
+subscription account has neither: its limit is the vendor's.
 
 - **The day.** A day runs from midnight to midnight in `spend_cap.timezone`
   (UTC by default). The cap refills whole at the boundary and the refusal's

@@ -61,6 +61,7 @@ async function main(): Promise<void> {
           kind: "provider",
           harness: "claude-code",
           provider: "openrouter",
+          base_url: "https://openrouter.ai/api",
           credential: "op://Jig/router/credential",
           spend_cap: { daily: "20.00" },
         },

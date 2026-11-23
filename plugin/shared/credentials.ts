@@ -94,9 +94,14 @@ export const SECRET_VARIABLES = "JIG_SECRET_VARIABLES";
 /** The shortest value replaced exactly: a shorter one would mask ordinary words. */
 const SHORTEST_EXACT = 8;
 
+/** Whether exact masking would replace `value`: the one eligibility test every holder of a secret shares. */
+export function isMaskable(value: string): boolean {
+  return value.length >= SHORTEST_EXACT;
+}
+
 /** Remember `value` as a secret this process holds, so every mask replaces it. */
 export function rememberSecret(value: string): void {
-  if (value.length >= SHORTEST_EXACT) remembered.add(value);
+  if (isMaskable(value)) remembered.add(value);
 }
 
 /** The exact secrets this process masks: the remembered ones and the values of the variables `SECRET_VARIABLES` names. */

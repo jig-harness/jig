@@ -68,6 +68,7 @@ export function waitsForRearmSlot(
   state: AdmissionState,
   action: Action,
   excluded: ReadonlySet<string>,
+  allowed?: AllowList,
 ): boolean {
   return (
     action.evidence?.rearm === true &&
@@ -78,6 +79,8 @@ export function waitsForRearmSlot(
         deadlineSec: state.passDeadlineSec,
         codex: state.codexOptIn,
         stage: "rearm",
+        // The repository's provider policy scopes capacity as it scopes admission.
+        ...(allowed === undefined ? {} : { allowed }),
       },
       excluded,
     )

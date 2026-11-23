@@ -11,6 +11,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -73,6 +74,7 @@ it.skipIf(process.platform === "win32")(
             kind: "provider",
             harness: "claude-code",
             provider: "openrouter",
+            base_url: "https://openrouter.ai/api",
             credential: REFERENCE,
             spend_cap: { daily: "20.00" },
             config_dir: configDir,
@@ -81,7 +83,11 @@ it.skipIf(process.platform === "win32")(
       }),
     );
     const id = "20261123T080000Z-abcdef21";
-    const identity = providerIdentity("openrouter", REFERENCE, null);
+    const identity = providerIdentity(
+      "openrouter",
+      REFERENCE,
+      "https://openrouter.ai/api",
+    );
     earlierRecord(w, {
       id,
       account: "router",
@@ -90,11 +96,19 @@ it.skipIf(process.platform === "win32")(
       provider: {
         provider: "openrouter",
         harness: "claude-code",
-        baseUrl: null,
+        baseUrl: "https://openrouter.ai/api",
         identity,
       },
     });
-    writeFileSync(join(w.dir, "drive-env"), "");
+    writeFileSync(
+      join(w.dir, "drive-env"),
+      [
+        "JIG_PROVIDER_CREDENTIAL",
+        VAULT,
+        "JIG_PROVIDER_IDENTITY",
+        "JIG_SECRET_VARIABLES",
+      ].join("\n"),
+    );
     writeFileSync(join(w.dir, "drive-echo-key"), "");
     const child = Bun.spawn(
       [
@@ -124,9 +138,10 @@ it.skipIf(process.platform === "win32")(
     expect(run?.configDir).toBe(configDir);
     const stage = JSON.parse(
       readFileSync(join(w.dir, "drive-env.json"), "utf8"),
-    ) as Record<string, string>;
-    expect(stage.JIG_PROVIDER_CREDENTIAL).toBeUndefined();
-    expect(stage[VAULT]).toBeUndefined();
+    ) as Record<string, string | null>;
+    rmSync(join(w.dir, "drive-env.json"), { force: true });
+    expect(stage.JIG_PROVIDER_CREDENTIAL).toBeNull();
+    expect(stage[VAULT]).toBeNull();
     expect(stage.JIG_PROVIDER_IDENTITY).toBe(identity);
     expect(stage.JIG_SECRET_VARIABLES).toBe("ANTHROPIC_API_KEY");
     const holding = files(dispatchState(w)).filter(

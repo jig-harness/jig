@@ -2,6 +2,7 @@
 import type { SignInChecks } from "./account-sign-in.ts";
 import { identityOf } from "./account-identity.ts";
 import { allowListOf } from "./provider-check.ts";
+import type { AllowList } from "../provider-allow.ts";
 import { stampProvider } from "../provider-launch.ts";
 import { accountLaunchOrdinal } from "../account-ordinal.ts";
 import {
@@ -79,11 +80,7 @@ import {
   type Preflight,
 } from "../preflight.ts";
 
-export {
-  enforcedDeadlineMs,
-  settleMs,
-  timeLeftMs,
-} from "./launch-deadline.ts";
+export { enforcedDeadlineMs, settleMs, timeLeftMs } from "./launch-deadline.ts";
 export { rotated } from "./launch-rotation.ts";
 
 /** What `--apply` carries across a tick's repositories. */
@@ -727,9 +724,10 @@ function accountsWait(
   waitsOn: LaneWait | undefined,
   refusal: LaunchOutcome | null,
   why: string,
+  allowed?: AllowList,
 ): AccountAdmission {
   return {
-    ...(refusal === null && waitsForRearmSlot(state, action, failed)
+    ...(refusal === null && waitsForRearmSlot(state, action, failed, allowed)
       ? { capacity: "accounts" as const }
       : {}),
     outcome: refusal ?? {
@@ -778,6 +776,7 @@ export async function admitAccount(
         checked.waitsOn,
         refusal,
         admitted.waits,
+        allowListOf(state, repo),
       );
     const slots = admitted.admitted;
     const identity = await identityOf(state, slots);

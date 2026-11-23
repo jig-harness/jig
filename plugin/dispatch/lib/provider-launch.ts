@@ -88,7 +88,12 @@ async function resolveLaunchCredential(
   const account = machine.value.accounts.find((a) => a.name === record.account);
   if (
     account?.provider === undefined ||
-    account.identity !== record.provider.identity
+    account.identity !== record.provider.identity ||
+    // The canonical launch fields: what the stage's environment is built from.
+    account.provider.harness !== record.provider.harness ||
+    account.provider.baseUrl !== record.provider.baseUrl ||
+    account.provider.provider !== record.provider.provider ||
+    account.configDir !== record.configDir
   )
     return failed(
       "changed",

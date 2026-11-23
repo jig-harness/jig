@@ -597,8 +597,32 @@ export function admitRearm(
       ? `no account serves the ${stage} stage: ${describeSlots(table, launch)}`
       : disallowed !== null
         ? `${disallowed}: ${describeSlots(table, launch)}`
-        : `no account has a free slot: ${describeSlots(table, launch)}`,
+        : `${slotWait(table, launch, excluded)}: ${describeSlots(table, launch)}`,
   };
+}
+
+/**
+ * The wait for a slot. Where the repository's allow list refuses some account
+ * that serves the stage, the wait names that, so a free account the list
+ * refuses is not read as the reason nothing is free.
+ */
+function slotWait(
+  table: readonly Slots[],
+  launch: LaunchKind,
+  excluded: ReadonlySet<string>,
+): string {
+  const allowed = launch.allowed;
+  const refusedByList =
+    allowed !== undefined &&
+    table.some(
+      (s) =>
+        !excluded.has(s.account.name) &&
+        stageRefusal(s.account, launch) === null &&
+        providerRefusal(s.account, allowed) !== null,
+    );
+  return refusedByList
+    ? `no account the provider allow list admits has a free slot`
+    : "no account has a free slot";
 }
 
 /**
