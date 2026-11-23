@@ -664,6 +664,18 @@ function planIdleClaimed(
 ): void {
   const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
   const latest = latestPickupFor(item.key, input.launches);
+  // A whole-batch question is shown on the anchor even where a pull request carries it: the siblings wait on it.
+  if (
+    pickup.kind === "ended" &&
+    wholeBatchQuestion(pickup.record) &&
+    pickup.record.record.item === item.key
+  ) {
+    const asked = questionAsked(input, item, pickup.record);
+    if (asked !== null) {
+      plan.actions.push(asked);
+      return;
+    }
+  }
   if (quietByPr(item, input, pr, plan, asksPerson(latest))) return;
   if (hostFaultStop(item, input, plan, latest, pr)) return;
   if (lockWaitStop(item, input, plan, latest, pr)) return;

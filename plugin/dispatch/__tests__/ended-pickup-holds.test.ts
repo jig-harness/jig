@@ -374,6 +374,23 @@ describe("a batch pickup that ended after claiming one member", () => {
     expect(read.record.releasedItems).toEqual(["#924", "#925"]);
   });
 
+  it("keeps every member of a legacy record that only knows a claim was seen, whatever the question names", () => {
+    const read = questionedBatch("Should #924 change its scope?");
+    delete (read.record as { claimedItems?: string[] }).claimedItems;
+    (read.record as { claimedSeen?: boolean }).claimedSeen = true;
+    expect(pickupHold("#925", [read]).kind).toBe("ended");
+  });
+
+  it("shows a whole-batch question on a claimed anchor, so its siblings have a need to wait on", () => {
+    const read = questionedBatch(
+      "Should the batch follow the shared approach?",
+    );
+    const next = plan(["#924", "#925"], [read], [], ["#923"]);
+    expect(
+      next.actions.filter((a) => a.cause === "pickup-question"),
+    ).toMatchObject([{ target: "#923" }]);
+  });
+
   it("holds the siblings of a whole-batch question as one need on its anchor, no need of their own", () => {
     const read = questionedBatch(
       "Should the batch follow the shared approach?",

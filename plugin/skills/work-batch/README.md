@@ -28,9 +28,11 @@ a refused item stops the batch. A question needing a person stops the
 headless pass and is recorded with the launch result. When it concerns
 particular members, include their exact tracker keys in the question, so the
 dispatcher places it on those members. Members the question does
-not name are picked up again by the usual rules. Leave keys out for a
+not name, and that the pass never claimed, are picked up again by the usual
+rules; a claimed member is not restarted automatically. Leave keys out for a
 batch-wide question, which is shown once on the batch anchor; the siblings
-wait on it with no need of their own, and answering it releases them all.
+wait on it with no need of their own, and answering it releases those the
+pass never claimed.
 
 Contents: [the procedure](#the-procedure) · [anchors](#anchors) ·
 [solo-only issues](#solo-only-issues) · [batch size](#batch-size) ·

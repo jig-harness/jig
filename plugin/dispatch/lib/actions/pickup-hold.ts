@@ -305,6 +305,9 @@ function leftUnclaimed(r: ReadRecord, item: string): boolean {
   const members = record.batchItems?.map((i) => i.key) ?? [];
   const claimed = record.claimedItems ?? [];
   if (members.length < 2 || claimed.includes(item)) return false;
+  // A legacy record cannot say which member it claimed: any may have been.
+  if (record.claimedItems === undefined && record.claimedSeen === true)
+    return false;
   const named = namedMembers(r);
   if (named === null) return claimed.some((key) => members.includes(key));
   if (named.length > 0) return !named.includes(item);
