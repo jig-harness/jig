@@ -21,7 +21,7 @@ function count(v: unknown): number | null {
 async function currentHead(pr: string): Promise<string | null> {
   const res = await run(
     ["gh", "pr", "view", pr, "--json", "headRefOid", "--jq", ".headRefOid"],
-    { stderr: "ignore", timeoutSec: helperTimeoutSeconds() },
+    { stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
   );
   const head = res.stdout.trim();
   return res.code === 0 && /^[0-9a-f]{7,64}$/.test(head) ? head : null;
