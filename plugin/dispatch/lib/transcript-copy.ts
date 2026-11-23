@@ -198,23 +198,20 @@ function redactedLines(
       value = JSON.parse(line);
     } catch (error) {
       swallow(error, "a transcript line that does not read is left out");
+      omitted++;
       continue;
     }
-    // The exact values are masked in the parsed strings, numbers and property names first, so no generic rule can split them; the serialized line is masked again as JSON escapes it.
-    let serialized = JSON.stringify(
+    // The exact values are masked structurally in the parsed strings, numbers and property names, so no generic rule can split them.
+    const serialized = JSON.stringify(
       redactStrings(maskExact(maskFields(value), secrets), mask),
     );
-    for (const secret of secrets)
-      for (const form of new Set([secret, JSON.stringify(secret).slice(1, -1)]))
-        serialized = serialized.split(form).join("<redacted>");
-    // A residual match that spanned JSON syntax would break the line: omit it rather than keep a line the reader skips.
-    try {
-      JSON.parse(serialized);
-    } catch (error) {
-      swallow(
-        error,
-        "a redacted transcript line that no longer reads is left out",
-      );
+    // A match left in the serialized line is never edited there (that could rename a property): the line is left out.
+    const residual = secrets.some((secret) =>
+      [secret, JSON.stringify(secret).slice(1, -1)].some((form) =>
+        serialized.includes(form),
+      ),
+    );
+    if (residual) {
       omitted++;
       continue;
     }

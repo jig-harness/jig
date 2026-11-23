@@ -212,7 +212,7 @@ describe("keeping a run's transcript copy", () => {
     }
   });
 
-  it("keeps an own constructor field and a field named authorization whose key a held secret would rename", () => {
+  it("keeps an own constructor field and masks a field name a held secret would rename, with its value", () => {
     const root = scratch();
     const config = join(root, "config");
     claudeTranscript(config, [
@@ -220,15 +220,51 @@ describe("keeping a run's transcript copy", () => {
         type: "assistant",
         message: { content: [] },
         constructor: "plain",
-        authorization: "some-other-opaque-secret",
+        authorization: "some-other-opaque-value",
       },
     ]);
-    const copy = keepTranscriptCopy(record(config), SESSION, root);
-    const parsed = JSON.parse(
-      readFileSync(String(copy?.transcript), "utf8").trim(),
-    );
-    expect(parsed.constructor).toBe("plain");
-    expect(parsed.authorization).toBe("<redacted>");
+    holdCredential(ID, "authorization");
+    try {
+      const copy = keepTranscriptCopy(
+        record(config, {
+          provider: { provider: "p" },
+        } as unknown as Partial<LaunchRecord>),
+        SESSION,
+        root,
+      );
+      const parsed = JSON.parse(
+        readFileSync(String(copy?.transcript), "utf8").trim(),
+      );
+      expect(parsed.constructor).toBe("plain");
+      expect(parsed.authorization).toBeUndefined();
+      expect(parsed["<redacted>"]).toBe("<redacted>");
+    } finally {
+      holdCredential("none", "unused-placeholder");
+    }
+  });
+
+  it("leaves out a line whose serialized form still matches a held secret, and marks the copy cut", () => {
+    const root = scratch();
+    const config = join(root, "config");
+    claudeTranscript(config, [
+      { type: "assistant", message: { content: [] }, keep: "one" },
+      { type: "assistant", message: { content: [] }, ["\nfixture-text"]: 1 },
+    ]);
+    holdCredential(ID, "\\nfixture-text");
+    try {
+      const copy = keepTranscriptCopy(
+        record(config, {
+          provider: { provider: "p" },
+        } as unknown as Partial<LaunchRecord>),
+        SESSION,
+        root,
+      );
+      const text = readFileSync(String(copy?.transcript), "utf8");
+      expect(text.trim().split("\n")).toHaveLength(1);
+      expect(copy?.cut).toBe(true);
+    } finally {
+      holdCredential("none", "unused-placeholder");
+    }
   });
 
   it("redacts structured tool inputs by their secret keys", () => {
