@@ -256,6 +256,10 @@ function parkText(slug: string, pr: DrivenPr): Notice {
     stale.length === 0
       ? ""
       : `, stale ${createHash("sha256").update(stale.join("\n")).digest("hex").slice(0, 16)}`;
+  const rearmRefusal =
+    pr.evidence.rearm === true
+      ? `, refused rearm request ${String(pr.evidence.rearmRequestId ?? "unknown")}`
+      : "";
   // A park is read beside its base only while its pull request conflicts.
   const conflict =
     pr.evidence.mergeable === "CONFLICTING"
@@ -265,9 +269,10 @@ function parkText(slug: string, pr: DrivenPr): Notice {
         ]
       : [];
   return notice(
-    `${slug} PR #${pr.number} parked, ledger generation ${generation(pr)}: ${keys}${disputeKey}${staleKey}${conflict.length === 0 ? "" : `, conflicting head ${pr.evidence.headSha ?? "unknown"}, base ${pr.evidence.baseSha ?? "unknown"}`}`,
+    `${slug} PR #${pr.number} parked, ledger generation ${generation(pr)}: ${keys}${disputeKey}${staleKey}${rearmRefusal}${conflict.length === 0 ? "" : `, conflicting head ${pr.evidence.headSha ?? "unknown"}, base ${pr.evidence.baseSha ?? "unknown"}`}`,
     [
       `PR #${pr.number} (${pr.title}) is parked: ${waiting.length === 1 ? "one decision waits" : `${waiting.length} decisions wait`} for a person.`,
+      ...(pr.evidence.rearm === true ? [`${pr.why}.`] : []),
       "",
       ...conflict,
       ...waiting.flatMap((p) => [

@@ -28,6 +28,7 @@ export async function readPark(
   listing: readonly unknown[] | undefined,
   loaders: Parameters<typeof parkAnswers>[4] = {},
   bound?: TickBound,
+  freshThreadState = false,
 ): Promise<ParkReading | undefined> {
   if (
     ledger.driver.state !== "stopped" ||
@@ -37,15 +38,17 @@ export async function readPark(
   // A thread whose read failed is kept with the failed call's class, which decides whether the tick waits it out.
   const failures = new Map<string, ReadFailure | undefined>();
   const kept =
+    !freshThreadState &&
     loaders.threadComments === undefined &&
     ledger.parked.some((p) => p.kind === "thread")
       ? await keptParkThreads(slug, pr, bound)
       : null;
   const found = await parkAnswers(pr, ledger.parked, slug, listing, {
+    acceptResolvedThreads: freshThreadState,
     // No thread is read once the tick's bound has ended; one in flight gets only the time the bound has left.
     threadComments: async (key) => {
       const held = kept?.held(key) ?? null;
-      if (held !== null) return held;
+      if (held !== null) return { comments: held, isResolved: false };
       if (ended(bound)) {
         failures.set(key, CUT_AT_BOUND);
         return null;
@@ -56,7 +59,7 @@ export async function readPark(
         (f) => failures.set(key, readFailureOf(f)),
         slug,
       );
-      if (read !== null) kept?.keep(key, read);
+      if (read !== null) kept?.keep(key, read.comments);
       return read;
     },
     ...loaders,
