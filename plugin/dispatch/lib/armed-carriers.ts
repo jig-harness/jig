@@ -17,6 +17,8 @@ function armedAlready(input: PlanInput, number: number): string | null {
   if (pr === undefined) return null;
   const own = driveHold(pr, input.launches);
   if (own.kind === "armed") return own.why;
+  // As the plan reads a drive: another host's claims count only where none of this host's launches holds it.
+  if (own.kind !== "none") return null;
   const claims = input.shared?.drives.get(number);
   if (input.shared === undefined || claims === undefined) return null;
   const foreign = foreignHold(pr, claims, input.shared.host);
