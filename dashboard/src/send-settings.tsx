@@ -9,7 +9,12 @@
 import { KeyRound } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { announce } from "./copy.tsx";
-import { keepTokens, keptTokens, useKeptTokens } from "./forge-token.ts";
+import {
+  keepTokens,
+  keptTokens,
+  tokensRevision,
+  useKeptTokens,
+} from "./forge-token.ts";
 import { tokenLogin, tokenRefusal } from "./github.ts";
 import { pageTransportFault } from "./send.tsx";
 import {
@@ -96,7 +101,7 @@ function TokenField({ more }: { more: boolean }) {
       return;
     }
     setTest({ kind: "testing" });
-    const before = keptTokens();
+    const before = tokensRevision();
     void tokenLogin(token).then((answer) => {
       if (!alive()) return;
       if (!answer.ok) {
@@ -105,17 +110,11 @@ function TokenField({ more }: { more: boolean }) {
       }
       // Checked against the tokens kept when GitHub answered, which another tab may have changed.
       const login = answer.value;
-      // The account's replacement, removal or owner change while the test ran.
-      const atOf = (list: KeptToken[]) => {
-        const t = list.find(
-          (k) => k.login.toLowerCase() === login.toLowerCase(),
-        );
-        return t === undefined ? null : `${t.at} ${t.owners.join(",")}`;
-      };
-      if (atOf(before) !== atOf(keptTokens())) {
+      // Any change to the kept tokens while the test ran, even one that ends where it began.
+      if (tokensRevision() !== before) {
         setTest({
           kind: "refused",
-          reason: `The token for ${login} changed while this one was tested. Test it again.`,
+          reason: `The kept tokens changed while this one was tested. Test it again.`,
         });
         return;
       }

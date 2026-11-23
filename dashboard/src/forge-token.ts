@@ -45,10 +45,15 @@ function storedToken(
   value: unknown,
   legacy = false,
 ): KeptToken | null | "untrusted" {
-  if (!isRecord(value)) return null;
-  const { token, login, at, owners } = value;
-  if (!isText(token) || !isText(login) || typeof at !== "number") return null;
-  if (legacy) return { token, login, at, owners: [] };
+  const valid = isRecord(value) ? value : null;
+  const { token, login, at, owners } = valid ?? {};
+  const credentials = isText(token) && isText(login) && typeof at === "number";
+  if (legacy) {
+    if (valid === null || !credentials) return null;
+    return { token, login, at, owners: [] };
+  }
+  // Any list entry that cannot be read in full may have carried a mapping.
+  if (!credentials) return UNTRUSTED;
   if (!Array.isArray(owners) || !owners.every(isText)) return UNTRUSTED;
   return { token, login, at, owners };
 }
@@ -65,13 +70,15 @@ export function tokensFrom(
   // A mapping that cannot be read fails closed: nothing is kept until the person pastes the tokens again.
   if (read.includes(UNTRUSTED)) return [];
   const tokens: KeptToken[] = [];
-  for (const token of read)
-    if (
-      token !== UNTRUSTED &&
-      token !== null &&
-      !tokens.some((t) => t.login.toLowerCase() === token.login.toLowerCase())
-    )
-      tokens.push(token);
+  for (const token of read) {
+    if (token === UNTRUSTED || token === null) continue;
+    const same = tokens.find(
+      (t) => t.login.toLowerCase() === token.login.toLowerCase(),
+    );
+    if (same === undefined) tokens.push(token);
+    // Two entries for one account that disagree leave no mapping to trust.
+    else if (same.owners.join(",") !== token.owners.join(",")) return [];
+  }
   return tokens;
 }
 
@@ -91,6 +98,11 @@ function now(): { tokens: KeptToken[]; saved: boolean } {
 function changed(): void {
   revision++;
   for (const listener of listeners) listener();
+}
+
+/** Counts every change to the kept tokens, from this tab or another. */
+export function tokensRevision(): number {
+  return revision;
 }
 
 /** The tokens kept now. */

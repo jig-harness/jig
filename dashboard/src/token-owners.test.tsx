@@ -175,14 +175,13 @@ describe("what a browser has stored", () => {
     expect(tokenFor(tokens, "any-owner")?.login).toBe("maintainer-a");
   });
 
-  test("the list of tokens is read before the earlier shape, and what is not a token is dropped", () => {
+  test("the list of tokens is read before the earlier shape, and a repeated account is kept once", () => {
     expect(
       tokensFrom(
         {
           tokens: [
             A,
             B,
-            { token: "", login: "x", at: 1, owners: [] },
             { ...A, token: "pat-dup" },
           ],
         },
@@ -199,6 +198,17 @@ describe("what a browser has stored", () => {
       { token: "r", login: "c", at: 1, owners: ["example-org", 7] },
     ])
       expect(tokensFrom({ tokens: [bad, ANY] }, null)).toEqual([]);
+  });
+
+  test("a list entry with invalid credentials or conflicting duplicates makes the list untrusted", () => {
+    for (const bad of [
+      { token: "", login: "x", at: 1, owners: ["example-org"] },
+      { token: "p", at: 1, owners: ["example-org"] },
+      { token: "p", login: "x", at: "1", owners: ["example-org"] },
+      "not a record",
+      { ...A, owners: ["other-org"] },
+    ])
+      expect(tokensFrom({ tokens: [A, bad, ANY] }, null)).toEqual([]);
   });
 });
 
