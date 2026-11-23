@@ -15,6 +15,7 @@
  * keeps it off that account (`pickup-hold.ts`).
  */
 import { statSync } from "node:fs";
+import { harnessNamed } from "../../shared/agent-harness/index.ts";
 import { basename, join } from "node:path";
 import {
   forEachDirEntry,
@@ -239,7 +240,7 @@ export function quickStartupDeath(
 ): boolean {
   return (
     ownSession(record) &&
-    record.vendor === "claude" &&
+    harnessNamed(record.vendor)?.capabilities.signInProbe === true &&
     typeof record.sessionId === "string" &&
     code !== null &&
     code !== 0 &&

@@ -10,11 +10,23 @@
  * wall: a session that went on after the wall (a person typed, the agent
  * resumed) is no longer waiting on it, and gets no nudge.
  */
-import { detectQuotaBlock } from "../../skills/drive-pr/scripts/lib/quota/index.ts";
-import { readBoundedTail } from "../../skills/drive-pr/scripts/lib/quota/types.ts";
+import {
+  detectQuotaBlock,
+  wallReaderFor,
+} from "../../skills/drive-pr/scripts/lib/quota/index.ts";
+import {
+  type QuotaBlock,
+  readBoundedTail,
+} from "../../skills/drive-pr/scripts/lib/quota/types.ts";
+import {
+  defaultHarness,
+  type HarnessName,
+  harnessNamed,
+  harnessOrDefault,
+} from "../../shared/agent-harness/index.ts";
 import { swallow } from "../../shared/errors.ts";
 import { isMapping } from "../../shared/config-layers.ts";
-import { isoOf, parseMs } from "../../shared/time.ts";
+import { isoOf, parseInstant, parseMs } from "../../shared/time.ts";
 
 /** What the probe prints: the wall, or `null`. */
 export interface ProbedWall {
@@ -61,27 +73,81 @@ function isWall(
   );
 }
 
+/** Whether the session's last record is still `block`: the reader's own answer when it gives one, else Claude Code's record shape. */
+function stillWall(
+  reader: string,
+  block: QuotaBlock,
+  sessionId: string,
+): boolean {
+  const own = wallReaderFor(reader)?.isStillWall;
+  if (own !== undefined) {
+    try {
+      return own(block, sessionId);
+    } catch (error) {
+      swallow(error, `${reader}'s last-record check threw`);
+      return false;
+    }
+  }
+  return isWall(lastRecord(block.source), block.observedAt, sessionId);
+}
+
 /** The wall the session `sessionId` met in `cwd` since `since`, if any. */
 export function probeWall(
   sessionId: string,
   cwd: string,
   since: Temporal.Instant,
   now: Temporal.Instant,
+  harness: HarnessName | null = null,
 ): ProbedWall | null {
-  const block = detectQuotaBlock({
-    cwd,
-    since,
-    now,
-    correlation: { vendor: "claude", sessionId },
-  });
+  // The record's harness names the reader; without one the session is the
+  // default harness's (Claude Code's). A harness with no reader reads no wall.
+  const reader = (
+    harness === null ? defaultHarness() : harnessOrDefault(harness)
+  ).wallReader;
+  if (reader === null) return null;
+  const block = detectQuotaBlock(
+    {
+      cwd,
+      since,
+      now,
+      // The adapter matches the correlation against its own vendor, which the
+      // registry key may differ from.
+      correlation: {
+        vendor: wallReaderFor(reader)?.vendor ?? reader,
+        sessionId,
+      },
+    },
+    undefined,
+    reader,
+  );
   if (block === null) return null;
   return {
     observedAt: isoOf(block.observedAt),
     resetAt: block.resetAt === null ? null : isoOf(block.resetAt),
     window: block.window,
     evidence: block.evidence,
-    last: isWall(lastRecord(block.source), block.observedAt, sessionId),
+    last: stillWall(reader, block, sessionId),
   };
+}
+
+/** `run.ts quota <session> <cwd> <since> [harness]`: print the wall the session met, or `null`. */
+export function quotaMain(args: string[]): number {
+  const [session, cwd, since, vendor] = args as [
+    string,
+    string,
+    string,
+    string | undefined,
+  ];
+  if (!Number.isFinite(parseMs(since))) {
+    console.error(`jig dispatch run: ${since} is not a date`);
+    return 2;
+  }
+  const harness = harnessNamed(vendor ?? "")?.name ?? null;
+  const now = Temporal.Now.instant();
+  console.log(
+    JSON.stringify(probeWall(session, cwd, parseInstant(since), now, harness)),
+  );
+  return 0;
 }
 
 /** Whether a parsed value is what the probe prints for a wall. */
