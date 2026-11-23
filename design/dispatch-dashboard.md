@@ -279,12 +279,22 @@ holds the card's Send back until it is left out. A guarded option shows its
 check panel once, naming every target it covers. Copy takes one
 `jig send` command per target listed, since no one comment answers several
 pull requests or issues. A target whose comment GitHub refused, or may have
-posted, is left out of the next send until the person lists it again; a
-target whose answer the tick refused, or whose facts changed so it no longer
-matches, leaves the group and is a card of its own. The tab, the answer and
+posted, is left out of the next send until the person lists it again. One
+that may have posted is kept in the target's own record, the one its own
+card's Send keeps, so either card holds that answer back, says "Still
+unchecked" and offers "I checked the linked target; allow Send again"; a
+send that posted only some of a target's comments is kept as only those, and
+the target's row says "Sent here" only for the answer the card would send it
+now. A pick is kept for the targets and framings it was made for: a target
+joining or leaving, or one framed or parked again, drops it and says so, and
+a send that reached every target forgets it. A target whose answer the tick
+refused, or whose facts changed so it no longer matches, leaves the group and
+is a card of its own. The tab, the answer and
 each act's heading count needs, one per target, as `jig ask --waiting`
-lists one entry per target address; the filter shows a group's card when
-any of its targets' repositories or stages matches.
+lists one entry per target address. The filter shows a group's card when
+any of its targets' repositories, stages or people matches; the card still
+lists, counts and answers every target, so leave out the ones the filter
+would hide before sending.
 
 **Where the facts come from.** Merge, Needs you, Running, Queue and
 Hosts are drawn from the line each tick writes, with the forge facts its

@@ -15,7 +15,10 @@
 import type { LineNeed } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { formatAddress } from "../../plugin/shared/address.ts";
 import { uniqueLogins } from "../../plugin/shared/forge-logins.ts";
-import { replaceOwnTarget } from "../../plugin/shared/question-group.ts";
+import {
+  replaceOwnTarget,
+  textDigest,
+} from "../../plugin/shared/question-group.ts";
 import { plural } from "./format.ts";
 import type { NeedView } from "./needs-view.ts";
 import type { DecisionRow, RowOption } from "./picking.ts";
@@ -108,17 +111,39 @@ function memberOf(need: LineNeed, view: NeedView): GroupMember {
   };
 }
 
+/**
+ * The framing a pick on the card is made for: the group, and, for each
+ * target, its card and the framing of its decision at this place (digest
+ * and park time). A target joining or leaving, or one framed or parked
+ * again, is another framing, so a kept pick is dropped, and says so, as on
+ * a target's own card: an answer covers only the targets it was made for.
+ */
+function groupFraming(
+  id: string,
+  place: number,
+  members: readonly NeedView[],
+): DecisionRow["framing"] {
+  const each = members.map((m) => {
+    const own = m.rows[place - 1]?.framing;
+    return [m.rowKey, own?.digest ?? null, own?.parkedAt ?? null];
+  });
+  return {
+    digest: `${id}/${place}/${textDigest(JSON.stringify(each))}`,
+    parkedAt: null,
+  };
+}
+
 /** A decision row with its text in the group's words and its framing the group's, so a pick on the card is kept for the group. */
 function groupRow(
   row: DecisionRow,
-  id: string,
+  framing: DecisionRow["framing"],
   words: (text: string) => string,
 ): DecisionRow {
   const { digest: _own, ...rest } = row;
   const or = (text: string | null) => (text === null ? null : words(text));
   return {
     ...rest,
-    framing: { digest: `${id}/${row.place}`, parkedAt: null },
+    framing,
     question: or(row.question),
     recommendation: or(row.recommendation),
     interplay: row.interplay.map(words),
@@ -191,7 +216,17 @@ export function groupedNeedView(
     decision: null,
     url: null,
     noLink: null,
-    rows: view.rows.map((row) => groupRow(row, id, words)),
+    rows: view.rows.map((row) =>
+      groupRow(
+        row,
+        groupFraming(
+          id,
+          row.place,
+          members.map((m) => m.view),
+        ),
+        words,
+      ),
+    ),
     send: {
       absent:
         "Send posts one answer to each target listed, on its own pull request or issue.",

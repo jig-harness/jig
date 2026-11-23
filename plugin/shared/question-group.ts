@@ -171,7 +171,12 @@ function hash53(text: string, seed: number): string {
  */
 export function questionGroupId(need: GroupedNeed): string | null {
   const key = questionGroupKey(need);
-  return key === null ? null : `q-${hash53(key, 1)}${hash53(key, 2)}`;
+  return key === null ? null : `q-${textDigest(key)}`;
+}
+
+/** A short digest of `text`, 28 hex digits: what a reader keeps in place of a long text it only compares. */
+export function textDigest(text: string): string {
+  return `${hash53(text, 1)}${hash53(text, 2)}`;
 }
 
 /**

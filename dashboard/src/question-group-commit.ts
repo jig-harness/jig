@@ -165,6 +165,18 @@ export interface TargetSend {
   comments: Array<{ key: string; body: string }>;
   /** What the target's own card's Copy would take: what "Sent here" compares. */
   text: string;
+  /** The answers the comments carry, one per comment, in order. */
+  answers: TargetCommit["commit"]["answers"];
+}
+
+/** What posted of a target's send, as "Sent here" keeps it: the whole answer, or only the comments that went, so a reload never reads a partial send as the whole answer. */
+export function postedText(s: TargetSend, done: number): string {
+  return done === s.comments.length
+    ? s.text
+    : s.comments
+        .slice(0, done)
+        .map((c) => c.body)
+        .join("\n\n");
 }
 
 /**
@@ -201,6 +213,7 @@ export function groupSends(
         at,
       ),
       text: own.text,
+      answers: own.answers,
     });
   }
   return { sends, unsendable };

@@ -32,55 +32,27 @@ import {
 } from "./question-group-send.ts";
 import type { GroupMember, QuestionGroupView } from "./question-group-view.ts";
 import { useSentHere } from "./sent.ts";
+import { finishSend, sendKeyOf, useSendState } from "./send-record.ts";
+import { targetWords } from "./question-group-words.ts";
 import { disarmOnLeave, type Picking, usePicking } from "./use-picking.ts";
-
-/** What the line says the tick did with a target's answer. */
-function actedWords(member: GroupMember): string | null {
-  const [a] = member.acted;
-  if (a === undefined) return null;
-  const did =
-    a.outcome === "done"
-      ? "carried out"
-      : a.outcome === "held"
-        ? "held"
-        : a.outcome === "refused"
-          ? "refused"
-          : "the tick is carrying it out";
-  return `${a.author} chose ${a.option}: ${did}${a.detail === null ? "." : ` — ${a.detail}`}`;
-}
-
-/** What a target's row says of its answer: the tick's outcome, else this page's send, else an earlier send from this browser. */
-function targetWords(
-  member: GroupMember,
-  outcome: TargetOutcome | undefined,
-  sent: boolean,
-): { text: string; fault: boolean } | null {
-  const acted = actedWords(member);
-  if (acted !== null) return { text: acted, fault: false };
-  if (outcome?.kind === "refused")
-    return {
-      text: `Not sent: ${outcome.reason}${outcome.uncertain ? " It may have posted: open it and check before listing it again." : ""}`,
-      fault: true,
-    };
-  if (outcome?.kind === "not attempted")
-    return { text: `Not sent: ${outcome.reason}.`, fault: false };
-  return outcome?.kind === "sent" || sent
-    ? { text: "Sent here; the next tick reads it.", fault: false }
-    : null;
-}
 
 /** What became of a target's answer, and whether it is left out. */
 function TargetState({
   member,
   outcome,
   listed,
+  current,
 }: {
   member: GroupMember;
   outcome: TargetOutcome | undefined;
   listed: boolean;
+  /** The answer the card would send it now; absent while it is left out. */
+  current: string | undefined;
 }) {
-  const sent = useSentHere(member.repo, member.target) !== null;
-  const said = targetWords(member, outcome, sent);
+  const sent = useSentHere(member.repo, member.target);
+  const record = sendKeyOf(member.repo, member.target);
+  const state = useSendState(record);
+  const said = targetWords(member, outcome, sent, current);
   return (
     <>
       {said === null ? null : (
@@ -88,6 +60,20 @@ function TargetState({
           className={`sm ${said.fault ? "decFault" : "mut"} groupTargetState`}
         >
           {said.text}
+        </span>
+      )}
+      {state === null || state === "sending" ? null : (
+        <span className="sm groupTargetState">
+          <span className="decFault" role="alert">
+            Still unchecked: {state.uncertain}
+          </span>{" "}
+          <button
+            type="button"
+            className="fbtn"
+            onClick={() => finishSend(record, null)}
+          >
+            I checked the linked target; allow Send again
+          </button>
         </span>
       )}
       {listed ? null : (
@@ -103,11 +89,14 @@ function GroupTargets({
   left,
   toggle,
   outcomes,
+  current,
 }: {
   group: QuestionGroupView;
   left: ReadonlySet<string>;
   toggle: (rowKey: string) => void;
   outcomes: ReadonlyMap<string, TargetOutcome>;
+  /** The answer the card would send each listed target now, by its card key. */
+  current: ReadonlyMap<string, string>;
 }) {
   return (
     <ul className="groupTargets">
@@ -146,6 +135,7 @@ function GroupTargets({
               member={m}
               outcome={outcomes.get(m.rowKey)}
               listed={listed}
+              current={current.get(m.rowKey)}
             />
           </li>
         );
@@ -406,6 +396,11 @@ export function GroupNeedItem({
             left={left}
             toggle={toggle}
             outcomes={outcomes}
+            current={
+              new Map(
+                targetsOf(picking).map((t) => [t.member.rowKey, t.commit.text]),
+              )
+            }
           />
           {need.people.length === 0 ? null : (
             <p className="sm waitsOn">

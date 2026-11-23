@@ -87,6 +87,8 @@ interface Posted {
 async function open(
   needs: { current: LineNeed[] },
   viewport?: { width: number; height: number },
+  /** GitHub's status for each comment posted, by its path; 201 unless it says otherwise. */
+  status: (path: string) => number = () => 201,
 ) {
   const server = await served("picks");
   const context = await requireBrowser().newContext(
@@ -103,6 +105,9 @@ async function open(
       path,
       body: (request.postDataJSON() as { body: string }).body,
     });
+    const code = status(path);
+    if (code !== 201)
+      return route.fulfill({ status: code, headers: CORS, json: {} });
     return route.fulfill({
       status: 201,
       headers: CORS,
@@ -260,6 +265,73 @@ describe("a question group's card", () => {
           "refused — the item moved since",
         );
         expect(opened.problems).toEqual([]);
+      } finally {
+        await opened.context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "a target GitHub gave no answer for stays unchecked, is held back, and sends again once checked",
+    async () => {
+      const needs = { current: stalledPickups().slice(0, 2) };
+      const repo = needs.current[0]?.repo ?? "";
+      let silent = true;
+      const opened = await open(needs, undefined, (path) =>
+        silent && path.includes("/issues/27/") ? 502 : 201,
+      );
+      const { page } = opened;
+      try {
+        const card = groupCard(page);
+        const confirmSend = async () => {
+          await card
+            .getByRole("button", {
+              name: "Send the answers for 2 items as maintainer-a",
+            })
+            .click();
+          await card
+            .getByRole("button", {
+              name: "Confirm and send the answers for 2 items as maintainer-a",
+            })
+            .click();
+        };
+        await card.locator(".opt").first().click();
+        await confirmSend();
+        await until(
+          "both answers tried",
+          async () => opened.posted.length === 2,
+        );
+        const row = card.locator(".groupTarget", { hasText: "#27" });
+        await until(
+          "the target with no answer says it is unchecked",
+          async () =>
+            ((await row.textContent()) ?? "").includes("Still unchecked"),
+        );
+        // Listed again without checking, it is held back: nothing posts.
+        await row.getByRole("checkbox", { name: `Answer ${repo} #27` }).check();
+        await card
+          .getByRole("checkbox", { name: `Answer ${repo} #17` })
+          .uncheck();
+        await confirmSend();
+        expect(opened.posted).toHaveLength(2);
+        silent = false;
+        await row
+          .getByRole("button", {
+            name: "I checked the linked target; allow Send again",
+          })
+          .click();
+        expect((await row.textContent()) ?? "").not.toContain(
+          "Still unchecked",
+        );
+        await confirmSend();
+        await until(
+          "the checked target posts",
+          async () => opened.posted.length === 3,
+        );
+        expect(opened.posted[2]?.path).toBe(
+          `/repos/${repo}/issues/27/comments`,
+        );
       } finally {
         await opened.context.close();
       }

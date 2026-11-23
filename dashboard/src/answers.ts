@@ -130,6 +130,11 @@ function keep(id: string, kept: KeptAnswer | null): boolean {
   return saved;
 }
 
+/** Forgets the answers kept under `ids`: a question group's pick, once every target it covered has its answer. */
+export function forgetAnswers(ids: readonly string[]): void {
+  for (const id of ids) keep(id, null);
+}
+
 /**
  * The answers kept for a card's decisions, followed as they change, how to
  * change one, and whether every one is stored in this browser rather than
