@@ -46,7 +46,7 @@ import type { FollowupOutcome } from "./followup-outcomes.ts";
 import type { FollowupRelease } from "./followup-releases.ts";
 import { planDrift } from "./expectations.ts";
 import { isDrive, type ReadRecord } from "./launches.ts";
-import { parkNotice, stopNotice } from "./notices.ts";
+import { parkNotice, stopNotice, unreportedNotice } from "./notices.ts";
 import { goneUnlaunched } from "./recovery-facts.ts";
 import { idleBlocksStart } from "./automation.ts";
 import { backingOff } from "./infra-backoff.ts";
@@ -188,10 +188,32 @@ export function planTick(input: PlanInput): Plan {
     serialHeld: [],
   };
 
-  /** One wanted stage for one target, minus what is running. */
-  function want(action: Action, joined: (w: Workspace) => boolean): void {
+  /**
+   * One wanted stage for one target, minus what is running. Where the
+   * runtime cannot vouch for a workspace joined to it, a notification still
+   * goes out, as beside a running session, and a launch becomes the need
+   * `recover` frames, when one is given; anything else is unplaced.
+   */
+  function want(
+    action: Action,
+    joined: (w: Workspace) => boolean,
+    recover?: Recover,
+  ): void {
     const held = holding(sessions, joined);
     if (held.kind === "unknown") {
+      const need =
+        action.stage === "notify"
+          ? action
+          : held.workspace === undefined || recover === undefined
+            ? null
+            : recover(held.workspace, held.reason);
+      if (need !== null) {
+        plan.actions.push({
+          ...need,
+          evidence: { ...need.evidence, unreportedSessions: held.reason },
+        });
+        return;
+      }
       plan.unplaced.push({
         target: action.target,
         record: "runtime",
@@ -366,7 +388,31 @@ export function holdBack(
   plan.actions = kept;
 }
 
-type Want = (action: Action, joined: (w: Workspace) => boolean) => void;
+/** The need that stands in for a launch whose workspace the runtime cannot vouch for, from that workspace and the reason. */
+type Recover = (workspace: string, reason: string) => Action;
+
+type Want = (
+  action: Action,
+  joined: (w: Workspace) => boolean,
+  recover?: Recover,
+) => void;
+
+/**
+ * A drive's re-arm or takeover held back by a workspace whose terminals the
+ * runtime cannot report: a person's need that says so, rather than a
+ * pull request left off the line.
+ */
+function unreportedNeed(slug: string, pr: DrivenPr, wanted: Action): Recover {
+  return (workspace, reason) => ({
+    stage: "notify",
+    target: wanted.target,
+    record: wanted.record,
+    reason: `${wanted.reason}; but ${reason}, so nothing is started until a person settles it`,
+    evidence: wanted.evidence,
+    cause: "needs-person",
+    notice: unreportedNotice(slug, pr, wanted.reason, workspace, reason),
+  });
+}
 
 /** A re-arm's ledger facts, or a notification's cause and message. */
 function stageFields(
@@ -708,17 +754,19 @@ function planDrive(
   }
   const cause = taken ? undefined : NOTIFY.get(pr.class);
   const staged = unread === null ? pr : { ...pr, why: unread };
+  const action: Action = {
+    stage: cause === undefined ? "rearm" : "notify",
+    target,
+    record: "forge",
+    reason: unread ?? wantReason(pr, takeover, foreign, holder, gone),
+    evidence: { url: pr.url, head: pr.head, ...pr.evidence },
+    ...stageFields(slug, staged, cause, launches),
+    ...takeoverFields(takeover, foreign, holder, gone),
+  };
   want(
-    {
-      stage: cause === undefined ? "rearm" : "notify",
-      target,
-      record: "forge",
-      reason: unread ?? wantReason(pr, takeover, foreign, holder, gone),
-      evidence: { url: pr.url, head: pr.head, ...pr.evidence },
-      ...stageFields(slug, staged, cause, launches),
-      ...takeoverFields(takeover, foreign, holder, gone),
-    },
+    action,
     (w) => w.prs.includes(pr.number),
+    unreportedNeed(slug, pr, action),
   );
 }
 

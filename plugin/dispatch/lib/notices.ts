@@ -316,6 +316,32 @@ export function stopNotice(slug: string, pr: DrivenPr): Notice {
   };
 }
 
+/**
+ * A re-arm or takeover the dispatcher holds back because a workspace joined
+ * to the pull request has terminals whose agents the runtime cannot report:
+ * it cannot tell whether a session still works there, so a person settles
+ * it. Keyed by the ledger generation, so it is sent once per stop.
+ */
+export function unreportedNotice(
+  slug: string,
+  pr: DrivenPr,
+  wanted: string,
+  workspace: string,
+  reason: string,
+): Notice {
+  return {
+    ...notice(
+      `${slug} PR #${pr.number} workspace unreportable, ledger generation ${generation(pr)}`,
+      [
+        `PR #${pr.number} (${pr.title}): the dispatcher would act on it (${wanted}), but ${reason}, so it cannot tell whether a session still works on it and starts nothing.`,
+        `Close the terminals in ${workspace} that run no agent, and the next tick acts on it; or run \`/jig:drive-pr ${pr.number}\` there yourself, or stop it.`,
+        pr.url,
+      ],
+    ),
+    ...driveFields(slug, pr, [`/jig:drive-pr ${pr.number}`]),
+  };
+}
+
 /** A rearm refused before launch because this host's lock could not be read. */
 export function rearmLockNotice(
   slug: string,

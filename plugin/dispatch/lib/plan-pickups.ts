@@ -279,7 +279,9 @@ function planWanted(
     });
     return;
   }
-  if (held.kind === "unknown") {
+  // A stopped pickup's need is only a notification: it goes out where the
+  // runtime cannot vouch for the item's workspace, as beside a running one.
+  if (held.kind === "unknown" && hold.kind === "none") {
     plan.unplaced.push({
       target: item.key,
       record: "runtime",
@@ -297,7 +299,7 @@ function planWanted(
     return;
   }
   if (hold.kind !== "none") planStopped(input, item, hold, plan);
-  else planFresh(item, held.evidence, input, plan);
+  else if (held.kind === "free") planFresh(item, held.evidence, input, plan);
 }
 
 /** An item nothing holds: picked up, unless its host-fault hold says to wait or it has no priority to rank it by. */
@@ -631,6 +633,16 @@ function planClaimed(
   }
   if (held.kind === "unknown") {
     plan.idleKeep.push(item.key);
+    // The question its ended pickup asked is only a notification: it still
+    // reaches a person.
+    const asked =
+      pickup.kind === "ended"
+        ? questionAsked(input, item, pickup.record)
+        : null;
+    if (asked !== null) {
+      plan.actions.push(asked);
+      return;
+    }
     plan.unplaced.push({
       target: item.key,
       record: "runtime",

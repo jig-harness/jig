@@ -8,6 +8,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { lastTick, type TickReceipt } from "../receipts.ts";
+import type { ParkedItem } from "../../skills/drive-pr/scripts/lib/state/schema.ts";
 import {
   assignedIssue,
   ledgerComment,
@@ -27,6 +28,17 @@ dispatch:
   identity: factory-bot
   followup_command: /followup
 `;
+
+const PARK: ParkedItem = {
+  key: "F1",
+  kind: "finding",
+  reason: "Which retry budget should the client keep?",
+  round: 2,
+  at: "2026-10-30T21:00:00.000Z",
+  class: "design-choice",
+  record:
+    "Question: which retry budget should the client keep?\nOptions: (a) three retries; (b) five retries\nRecommended: (a), the budget the timeout was sized for",
+};
 
 let current: World | null = null;
 afterEach(() => {
@@ -126,24 +138,69 @@ describe("jig dispatch reports what it would start", () => {
     );
   });
 
-  it("plans nothing for a target the runtime cannot vouch for", async () => {
+  it("asks a person, rather than re-arming, where the runtime cannot vouch for the pull request's workspace", async () => {
     const w = fixture();
     w.setWorkspaces([
       { branch: "feature/7-parked", unverifiableTerminalCount: 1 },
     ]);
     const receipt = await tick(w);
-    expect(actions(receipt).map((a) => a[1])).toEqual(["#12", "PR #5"]);
-    expect(receipt.repos[0]?.unplaced).toEqual([
-      {
-        target: "PR #7",
-        record: "runtime",
-        reason:
-          "workspace /ws/0 has 1 terminal(s) whose agents the runtime cannot report",
-      },
+    const repo = receipt.repos[0];
+    expect(actions(receipt)).toEqual([
+      ["pickup", "#12", "tracker"],
+      ["notify", "PR #7", "forge"],
+      ["followup", "PR #5", "forge"],
     ]);
+    expect(repo?.unplaced).toEqual([]);
+    const need = repo?.actions.find((a) => a.target === "PR #7");
+    expect(need?.cause).toBe("needs-person");
+    expect(need?.reason).toContain("stopped 16 (quota-parked");
+    expect(need?.reason).toContain(
+      "workspace /ws/0 has 1 terminal(s) whose agents the runtime cannot report",
+    );
+    expect(need?.evidence.unreportedSessions).toBe(
+      "workspace /ws/0 has 1 terminal(s) whose agents the runtime cannot report",
+    );
+    expect(need?.notice?.key).toContain(
+      "PR #7 workspace unreportable, ledger generation 3",
+    );
+    expect(need?.notice?.text).toContain("Close the terminals in /ws/0");
   });
 
-  it("plans nothing for a target whose agent has no readable state", async () => {
+  it("still notifies a parked drive whose workspace the runtime cannot vouch for", async () => {
+    const w = fixture();
+    w.setComments(7, [
+      ledgerComment(701, stoppedLedger(7, 8, { parked: [PARK] })),
+    ]);
+    w.setWorkspaces([
+      { branch: "feature/7-parked", unverifiableTerminalCount: 2 },
+    ]);
+    const receipt = await tick(w);
+    const repo = receipt.repos[0];
+    expect(repo?.unplaced.map((u) => u.target)).not.toContain("PR #7");
+    const need = repo?.actions.find((a) => a.target === "PR #7");
+    expect(need?.stage).toBe("notify");
+    expect(need?.cause).toBe("parked");
+    expect(need?.evidence.unreportedSessions).toBe(
+      "workspace /ws/0 has 2 terminal(s) whose agents the runtime cannot report",
+    );
+  });
+
+  it("holds a pull request whose workspace runs an agent beside a terminal the runtime cannot report", async () => {
+    const w = fixture();
+    w.setWorkspaces([
+      {
+        branch: "feature/7-parked",
+        agents: [{ state: "working" }],
+        unverifiableTerminalCount: 1,
+      },
+    ]);
+    const receipt = await tick(w);
+    expect(actions(receipt).map((a) => a[1])).toEqual(["#12", "PR #5"]);
+    expect(receipt.repos[0]?.running.map((r) => r.target)).toEqual(["PR #7"]);
+    expect(receipt.repos[0]?.unplaced).toEqual([]);
+  });
+
+  it("asks a person about a target whose agent has no readable state, and starts nothing for it", async () => {
     const w = fixture();
     w.setWorkspaces([
       {
@@ -152,8 +209,28 @@ describe("jig dispatch reports what it would start", () => {
       },
     ]);
     const receipt = await tick(w);
-    expect(receipt.repos[0]?.unplaced.map((u) => u.target)).toContain("PR #7");
-    expect(actions(receipt).map((a) => a[1])).not.toContain("PR #7");
+    expect(actions(receipt)).toContainEqual(["notify", "PR #7", "forge"]);
+    expect(actions(receipt)).not.toContainEqual(["rearm", "PR #7", "forge"]);
+  });
+
+  it("starts no fresh pickup where the runtime cannot vouch for its workspace", async () => {
+    const w = fixture();
+    w.setWorkspaces([
+      {
+        branch: "12-the-item",
+        unverifiableTerminalCount: 1,
+      },
+    ]);
+    const receipt = await tick(w);
+    expect(receipt.repos[0]?.unplaced).toEqual([
+      {
+        target: "#12",
+        record: "runtime",
+        reason:
+          "workspace /ws/0 has 1 terminal(s) whose agents the runtime cannot report",
+      },
+    ]);
+    expect(actions(receipt).map((a) => a[1])).toEqual(["PR #7", "PR #5"]);
   });
 
   it("refuses a dispatch section that is a timestamp", async () => {
