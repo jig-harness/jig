@@ -459,7 +459,7 @@ export const TERMINAL_STATES: Readonly<
     terminal: true,
     emittedBy: "drive.ts only (UNSUPPORTED_CLI_EXIT)",
     meaning:
-      "A prerequisite is missing. `drive.ts` exits `2`, with no report, when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which. `drive-status.ts` also exits `2` on arguments it cannot use, before there is a pull request to report on, and names no state.",
+      "A prerequisite is missing. `drive.ts` exits `2`, with no state report (a dispatcher closing report may still be written), when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which. `drive-status.ts` also exits `2`, before there is a pull request to report on and naming no state, on arguments it cannot use and when its startup cannot resolve the repository or the pull request selector, which can be a network or authentication failure rather than an argument error.",
     report: {
       stop: "stopped: a usage error, or a gh that cannot report the pull request",
       cause: "environment",

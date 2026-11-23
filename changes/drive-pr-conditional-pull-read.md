@@ -21,7 +21,8 @@ release: minor
   it as a state, since every `gh` serves the evaluation's REST read. Its
   `driveStatusExit` in
   [data/drive-exits.json](../plugin/protocol/data/drive-exits.json) is now
-  `null`; `drive-status.ts`'s own argument errors still exit `2`, with no
-  report. **Consumer action:** advised at instructions. A program that runs
-  `drive-status.ts` itself reads its exit `2` as an argument error with no
+  `null`; `drive-status.ts` still exits `2`, with no
+  report, on argument errors and when startup cannot resolve the repository or
+  the pull request selector (which may be a network or authentication failure). **Consumer action:** advised at instructions. A program that runs
+  `drive-status.ts` itself reads its exit `2` as a startup refusal with no
   report, never as a state. **Detect:** `text:UNSUPPORTED_CLI`.

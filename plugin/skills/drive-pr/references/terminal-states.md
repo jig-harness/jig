@@ -2343,7 +2343,7 @@ same-process timer removes that class outright.
 Measured: the base branch advanced mid-drive and
 produced one conflict in a CI workflow file:
 
-- `gh pr view` → `mergeable=CONFLICTING`, `mergeStateStatus=DIRTY`.
+- The pull request read → `mergeable=CONFLICTING`, `mergeStateStatus=DIRTY`.
 - **Zero** `pull_request`-triggered CI ran on the head. The only check-run on the
   commit was a dormant `github-actions / AI review` workflow, `completed/skipped`.
 - So the posting reviewer never posted a check-run, and mode 4's guard — correctly —
