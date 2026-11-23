@@ -493,7 +493,8 @@ function ViewBody({
   );
   const forges = useMemo(() => forgesOf(line), [line]);
   if (tab === "help") return <HelpView Fold={Fold} />;
-  if (view.answer === null) return null;
+  // The needs view mounts without an answer: the token settings it holds must stay reachable when the first state read fails.
+  if (view.answer === null && tab !== "needs") return null;
   if (tab !== "history")
     return (
       <CardView
