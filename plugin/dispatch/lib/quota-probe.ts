@@ -75,19 +75,17 @@ function probeWall(
   now: Temporal.Instant,
   harness: HarnessName | null = null,
 ): ProbedWall | null {
-  const block = detectQuotaBlock({
-    cwd,
-    since,
-    now,
-    // The record's harness names the reader; without one the session is the
-    // default harness's (Claude Code's).
-    correlation: {
-      vendor:
-        (harness === null ? defaultHarness() : harnessOrDefault(harness))
-          .wallReader ?? "",
-      sessionId,
-    },
-  });
+  // The record's harness names the reader; without one the session is the
+  // default harness's (Claude Code's). A harness with no reader reads no wall.
+  const reader = (
+    harness === null ? defaultHarness() : harnessOrDefault(harness)
+  ).wallReader;
+  if (reader === null) return null;
+  const block = detectQuotaBlock(
+    { cwd, since, now, correlation: { vendor: reader, sessionId } },
+    undefined,
+    reader,
+  );
   if (block === null) return null;
   return {
     observedAt: isoOf(block.observedAt),

@@ -141,9 +141,11 @@ function moreRestrictive(
 export function detectQuotaBlock(
   opts: DetectOpts,
   truncatedByVendor?: ReadonlyMap<string, boolean>,
+  only?: string,
 ): QuotaBlock | null {
   let best: QuotaBlock | null = null;
   for (const adapter of adapters()) {
+    if (only !== undefined && adapter.vendor !== only) continue;
     const truncated =
       truncatedByVendor?.get(adapter.vendor) ??
       opts.preexistingSessionsTruncated;
