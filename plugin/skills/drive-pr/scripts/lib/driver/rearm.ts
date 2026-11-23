@@ -31,6 +31,7 @@
  *     merely mentions a parked key must not unpark it.
  */
 import type { ProbeStop } from "../status/probe-stop.ts";
+import type { StopFinish } from "../state/events.ts";
 import { fail, shellQuote } from "./../cli.ts";
 
 import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
@@ -463,6 +464,7 @@ export async function recordDriveEvent(
   listingPages: number | null = null,
   until: string | null = null,
   probe: ProbeStop | null = null,
+  finish: StopFinish | null = null,
 ): Promise<boolean> {
   const res = await run(tsArgv(driveState, ["record-event", pr]), {
     stdin: JSON.stringify({
@@ -472,6 +474,7 @@ export async function recordDriveEvent(
       ...(listingPages === null ? {} : { listingPages }),
       ...(until === null ? {} : { until }),
       ...(probe === null ? {} : { probe }),
+      ...(finish === null ? {} : { finish }),
     }),
     stderr: "inherit",
     timeoutSec: helperTimeoutSeconds(),

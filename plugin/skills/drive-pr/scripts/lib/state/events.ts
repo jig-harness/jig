@@ -28,7 +28,11 @@
  *     records, on a `CHECK_RUNS_UNREADABLE` stop, how many pages of the
  *     head's check-runs listing were read. `until` records, on
  *     a stop on the forge's spent rate limit, when the limit resets: the
- *     dispatcher re-drives it from then.
+ *     dispatcher re-drives it from then. `finish` records, on a stall
+ *     whose passes all ended `finish-round.ts` on the same state, that state
+ *     and the last pass's reason (`round-finish.ts`): the dispatcher hands a
+ *     stall held by a failed push to a person rather than re-driving it onto
+ *     the same refusal, and the ledger's summary names it.
  *
  * Takeovers have their own record (`takeover.ts`). Optional in a stored
  * state: a file written before the field existed reads as no events.
@@ -63,6 +67,43 @@ export interface DriveEvent {
   until?: unknown;
   /** A status probe report on a stop whose exit was passed through. */
   probe?: unknown;
+  /** On a stall's `stop`: the `finish-round.ts` state every stalled pass ended on, with the last reason. */
+  finish?: StopFinish;
+}
+
+/** The finish a stall's passes shared (`round-finish.ts`'s `sharedFinish`). */
+export interface StopFinish {
+  state: string;
+  reason: string;
+}
+
+/** The longest finish reason a stop event keeps. */
+export const STOP_FINISH_REASON_MAX = 1000;
+
+/** Whether `v` is a finish a stop event may carry. */
+export function isStopFinish(v: unknown): v is StopFinish {
+  return (
+    isRecord(v) &&
+    typeof v.state === "string" &&
+    /^[A-Z][A-Z_]*$/.test(v.state) &&
+    typeof v.reason === "string" &&
+    v.reason.length <= STOP_FINISH_REASON_MAX
+  );
+}
+
+/** The finish a stop event records, cut to the kept length; `undefined` for none. */
+export function stopFinishOf(
+  finish: { state: string; reason: string } | null | undefined,
+): StopFinish | undefined {
+  if (finish === null || finish === undefined) return undefined;
+  const kept = {
+    state: finish.state,
+    reason:
+      finish.reason.length > STOP_FINISH_REASON_MAX
+        ? `${finish.reason.slice(0, STOP_FINISH_REASON_MAX - 1)}…`
+        : finish.reason,
+  };
+  return isStopFinish(kept) ? kept : undefined;
 }
 
 /** Whether `cause` is one of the causes of an event of `kind`. */
@@ -93,7 +134,8 @@ export function isDriveEvent(v: unknown): v is DriveEvent {
       Number.isSafeInteger(v.listingPages) && (v.listingPages as number) >= 0,
     ) &&
     stopOnly(v.kind, v.leftWork, typeof v.leftWork === "boolean") &&
-    stopOnly(v.kind, v.tree, typeof v.tree === "string" && v.tree !== "")
+    stopOnly(v.kind, v.tree, typeof v.tree === "string" && v.tree !== "") &&
+    stopOnly(v.kind, v.finish, isStopFinish(v.finish))
   );
 }
 
@@ -139,7 +181,7 @@ export function lastStopEvent(
   return events.findLast((e) => e.kind === "stop");
 }
 
-/** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`, optional `"leftWork"` with `"tree"` on a measured stop, `"listingPages"` on a listing stop, and `"until"` on a forge-rate-limit stop). */
+/** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`, optional `"leftWork"` with `"tree"` on a measured stop, `"listingPages"` on a listing stop, `"until"` on a forge-rate-limit stop, and `"finish"` on a stall's stop). */
 export async function recordEvent(
   store: StateStore,
   raw: string,
@@ -187,6 +229,7 @@ export async function recordEvent(
         : { listingPages: input.listingPages }),
       ...(input.until === undefined ? {} : { until: input.until }),
       ...(input.probe === undefined ? {} : { probe: input.probe }),
+      ...(input.finish === undefined ? {} : { finish: input.finish }),
     };
     if (
       !isDriveEvent(event) ||

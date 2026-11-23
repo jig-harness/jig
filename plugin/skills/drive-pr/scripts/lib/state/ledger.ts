@@ -227,7 +227,7 @@ export function ledgerFromState(
       record: redact(d.record),
       reverse: redact(d.reverse),
     })),
-    events: (s.events ?? []).map(cleanStopEvent),
+    events: (s.events ?? []).map(cleanStopEvent).map(redactedFinish),
     ciActions: (s.ciActions ?? []).map((action) => ({
       ...action,
       detail: boundedCiDetail(redact(action.detail)),
@@ -238,6 +238,16 @@ export function ledgerFromState(
     narrative: opts.narrative.slice(-NARRATIVE_LINES).map(redact),
     cut: s.resolvedParksLost === true ? [OLDER_PARKS_CUT] : [],
   };
+}
+
+/** `event` with its stall finish's reason redacted, as every reason the ledger carries is. */
+function redactedFinish(event: DriveEvent): DriveEvent {
+  return event.finish === undefined
+    ? event
+    : {
+        ...event,
+        finish: { ...event.finish, reason: redact(event.finish.reason) },
+      };
 }
 
 function ledgerDriverWithProbe(
@@ -321,6 +331,23 @@ function ciEventLines(actions: readonly CiAction[] | undefined): string[] {
     .flatMap((e) => ["", `CI ${e.action}: ${summaryText(e.detail)}`]);
 }
 
+/** What held a stopped drive's stalled passes, when its last stop recorded it: the state each ended `finish-round.ts` on, and why. */
+function stallFinishLines(l: Ledger): string[] {
+  if (l.driver.state !== "stopped") return [];
+  const stop = lastStopEvent(l.events ?? []);
+  if (
+    stop?.finish === undefined ||
+    l.driver.exit === undefined ||
+    l.driver.exit === null ||
+    stop.cause !== String(l.driver.exit)
+  )
+    return [];
+  return [
+    "",
+    `Every stalled pass ended \`${stop.finish.state}\`: ${summaryText(stop.finish.reason)}`,
+  ];
+}
+
 function driverSummary(l: Ledger): string {
   const d = l.driver;
   const state =
@@ -360,6 +387,7 @@ function ledgerBody(l: Ledger, parkedList: boolean, writer: Writer): string {
   ];
   if (d.personStop !== undefined)
     lines.push("", stopSummary(d.personStop, d.state));
+  lines.push(...stallFinishLines(l));
   lines.push(...ciEventLines(l.ciActions));
   if (parkedList && l.parked.length > 0) {
     lines.push("", "Parked, awaiting a person:");

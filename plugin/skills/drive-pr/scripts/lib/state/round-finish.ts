@@ -158,6 +158,22 @@ export function finishCause(state: string): ReportCause {
     : "unknown";
 }
 
+/**
+ * The closing report's next step for a stall held by `state`, where it says
+ * more than the stall's own (`null` elsewhere): passes that all failed to
+ * push stall on whatever refuses the push, which a re-arm meets again.
+ */
+export function finishNext(
+  state: string,
+): { step: string; owner: "person"; act: "Investigate" } | null {
+  if (state !== "PUSH_FAILED") return null;
+  return {
+    step: "Fix what refuses the push, named in concluded (the pre-push gates, on the base branch when they fail there too; the remote; the connection), then re-arm the drive: a re-arm before that fails the same push.",
+    owner: "person",
+    act: "Investigate",
+  };
+}
+
 /** The recorder of a finish that is not a drive pass's, or whose directory is unresolved. */
 function noRecord(): void {
   // Nothing is kept for the stall stop.
