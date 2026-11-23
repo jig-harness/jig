@@ -5,7 +5,7 @@ status: amended
 description: "Each system Jig integrates with has one transport, built from one shared library, that reuses an answer before it sends, asks a shared budget, bounds what a call can cost, records what it spent, and fails as one of a closed set of classes"
 lifecycle: permanent
 version: "1.1"
-last_updated: 2026-11-20
+last_updated: 2026-11-23
 owner: maintainers
 decision_date: 2026-11-13
 supersedes: ~
@@ -161,6 +161,9 @@ that builds it; until then review holds the obligation.
 ## Amendments
 
 ### 2026-11-20 — model providers join the governed systems (v1.1)
+
+Approved on 2026-11-23, together with
+[ADR-0026](ADR-0026-the-agent-harness-is-an-interface.md).
 
 Touches the Decision, which names the systems the rule covers. A model
 provider is the fourth kind of outside system: it limits its callers, it

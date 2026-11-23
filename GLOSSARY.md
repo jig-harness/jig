@@ -9,6 +9,41 @@ make, use the entry's term instead.
 
 ## Core ideas
 
+<a id="occurrence-identity"></a>
+
+- **Occurrence identity** — the stable identifier for one specific need for
+  attention or action. It lets a later report settle that need without also
+  settling a newer need that has the same display key.
+
+<a id="coverage-revision"></a>
+
+- **Coverage revision** — the version of a source's declared authority scope
+  that covered an observation. It is checked with the observation and the
+  hub's acceptance fence so an earlier owner cannot relabel a later report as
+  historical evidence.
+
+<a id="authority-epoch"></a>
+
+- **Authority epoch** — one uninterrupted interval in which a source is
+  authorized to report for a repository. A handoff starts a new epoch; evidence
+  from an earlier epoch remains usable only when its observation and recorded
+  acceptance both fall within that epoch.
+
+<a id="grant-revision"></a>
+
+- **Grant revision** — the monotonically increasing version of a viewer's
+  access grant. A protected response names the revision and expiry that
+  authorized it, allowing the browser to reject a late response from an older
+  or broader grant. Its policy authority assigns revisions in policy-update
+  order and persists that sequence across restart; a changed authority instance
+  requires a fresh authorization handshake.
+
+<a id="scope-invalidation"></a>
+
+- **Scope invalidation** — a feed event that tells a consumer to remove a row
+  because its current access no longer permits it. It is not settlement
+  evidence, so the consumer keeps the underlying occurrence unresolved.
+
 - **Preflight** — a small check that runs before a stage starts, to prove a
   condition the stage needs. For example, the dispatcher checks whether an
   account can reach a tracker before launching work that must use it.
@@ -917,7 +952,7 @@ make, use the entry's term instead.
   issue; where the tracker keeps the value is its *facet store*. The skills
   read the value, never the label or field behind it, and every filing
   through the interface is checked for all three
-  ([design](design/tracker-facets.md)).
+  ([Tracker facets chapter](plugin/protocol/tracker-facets.md)).
 - **Facet store** (store) — where a tracker keeps one *issue facet*: the
   tracker's own field for it (`native`, such as GitHub's or Jira's issue
   type), a custom field the repository names (`field`), or a label per
@@ -926,7 +961,7 @@ make, use the entry's term instead.
   the repository's issues carry them, else the organization's matching
   field, read by detection. A repository names its own in
   `issue_tracker.facets`, and no repository's store moves unless its
-  configuration says so ([design](design/tracker-facets.md)).
+  configuration says so ([Tracker facets chapter](plugin/protocol/tracker-facets.md)).
 - **Sensitivity flag** — a *flag label* marking a change that carries extra
   obligations, such as a database migration, a published contract, personal
   data or a manual operational step. `decide` reads them under fixed names:
@@ -2076,7 +2111,7 @@ make, use the entry's term instead.
   values are generated from the code and a gate fails the build when a
   chapter and the code disagree; only the meaning of each value and the
   chapter's prose are written by hand
-  ([design/protocol.md](design/protocol.md)). *Avoid*: spec, specification
+  ([Protocol chapters](plugin/protocol/README.md)). *Avoid*: spec, specification
   (a spec is what a work item links).
 - **Rule matcher** — the one piece of the plugin that decides whether a rule
   in a repository's configuration matches a tracker item or a change, for

@@ -1,6 +1,6 @@
 /**
  * The shape of a Jig Protocol chapter as the generator reads it
- * (design/protocol.md § The generator and its gate): what a chapter
+ * (tools/protocol/README.md § The generator and its gate): what a chapter
  * declares in the chapter list (`chapters.ts`), and what its data file
  * (`plugin/protocol/data/<chapter>.json`) holds.
  */
@@ -38,7 +38,7 @@ export type FieldType = "string" | "integer" | "boolean";
 
 /**
  * How the comparison with the integration branch reads a change to a field's
- * content (design/protocol.md § What stable promises, and how the gate holds
+ * content (tools/protocol/README.md § What stable promises, and how the gate holds
  * it): `exact`, every change is a break; `prose`, words for a person, which
  * may be reworded but not emptied, nor stated where a value held null;
  * `names`, a comma-separated list of names, which may gain a name, in any

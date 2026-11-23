@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Neatline step 3, light, 1440</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#f9f6f1}
+a{color:#1a6444}a:hover{color:#005031}
+/* person's moment: a double bracket */
+.dbr{position:relative;display:inline-block;padding:0 .46em}
+.dbr::before,.dbr::after{content:"";position:absolute;top:.14em;bottom:.04em;width:.24em;border:3px double currentColor;box-sizing:border-box}
+.dbr::before{left:0;border-right:0}
+.dbr::after{right:0;border-left:0}
+/* status: shipped clause underlined once, planned clause with dashes (survives greyscale) */
+.shipped{padding-bottom:3px;background:linear-gradient(currentColor,currentColor) left bottom/100% 1.5px no-repeat;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+.planned{padding-bottom:3px;background:repeating-linear-gradient(to right,currentColor 0 6px,transparent 6px 10px) left bottom/100% 1.5px no-repeat;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+</style>
+</helmet>
+<div style="width:1440px; height:1180px; box-sizing:border-box; position:relative; overflow:hidden; background:#f9f6f1; /* bg */ color:#251e18; /* ink */ font-family:'Iowan Old Style','Palatino Linotype',Palatino,'Book Antiqua','URW Palladio L',Georgia,serif;">
+
+  <!-- masthead -->
+  <header style="position:absolute; left:72px; top:0; width:1296px; height:72px; box-sizing:border-box; border-bottom:1px solid #d5d0c8; /* line */">
+    <a href="#" style="position:absolute; left:0; top:20px; display:flex; align-items:center; gap:12px; color:#251e18; text-decoration:none; height:32px;">
+      <img src="./logo.svg" width="32" height="32" alt="" style="display:block">
+      <span style="font-size:24px; line-height:32px; letter-spacing:.01em;">Jig</span>
+    </a>
+  </header>
+
+  <!-- the legend: five entries with coordinates 01-05 -->
+  <div style="position:absolute; left:72px; top:120px; width:528px; height:990px;">
+    <!-- legend rule; each numeral's tick meets it -->
+    <div aria-hidden="true" style="position:absolute; left:56px; top:0; width:1px; height:990px; background:#d5d0c8;"></div>
+    <ol style="list-style:none; margin:0; padding:0;">
+
+      <!-- 01, collapsed -->
+      <li id="s1" style="position:absolute; left:0; top:0; width:528px;">
+        <span style="position:absolute; left:0; top:0; width:40px; text-align:right; font-size:16px; line-height:24px; font-variant-numeric:lining-nums tabular-nums; letter-spacing:.04em; color:#59514a;">01</span>
+        <span aria-hidden="true" style="position:absolute; left:46px; top:12px; width:10px; height:1px; background:#867f77;"></span>
+        <div style="margin-left:80px;">
+          <p style="margin:0; font-size:16px; line-height:24px; font-style:italic; color:#59514a;">The line</p>
+          <h2 style="margin:6px 0 0; font-size:20px; line-height:1.3; font-weight:400; color:#59514a;">Seven stations, run as a loop.</h2>
+        </div>
+      </li>
+
+      <!-- 02, quiet neighbour, carries the planned mark -->
+      <li id="s2" style="position:absolute; left:0; top:100px; width:528px;">
+        <span style="position:absolute; left:0; top:0; width:40px; text-align:right; font-size:16px; line-height:24px; font-variant-numeric:lining-nums tabular-nums; letter-spacing:.04em; color:#59514a;">02</span>
+        <span aria-hidden="true" style="position:absolute; left:46px; top:12px; width:10px; height:1px; background:#867f77;"></span>
+        <div style="margin-left:80px;">
+          <p style="margin:0; font-size:16px; line-height:24px; font-style:italic; color:#59514a;">The tick</p>
+          <h2 style="margin:8px 0 0; font-size:26px; line-height:1.3; font-weight:400; color:#59514a;">A timer wakes the dispatcher.</h2>
+          <p style="margin:12px 0 0; font-size:17px; line-height:1.6; color:#59514a;">Every few minutes the dispatcher reads the tracker, the pull requests and the running sessions. Then it starts what should be running and is not.</p>
+          <p style="margin:14px 0 0; font-size:17px; line-height:1.6; color:#59514a;"><span class="shipped">Machinery ships.</span> <span class="planned">Running unattended is planned.</span></p>
+        </div>
+      </li>
+
+      <!-- 03, the active entry -->
+      <li id="s3" aria-current="step" style="position:absolute; left:0; top:380px; width:528px;">
+        <span style="position:absolute; left:0; top:0; width:40px; text-align:right; font-size:16px; line-height:24px; font-weight:600; font-variant-numeric:lining-nums tabular-nums; letter-spacing:.04em; color:#1a6444; /* accent */">03</span>
+        <span aria-hidden="true" style="position:absolute; left:44px; top:11px; width:26px; height:2px; background:#1a6444;"></span>
+        <div style="margin-left:80px;">
+          <p style="margin:0; font-size:16px; line-height:24px; font-style:italic; color:#251e18;">The slots</p>
+          <h2 style="margin:8px 0 0; font-size:26px; line-height:1.3; font-weight:400; color:#251e18;">Two slots per account, and the wall.</h2>
+          <p style="margin:14px 0 0; font-size:18px; line-height:1.6; color:#251e18;">Each subscription account holds two sessions at once. When an account reaches its usage limit, that is the wall: the account stays out of every launch until the wall resets.</p>
+        </div>
+      </li>
+
+      <!-- 04, quiet neighbour -->
+      <li id="s4" style="position:absolute; left:0; top:680px; width:528px;">
+        <span style="position:absolute; left:0; top:0; width:40px; text-align:right; font-size:16px; line-height:24px; font-variant-numeric:lining-nums tabular-nums; letter-spacing:.04em; color:#59514a;">04</span>
+        <span aria-hidden="true" style="position:absolute; left:46px; top:12px; width:10px; height:1px; background:#867f77;"></span>
+        <div style="margin-left:80px;">
+          <p style="margin:0; font-size:16px; line-height:24px; font-style:italic; color:#59514a;">The ledger</p>
+          <h2 style="margin:8px 0 0; font-size:26px; line-height:1.3; font-weight:400; color:#59514a;">The drive keeps its ledger on the pull request.</h2>
+          <p style="margin:12px 0 0; font-size:17px; line-height:1.6; color:#59514a;">One comment records the round, the last head checked and every parked question. Another machine reads it and picks up where the drive stopped.</p>
+        </div>
+      </li>
+
+      <!-- 05, collapsed; the person's answer carries the double bracket -->
+      <li id="s5" style="position:absolute; left:0; top:920px; width:528px;">
+        <span style="position:absolute; left:0; top:0; width:40px; text-align:right; font-size:16px; line-height:24px; font-variant-numeric:lining-nums tabular-nums; letter-spacing:.04em; color:#59514a;">05</span>
+        <span aria-hidden="true" style="position:absolute; left:46px; top:12px; width:10px; height:1px; background:#867f77;"></span>
+        <div style="margin-left:80px;">
+          <p style="margin:0; font-size:16px; line-height:24px; font-style:italic; color:#59514a;">The question</p>
+          <h2 style="margin:6px 0 0; font-size:20px; line-height:1.3; font-weight:400; color:#59514a;">A question waits until <span class="dbr">you answer.</span></h2>
+        </div>
+      </li>
+    </ol>
+  </div>
+
+  <!-- sticky plate, settled on entry 03 -->
+  <figure style="position:absolute; left:646px; top:392px; width:722px; height:448px; margin:0; box-sizing:border-box; background:#fffdfa; /* card */ border:1px solid #867f77; /* line-strong */">
+    <!-- the plate's matching tick for the active numeral (same height as 03) -->
+    <span aria-hidden="true" style="position:absolute; left:-15px; top:118px; width:14px; height:2px; background:#1a6444;"></span>
+    <!-- neatline -->
+    <div style="position:absolute; left:28px; top:28px; width:664px; height:374px; box-sizing:border-box; border:1px solid #251e18; overflow:hidden; background:#f9f6f1;">
+      <img src="../figure/line-step2-light.svg" width="662" height="372" alt="Isometric engraving of an account with two slots, each holding one session, and the wall beside it; a third session waits on the far side of the wall." style="display:block; width:662px; height:372px;">
+      <!-- locator: four corner brackets around the two slots, accent -->
+      <div aria-hidden="true" style="position:absolute; left:164px; top:40px; width:16px; height:16px; border-top:2px solid #1a6444; border-left:2px solid #1a6444;"></div>
+      <div aria-hidden="true" style="position:absolute; left:314px; top:40px; width:16px; height:16px; border-top:2px solid #1a6444; border-right:2px solid #1a6444;"></div>
+      <div aria-hidden="true" style="position:absolute; left:164px; top:168px; width:16px; height:16px; border-bottom:2px solid #1a6444; border-left:2px solid #1a6444;"></div>
+      <div aria-hidden="true" style="position:absolute; left:314px; top:168px; width:16px; height:16px; border-bottom:2px solid #1a6444; border-right:2px solid #1a6444;"></div>
+    </div>
+    <!-- edge ticks on the neatline -->
+    <div aria-hidden="true" style="position:absolute; left:29px; top:21px; width:662px; height:6px; background:repeating-linear-gradient(to right,#867f77 0 1px,transparent 1px 41.375px);"></div>
+    <div aria-hidden="true" style="position:absolute; left:29px; top:403px; width:662px; height:6px; background:repeating-linear-gradient(to right,#867f77 0 1px,transparent 1px 41.375px);"></div>
+    <div aria-hidden="true" style="position:absolute; left:21px; top:29px; width:6px; height:372px; background:repeating-linear-gradient(to bottom,#867f77 0 1px,transparent 1px 41.333px);"></div>
+    <div aria-hidden="true" style="position:absolute; left:693px; top:29px; width:6px; height:372px; background:repeating-linear-gradient(to bottom,#867f77 0 1px,transparent 1px 41.333px);"></div>
+    <!-- the locator's references on the border: accent ticks at its extents -->
+    <div aria-hidden="true" style="position:absolute; left:193px; top:17px; width:2px; height:10px; background:#1a6444;"></div>
+    <div aria-hidden="true" style="position:absolute; left:359px; top:17px; width:2px; height:10px; background:#1a6444;"></div>
+    <div aria-hidden="true" style="position:absolute; left:17px; top:69px; width:10px; height:2px; background:#1a6444;"></div>
+    <div aria-hidden="true" style="position:absolute; left:17px; top:211px; width:10px; height:2px; background:#1a6444;"></div>
+    <!-- caption along the lower border -->
+    <figcaption style="position:absolute; left:28px; top:414px; width:664px; height:24px; display:flex; align-items:baseline; gap:12px; font-size:16px; line-height:24px; color:#59514a; /* muted */">
+      <span style="font-variant-numeric:lining-nums tabular-nums; letter-spacing:.04em; color:#1a6444; font-weight:600;">03</span>
+      <span style="font-style:italic; color:#251e18;">The slots</span>
+    </figcaption>
+  </figure>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1180}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
