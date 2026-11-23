@@ -21,7 +21,9 @@
  *       codex: { max: xhigh }
  *
  * A complexity tier says how hard the item is, never which model runs it:
- * `models` is the only place a model name appears (`routing-models.ts`).
+ * classification selects a tier, and `routing-models.ts` resolves the model
+ * separately from the `models` rows, the model-keyed declarations and the
+ * per-stage cells.
  * The tier comes from the type and size by `TIER_TABLE`, an explicit
  * `types.<type>.tier` replacing the table's, and a complex flag sets it to
  * `complex` whatever the rest says. `execution` and `strategic`, the tier

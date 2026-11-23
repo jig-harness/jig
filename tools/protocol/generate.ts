@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * The Jig Protocol's generator and its gate (design/protocol.md § The
+ * The Jig Protocol's generator and its gate (tools/protocol/README.md § The
  * generator and its gate; ADR-0020).
  *
  * `bun tools/protocol/generate.ts` writes, from the chapter list

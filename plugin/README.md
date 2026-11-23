@@ -1556,11 +1556,18 @@ the outcome, and shows whether the step was carried out, refused with its
 reason, or held. With nothing picked, Send stays held back; Copy still takes the
 approval of a lone Decide decision's recommendation to paste. A guarded
 pick takes a second step to copy. Every Send first confirms the target,
-login and exact answer; changing the answer, target or token requires a new
-confirmation. The page tests the token by asking GitHub
+login and exact answer; changing the answer, target or the token the card
+sends with requires a new confirmation. The page keeps one token per GitHub
+account, each naming the repository owners it answers for (`example-org`
+for every `example-org/*` repository), and a card sends with the token for
+its target repository's owner, or else with the one token that names no
+owner, which answers for every owner no other token names; a card whose
+owner no token answers for has no Send and says so, and Copy still works.
+The settings panel refuses a second token for one owner, or a second token
+that names no owner. The page tests each token by asking GitHub
 which login it signs in as, names that login, keeps the token in that
-browser's local storage alone and forgets it on request; the dashboard's
-server never receives it and has no route that writes. Make a fine-grained
+browser's local storage alone and forgets each on request; the dashboard's
+server never receives one and has no route that writes. Make a fine-grained
 personal access token limited to the repositories the dashboard shows, with
 Issues and Pull requests set to read and write, and a short expiry. Its
 answers count as `jig send`'s do, by the drive's rule for an author. Any
@@ -1724,6 +1731,7 @@ changes nothing on the forge or the tracker
 ```sh
 jig ask <station>@<owner>/<name>#<key> [--json] [--thread [--since <date> | --all]]
 jig ask --waiting [--person <login>] [--json]
+jig ask --settled [--person <login>] [--json]
 ```
 
 In a session, [`/jig:operator`](skills/operator/SKILL.md) runs `jig ask`
@@ -1825,7 +1833,11 @@ stage and parked questions in `questions` in JSON and as `question:` lines
 in text; parks without a separate question use their recorded decision lines.
 An entry whose notice did not reach a person at that tick (held for room in
 the notices comment, lost, or its destination out of reach) says why in
-`notice`, and as a `notice not delivered:` line in text. When the newest
+`notice`, and as a `notice not delivered:` line in text. In JSON,
+`questionGroup` names the [question group](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) the need is in:
+entries that share it are one card on the dispatch dashboard's Needs you,
+settled by one answer that goes to each of them; it is `null` for a need
+that is always a card of its own. When the newest
 tick could not read a repository (the forge refused it, or its configuration
 did not read), the line keeps what the tick that last read it found, and the
 answer lists the repository in `incomplete` (`repo`, `refused` and `readAt`,
@@ -1833,6 +1845,17 @@ the start of the tick its entries are from, `null` when no tick has read it),
 and in text as a `the line is incomplete:` block. Its entries are then as of
 that reading, and an empty `waiting` with a non-empty `incomplete` does not
 mean nothing waits.
+
+**`--settled`** lists what left the line in the last 24 hours and how, the
+list the dashboard shows as Settled recently, from the newest tick's line and
+with no forge or tracker call. Each entry in `settled` names its repository
+and `targets` (several when one answer settled them), the `cause` and
+question the need carried, when it left (`at`), `by` whom (`person`, `tick`,
+`steward` or `facts`, with the login, the rule or the steward's record in
+`who`), the `option` chosen, and `how` it was settled. An answer a station
+held or refused is listed with that `outcome` and its reason, while its card
+stays open. `--person <login>` lists only entries a person with that login
+settled.
 
 **`--json`** prints the answer as one object carrying its version, `v` (1):
 later versions add fields and never rename one. The fields only this

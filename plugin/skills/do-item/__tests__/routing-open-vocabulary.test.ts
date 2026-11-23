@@ -184,11 +184,19 @@ describe("the host and the repository layers", () => {
     // the all-stages cell. The stage's row is the more specific one.
     const config = layered(
       HOST,
-      `routing:\n  models:\n    codex: { complex: sol }\n`,
+      `routing:\n  models:\n    codex: { complex: astra }\n`,
     );
     expect(parseRoutingModels(config, "steward").codex?.complex).toBe(OUTSIDE);
-    expect(parseRoutingModels(config, "pickup").codex?.complex).toBe("sol");
-    expect(parseRoutingModels(config).codex?.complex).toBe("sol");
+    expect(parseRoutingModels(config, "pickup").codex?.complex).toBe("astra");
+    expect(parseRoutingModels(config).codex?.complex).toBe("astra");
+  });
+
+  it("refuses a stage whose models is null, which would erase a lower layer", () => {
+    expect(() =>
+      parseRoutingModels({
+        routing: { stages: { steward: { models: null } } },
+      }),
+    ).toThrow("routing.stages.steward.models is null");
   });
 
   it("lets a run's environment win over both files", () => {

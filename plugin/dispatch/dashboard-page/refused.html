@@ -162,6 +162,11 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
 .groupHead.first { border-top: 0; margin-top: 0; padding-top: 0; }
 /* the cards an answer hid: one quiet line, a full touch target at every width, that opens to their notes */
 .heldToggle { display: inline-flex; align-items: center; min-height: var(--tap); padding: 0; background: none; border: 0; cursor: pointer; font: inherit; font-size: var(--small); color: var(--muted); text-align: left; }
+.settled { margin-top: 10px; }
+.settled ul:not([hidden]) { margin: 0 0 6px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; overflow-wrap: anywhere; }
+.settledEntry { border-left: 2px solid var(--line-strong); padding-left: 8px; }
+.settledEntry p { margin: 0; }
+.settledEntry.held, .settledEntry.refused { border-left-color: var(--hl-line); }
 .answeredHolds ul:not([hidden]) { margin: 0 0 6px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
 .moreBtn { min-height: 44px; margin-top: 6px; width: 100%; background: transparent; color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--r); font: 400 15px var(--sans); cursor: pointer; }
 .moreRow { display: flex; gap: 8px; margin-top: 6px; }
@@ -229,6 +234,9 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
 .sendToggle span { overflow-wrap: anywhere; }
 .sendSettings { margin: 0 0 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--r); }
 .tokenForm { display: flex; flex-direction: column; gap: 4px; }
+.keptTokens { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.keptTokens > li { display: flex; flex-direction: column; gap: 4px; padding-top: 6px; border-top: 1px solid var(--line); }
+.sendSettings h4 { margin: 4px 0 0; font-size: 14px; }
 .reply { display: flex; flex-direction: column; gap: 2px; }
 .reply input { width: 100%; min-height: 44px; padding: 4px 8px; background: var(--card); color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--r); font: 400 15px/1.4 var(--sans); }
 
@@ -391,6 +399,16 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
 .workRunTop { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: center; }
 .runKv, .runSaid { margin: 4px 0 0; }
 .concluded { margin: 2px 0 0; }
+/* a question group's card: the targets it covers, each a row with a full touch target to leave it out */
+.groupTargets { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; }
+.groupTarget { display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; min-height: var(--tap); border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.groupTarget:first-child { border-top: 0; }
+.groupTarget a { display: inline-flex; align-items: center; min-height: var(--tap); }
+.groupPick { display: inline-flex; align-items: center; justify-content: center; min-width: var(--tap); min-height: var(--tap); margin-left: -12px; cursor: pointer; }
+.groupPick input { width: 20px; height: var(--tap); margin: 0; }
+.groupTargetState, .groupTargetLeft { flex-basis: 100%; padding-left: 32px; }
+.groupEvidence { margin-top: 10px; }
+.groupEvidence h3 { margin: 0 0 4px; font: 600 14px/1.3 var(--sans); }
 .foot { max-width: 1200px; margin: 0 auto; padding: 8px 16px 32px; display: flex; flex-direction: column; gap: 12px; }
 .legend { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
 .lgRole { display: flex; flex-direction: column; gap: 2px; font-size: 14px; }

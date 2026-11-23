@@ -2,8 +2,8 @@
  * What config-fit asks the configured tracker: whether it answers for the
  * audited repository, whether configured facet stores are usable, and, on
  * GitHub Issues, where each facet the configuration leaves to the default
- * is kept (design/tracker-facets.md,
- * "No store moves by itself"). A facet that relies on the default waits on
+ * is kept (plugin/protocol/tracker-facets.md,
+ * "Why a store is in force"). A facet that relies on the default waits on
  * detection before every read and write, and a store the default selected
  * changes only by what the tracker shows; naming it in `issue_tracker.facets`
  * commits it, so every facet without a named store is reported with the line

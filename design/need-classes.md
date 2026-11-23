@@ -401,6 +401,27 @@ one need per cause, naming the targets it holds, and the targets carry no
 need of their own for that cause; a target with another cause keeps that
 need. A cause is settled once, and its targets leave the line with it.
 
+### Identical questions fold
+
+A cause of one target is not grouped on the line, but the same question
+asked of many targets is one card wherever a person reads Needs you's rules.
+Needs of one host's line are a [question group](../GLOSSARY.md) when they
+share the act and the number of decisions, and each decision has
+the same kind, class, station, question, recommendation, options (each name,
+what it changes and costs), steps and interplay once the need's own target
+identifier is replaced. Any other identifier in the text stays, so a
+question naming another item groups only with questions naming that item;
+the repository and the cause are not part of the key, and each target listed
+names its own.
+A need without framed options, one whose answers keep it waiting (stale,
+disputed, not read) and one whose answer the tick refused are always cards
+of their own. The rule is `plugin/shared/question-group.ts`; the dashboard
+draws the card from it ([dispatch-dashboard.md](dispatch-dashboard.md)), and
+`jig ask --waiting` keeps one entry per target address, each naming its
+group (`questionGroup`) with the identity the card carries. One answer on
+the card is each target's own station answer, so every station still checks
+its answer on its own.
+
 ### The steward's remit
 
 The steward reads a digest and proposes records; the next tick checks and

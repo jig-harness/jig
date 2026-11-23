@@ -600,7 +600,7 @@ line and the sections between its `protocol:generated` markers come from
 `tools/protocol/generate.ts`, and its data file carries no header, so the
 `protocol` entry is that file's marker. The chapters' check also compares
 each stable chapter with the integration branch's copy at the merge base
-([design/protocol.md](design/protocol.md)), so it needs that history.
+([the Protocol maintainer reference](tools/protocol/README.md#what-stable-promises-and-how-the-gate-holds-it)), so it needs that history.
 
 A new derived file gets its entry in the pull request that adds it; the
 runner refuses an entry without a check.

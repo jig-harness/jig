@@ -135,6 +135,7 @@ import { captureIdentity, type ProcessIdentity } from "../shared/liveness.ts";
 import { endOwnTab, withoutRunTabMarker } from "../shared/orca-tabs.ts";
 import { LAUNCH_VARIABLE } from "../shared/launched-session.ts";
 import { resolveAccountIdentity } from "../skills/drive-pr/scripts/lib/identity.ts";
+import { harnessNamed } from "../shared/agent-harness/index.ts";
 import {
   NO_BACKGROUND_TASKS,
   passCommand,
@@ -156,7 +157,7 @@ import {
   readResult,
   recordExit,
 } from "./lib/launches.ts";
-import { probeWall } from "./lib/quota-probe.ts";
+import { quotaMain } from "./lib/quota-probe.ts";
 import {
   driverReportFile,
   printKeptReport,
@@ -174,6 +175,7 @@ import {
 } from "./lib/session.ts";
 import { failureText } from "./lib/text.ts";
 import { configuredPassArgs } from "../skills/drive-pr/scripts/lib/pass-args.ts";
+import { RESOLVED_PARKS_PR_ENV } from "../skills/drive-pr/scripts/lib/driver/rearm.ts";
 import {
   enterAfterStage,
   newerStateRefusal,
@@ -198,14 +200,7 @@ import {
   recordWorkingStartup,
 } from "./lib/account-startup.ts";
 import { forgetClaudeSignIn } from "./lib/claude-sign-in.ts";
-import { codexSessionIn } from "./lib/transcript-copy.ts";
-import {
-  currentIso,
-  currentMs,
-  isoFromMs,
-  parseInstant,
-  parseMs,
-} from "../shared/time.ts";
+import { currentIso, currentMs, isoFromMs, parseMs } from "../shared/time.ts";
 
 const CLAIMED = 3;
 
@@ -231,7 +226,7 @@ function driveCommand(record: LaunchRecord, script: string): string[] {
     record.codexBypass === true,
     words,
   );
-  const pinned = record.vendor === "codex" && words.length === 0;
+  const pinned = !readsLaunchArgs(record) && words.length === 0;
   if (settleTree)
     pass[pass.length - 1] +=
       "\nThe original tree holds uncommitted work. Inspect it: commit and push edits that belong to this change, or discard edits only when they are known disposable. Stop if ownership is unclear. Settle the existing tree before reporting convergence.";
@@ -242,6 +237,10 @@ function driveCommand(record: LaunchRecord, script: string): string[] {
     script,
     pr,
     ...(record.action === "takeover" ? ["--take-over"] : []),
+    // A re-arm a person asked for (their request label): a drive stopped on
+    // its round budget is granted one more instead of stopping on its first
+    // check. The steward's and the tick's re-drives never renew it.
+    ...(record.rearmLabel != null ? ["--rearm-budget"] : []),
     "--bots-only",
     ...(settleTree ? ["--settle-worktree"] : []),
     ...(pinned ? ["--pass-args", ""] : []),
@@ -251,6 +250,22 @@ function driveCommand(record: LaunchRecord, script: string): string[] {
     "--",
     ...pass,
   ];
+}
+
+/** Only a launch bound to a person's re-arm request can clear resolved parks. */
+function resolvedParkPr(record: LaunchRecord): string {
+  if (
+    record.action !== "rearm" ||
+    record.rearmLabel == null ||
+    typeof record.rearmRequestId !== "number"
+  )
+    return "";
+  return String(record.pr);
+}
+
+/** Whether the record's harness reads the host's extra pass words as the pass starts; one that fixed them at admission pins them. */
+function readsLaunchArgs(record: LaunchRecord): boolean {
+  return harnessNamed(record.vendor)?.capabilities.hostArgsAt !== "admission";
 }
 
 /** The drive script: `drive-pr`'s, unless a test names another. */
@@ -334,7 +349,7 @@ async function tryWriteWall(
 function stageArgv(record: LaunchRecord): string[] {
   // `drive.pass_args` is Claude Code's: a Codex pass never reads it, so a bad value cannot stop one.
   const claudeWords = (): readonly string[] =>
-    record.vendor === "codex" ? [] : configuredPassArgs().words;
+    readsLaunchArgs(record) ? configuredPassArgs().words : [];
   if (record.action === "steward")
     return stewardPassArgv(record, claudeWords());
   if (isDrive(record)) return driveCommand(record, driveScript());
@@ -536,6 +551,7 @@ async function executeStage(
       ...withoutRunTabMarker(passEnvironment(process.env, record)),
       ...(ownPass(record) ? NO_BACKGROUND_TASKS : {}),
       [LAUNCH_VARIABLE]: id,
+      [RESOLVED_PARKS_PR_ENV]: resolvedParkPr(record),
       JIG_OUTBOUND_CALLER: `pass:${record.action}:${record.id}`,
       ...(isDrive(record)
         ? { [DRIVER_REPORT_VARIABLE]: driverReportFile(id) }
@@ -600,7 +616,7 @@ function startupOf(
 } {
   if (
     !ownPass(record) ||
-    record.vendor !== "claude" ||
+    harnessNamed(record.vendor)?.capabilities.signInProbe !== true ||
     ran.started === undefined ||
     ran.exited === undefined
   )
@@ -657,10 +673,11 @@ function startupOutputOf(ran: Ran): string {
   return ran.startupOutput ?? ran.output ?? "";
 }
 
-/** The session id a Codex pass printed at its start; Claude Code's is the one the tick minted (`sessionId`). */
+/** The session id a pass printed at its start (Codex's); Claude Code's is the one the tick minted (`sessionId`). */
 function sessionOf(record: LaunchRecord, ran: Ran): string | null {
-  return record.vendor === "codex" && ownPass(record)
-    ? codexSessionIn(ran.head)
+  const harness = harnessNamed(record.vendor);
+  return harness?.capabilities.sessionId === "printed" && ownPass(record)
+    ? harness.sessionIdIn(ran.head)
     : null;
 }
 
@@ -930,31 +947,26 @@ async function trackerMain(slug: string, deadline: string): Promise<number> {
   return 0;
 }
 
+/** `run.ts identity <harness>`: the account the named harness reads in this environment. */
+function identityMain(name: string): number {
+  const harness = harnessNamed(name);
+  const read = () => harness?.accountIdentity(process.env);
+  console.log(JSON.stringify(read() ?? resolveAccountIdentity([name])));
+  return 0;
+}
+
 /** The wrapper's command line; `jig dispatch run` reaches it too. */
 export async function runMain(argv: string[]): Promise<number> {
-  if (argv[0] === "identity" && argv.length === 2) {
-    console.log(JSON.stringify(resolveAccountIdentity([argv[1] as string])));
-    return 0;
-  }
-  if (argv[0] === "quota" && argv.length === 4) {
-    const [, session, cwd, since] = argv as [string, string, string, string];
-    if (!Number.isFinite(parseMs(since))) {
-      console.error(`jig dispatch run: ${since} is not a date`);
-      return 2;
-    }
-    console.log(
-      JSON.stringify(
-        probeWall(session, cwd, parseInstant(since), Temporal.Now.instant()),
-      ),
-    );
-    return 0;
-  }
+  if (argv[0] === "identity" && argv.length === 2)
+    return identityMain(argv[1] as string);
+  if (argv[0] === "quota" && (argv.length === 4 || argv.length === 5))
+    return quotaMain(argv.slice(1));
   if (argv[0] === "tracker" && argv.length === 3)
     return trackerMain(argv[1] as string, argv[2] as string);
   const supervising = argv[0] === "supervise" && argv.length === 3;
   if (!supervising && argv.length !== 2) {
     console.error(
-      "usage: run.ts <record> <token> | run.ts identity claude|codex | run.ts quota <session-id> <cwd> <since> | run.ts tracker <slug> <deadline-ms>",
+      "usage: run.ts <record> <token> | run.ts identity <harness> | run.ts quota <session-id> <cwd> <since> | run.ts tracker <slug> <deadline-ms>",
     );
     return 2;
   }

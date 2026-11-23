@@ -27,7 +27,7 @@ export interface CardInfo {
   committedOnCard?: boolean;
 }
 
-/** The station whose records a stage leaves (design/addresses.md). */
+/** The station whose records a stage leaves (plugin/protocol/addresses.md). */
 function stationOf(stage: string): string {
   return stage === "pickup" || stage === "followup" ? stage : "drive";
 }
@@ -66,7 +66,11 @@ export function needCard(need: NeedView, commit: CardCommit): CardInfo {
       ...card,
       command: commit.text,
       commandLabel: commit.label,
-      committedOnCard: commit.guarded.length > 0 || commit.faults.length > 0,
+      // A question group's card copies through the card, which knows the targets left out.
+      committedOnCard:
+        need.group !== undefined ||
+        commit.guarded.length > 0 ||
+        commit.faults.length > 0,
     };
   return {
     ...card,

@@ -109,26 +109,35 @@ export function declaredTiers(
   for (const [runtime, row] of Object.entries(modelTiers)) {
     const merged: Record<string, FamilyTier> =
       out[runtime] ?? Object.create(null);
+    const byModel = new Map<string, string[]>();
+    for (const k of Object.keys(merged)) {
+      const c = canonicalName(runtime, k);
+      byModel.set(c, [...(byModel.get(c) ?? []), k]);
+    }
     for (const [name, entry] of Object.entries(row))
-      addDeclaration(runtime, merged, name, entry);
+      addDeclaration(runtime, merged, byModel, name, entry);
     out[runtime] = merged;
   }
   return out;
 }
 
-/** One `model_tiers` entry into a runtime's table, replacing an older-key entry for the same model. */
+/**
+ * One `model_tiers` entry into a runtime's table, replacing every older-key
+ * entry that names the same model under any spelling. `byModel` indexes the
+ * table's canonical names once per runtime.
+ */
 function addDeclaration(
   runtime: string,
   merged: Record<string, FamilyTier>,
+  byModel: Map<string, string[]>,
   name: string,
   entry: FamilyTier,
 ): void {
   const target = canonicalName(runtime, name);
-  const older = Object.keys(merged).find(
-    (k) => canonicalName(runtime, k) === target,
-  );
-  const other = older === undefined ? undefined : merged[older];
-  if (older !== undefined && other !== undefined) {
+  const olders = byModel.get(target) ?? [];
+  for (const older of olders) {
+    const other = merged[older];
+    if (other === undefined) continue;
     if (other.tier !== entry.tier)
       throw new RoutingError(
         `routing.model_tiers.${formatField([runtime])}.${formatField([name])} (${entry.tier}) and routing.family_tiers.${formatField([runtime])}.${formatField([older])} (${other.tier}) declare one model with different tiers; keep one`,
@@ -136,6 +145,7 @@ function addDeclaration(
     delete merged[older];
   }
   merged[name] = entry;
+  byModel.set(target, [name]);
 }
 
 function parseTierEntries(raw: unknown, key: TierKey): FamilyTiers {
@@ -427,8 +437,12 @@ export function parseStages(raw: unknown): StageModels {
     const at = `routing.stages.${stage}`;
     const fields = mapping(entry, at, "be a mapping with a models field");
     refuseUnknownKeys(fields, STAGE_FIELDS, at);
+    if (fields.models === null)
+      throw new RoutingError(
+        `${at}.models is null, which would erase a lower layer's stage models whole; omit the key to inherit, or give a mapping`,
+      );
     const runtimes: Record<string, Partial<ModelRow>> = Object.create(null);
-    if (fields.models !== undefined && fields.models !== null) {
+    if (fields.models !== undefined) {
       const models = mapping(
         fields.models,
         `${at}.models`,

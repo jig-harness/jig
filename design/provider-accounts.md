@@ -25,7 +25,8 @@ model providers under the rule for outbound calls. How a provider's limits,
 failures and costs are governed is in
 [outbound-calls.md § Model providers](outbound-calls.md#model-providers); this
 page holds the account schema and everything else the build steps read.
-Nothing here is built yet.
+The harness interface is built, with Claude Code and Codex behind it
+(`plugin/shared/agent-harness/`); the rest is not built yet.
 
 ## How it works
 

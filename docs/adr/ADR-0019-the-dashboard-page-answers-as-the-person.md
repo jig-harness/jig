@@ -1,11 +1,11 @@
 ---
 title: "ADR-0019: The dashboard's page answers a parked decision as the person"
 type: adr
-status: approved
-description: "The dispatch dashboard's page may post a parked decision's answer: from the browser, to the forge's API, with a fine-grained token the person pastes into that browser and that the host never receives; the dashboard's server keeps no write route, the dispatcher never relays an answer, and the answer is trusted as one `jig send` writes from a terminal until item 40 tells a pass's comment from a person's"
+status: amended
+description: "The dispatch dashboard's page may post a parked decision's answer: from the browser, to the forge's API, with the fine-grained token the person pasted into that browser for the target repository's owner, one per forge account, which the host never receives; the dashboard's server keeps no write route, the dispatcher never relays an answer, and the answer is trusted as one `jig send` writes from a terminal until item 40 tells a pass's comment from a person's"
 lifecycle: permanent
-version: "1.0"
-last_updated: 2026-11-16
+version: "1.1"
+last_updated: 2026-11-23
 owner: maintainers
 decision_date: 2026-11-12
 supersedes: ~
@@ -15,7 +15,7 @@ tags: [adr, dashboard, security, answers, dispatcher]
 
 # ADR-0019: The dashboard's page answers a parked decision as the person
 
-**Status:** Approved · **Date:** 2026-11-12 · **Deciders:** Jig's maintainers through pull-request review
+**Status:** Amended · **Date:** 2026-11-12 · **Deciders:** Jig's maintainers through pull-request review
 
 ## Context
 
@@ -48,9 +48,13 @@ The forces:
 The dashboard's page may submit a parked decision's answer, and does it
 from the browser, as the person:
 
-- The person pastes a fine-grained GitHub token once per browser. The page
-  tests it with GitHub (`GET /user`), names the login it signs in as, keeps
-  it in that browser's local storage alone and forgets it on request.
+- The person pastes a fine-grained GitHub token per GitHub account they
+  answer as, each in the browser that sends with it. The page tests each
+  with GitHub (`GET /user`), names the login it signs in as, keeps it in
+  that browser's local storage alone with the repository owners it answers
+  for, and forgets each on request, leaving the others kept. A card sends
+  with the token for its target repository's owner
+  ([Which token a card sends with](#which-token-a-card-sends-with)).
 - A card's **Send** posts, for each decision it answers, the comment
   `jig send` writes: the answer line Copy takes (`approve` or
   `choose <name>` with the decision's digest), any note line, and the
@@ -60,9 +64,11 @@ from the browser, as the person:
   forge's REST API.
 - Send is held back until an option is picked on the card: an approval
   nobody picked is Copy's alone. Every send takes a second step: Send
-  shows the target, the login and the exact answer, and Confirm send
-  posts. A change to the target, the decision's framing, the answer or the
-  token asks for a new confirmation. A guarded pick also takes the second
+  shows the target, the login of the token that will post and the exact
+  answer, and Confirm send posts. A change to the target, the decision's
+  framing, the answer or the token the card sends with (replaced,
+  forgotten, or another token now answering for its owner) asks for a new
+  confirmation; a change to another token does not. A guarded pick also takes the second
   step to copy.
 - Send is offered only when the page came over HTTPS, from loopback
   (`localhost`, 127.0.0.0/8, `::1`); on any other plain-HTTP address the card says why it
@@ -81,6 +87,38 @@ Send is offered only where a station reads an answer comment on a GitHub
 issue or pull request (a parked drive's decisions, and the pickup,
 follow-up and recovery decisions the dispatcher frames); any other card
 keeps Copy and says why it has no Send.
+
+### Which token a card sends with
+
+A person may answer as more than one GitHub account: an organization can
+require its own identity for its repositories while other owners'
+repositories are reached as another. So the page keeps one token per
+account, and each names the repository owners it answers for: an owner
+such as `example-org` covers every `example-org/*` repository.
+
+- **The choice.** A card sends with the token that names its target
+  repository's owner (the repository the comment posts to), compared
+  without case, as GitHub compares owners and logins. When none names it,
+  the card sends with the one token that names no owner, which answers for
+  every owner no other token names; with no such token, the card has no
+  Send, names the owner no token answers for and points at the settings,
+  and Copy still works.
+- **No silent choice.** One owner maps to at most one token, at most one
+  token names no owner, and one account keeps one token: the settings
+  panel refuses a token or a mapping that would break any of these and
+  says which token holds the owner, rather than choosing between tokens.
+  A newly tested token for an account already kept replaces that token.
+- **Who answered.** The confirmation, the posted record's writer and the
+  card's "Sent here" all name the chosen token's login, and the tick's
+  outcome names the answer's author as it does for any answer.
+- **Everything else holds for each token.** The transport rule, local
+  storage alone, forgetting on request, the content security policy and
+  the uncertainty below, which is kept by writer and decision, so an
+  uncertain answer under one account holds back only that account's same
+  answer.
+- **A browser that kept one token before** keeps it: it reads as the token
+  that names no owner, so it answers for every owner as it did, until the
+  person names owners for it or adds a token for another account.
 
 ### A send with no answer
 
@@ -119,6 +157,12 @@ person's latest answer counts.
   records the line already reads, but does not require one), and needs enrolment and HTTPS before the first answer. Until item 40, the
   answer it posts is still the person's login's comment, so the passkey
   proves a person to the dashboard, not to the drive that reads the answer.
+- **A token per repository rather than per owner.** Rejected: the token
+  a person can use is decided by the account that reaches the repository,
+  and an owner's repositories are reached by one account, so naming each
+  repository adds a mapping per repository and nothing a person can tell
+  apart. Owner is the granularity the tokens are chosen by; a repository
+  that needs another account than its owner's would reopen it.
 - **Copy and paste only.** Rejected: it keeps the host read-only at the
   cost of the slowest step on a phone, and adds no safety a pass holding
   the login does not already bypass.
@@ -134,7 +178,7 @@ person's latest answer counts.
 
 ### Costs
 
-- The token is as safe as the page's origin and the browser that keeps
+- Each token is as safe as the page's origin and the browser that keeps
   it: a script injected into the page could read it, which the strict
   content security policy and rendering every record's text as data guard
   against, and a narrow scope (the dashboard's repositories, Issues and
@@ -156,4 +200,16 @@ Reopen this when one of these holds:
 - a station reads an answer from somewhere other than a comment on a
   GitHub issue or pull request, or another forge's pull requests are
   parked on;
-- a second person acts through one dashboard.
+- a second person acts through one dashboard;
+- one owner's repositories need tokens of different accounts.
+
+## Amendments
+
+### 2026-11-23 · One token per GitHub account, chosen by the repository's owner (v1.1)
+
+Touches the Decision and Alternatives sections. The page keeps one token per
+GitHub account, each naming the repository owners it answers for, and a
+card sends with the token for its target repository's owner
+([Which token a card sends with](#which-token-a-card-sends-with)). The
+transport, storage, forgetting and trust rules hold for each token as they
+held for the one.

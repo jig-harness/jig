@@ -11,5 +11,5 @@ A model outside the known families can now be routed by configuration alone.
 
 ### Changed
 
-- A model that is neither a known family nor declared is still refused, and the message now names the key to set (`routing.model_tiers.<runtime>.<model>`) instead of `routing.family_tiers`.
+- For a runtime with a list of known families, a model that is neither a known family nor declared is still refused, and the message now names the key to set (`routing.model_tiers.<runtime>.<model>`) instead of `routing.family_tiers`.
 - `routing.family_tiers` is kept as the older spelling of `routing.model_tiers`: a configuration that sets only it routes exactly as before. One model declared under both with different tiers is refused.

@@ -1,5 +1,5 @@
 /**
- * The weekly sweep (design/tracker-facets.md, "The weekly sweep"): every
+ * The weekly sweep (plugin/skills/file-issue/README.md, "The weekly sweep"): every
  * open issue outside triage and not yet started that lacks a type, a
  * priority or a size (no size asked of an epic), or carries a retired label
  * (a facet's label where the facet is kept elsewhere), read through the

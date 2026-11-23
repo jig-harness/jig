@@ -1,6 +1,6 @@
 /**
  * A tracker whose facets the configuration leaves to the GitHub default
- * (design/tracker-facets.md, "Defaults per adapter"): before the first read
+ * (plugin/protocol/tracker-facets.md, "Why a store is in force"): before the first read
  * or write that touches a facet, detection selects each unnamed facet's
  * store (facets/detect.ts), and the tracker is built over the stores it
  * selected. Detection runs once per tracker, its answer cached on the

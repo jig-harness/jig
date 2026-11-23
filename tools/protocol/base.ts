@@ -1,5 +1,5 @@
 /**
- * What a stable chapter promised before this change (design/protocol.md
+ * What a stable chapter promised before this change (tools/protocol/README.md
  * § What stable promises, and how the gate holds it): the check reads each
  * chapter's data file as the integration branch holds it at the merge base,
  * and fails a change that breaks a stable chapter without raising its

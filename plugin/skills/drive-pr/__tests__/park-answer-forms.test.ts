@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { ParkedItem } from "../scripts/lib/state/schema.ts";
 import { parkAnswers } from "../scripts/lib/driver/rearm.ts";
+import { parseThreadComments } from "../scripts/lib/driver/park-answers.ts";
 import { humanVerdictNotice } from "../scripts/lib/driver/human-answer-notice.ts";
 import { redactStrings } from "../../../shared/redact.ts";
 import { renderParkedDecision } from "../../../shared/decisions/park.ts";
@@ -175,6 +176,125 @@ describe("one park interpretation for local state and the published ledger", () 
     expect(result.responded).toEqual([item]);
   });
 
+  it("settles an already-resolved thread without inventing a human verdict", async () => {
+    const result = await parkAnswers(12, [item], "example/repo", [], {
+      acceptResolvedThreads: true,
+      threadComments: async () => ({ comments: [], isResolved: true }),
+    });
+    if ("unreadable" in result) throw new Error("fixture unreadable");
+    expect(result.waiting).toEqual([]);
+    expect(result.answered).toEqual([]);
+    expect(result.resolved).toEqual([item]);
+  });
+
+  it("keeps a resolved thread parked when it carries a condition without an answer", async () => {
+    const result = await parkAnswers(
+      12,
+      [item],
+      "example/repo",
+      [conversation("note PRRT_a: only after the migration")],
+      {
+        acceptResolvedThreads: true,
+        threadComments: async () => ({ comments: [], isResolved: true }),
+      },
+    );
+    if ("unreadable" in result) throw new Error("fixture unreadable");
+    expect(result.resolved).toEqual([]);
+    expect(result.waiting).toEqual([item]);
+    expect(result.notes).toMatchObject([
+      { author: "alice", note: "only after the migration" },
+    ]);
+  });
+
+  it("refuses a thread history containing a malformed comment node", () => {
+    expect(
+      parseThreadComments({
+        data: {
+          node: {
+            isResolved: true,
+            comments: {
+              pageInfo: { hasNextPage: false },
+              nodes: [{ body: "missing identity fields" }],
+            },
+          },
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("refuses a thread history with an unparseable timestamp", () => {
+    const read = (
+      lastEditedAt: string | null,
+      createdAt = "2026-11-10T10:00:00Z",
+    ) =>
+      parseThreadComments({
+        data: {
+          node: {
+            isResolved: true,
+            comments: {
+              pageInfo: { hasNextPage: false },
+              nodes: [
+                {
+                  url: "https://example.test/c",
+                  author: { login: "alice" },
+                  authorAssociation: "OWNER",
+                  createdAt,
+                  lastEditedAt,
+                  body: "answer PRRT_a: approve",
+                },
+              ],
+            },
+          },
+        },
+      });
+    expect(read(null)).not.toBeNull();
+    expect(read("not a time")).toBeNull();
+    expect(read(null, "garbage")).toBeNull();
+  });
+
+  it("keeps a resolved thread parked when its answer evidence is disputed", async () => {
+    const result = await parkAnswers(
+      12,
+      [item],
+      "example/repo",
+      [
+        conversation("answer PRRT_a: approve", "alice"),
+        conversation(
+          "answer PRRT_a: choose Remove",
+          "bob",
+          "2026-11-10T12:00:00Z",
+        ),
+      ],
+      {
+        acceptResolvedThreads: true,
+        threadComments: async () => ({ comments: [], isResolved: true }),
+      },
+    );
+    if ("unreadable" in result) throw new Error("fixture unreadable");
+    expect(result.resolved).toEqual([]);
+    expect(result.waiting).toEqual([item]);
+    expect(result.disputed).toHaveLength(1);
+  });
+
+  it("keeps a resolved park waiting on an ordinary read", async () => {
+    const result = await parkAnswers(12, [item], "example/repo", [], {
+      threadComments: async () => ({ comments: [], isResolved: true }),
+    });
+    if ("unreadable" in result) throw new Error("fixture unreadable");
+    expect(result.waiting).toEqual([item]);
+    expect(result.resolved).toEqual([]);
+  });
+
+  it("reports missing resolution evidence when reading an explicit re-arm", async () => {
+    const result = await parkAnswers(12, [item], "example/repo", [], {
+      acceptResolvedThreads: true,
+      threadComments: async () => ({ comments: [], isResolved: null }),
+    });
+    expect(result).toEqual({
+      unreadable: "thread PRRT_a (GitHub did not report its resolution status)",
+    });
+  });
+
   it("leaves disagreements waiting and agrees across raw and redacted decisions", async () => {
     const listing = [
       conversation(
@@ -197,6 +317,59 @@ describe("one park interpretation for local state and the published ledger", () 
         undefined,
       ]);
     }
+  });
+
+  it("keeps an answered item waiting while another person's condition note stands", async () => {
+    const result = await parkAnswers(
+      12,
+      [item],
+      "example/repo",
+      [
+        conversation("answer PRRT_a: approve"),
+        conversation("note PRRT_a: only after the migration", "bob"),
+      ],
+      { threadComments: async () => [] },
+    );
+    if ("unreadable" in result) throw new Error("fixture unreadable");
+    expect(result.answered).toEqual([]);
+    expect(result.waiting).toEqual([item]);
+    expect(result.notes).toMatchObject([{ author: "bob" }]);
+  });
+
+  it("keeps a note whose time ties its author's answer", async () => {
+    const same = "2026-11-10T12:00:00Z";
+    const result = await parkAnswers(
+      12,
+      [item],
+      "example/repo",
+      [
+        conversation("answer PRRT_a: approve", "alice", same),
+        conversation("note PRRT_a: after the migration", "alice", same),
+      ],
+      { threadComments: async () => [] },
+    );
+    if ("unreadable" in result) throw new Error("fixture unreadable");
+    expect(result.notes).toMatchObject([{ author: "alice" }]);
+  });
+
+  it("settles a note by its author's later answer", async () => {
+    const result = await parkAnswers(
+      12,
+      [item],
+      "example/repo",
+      [
+        conversation(
+          "note PRRT_a: after the migration",
+          "alice",
+          "2026-11-10T11:00:00Z",
+        ),
+        conversation("answer PRRT_a: approve", "alice", "2026-11-10T12:00:00Z"),
+      ],
+      { threadComments: async () => [] },
+    );
+    if ("unreadable" in result) throw new Error("fixture unreadable");
+    expect(result.notes).toEqual([]);
+    expect(result.answered).toHaveLength(1);
   });
 
   it("keeps notes without answers visible while waiting for a decision", async () => {

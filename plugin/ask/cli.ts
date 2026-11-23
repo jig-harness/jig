@@ -1,7 +1,7 @@
 /**
  * `jig ask <address>`: who holds a station of the line, its state, what it
  * waits on and how its last launch ended, from the records alone
- * (`design/addresses.md`). `--thread` adds the address's correspondence,
+ * (`plugin/README.md, "Asking a station where it stands"`). `--thread` adds the address's correspondence,
  * `--json` prints the answer as one object, and `--waiting` lists every
  * address that waits on a person from the newest tick's line.
  *
@@ -49,10 +49,10 @@ import {
 } from "./lib/local.ts";
 import { askPickup, type RepoTracker, trackerAt } from "./lib/pickup.ts";
 import { type Reading, reading } from "./lib/reading.ts";
-import { renderAnswer, renderWaiting } from "./lib/render.ts";
+import { renderAnswer, renderSettled, renderWaiting } from "./lib/render.ts";
 import type { AskContext, StationAnswer } from "./lib/station.ts";
 import { windowed } from "./lib/thread.ts";
-import { waitingAnswer } from "./lib/waiting.ts";
+import { settledAnswer, waitingAnswer } from "./lib/waiting.ts";
 
 export const askCommand = command(
   "ask",
@@ -84,9 +84,12 @@ export const askCommand = command(
     waiting: option("--waiting", {
       description: message`List every address that waits on a person, from the newest tick's line; no forge or tracker call.`,
     }),
+    settled: option("--settled", {
+      description: message`List what left the line in the last day and how (a person answered, a rule of the tick, the steward, or its facts changed), with the answers that did not settle their need, from the newest tick's line; no forge or tracker call.`,
+    }),
     person: optional(
       option("--person", string({ metavar: "LOGIN" }), {
-        description: message`With --waiting, only entries that name this person's login.`,
+        description: message`With --waiting or --settled, only entries that name this person's login.`,
       }),
     ),
   }),
@@ -112,6 +115,15 @@ function waitingMain(args: AskArguments): number {
     usage("--waiting lists every address; it takes none");
   const answer = waitingAnswer(dispatcherRoot(), args.person);
   print(args.json ? JSON.stringify(answer, null, 2) : renderWaiting(answer));
+  return ASK_EXIT.ANSWERED;
+}
+
+/** `--settled`. */
+function settledMain(args: AskArguments): number {
+  if (args.address !== undefined)
+    usage("--settled lists the whole line; it takes no address");
+  const answer = settledAnswer(dispatcherRoot(), args.person);
+  print(args.json ? JSON.stringify(answer, null, 2) : renderSettled(answer));
   return ASK_EXIT.ANSWERED;
 }
 
@@ -257,8 +269,12 @@ function answerOf(found: StationAnswer, ctx: AskContext): AskAnswer {
 }
 
 export async function askMain(args: AskArguments): Promise<number> {
+  if (args.waiting && args.settled)
+    usage("--waiting and --settled are two lists; ask for one");
   if (args.waiting) return waitingMain(args);
-  if (args.person !== undefined) usage("--person goes with --waiting");
+  if (args.settled) return settledMain(args);
+  if (args.person !== undefined)
+    usage("--person goes with --waiting or --settled");
   const resolved = resolveAddress(args.address, args.key, usage);
   const { address, machine, tracker } = resolved;
   const r = reading();

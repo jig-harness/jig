@@ -13,15 +13,20 @@ import { formatAddress, type Station } from "../../shared/address.ts";
 import type {
   LineNeed,
   LineQueued,
+  LineSettled,
+  LineSnapshot,
   NeedCause,
 } from "../../dispatch/lib/dashboard-contract.ts";
 import { readLine } from "../../dispatch/lib/line-store.ts";
+import { SETTLED_WINDOW_MS } from "../../dispatch/lib/need-leaves.ts";
+import { currentMs, parseMs } from "../../shared/time.ts";
 import {
   type RefusedRepo,
   refusedRepos,
 } from "../../dispatch/lib/line-unread.ts";
 import { ANSWER_VERSION, type PersonAct } from "./answer.ts";
 import { actOfLineNeed, type NeedAct } from "../../shared/acts.ts";
+import { questionGroupId } from "../../shared/question-group.ts";
 import { HOST_NEED_REPO } from "../../dispatch/lib/preflight.ts";
 
 /** The act that settles each cause the tick finds waiting on a person. */
@@ -69,6 +74,8 @@ export interface WaitingEntry {
   questions: string[];
   /** Why its notice has not reached a person this tick (held for room in the comment, lost, its destination unreachable); `null` otherwise. */
   notice: string | null;
+  /** The question group the need is in (`shared/question-group.ts`): entries that share it are one card on the dashboard's Needs you, settled by one answer; `null` for a need that is always a card of its own. */
+  questionGroup: string | null;
 }
 
 /** What `--waiting` answers. */
@@ -109,6 +116,7 @@ function shared(need: LineNeed): Omit<WaitingEntry, "address" | "questions"> {
     url: need.url,
     title: need.title,
     notice: need.notified?.detail ?? null,
+    questionGroup: questionGroupId(need),
   };
 }
 
@@ -153,7 +161,20 @@ function heldPickupEntry(entry: LineQueued): WaitingEntry | null {
     title: entry.title,
     questions: [],
     notice: null,
+    questionGroup: null,
   };
+}
+
+/** The newest tick's line under the dispatcher's state directory `root`, or why there is none to read. */
+function newestLine(root: string | null): LineSnapshot | string {
+  if (root === null)
+    return "this machine dispatches nothing, so there is no line to read";
+  const line = readLine(root);
+  if (!line.ok) return line.failure.reason;
+  return (
+    line.value ??
+    "no tick from the dispatch file has written a line yet, so there is no line to read"
+  );
 }
 
 /** What waits on a person, from the newest tick's line under the dispatcher's state directory `root`. */
@@ -161,28 +182,19 @@ export function waitingAnswer(
   root: string | null,
   person?: string,
 ): WaitingAnswer {
-  const none = (unread: string): WaitingAnswer => ({
-    v: ANSWER_VERSION,
-    tick: null,
-    waiting: [],
-    unread,
-    incomplete: [],
-  });
-  if (root === null)
-    return none("this machine dispatches nothing, so there is no line to read");
-  const line = readLine(root);
-  if (!line.ok) return none(line.failure.reason);
-  if (line.value === null)
-    return none(
-      "no tick from the dispatch file has written a line yet, so there is no line to read",
-    );
+  const found = newestLine(root);
+  if (typeof found === "string")
+    return {
+      v: ANSWER_VERSION,
+      tick: null,
+      waiting: [],
+      unread: found,
+      incomplete: [],
+    };
   return {
     v: ANSWER_VERSION,
-    tick: { runId: line.value.runId, finishedAt: line.value.finishedAt },
-    waiting: [
-      ...line.value.needs.map(entryOf),
-      ...line.value.queue.map(heldPickupEntry),
-    ]
+    tick: { runId: found.runId, finishedAt: found.finishedAt },
+    waiting: [...found.needs.map(entryOf), ...found.queue.map(heldPickupEntry)]
       .filter((e): e is WaitingEntry => e !== null)
       .filter(
         (e) =>
@@ -190,6 +202,42 @@ export function waitingAnswer(
           e.people.some((p) => p.toLowerCase() === person.toLowerCase()),
       ),
     unread: null,
-    incomplete: refusedRepos(line.value),
+    incomplete: refusedRepos(found),
+  };
+}
+
+/** What `--settled` answers. */
+export interface SettledAnswer {
+  v: typeof ANSWER_VERSION;
+  /** The tick the line is from; `null` when there is no line to read. */
+  tick: { runId: string; finishedAt: string } | null;
+  /** The needs that left the line in the last day and the answers that did not settle theirs, newest first. */
+  settled: LineSettled[];
+  /** Why there is no line, or why it does not read; `null` when it read. */
+  unread: string | null;
+}
+
+/** What left the line recently, from the newest tick's line under the dispatcher's state directory `root`: no forge or tracker call. */
+export function settledAnswer(
+  root: string | null,
+  person?: string,
+): SettledAnswer {
+  const found = newestLine(root);
+  if (typeof found === "string")
+    return { v: ANSWER_VERSION, tick: null, settled: [], unread: found };
+  // The tick wrote the list windowed to its own clock: window it again to this one.
+  const since = currentMs() - SETTLED_WINDOW_MS;
+  return {
+    v: ANSWER_VERSION,
+    tick: { runId: found.runId, finishedAt: found.finishedAt },
+    settled: (found.settled ?? []).filter(
+      (e) =>
+        parseMs(e.at) >= since &&
+        (person === undefined ||
+          (e.who ?? "")
+            .split(", ")
+            .some((p) => p.toLowerCase() === person.toLowerCase())),
+    ),
+    unread: null,
   };
 }
