@@ -740,7 +740,7 @@
                     "type": "string"
                   },
                   "outcome": {
-                    "enum": ["answered", "provisional"]
+                    "enum": ["answered", "provisional", "resolved-thread"]
                   },
                   "answers": {
                     "type": "array",
@@ -1579,7 +1579,7 @@
                 "type": "string"
               },
               "outcome": {
-                "enum": ["answered", "provisional"]
+                "enum": ["answered", "provisional", "resolved-thread"]
               },
               "answers": {
                 "type": "array",

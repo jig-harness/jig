@@ -7,7 +7,7 @@
  *
  * | What the ledgers show | Event row |
  * | --- | --- |
- * | a receipt whose identity the line has not ingested, whether or not the line held its park | `park-answered`, or `park-provisional` for one handed on to be decided provisionally |
+ * | a receipt whose identity the line has not ingested, whether or not the line held its park | `park-answered`, `park-provisional`, or `park-resolved-thread` |
  * | a park the line held that is gone, with no receipt for it | `park-removed` |
  * | a park on a pull request no longer open | its final receipts count; without a receipt it leaves without a row |
  *
@@ -158,7 +158,9 @@ function receiptRow(slug: string, pr: number, r: ResolutionReceipt): EventRow {
   const said =
     r.outcome === "provisional"
       ? "handed on unanswered, to be decided provisionally"
-      : `answered: ${r.answers.map((a) => answerWords(answerView(a))).join("; ")}`;
+      : r.outcome === "resolved-thread"
+        ? "was already resolved on the forge, without a human answer"
+        : `answered: ${r.answers.map((a) => answerWords(answerView(a))).join("; ")}`;
   return {
     kind: "event",
     key: `park ${receiptIdentity(slug, pr, r)}`,
@@ -166,7 +168,12 @@ function receiptRow(slug: string, pr: number, r: ResolutionReceipt): EventRow {
     repo: slug,
     stage: "rearm",
     target: `PR #${pr}`,
-    event: r.outcome === "provisional" ? "park-provisional" : "park-answered",
+    event:
+      r.outcome === "provisional"
+        ? "park-provisional"
+        : r.outcome === "resolved-thread"
+          ? "park-resolved-thread"
+          : "park-answered",
     account: null,
     class: null,
     reason: `${r.kind} ${r.key}${r.class === undefined ? "" : ` (class ${r.class})`} ${said}`,

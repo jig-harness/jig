@@ -28,8 +28,8 @@ export const RESOLVED_PARKS_KEPT = 10;
 /** One answer the re-arm consumed, as the receipt keeps it: without its body. */
 export type ReceiptAnswer = Omit<PendingAnswer, "body">;
 
-/** How a park left: answered by people, or handed on to be decided provisionally. */
-export type ReceiptOutcome = "answered" | "provisional";
+/** How a park left: answered, provisionally handed on, or already resolved on the forge. */
+export type ReceiptOutcome = "answered" | "provisional" | "resolved-thread";
 
 export interface ResolutionReceipt {
   key: string;
@@ -107,7 +107,8 @@ const RECEIPT_FIELDS = {
   class: optional(isText),
   digest: optional(isDecisionDigest),
   parkedAt: isTime,
-  outcome: (v: unknown) => v === "answered" || v === "provisional",
+  outcome: (v: unknown) =>
+    v === "answered" || v === "provisional" || v === "resolved-thread",
   answers: (v: unknown) => Array.isArray(v) && v.every(isReceiptAnswer),
   answeredAt: optional(isTime),
   resolvedAt: isTime,
@@ -175,12 +176,7 @@ export function receiptsFor(
 ): ResolutionReceipt[] {
   return removed.flatMap((p) => {
     const verdict = consumed.find((v) => v.key === p.key);
-    if (
-      p.at === undefined ||
-      verdict === undefined ||
-      verdict.resolvedThread === true
-    )
-      return [];
+    if (p.at === undefined || verdict === undefined) return [];
     const answers = verdict.answers.map(withoutBody);
     const answeredAt = answers
       .map((a) => a.at)
@@ -194,7 +190,12 @@ export function receiptsFor(
         ...(p.class === undefined ? {} : { class: p.class }),
         ...(p.digest === undefined ? {} : { digest: p.digest }),
         parkedAt: p.at,
-        outcome: verdict.provisional === true ? "provisional" : "answered",
+        outcome:
+          verdict.resolvedThread === true
+            ? "resolved-thread"
+            : verdict.provisional === true
+              ? "provisional"
+              : "answered",
         answers,
         ...(answeredAt === undefined ? {} : { answeredAt }),
         resolvedAt,

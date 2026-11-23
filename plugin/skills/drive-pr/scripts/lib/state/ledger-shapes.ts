@@ -199,7 +199,7 @@ const receipt = s.object({
   class: s.optional(text),
   digest: s.optional(digest),
   parkedAt: text,
-  outcome: s.enum(["answered", "provisional"]),
+  outcome: s.enum(["answered", "provisional", "resolved-thread"]),
   answers: s.array(answer),
   answeredAt: s.optional(text),
   resolvedAt: text,

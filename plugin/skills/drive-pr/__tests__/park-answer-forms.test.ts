@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { ParkedItem } from "../scripts/lib/state/schema.ts";
 import { parkAnswers } from "../scripts/lib/driver/rearm.ts";
+import { parseThreadComments } from "../scripts/lib/driver/park-answers.ts";
 import { humanVerdictNotice } from "../scripts/lib/driver/human-answer-notice.ts";
 import { redactStrings } from "../../../shared/redact.ts";
 import { renderParkedDecision } from "../../../shared/decisions/park.ts";
@@ -184,6 +185,41 @@ describe("one park interpretation for local state and the published ledger", () 
     expect(result.waiting).toEqual([]);
     expect(result.answered).toEqual([]);
     expect(result.resolved).toEqual([item]);
+  });
+
+  it("keeps a resolved thread parked when it carries a condition without an answer", async () => {
+    const result = await parkAnswers(
+      12,
+      [item],
+      "example/repo",
+      [conversation("note PRRT_a: only after the migration")],
+      {
+        acceptResolvedThreads: true,
+        threadComments: async () => ({ comments: [], isResolved: true }),
+      },
+    );
+    if ("unreadable" in result) throw new Error("fixture unreadable");
+    expect(result.resolved).toEqual([]);
+    expect(result.waiting).toEqual([item]);
+    expect(result.notes).toMatchObject([
+      { author: "alice", note: "only after the migration" },
+    ]);
+  });
+
+  it("refuses a thread history containing a malformed comment node", () => {
+    expect(
+      parseThreadComments({
+        data: {
+          node: {
+            isResolved: true,
+            comments: {
+              pageInfo: { hasNextPage: false },
+              nodes: [{ body: "missing identity fields" }],
+            },
+          },
+        },
+      }),
+    ).toBeNull();
   });
 
   it("keeps a resolved thread parked when its answer evidence is disputed", async () => {

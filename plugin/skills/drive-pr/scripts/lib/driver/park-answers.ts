@@ -38,6 +38,49 @@ export interface ThreadComments {
   isResolved: boolean | null;
 }
 
+/** Decode a complete thread response without silently losing evidence. */
+export function parseThreadComments(value: unknown): ThreadComments | null {
+  let node = value;
+  for (const key of ["data", "node"])
+    node = isRecord(node) ? node[key] : undefined;
+  const comments = isRecord(node) ? node.comments : undefined;
+  if (
+    !isRecord(node) ||
+    !isRecord(comments) ||
+    !isRecord(comments.pageInfo) ||
+    comments.pageInfo.hasNextPage !== false ||
+    !Array.isArray(comments.nodes)
+  )
+    return null;
+  const parsed: CommentLike[] = [];
+  for (const comment of comments.nodes) {
+    if (
+      !isRecord(comment) ||
+      typeof comment.url !== "string" ||
+      !isRecord(comment.author) ||
+      typeof comment.author.login !== "string" ||
+      typeof comment.authorAssociation !== "string" ||
+      typeof comment.createdAt !== "string" ||
+      typeof comment.body !== "string" ||
+      (comment.lastEditedAt !== null &&
+        typeof comment.lastEditedAt !== "string")
+    )
+      return null;
+    parsed.push({
+      author: comment.author.login,
+      association: comment.authorAssociation,
+      at: comment.createdAt,
+      editedAt: comment.lastEditedAt,
+      url: comment.url,
+      body: comment.body,
+    });
+  }
+  return {
+    isResolved: typeof node.isResolved === "boolean" ? node.isResolved : null,
+    comments: parsed,
+  };
+}
+
 /**
  * A review thread's comments; `null` when they did not read, the failed
  * call's class told to `failed`. An incomplete thread can hide a dispute,
@@ -69,29 +112,7 @@ export async function threadComments(
     if (failure !== null) failed?.(failure);
     return null;
   }
-  let node = json(res.stdout);
-  for (const key of ["data", "node"])
-    node = isRecord(node) ? node[key] : undefined;
-  const comments = isRecord(node) ? node.comments : undefined;
-  if (
-    !isRecord(node) ||
-    !isRecord(comments) ||
-    !isRecord(comments.pageInfo) ||
-    comments.pageInfo.hasNextPage !== false ||
-    !Array.isArray(comments.nodes)
-  )
-    return null;
-  return {
-    isResolved: typeof node.isResolved === "boolean" ? node.isResolved : null,
-    comments: comments.nodes.filter(isRecord).map((n) => ({
-      author: isRecord(n.author) ? text(n.author.login) : "",
-      association: text(n.authorAssociation),
-      at: text(n.createdAt),
-      editedAt: typeof n.lastEditedAt === "string" ? n.lastEditedAt : null,
-      url: text(n.url),
-      body: text(n.body),
-    })),
-  };
+  return parseThreadComments(json(res.stdout));
 }
 
 /**
@@ -200,6 +221,7 @@ function classifyPark(
   answers: PendingAnswer[],
   incomplete: boolean,
   resolved: boolean,
+  hasNotes: boolean,
 ): void {
   if (answers.length > 0) {
     result.responded.push(item);
@@ -210,9 +232,9 @@ function classifyPark(
   if (stale.length > 0) result.stale.push({ item, answers: stale });
   const disputed = disputedAnswers(answers);
   if (disputed) result.disputed.push({ item, answers });
-  // Resolution is sufficient only where it does not erase evidence of an
-  // answer or a dispute. Those still need the ordinary answer safeguards.
-  if (resolved && answers.length === 0 && !incomplete) {
+  // Resolution is sufficient only where it does not erase an answer, dispute
+  // or condition note. Those still need the ordinary answer safeguards.
+  if (resolved && answers.length === 0 && !incomplete && !hasNotes) {
     result.resolved.push(item);
     return;
   }
@@ -289,15 +311,15 @@ export async function parkAnswers(
       return {
         unreadable: `thread ${item.key} (GitHub did not report its resolution status)`,
       };
-    result.notes.push(
-      ...sourceNotes(item, [...threadHistory, ...pullComments]),
-    );
+    const notes = sourceNotes(item, [...threadHistory, ...pullComments]);
+    result.notes.push(...notes);
     classifyPark(
       result,
       item,
       answers,
       item.at === undefined || thread === null || conversation === null,
       loaders.acceptResolvedThreads === true && thread?.isResolved === true,
+      notes.length > 0,
     );
   }
   return result;
