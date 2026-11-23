@@ -92,6 +92,20 @@ function at(value: unknown, ...path: string[]): unknown {
 }
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
+
+/** Keep forge diagnostics useful without letting them control operator output. */
+function ghDiagnostic(stderr: string): string {
+  const lastLine = stderr.trim().split("\n").at(-1) ?? "";
+  const plain = Array.from(lastLine)
+    .filter((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      return code >= 0x20 && (code < 0x7f || code > 0x9f);
+    })
+    .join("")
+    .trim();
+  const maxLength = 500;
+  return plain.length > maxLength ? `${plain.slice(0, maxLength - 1)}…` : plain;
+}
 const nodes = (v: unknown): unknown[] => {
   const list = at(v, "nodes");
   return Array.isArray(list) ? list : [];
@@ -330,7 +344,7 @@ async function queryGraphql(
     { stderr: "pipe", env: ghRepoEnvFor(slug), timeoutSec },
   );
   if (r.code !== 0) {
-    const tail = r.stderr.trim().split("\n").at(-1) ?? "";
+    const tail = ghDiagnostic(r.stderr);
     return failed(
       "unreadable",
       `gh api graphql exited ${r.code}${tail === "" ? "" : `: ${tail}`}`,

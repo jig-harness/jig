@@ -126,6 +126,24 @@ it("names the repository it reads in GH_REPO, for a gh that routes by owner", as
   expect(r.calls.trim().split("\n")).toEqual(["other-owner/private"]);
 });
 
+it("bounds and sanitizes a failed GraphQL diagnostic", async () => {
+  const r = await run(
+    `
+    import { readMergeFacts } from ${JSON.stringify(join(LIB, "merge-facts.ts"))};
+    console.log(JSON.stringify(await readMergeFacts("example-org/repo", [1], 30)));
+    `,
+    `#!/usr/bin/env bun
+    console.error("\\x1b[2J" + "x".repeat(600));
+    process.exit(1);
+    `,
+  );
+  expectSpawnExit(r, 0);
+  const reason = JSON.parse(r.stdout).failure.reason;
+  expect(reason).not.toContain("\\x1b");
+  expect(reason).toContain("…");
+  expect(reason.length).toBeLessThanOrEqual(530);
+});
+
 it("withdraws standing wording when the final readiness read changes", async () => {
   for (const changed of ["approval", "thread", "hold"]) {
     const r = await run(
