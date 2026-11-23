@@ -130,10 +130,11 @@ function located(
     .map((w) => w.path)
     .sort((a, b) => a.localeCompare(b));
   if (joined.length === 0) return cause;
-  // Each path is bounded and at most a few are named, so the message stays within the comment's room.
-  const shown = joined.slice(0, 3).map((p) => workspaceLabel(p));
-  const more = joined.length > 3 ? ` and ${joined.length - 3} more` : "";
-  const named = `${joined.length === 1 ? "Its workspace" : "Its workspaces"}: ${shown.join(", ")}${more}`;
+  // Each path is bounded; the first few are named whole and the rest by the start of their path, so no workspace is left without a place to look.
+  const shown = joined.map((p, i) =>
+    i < 3 ? workspaceLabel(p) : workspaceLabel(p).slice(0, 120),
+  );
+  const named = `${joined.length === 1 ? "Its workspace" : "Its workspaces"}: ${shown.join(", ")}`;
   return {
     ...cause,
     notice: { ...cause.notice, text: `${cause.notice.text}\n${named}` },

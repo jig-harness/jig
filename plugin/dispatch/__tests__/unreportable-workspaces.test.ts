@@ -174,6 +174,25 @@ describe("a drive's unreportable notice", () => {
     expect(a.key).not.toBe(b.key);
   });
 
+  it("keys two different paths differently, whatever they hold", async () => {
+    const { unreportedNotice } = await import("../lib/notices.ts");
+    const pr = { number: 5, title: "t", url: "u", evidence: {} } as never;
+    const paths = [
+      "/w/a\nb",
+      "/w/a b",
+      '"/w/a b"',
+      '"/w/a\\nb"',
+      "/w/a\\nb",
+      "/w/[jig dispatch: x]",
+      "/w/a\u2028b",
+    ];
+    const keys = paths.map(
+      (p) => unreportedNotice("s", pr, "re-arm", p, "r").key,
+    );
+    expect(new Set(keys).size).toBe(paths.length);
+    for (const k of keys) expect(k).not.toMatch(/[\n\u2028]/u);
+  });
+
   it("keeps its recovery and link whole when the reason is huge", async () => {
     const { unreportedNotice, withUnreported } = await import(
       "../lib/notices.ts"

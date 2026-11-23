@@ -66,11 +66,24 @@ function unTagged(text: string): string {
 /** The most of a workspace's path a message shows; the notify step names the workspace whole. */
 const MAX_WORKSPACE = 1000;
 
-/** A workspace as a key names it: the path with the key line's opening broken, and a digest of the original when breaking it changed the path, so two paths stay two keys. */
+/**
+ * A workspace as a key names it. A plain path stands as itself; one the key
+ * line cannot carry (a control or line-separator character, the key line's
+ * opening, or a start that reads as the quoted form) is written quoted with
+ * those characters escaped. The quoted form starts with a quote and a plain
+ * one never does, and escaping doubles every backslash, so no two paths
+ * share a key.
+ */
 function workspaceKey(workspace: string): string {
-  const safe = unTagged(workspace).replace(/[\p{Cc}\u2028\u2029]/gu, " ");
-  if (safe === workspace) return workspace;
-  return `${safe} #${createHash("sha256").update(workspace).digest("hex").slice(0, 12)}`;
+  const plain =
+    !workspace.startsWith('"') &&
+    !workspace.includes(TAG) &&
+    !/[\p{Cc}\u2028\u2029]/u.test(workspace);
+  if (plain) return workspace;
+  return JSON.stringify(workspace).replace(
+    /[\p{Cc}\u2028\u2029[]/gu,
+    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
 }
 
 /**
