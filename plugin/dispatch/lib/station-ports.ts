@@ -249,12 +249,13 @@ export function releaseRecord(
   if (!members.includes(item))
     return `launch record ${id} is not a pickup of ${item}`;
   if (!holdsItem(record, item)) return null;
-  // The member answered is released, and with it the members a whole-batch
-  // question held that the pass never claimed; otherwise its siblings keep
+  // The member answered is released, and, when it is the anchor carrying a
+  // whole-batch question, the members that question held and the pass never claimed; otherwise its siblings keep
   // the question they wait on.
-  const settled = wholeBatchQuestion(ended)
-    ? members.filter((m) => m === item || !pickupClaimed(record, m))
-    : [item];
+  const settled =
+    wholeBatchQuestion(ended) && item === record.item
+      ? members.filter((m) => m === item || !pickupClaimed(record, m))
+      : [item];
   const released = [...new Set([...(record.releasedItems ?? []), ...settled])];
   record.releasedItems = released;
   if (members.every((m) => released.includes(m))) record.released = true;

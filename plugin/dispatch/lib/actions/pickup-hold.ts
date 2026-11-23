@@ -296,8 +296,9 @@ function endedWhy(
  * describes, keeps every member. A pass that ended on a question keeps the
  * members the question names, and releases the others, whether it claimed
  * any or not: the question is not about them. A question that names no
- * member is about the whole batch and keeps every member until it is
- * answered, which settles them all (`releaseRecord`).
+ * member is about the whole batch and keeps every member while its anchor
+ * (the record's first item) is held; answering it on the anchor settles them
+ * all (`releaseRecord`), and so does the anchor's release any other way.
  */
 function leftUnclaimed(r: ReadRecord, item: string): boolean {
   const { record } = r;
@@ -306,7 +307,10 @@ function leftUnclaimed(r: ReadRecord, item: string): boolean {
   if (members.length < 2 || claimed.includes(item)) return false;
   const named = namedMembers(r);
   if (named === null) return claimed.some((key) => members.includes(key));
-  return named.length > 0 && !named.includes(item);
+  if (named.length > 0) return !named.includes(item);
+  // A whole-batch question waits on its anchor: once that is released, nothing holds the rest.
+  const anchor = record.item;
+  return anchor !== null && anchor !== item && !holdsItem(record, anchor);
 }
 
 /**

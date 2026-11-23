@@ -404,6 +404,40 @@ describe("a batch pickup that ended after claiming one member", () => {
     expect(after?.record.released).toBe(true);
   });
 
+  it("frees the siblings of a whole-batch question once its anchor is released on its own", () => {
+    const dir = root();
+    const read = questionedBatch(
+      "Should the batch follow the shared approach?",
+    );
+    // The claimed anchor goes back to the queue, which releases its record alone.
+    release([read], ["#923", "#924", "#925"], [], dir);
+    expect(read.record.releasedItems).toContain("#923");
+    release([read], ["#924", "#925"], [], dir);
+    expect(read.record.released).toBe(true);
+    const next = plan(["#924", "#925"], [read]);
+    expect(
+      next.actions.filter((a) => a.stage === "pickup").map((a) => a.target),
+    ).toEqual(["#924", "#925"]);
+    expect(next.quiet).toEqual([]);
+  });
+
+  it("keeps a whole-batch question's anchor when a claimed sibling is released", () => {
+    const dir = root();
+    const read = endedBatch(["#923", "#924", "#925"], "failed", ["#924"]);
+    if (read.state.kind === "ended")
+      read.state.exit.said =
+        "Question: Should the batch follow the shared approach?\n";
+    persist(read, dir);
+    const inputs = {
+      repo: { slug: SLUG },
+      root: dir,
+    } as unknown as Parameters<typeof releaseRecord>[0];
+    expect(releaseRecord(inputs, "#924", read.record.id)).toBeNull();
+    expect(readEnded(read.record.id, dir)?.record.releasedItems).toEqual([
+      "#924",
+    ]);
+  });
+
   it("settles only the member answered when the question names members", () => {
     const dir = root();
     const read = questionedBatch("Should #924 change its scope?");
