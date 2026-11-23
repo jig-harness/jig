@@ -6,8 +6,18 @@ export function confirmationSignature(
   need: NeedView,
   answers: RowAnswer[],
   credential: string,
+  /** On a question group's card, the targets left out: the targets an answer covers are part of what was confirmed. */
+  left: ReadonlySet<string> = new Set(),
 ): string {
   return JSON.stringify({
+    group: need.group?.members
+      .filter((m) => !left.has(m.rowKey))
+      .map((m) => ({
+        card: m.rowKey,
+        url: m.url,
+        to: m.send,
+        rows: m.rows.map((row) => ({ key: row.key, framing: row.framing })),
+      })),
     repo: need.repo,
     target: need.target,
     url: need.url,

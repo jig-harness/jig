@@ -1,4 +1,4 @@
-import { answerId, useAnswers } from "./answers.ts";
+import { cardAnswerIds, useAnswers } from "./answers.ts";
 import type { NeedRow } from "./needs-view.ts";
 import { rowAnswer } from "./picking.ts";
 
@@ -8,14 +8,14 @@ function groupMembers(rows: NeedRow[], index: number): NeedRow[] {
 }
 
 export function DecisionCounts({ rows }: { rows: NeedRow[] }) {
-  const decisions = rows.flatMap((row) =>
-    row.type === "need"
-      ? row.need.rows.map((decision) => ({
-          decision,
-          id: answerId(row.need.repo, row.need.target, decision.key),
-        }))
-      : [],
-  );
+  const decisions = rows.flatMap((row) => {
+    if (row.type !== "need") return [];
+    const ids = cardAnswerIds(row.need);
+    return row.need.rows.map((decision, i) => ({
+      decision,
+      id: ids[i] ?? "",
+    }));
+  });
   const [kept] = useAnswers(decisions.map(({ id }) => id));
   if (decisions.length === 0) return null;
   const answers = decisions.map(({ decision }, index) =>
