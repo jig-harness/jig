@@ -45,7 +45,7 @@ interface NameFinder {
  * unquoted one wants the name alone (group: name).
  */
 function nameFinder(quoted: boolean): NameFinder {
-  const run = /[A-Za-z0-9_.-]+/g;
+  const run = new RegExp(`${KEY_CLASS}+`, "g");
   const tail = /\s*[:=]\s*/y;
   return {
     lastIndex: 0,
@@ -94,6 +94,15 @@ function bracketedEnd(text: string, start: number): number {
   return i;
 }
 
+const ASSIGNMENT_START = new RegExp(`["']?(${KEY_CLASS}+)["']?\\s*[:=]`, "y");
+
+/** Whether a credential-named assignment begins at `at`: a bare value never swallows the next assignment's key. */
+function startsAssignment(text: string, at: number): boolean {
+  ASSIGNMENT_START.lastIndex = at;
+  const m = ASSIGNMENT_START.exec(text);
+  return m !== null && isCredentialKey(m[1] ?? "");
+}
+
 /**
  * Replace each `prefix` match plus the value after it. The value is a quoted
  * string, a bracketed value, or else what `plain` matches there; `skip`
@@ -105,9 +114,11 @@ function maskValues(
   plain: RegExp,
   render: (m: NameMatch) => string,
   skip?: (rest: string) => boolean,
+  contiguous = false,
 ): string {
   const quoted = new RegExp(QUOTED, "y");
   const plainY = new RegExp(plain.source, "y");
+  const glued = /\S*/y;
   let out = "";
   let last = 0;
   prefix.lastIndex = 0;
@@ -117,8 +128,15 @@ function maskValues(
     quoted.lastIndex = at;
     plainY.lastIndex = at;
     if (skip?.(text.slice(at))) continue;
-    if (quoted.test(text)) end = quoted.lastIndex;
-    else if (text[at] === "[") end = bracketedEnd(text, at);
+    if (quoted.test(text)) {
+      end = quoted.lastIndex;
+      // An unquoted assignment's value runs on through segments glued to the quote.
+      if (contiguous) {
+        glued.lastIndex = end;
+        if (glued.test(text)) end = glued.lastIndex;
+      }
+    } else if (text[at] === "[") end = bracketedEnd(text, at);
+    else if (startsAssignment(text, at)) continue;
     else if (plainY.test(text)) end = plainY.lastIndex;
     if (end < 0) continue;
     out += text.slice(last, m.index) + render(m);
@@ -204,6 +222,7 @@ export function maskCredentialShapes(text: string, mark: string): string {
     /\S+/,
     (m) => `${m[1]}=${mark}`,
     (rest) => /^(?:<redacted>|\[(?:redacted|launch token)\])(?!\S)/.test(rest),
+    true,
   )
     .replace(
       /\b(?:gh[pousr]_|github_pat_|sk-|xox[abp]-|lin_api_)[A-Za-z0-9_-]{8,}/g,

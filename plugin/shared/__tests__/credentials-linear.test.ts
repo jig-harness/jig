@@ -37,3 +37,18 @@ test.each([
     );
   },
 );
+
+test("a bare value never swallows the next assignment's key", () => {
+  expect(maskCredentials('token= password="example value"', MARK)).toBe(
+    `token= password=${MARK}`,
+  );
+  expect(maskCredentials('token=\npassword="example value"', MARK)).toBe(
+    `token=\npassword=${MARK}`,
+  );
+});
+
+test("segments glued to a quoted value are masked with it", () => {
+  expect(maskCredentials('password="quoted part"unquoted-fixture', MARK)).toBe(
+    `password=${MARK}`,
+  );
+});
