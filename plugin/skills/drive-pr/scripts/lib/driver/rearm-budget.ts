@@ -6,7 +6,7 @@
  * passes instead of stopping on its first check.
  */
 import { fail, isDigits } from "./../cli.ts";
-import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
+import { ghCall, helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
 import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { rearmGrant, type SpentRounds } from "./../state/round-grant.ts";
@@ -20,35 +20,70 @@ function count(v: unknown): number | null {
 
 /** The pull request's head, or `null` when it did not read. */
 async function currentHead(pr: string): Promise<string | null> {
-  const res = await run(
-    ["gh", "pr", "view", pr, "--json", "headRefOid", "--jq", ".headRefOid"],
+  const res = await ghCall(
+    ["pr", "view", pr, "--json", "headRefOid", "--jq", ".headRefOid"],
     { stderr: "inherit", timeoutSec: Math.min(15, helperTimeoutSeconds()) },
   );
   const head = res.stdout.trim();
   return res.code === 0 && /^[0-9a-f]{7,64}$/.test(head) ? head : null;
 }
 
+type RunOpts = { stderr: "inherit"; timeoutSec: number };
+
+/** The stored drive state as a record, or `null` when it did not read as JSON. */
+function parseState(got: { code: number; stdout: string }): unknown {
+  if (got.code !== 0) return null;
+  try {
+    return JSON.parse(got.stdout);
+  } catch (error) {
+    swallow(error, "drive-state.ts get printed no JSON");
+    return null;
+  }
+}
+
+/** The head's review round answer: whether it is already counted, or a refusal. */
+async function headCountedFor(
+  pr: string,
+  head: string,
+  spentHeads: number,
+  opts: RunOpts,
+): Promise<boolean> {
+  const next = await run(
+    tsArgv(driveState, ["prospective-round", pr, "--head", head]),
+    opts,
+  );
+  const answer = next.stdout.trim();
+  // Only the head's current round (already counted) or the next one (new)
+  // is an answer; a failed or malformed probe proves neither.
+  if (
+    next.code !== 0 ||
+    !isDigits(answer) ||
+    ![spentHeads, spentHeads + 1].includes(Number.parseInt(answer, 10))
+  )
+    return fail(
+      1,
+      `cannot read the review round of PR #${pr}'s head; refusing to grant rounds on an unknown head history; re-arm again`,
+    );
+  return answer === String(spentHeads);
+}
+
 /** The durable counters, read the way `readRoundBudget` reads them; an unreadable one stops the drive. */
 async function spentRounds(pr: string, rearm: boolean): Promise<SpentRounds> {
-  const opts = {
-    stderr: "inherit" as const,
+  const opts: RunOpts = {
+    stderr: "inherit",
     timeoutSec: helperTimeoutSeconds(),
   };
   const rounds = await run(tsArgv(driveState, ["rounds", pr]), opts);
   const got = await run(tsArgv(driveState, ["get", pr]), opts);
-  let state: unknown = null;
-  try {
-    state = got.code === 0 ? JSON.parse(got.stdout) : null;
-  } catch (error) {
-    swallow(error, "drive-state.ts get printed no JSON");
-    state = null;
-  }
+  const state = parseState(got);
+  const rec = isRecord(state) ? state : {};
   const roundsRaw = rounds.stdout.trim();
-  const stored = isRecord(state) ? count(state.attempts) : null;
-  const granted = isRecord(state) ? count(state.roundsGranted ?? 0) : null;
+  const stored = count(rec.attempts);
+  const granted = count(rec.roundsGranted ?? 0);
   if (
     rounds.code !== 0 ||
     !isDigits(roundsRaw) ||
+    !isRecord(state) ||
     stored === null ||
     granted === null
   )
@@ -59,30 +94,13 @@ async function spentRounds(pr: string, rearm: boolean): Promise<SpentRounds> {
   // Passes count per head and restart at one on another head, as the round
   // gate reads them; an unreadable head keeps the stored figures.
   const head = rearm ? await currentHead(pr) : null;
-  const rec = isRecord(state) ? state : {};
   const spentHeads = Number.parseInt(roundsRaw, 10);
   // A head already in the review history is not counted again, whether or
   // not it is the last counted one.
-  let headCounted = head === null || rec.lastCountedHead === head;
-  if (!headCounted && head !== null) {
-    const next = await run(
-      tsArgv(driveState, ["prospective-round", pr, "--head", head]),
-      opts,
-    );
-    const answer = next.stdout.trim();
-    // Only the head's current round (already counted) or the next one (new)
-    // is an answer; a failed or malformed probe proves neither.
-    if (
-      next.code !== 0 ||
-      !isDigits(answer) ||
-      ![spentHeads, spentHeads + 1].includes(Number.parseInt(answer, 10))
-    )
-      return fail(
-        1,
-        `cannot read the review round of PR #${pr}'s head; refusing to grant rounds on an unknown head history; re-arm again`,
-      );
-    headCounted = answer === String(spentHeads);
-  }
+  const headCounted =
+    head === null ||
+    rec.lastCountedHead === head ||
+    (await headCountedFor(pr, head, spentHeads, opts));
   return {
     rounds: spentHeads,
     attempts: head === null || rec.attemptsHead === head ? stored : 0,
