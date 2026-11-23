@@ -990,7 +990,9 @@ it("does not let an optional failing check borrow a failed reviewer attempt's re
   ];
   expect(readiness(f, RULES).lane).toBe("merge-now");
   // The same ordinary failure, once required, stops a stale CLEAN state.
-  f.checks[2] = { ...f.checks[2], required: true };
+  f.checks = f.checks.map((c) =>
+    c.app === "github-actions" ? { ...c, required: true } : c,
+  );
   const required = readiness(f, RULES);
   expect([required.place, required.waitsOn]).toEqual([
     "needs-you",
