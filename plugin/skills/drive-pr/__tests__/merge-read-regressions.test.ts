@@ -93,7 +93,7 @@ it("stops paging once the shared merge-facts deadline is spent", async () => {
     import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
     const root = process.env.MERGE_FIXTURE;
     appendFileSync(root + "/calls", "query\\n");
-    writeFileSync(root + "/clock", String(Number(readFileSync(root + "/clock", "utf8")) + 20000));
+    writeFileSync(root + "/clock", String(Number(readFileSync(root + "/clock", "utf8")) + 15000));
     console.log(JSON.stringify({ data: { repository: {} } }));
   `,
   );
@@ -126,6 +126,24 @@ it("names the repository it reads in GH_REPO, for a gh that routes by owner", as
   expect(r.calls.trim().split("\n")).toEqual(["other-owner/private"]);
 });
 
+it("bounds and sanitizes a failed GraphQL diagnostic", async () => {
+  const r = await run(
+    `
+    import { readMergeFacts } from ${JSON.stringify(join(LIB, "merge-facts.ts"))};
+    console.log(JSON.stringify(await readMergeFacts("example-org/repo", [1], 30)));
+    `,
+    `#!/usr/bin/env bun
+    console.error("\\x1b[2J" + "x".repeat(600));
+    process.exit(1);
+    `,
+  );
+  expectSpawnExit(r, 0);
+  const reason = JSON.parse(r.stdout).failure.reason;
+  expect(reason).not.toContain("\\x1b");
+  expect(reason).toContain("…");
+  expect(reason.length).toBeLessThanOrEqual(530);
+});
+
 it("withdraws standing wording when the final readiness read changes", async () => {
   for (const changed of ["approval", "thread", "hold"]) {
     const r = await run(
@@ -149,7 +167,7 @@ it("withdraws standing wording when the final readiness read changes", async () 
         reviewThreads: { ...none, nodes: ${JSON.stringify(changed === "thread" ? [{ isResolved: false }] : [])} },
         reviewRequests: none,
         latestReviews: { ...none, nodes: [{ state: "APPROVED", authorAssociation: "MEMBER", author: { __typename: "User", login: "maintainer" }, commit: { oid: head } }] },
-        commits: { nodes: [{ commit: { oid: head, statusCheckRollup: { contexts: { ...none, nodes: [{ __typename: "CheckRun", name: "AI review", status: "COMPLETED", conclusion: "SUCCESS", checkSuite: { app: { slug: "example-review" } } }] } } } }] }
+        commits: { nodes: [{ commit: { oid: head, statusCheckRollup: { contexts: { ...none, nodes: [{ __typename: "CheckRun", name: "AI review", status: "COMPLETED", conclusion: "SUCCESS", isRequired: false, checkSuite: { app: { slug: "example-review" } } }] } } } }] }
       } } } }));
       `,
     );
@@ -158,3 +176,121 @@ it("withdraws standing wording when the final readiness read changes", async () 
     expect(r.calls).toContain("DELETE");
   }
 });
+
+for (const scenario of [
+  "passing",
+  "failing",
+  "superseded",
+  "capped",
+  "wrong-head",
+  "unreadable-entry",
+  "unreadable-first-page",
+  "deadline",
+  "null-rollup",
+] as const) {
+  it(`places a converged pull request using paginated checks (${scenario})`, async () => {
+    const r = await run(
+      `
+      import { readMergeFacts } from ${JSON.stringify(join(LIB, "merge-facts.ts"))};
+      import { readiness } from ${JSON.stringify(join(LIB, "merge-ready.ts"))};
+      import { readFileSync, writeFileSync } from "node:fs";
+      if (${JSON.stringify(scenario)} === "deadline") {
+        const clock = process.env.MERGE_FIXTURE + "/clock";
+        writeFileSync(clock, "0");
+        Temporal.Now.instant = () =>
+          Temporal.Instant.fromEpochMilliseconds(Number(readFileSync(clock, "utf8")));
+      }
+      const repo = "example-org/repo";
+      const read = await readMergeFacts(repo, [7], 30);
+      if (!read.ok) throw new Error(read.failure.reason);
+      const facts = read.value.pulls.get(7);
+      const placed = readiness({
+        ...facts, slug: repo, converged: true, verifiedSha: facts.head, held: false,
+      }, {
+        reviewerApp: ${JSON.stringify(scenario === "null-rollup" ? null : "example-review")}, reviewerCheck: ${scenario === "null-rollup" ? "null" : "/^AI review$/"}, ciHoldLabel: null,
+      });
+      console.log(JSON.stringify({ placed, partial: facts.partial, count: facts.checks.length, cost: read.value.cost }));
+      `,
+      `#!/usr/bin/env bun
+      import { appendFileSync, writeFileSync } from "node:fs";
+      const head = "${"a".repeat(40)}";
+      const args = process.argv.slice(2);
+      const scenario = ${JSON.stringify(scenario)};
+      const after = Number(args.find((arg) => arg.startsWith("after="))?.slice("after=".length) ?? 0);
+      appendFileSync(process.env.MERGE_FIXTURE + "/calls", JSON.stringify(args) + "\\n");
+      if (scenario === "deadline") writeFileSync(process.env.MERGE_FIXTURE + "/clock", after ? "30800" : "29500");
+      const check = (id, name, conclusion = "SUCCESS", app = "github-actions", startedAt = "2026-11-08T10:00:00Z") => ({
+        __typename: "CheckRun", databaseId: id, name, status: "COMPLETED",
+        conclusion, startedAt, isRequired: app !== "example-review", checkSuite: { app: { slug: app } },
+      });
+      const checks = Array.from({ length: after ? 40 : 100 },
+        (_, i) => check(after * 100 + i + 1, "check-" + (after * 100 + i + 1)));
+      if (!after) {
+        checks[0] = check(1, "AI review", "SUCCESS", "example-review");
+        if (scenario === "superseded") checks[1] = check(2, "retried-check");
+      }
+      if (after && scenario === "failing") checks[39] = check(140, "last-required", "FAILURE");
+      if (after && scenario === "superseded")
+        checks[39] = check(140, "retried-check", "FAILURE", "github-actions", "2026-11-08T09:00:00Z");
+      if (after && scenario === "unreadable-entry") checks[39] = null;
+      if (!after && scenario === "unreadable-first-page") delete checks[99].isRequired;
+      const contexts = {
+        nodes: checks, pageInfo: { hasNextPage: !after || scenario === "capped", endCursor: String(after + 1) },
+      };
+      const commit = {
+        oid: after && scenario === "wrong-head" ? "b".repeat(40) : head,
+        statusCheckRollup: scenario === "null-rollup" ? null : { contexts },
+      };
+      const none = { nodes: [], pageInfo: { hasNextPage: false } };
+      const repository = after ? { head: commit } : {
+        squashMergeAllowed: true,
+        pr7: {
+          number: 7, headRefOid: head, mergeable: "MERGEABLE", mergeStateStatus: "CLEAN",
+          authorAssociation: "MEMBER", labels: none, reviewThreads: none, reviewRequests: none,
+          latestReviews: none, commits: { nodes: [{ commit }] },
+        },
+      };
+      console.log(JSON.stringify({ data: { repository, rateLimit: { cost: 1, remaining: 100 - after, limit: 100 } } }));
+      `,
+    );
+    expectSpawnExit(r, 0);
+    const result = JSON.parse(r.stdout);
+    const calls = r.calls.trim().split("\n");
+    expect(result.cost).toBe(calls.length);
+    const partialRequests = {
+      capped: 4,
+      "wrong-head": 2,
+      "unreadable-entry": 2,
+      "unreadable-first-page": 1,
+      deadline: 2,
+    } as const;
+    if (scenario in partialRequests) {
+      expect(calls).toHaveLength(
+        partialRequests[scenario as keyof typeof partialRequests],
+      );
+      expect(result.placed).toMatchObject({ place: "stay", lane: null });
+      expect(result.partial).toContain("checks");
+      if (scenario === "capped") expect(result.partial).toContain("4-page cap");
+    } else {
+      expect(calls).toHaveLength(scenario === "null-rollup" ? 1 : 2);
+      expect(result).toMatchObject({
+        count: scenario === "null-rollup" ? 0 : 140,
+        partial: null,
+      });
+      if (scenario !== "null-rollup")
+        expect(calls[1]).toContain(`head=${"a".repeat(40)}`);
+      if (scenario === "failing") {
+        expect(result.placed).toMatchObject({
+          lane: null,
+          failing: ["last-required"],
+        });
+        expect(result.placed.says).toContain("last-required");
+      } else {
+        expect(result.placed).toMatchObject({
+          place: "ready",
+          lane: scenario === "null-rollup" ? "approve-first" : "merge-now",
+        });
+      }
+    }
+  });
+}
