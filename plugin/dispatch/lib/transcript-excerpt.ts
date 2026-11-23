@@ -35,7 +35,7 @@ export interface TranscriptExcerpt {
   assistant: string[];
   /** Every tool error after the run's last successful tool call, oldest first. */
   toolErrors: ToolError[];
-  /** Whether turns, errors or text were left out to keep within the bound. */
+  /** Whether turns, errors or text were left out to keep within the bound, or the copy marks lines it left out (an unreadable line, a line that still matched a held secret), which can sit anywhere in a short transcript. */
   cut: boolean;
 }
 
@@ -49,6 +49,8 @@ interface ToolResult {
 interface Read {
   assistant: string[];
   results: ToolResult[];
+  /** Whether the copy marks lines it left out. */
+  gap: boolean;
 }
 
 /** The text of a content value: a string, or the text of each item of a list. */
@@ -157,7 +159,7 @@ function readCodex(
 }
 
 function readTranscript(text: string): Read {
-  const read: Read = { assistant: [], results: [] };
+  const read: Read = { assistant: [], results: [], gap: false };
   const tools = new Map<string, string>();
   for (const raw of text.split("\n")) {
     if (raw.trim() === "") continue;
@@ -169,6 +171,12 @@ function readTranscript(text: string): Read {
       continue;
     }
     if (!isMapping(line)) continue;
+    if (line.type === "jig-omitted") {
+      // What stood here is unknown, so an error before it is not known to be current: it counts as a result that went through.
+      read.gap = true;
+      read.results.push({ ok: true, tool: null, text: "" });
+      continue;
+    }
     readClaude(line, read, tools);
     readCodex(line, read, tools);
   }
@@ -212,7 +220,7 @@ export function transcriptExcerpt(text: string): TranscriptExcerpt {
   read.results.forEach((r, i) => {
     if (r.ok) lastOk = i;
   });
-  let cut = false;
+  let cut = read.gap;
   const errors = read.results.slice(lastOk + 1).map((r) => {
     const end = ending(r.text);
     cut ||= end.cut;

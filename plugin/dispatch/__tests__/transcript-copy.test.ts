@@ -260,8 +260,72 @@ describe("keeping a run's transcript copy", () => {
         root,
       );
       const text = readFileSync(String(copy?.transcript), "utf8");
-      expect(text.trim().split("\n")).toHaveLength(1);
+      const kept = text
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l));
+      expect(kept).toEqual([
+        { type: "assistant", message: { content: [] }, keep: "one" },
+        { type: "jig-omitted" },
+      ]);
       expect(copy?.cut).toBe(true);
+    } finally {
+      holdCredential("none", "unused-placeholder");
+    }
+  });
+
+  it("records no transcript when its only line cannot be kept", () => {
+    const root = scratch();
+    const config = join(root, "config");
+    claudeTranscript(config, [
+      { type: "assistant", message: { content: [] }, "\nfixture-text": 1 },
+    ]);
+    holdCredential(ID, "\\nfixture-text");
+    try {
+      const copy = keepTranscriptCopy(
+        record(config, {
+          provider: { provider: "p" },
+        } as unknown as Partial<LaunchRecord>),
+        SESSION,
+        root,
+      );
+      expect(copy?.transcript).toBeNull();
+      expect(copy?.missing).toContain("no line");
+      expect(copy?.cut).toBe(true);
+    } finally {
+      holdCredential("none", "unused-placeholder");
+    }
+  });
+
+  it("masks a secret in a tool output that holds JSON, in its decoded form too", () => {
+    const root = scratch();
+    const config = join(root, "config");
+    const secret = 'ab"cd\\ef-credential';
+    claudeTranscript(config, [
+      {
+        type: "response_item",
+        payload: {
+          type: "function_call_output",
+          call_id: "c1",
+          output: JSON.stringify({ output: `leaked ${secret}`, exit_code: 1 }),
+        },
+      },
+    ]);
+    holdCredential(ID, secret);
+    try {
+      const copy = keepTranscriptCopy(
+        record(config, {
+          provider: { provider: "p" },
+        } as unknown as Partial<LaunchRecord>),
+        SESSION,
+        root,
+      );
+      const line = JSON.parse(
+        readFileSync(String(copy?.transcript), "utf8").trim(),
+      );
+      const inner = JSON.parse(line.payload.output);
+      expect(inner.output).not.toContain(secret);
+      expect(inner.output).toContain("<redacted>");
     } finally {
       holdCredential("none", "unused-placeholder");
     }

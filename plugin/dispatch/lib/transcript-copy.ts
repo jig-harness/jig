@@ -81,7 +81,7 @@ export interface TranscriptCopy {
   transcript: string | null;
   /** Why there is no copy; absent when there is one. */
   missing?: string;
-  /** Whether the transcript was longer than the copy keeps. */
+  /** Whether the copy leaves anything of the transcript out: the start of one longer than the copy keeps, or a line (marked where it stood) that did not read or still matched a held secret. */
   cut: boolean;
 }
 
@@ -155,10 +155,28 @@ function replaceSecrets(text: string, secrets: readonly string[]): string {
   return out;
 }
 
-/** `value` with each exact secret replaced in every string, every number written as one and every property name, before any generic redaction can split it. */
+/** The value a string holds when it is itself a JSON object or array (a tool's output), else `undefined`. */
+function nestedJson(text: string): unknown {
+  if (!/^\s*[[{]/.test(text)) return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Only a fixed diagnostic: the parser's own message can quote the text.
+    swallow(new SyntaxError("not JSON"), "a string that is not JSON is text");
+    return undefined;
+  }
+}
+
+/** `value` with each exact secret replaced in every string, every number written as one and every property name, before any generic redaction can split it. A string that holds JSON is masked in its decoded form too, so a reader that decodes it again finds no secret. */
 function maskExact(value: unknown, secrets: readonly string[]): unknown {
   if (secrets.length === 0) return value;
-  if (typeof value === "string") return replaceSecrets(value, secrets);
+  if (typeof value === "string") {
+    const nested = nestedJson(value);
+    return replaceSecrets(
+      nested === undefined ? value : JSON.stringify(maskExact(nested, secrets)),
+      secrets,
+    );
+  }
   if (typeof value === "number") {
     const written = String(value);
     return replaceSecrets(written, secrets) === written ? value : "<redacted>";
@@ -179,11 +197,14 @@ function maskExact(value: unknown, secrets: readonly string[]): unknown {
   return value;
 }
 
-/** The transcript's lines, each redacted; a line that does not read as JSON is left out. */
+/** The line that stands where one or more lines were left out, so a reader knows evidence is missing there. */
+export const OMITTED_LINE = JSON.stringify({ type: "jig-omitted" });
+
+/** The transcript's lines, each redacted; a line that does not read as JSON, or that would still match a held secret, is left out and a marker line stands in its place. `kept` counts the lines that are not markers. */
 function redactedLines(
   text: string,
   held: readonly string[],
-): { lines: string[]; omitted: number } {
+): { lines: string[]; kept: number; omitted: number } {
   const secrets = [...new Set(held.filter((secret) => secret !== ""))].sort(
     (a, b) => b.length - a.length,
   );
@@ -191,14 +212,18 @@ function redactedLines(
     maskCredentials(replaceSecrets(value, secrets), "<redacted>");
   const lines: string[] = [];
   let omitted = 0;
+  const leaveOut = () => {
+    omitted++;
+    if (lines[lines.length - 1] !== OMITTED_LINE) lines.push(OMITTED_LINE);
+  };
   for (const line of text.split("\n")) {
     if (line.trim() === "") continue;
     let value: unknown;
     try {
       value = JSON.parse(line);
-    } catch (error) {
-      swallow(error, "a transcript line that does not read is left out");
-      omitted++;
+    } catch {
+      // The parser's message can quote the line's text, which may be a credential: nothing of it is logged.
+      leaveOut();
       continue;
     }
     // The exact values are masked structurally in the parsed strings, numbers and property names, so no generic rule can split them.
@@ -212,12 +237,16 @@ function redactedLines(
       ),
     );
     if (residual) {
-      omitted++;
+      leaveOut();
       continue;
     }
     lines.push(serialized);
   }
-  return { lines, omitted };
+  return {
+    lines,
+    kept: lines.filter((l) => l !== OMITTED_LINE).length,
+    omitted,
+  };
 }
 
 /** The end of `lines` that fits in `COPY_BYTES`, and whether any was left out. */
@@ -287,14 +316,22 @@ export function keepTranscriptCopy(
         record.token,
         heldCredential(record.id) ?? "",
       ]);
-      const { text, dropped } = boundedEnd(redacted.lines);
-      const path = join(dir, "transcript.jsonl");
-      writePrivate(path, text);
-      copy = {
-        ...copy,
-        transcript: path,
-        cut: longer || dropped || redacted.omitted > 0,
-      };
+      if (redacted.kept === 0 && redacted.omitted > 0)
+        copy = {
+          ...copy,
+          missing: "no line of the transcript could be kept safely",
+          cut: true,
+        };
+      else {
+        const { text, dropped } = boundedEnd(redacted.lines);
+        const path = join(dir, "transcript.jsonl");
+        writePrivate(path, text);
+        copy = {
+          ...copy,
+          transcript: path,
+          cut: longer || dropped || redacted.omitted > 0,
+        };
+      }
     }
     writePrivate(join(dir, "copy.json"), `${JSON.stringify(copy)}\n`);
     return copy;

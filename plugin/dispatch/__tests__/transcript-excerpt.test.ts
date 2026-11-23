@@ -162,4 +162,17 @@ describe("the excerpt's bound", () => {
     expect(excerpt.assistant.at(-2)).toContain("turn 39");
     expect(excerpt.assistant.some((t) => t.includes("turn 0"))).toBe(false);
   });
+
+  it("does not read an error before an omitted line as current, and marks the excerpt cut", () => {
+    const text = jsonl([
+      said("run", { id: "t1", name: "Bash" }),
+      result("t1", "boom", true),
+      { type: "jig-omitted" },
+      said("done"),
+    ]);
+    const excerpt = transcriptExcerpt(text);
+    expect(excerpt.toolErrors).toEqual([]);
+    expect(excerpt.assistant).toEqual(["run", "done"]);
+    expect(excerpt.cut).toBe(true);
+  });
 });
