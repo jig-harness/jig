@@ -17,18 +17,24 @@
  *    "message":{"content":[{"type":"text",
  *      "text":"You've hit your session limit · resets 3:20am (Europe/Amsterdam)"}]}}
  *
- * WHAT THIS ADAPTER CANNOT DO, stated rather than papered over: it has never
- * seen a WEEKLY wall. Every `rate_limit` record in 371 samples here is the
- * five-hour "session limit" wording. So `session limit` is the only phrasing
- * classified `short`; every other recognised `rate_limit` is `unknown`, which
- * the caller treats exactly like `weekly` — stop and notify. That is the
- * correct behaviour for a weekly wall arriving in wording we have not seen,
- * and adding its recogniser later is additive. Guessing `short` from an
- * unrecognised phrase is the one mistake that would sleep a drive for days.
+ * TWO WORDINGS ARE RECOGNISED, each only as a whole text block:
+ *
+ *   - the five-hour notice, `You've hit your session limit · resets 3:20am
+ *     (Europe/Amsterdam)`, classified `short` with the next occurrence of
+ *     that clock as its reset;
+ *   - the weekly notice, `You've hit your weekly limit · resets Nov 27, 11am
+ *     (Europe/Amsterdam)`, classified `weekly` with the dated reset it
+ *     states, when that reset resolves and falls within a week and a day of
+ *     the record.
+ *
+ * Every other `rate_limit` record, including a weekly notice whose reset does
+ * not resolve, is `unknown` with no reset, which the caller treats exactly
+ * like `weekly` — stop and notify. Guessing `short` from an unrecognised
+ * phrase is the one mistake that would sleep a drive for days.
  */
 
 import { randomUUID } from "node:crypto";
-import { statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import {
@@ -47,7 +53,10 @@ import {
   scanBudgetExceeded,
 } from "./types.ts";
 import {
+  DATED_RESET_CLAUSE_RE,
+  matchDatedResetClauseText,
   matchResetClauseText,
+  parseDatedResetClause,
   parseResetClause,
   RESET_CLAUSE_RE,
 } from "./wallclock.ts";
@@ -68,6 +77,100 @@ const SESSION_LIMIT_NOTICE_RE = new RegExp(
   `^you(?:'|’)ve hit your session limit\\s*·\\s*${RESET_CLAUSE_RE.source}$`,
   "i",
 );
+
+/** The weekly notice, anchored end to end the same way, on the dated reset clause. */
+const WEEKLY_LIMIT_NOTICE_RE = new RegExp(
+  `^you(?:'|’)ve hit your weekly limit\\s*·\\s*${DATED_RESET_CLAUSE_RE.source}$`,
+  "i",
+);
+
+/**
+ * The furthest a weekly notice's reset may lie after its record: a week and
+ * a day. A reset further out means the clause was not what it seemed (a date
+ * resolved into the wrong year), and the wall is then read as one whose reset
+ * is unknown rather than walling an account for months.
+ */
+const WEEKLY_RESET_MAX_MS = 8 * 24 * 60 * 60 * 1000;
+
+/** What one text block of a `rate_limit` record says, when it is a recognised notice. */
+interface Notice {
+  window: "short" | "weekly" | "unknown";
+  label: string;
+  reset: Temporal.Instant | null;
+  clause: string | null;
+}
+
+/**
+ * The first block of `blocks` that is a whole recognised notice, read at the
+ * record's instant `at`; `null` when none is. Only that block's own reset
+ * clause is ever trusted.
+ */
+function recognisedNotice(
+  blocks: readonly string[],
+  at: Temporal.Instant,
+): Notice | null {
+  for (const block of blocks) {
+    if (SESSION_LIMIT_NOTICE_RE.test(block)) {
+      return {
+        window: "short",
+        label: "session limit",
+        reset: parseResetClause(block, at)?.at ?? null,
+        clause: matchResetClauseText(block),
+      };
+    }
+    if (WEEKLY_LIMIT_NOTICE_RE.test(block)) {
+      const reset = parseDatedResetClause(block, at)?.at ?? null;
+      const plausible =
+        reset !== null &&
+        reset.epochMilliseconds - at.epochMilliseconds <= WEEKLY_RESET_MAX_MS;
+      return {
+        window: plausible ? "weekly" : "unknown",
+        label: "weekly limit",
+        reset: plausible ? reset : null,
+        clause: matchDatedResetClauseText(block),
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * The transcripts of session `sessionId` changed since `sinceMs`, read
+ * without walking the tree: `<project>/<sessionId>.jsonl` and the subagent
+ * transcripts under `<project>/<sessionId>/subagents/`, for every project
+ * directory. Only the top level is listed, so the size of the rest of the
+ * tree costs nothing and no walk bound applies. The file name only narrows
+ * where to look: every record read is still matched on its own `sessionId`.
+ */
+function sessionFiles(sessionId: string, sinceMs: number): string[] {
+  // A session id names a file; one that could name a path is not read.
+  if (!/^[A-Za-z0-9_-]+$/.test(sessionId)) return [];
+  const root = projectsRoot();
+  const out: string[] = [];
+  const keep = (path: string): void => {
+    try {
+      if (statSync(path).mtimeMs >= sinceMs) out.push(path);
+    } catch {
+      // Gone or unreadable: it contributes nothing.
+    }
+  };
+  forEachDirEntry(root, (project) => {
+    if (!project.isDirectory()) return true;
+    const dir = join(root, project.name);
+    const transcript = join(dir, `${sessionId}.jsonl`);
+    if (existsSync(transcript)) keep(transcript);
+    const subagents = join(dir, sessionId, "subagents");
+    if (existsSync(subagents)) {
+      forEachDirEntry(subagents, (entry) => {
+        if (!entry.isDirectory() && entry.name.endsWith(".jsonl"))
+          keep(join(subagents, entry.name));
+        return true;
+      });
+    }
+    return true;
+  });
+  return out;
+}
 
 /**
  * Where Claude Code keeps transcripts. Overridable so the tests can point at a
@@ -525,7 +628,21 @@ export const claudeAdapter: QuotaAdapter = {
     // transcript this walk never reached read as "no wall" indistinguishably
     // from a genuinely clean one.
     const scan = candidateFiles(sinceFloorMs);
-    for (const path of scan.files) {
+    // With the pass's own session id, its transcripts are also read by name
+    // (`sessionFiles`), so a walk cut short by either bound on a large tree
+    // cannot hide this pass's own wall. The walk still runs: a transcript in
+    // a layout the lookup does not know is found there, and matched on the
+    // same record id.
+    const files =
+      ourSessionId === null
+        ? scan.files
+        : [
+            ...new Set([
+              ...sessionFiles(ourSessionId, sinceFloorMs),
+              ...scan.files,
+            ]),
+          ];
+    for (const path of files) {
       const isPreexisting = opts.preexistingSessions?.has(path) ?? false;
       // A file that already existed when the pass was spawned ORDINARILY
       // belongs to a session that started before it — a human's chat in this
@@ -664,25 +781,14 @@ export const claudeAdapter: QuotaAdapter = {
         // `resets ...` clause substring from a DIFFERENT block would report a
         // false SHORT classification for a wall that is actually unknown or
         // weekly — defeating the fail-closed policy this file otherwise
-        // follows. First block that itself contains the phrase wins; its OWN
-        // reset clause is the only one ever trusted. Matched against the WHOLE
-        // block via `SESSION_LIMIT_NOTICE_RE` (defined above, next to why it is
-        // anchored end to end) — see that comment for why a partial match at
-        // any position kept leaving a fresh bypass, one position after another.
-        let isSession = false;
-        let reset: { at: Temporal.Instant; zone: string } | null = null;
-        let sessionBlock = "";
-        for (const block of blocks) {
-          if (SESSION_LIMIT_NOTICE_RE.test(block)) {
-            isSession = true;
-            reset = parseResetClause(
-              block,
-              Temporal.Instant.fromEpochMilliseconds(ts),
-            );
-            sessionBlock = block;
-            break;
-          }
-        }
+        // follows. The first block that is itself a whole notice wins
+        // (`recognisedNotice`, matched end to end — see
+        // `SESSION_LIMIT_NOTICE_RE` for why a partial match at any position
+        // leaves a bypass); its OWN reset clause is the only one trusted.
+        const notice = recognisedNotice(
+          blocks,
+          Temporal.Instant.fromEpochMilliseconds(ts),
+        );
         bestAt = ts;
         bestPath = path;
         // `evidence` is what a human reads via `describeQuota()`, and what
@@ -692,30 +798,31 @@ export const claudeAdapter: QuotaAdapter = {
         // itself. Storing all of it risks logging unrelated transcript
         // content the user typed, with no classification, redaction, or
         // retention bound. Record only what was actually RECOGNISED: the
-        // session-limit phrase (a fixed label, not a quote) and the `resets
-        // ...` clause substring itself — never the free text either was
-        // found in. For an
-        // unrecognised wall, still surface any resets clause found in ANY
-        // block purely as evidence — it is never trusted for `resetAt` or
-        // `window` unless it came from the block that also matched the
-        // session-limit phrase.
-        const resetClauseText = isSession
-          ? matchResetClauseText(sessionBlock)
-          : (blocks
-              .map((b) => matchResetClauseText(b))
-              .find((m) => m !== null) ?? null);
-        const recognised = [
-          isSession ? "session limit" : null,
-          resetClauseText,
-        ].filter((p): p is string => p !== null);
+        // notice's phrase (a fixed label, not a quote) and the `resets ...`
+        // clause substring itself — never the free text either was found in.
+        // For an unrecognised wall, still surface any resets clause found in
+        // ANY block purely as evidence — it is never trusted for `resetAt`
+        // or `window` unless it came from the block that is the notice.
+        const resetClauseText =
+          notice !== null
+            ? notice.clause
+            : (blocks
+                .map(
+                  (b) =>
+                    matchDatedResetClauseText(b) ?? matchResetClauseText(b),
+                )
+                .find((m) => m !== null) ?? null);
+        const recognised = [notice?.label ?? null, resetClauseText].filter(
+          (p): p is string => p !== null,
+        );
         best = {
           vendor: claudeVendor,
-          window: isSession ? "short" : "unknown",
+          window: notice?.window ?? "unknown",
           // A reset clause is only trusted for wording we classified. On an
           // unrecognised phrase the instant may well parse, but it would be an
           // instant for a window whose LENGTH we do not know — and length is
           // what decides sleepability. Report the block, withhold the reset.
-          resetAt: isSession && reset !== null ? reset.at : null,
+          resetAt: notice?.reset ?? null,
           observedAt: Temporal.Instant.fromEpochMilliseconds(ts),
           evidence:
             recognised.length > 0
@@ -763,6 +870,7 @@ export const claudeAdapter: QuotaAdapter = {
       console.error(
         "drive-pr quota: the detection scan over ~/.claude/projects was truncated (see MAX_CANDIDATE_FILES_SCANNED/DRIVE_PR_QUOTA_MAX_SCAN_MS) before it finished — a Claude quota wall may exist in a transcript this walk did not reach.",
       );
+      opts.onScanTruncated?.(claudeVendor);
     }
     return best;
   },

@@ -653,6 +653,7 @@ export const codexAdapter: QuotaAdapter = {
       console.error(
         "drive-pr quota: the detection scan over ~/.codex/sessions was truncated (see MAX_CANDIDATE_FILES_SCANNED/DRIVE_PR_QUOTA_MAX_SCAN_MS) before it finished — a Codex quota wall may exist in a rollout this walk did not reach.",
       );
+      opts.onScanTruncated?.("codex");
     }
     return best;
   },

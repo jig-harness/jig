@@ -176,3 +176,119 @@ export function parseResetClause(
   const at = nextWallClock(now, hour, minute, zone);
   return at === null ? null : { at, zone };
 }
+
+/**
+ * The `resets <month> <day>, <clock> (<zone>)` tail of a wall that reopens
+ * days away: Claude Code's weekly notice reads
+ * `resets Nov 27, 11am (Europe/Amsterdam)`. A month (its three-letter
+ * abbreviation or its full English name), a day of the month, an optional
+ * comma, then the same clock and zone `RESET_CLAUSE_RE` reads, with the same
+ * parenthesis alternation. Exported for the same reason that one is: a caller
+ * anchoring a whole notice composes its regex from this source.
+ */
+export const DATED_RESET_CLAUSE_RE =
+  /resets\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(\d{1,2}),?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(?:\(([A-Za-z0-9+_-]+(?:\/[A-Za-z0-9+_-]+)*)\)|([A-Za-z0-9+_-]+(?:\/[A-Za-z0-9+_-]+)*))/i;
+
+const MONTHS = [
+  "jan",
+  "feb",
+  "mar",
+  "apr",
+  "may",
+  "jun",
+  "jul",
+  "aug",
+  "sep",
+  "oct",
+  "nov",
+  "dec",
+];
+
+/** The 24-hour clock a 12-hour or 24-hour spelling names; `null` when it names none. */
+function hourOf(rawHour: number, meridiem: string | undefined): number | null {
+  if (meridiem === "am" || meridiem === "pm") {
+    if (rawHour < 1 || rawHour > 12) return null;
+    const base = rawHour === 12 ? 0 : rawHour;
+    return meridiem === "pm" ? base + 12 : base;
+  }
+  return rawHour > 23 ? null : rawHour;
+}
+
+/**
+ * The next instant at or after `now` (floored to its minute, as
+ * `nextWallClock` floors) whose wall clock in `timeZone` reads that month,
+ * day and time: this year's, else next year's. `null` when the zone is
+ * unknown, the date does not exist (`Feb 30`), or the clock is skipped on
+ * that date by a spring-forward transition. A fall-back day's doubled hour
+ * takes its first occurrence still ahead.
+ */
+export function nextDatedWallClock(
+  now: Temporal.Instant,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  timeZone: string,
+): Temporal.Instant | null {
+  if (!Number.isInteger(month) || month < 1 || month > 12) return null;
+  if (!Number.isInteger(day) || day < 1 || day > 31) return null;
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) return null;
+  if (!Number.isInteger(minute) || minute < 0 || minute > 59) return null;
+  let here: Temporal.ZonedDateTime;
+  try {
+    here = now.toZonedDateTimeISO(timeZone);
+  } catch (error) {
+    if (error instanceof RangeError) return null;
+    throw error;
+  }
+  const floor = Math.floor(now.epochMilliseconds / 60_000) * 60_000;
+  for (const year of [here.year, here.year + 1]) {
+    let wall: Temporal.PlainDateTime;
+    try {
+      wall = Temporal.PlainDateTime.from(
+        { year, month, day, hour, minute },
+        { overflow: "reject" },
+      );
+    } catch (error) {
+      if (error instanceof RangeError) return null;
+      throw error;
+    }
+    const earlier = wall.toZonedDateTime(timeZone, {
+      disambiguation: "earlier",
+    });
+    if (!earlier.toPlainDateTime().equals(wall)) continue;
+    if (earlier.epochMilliseconds >= floor) return earlier.toInstant();
+    const later = wall
+      .toZonedDateTime(timeZone, { disambiguation: "later" })
+      .toInstant();
+    if (later.epochMilliseconds >= floor) return later;
+  }
+  return null;
+}
+
+/**
+ * Parse a dated reset clause (`DATED_RESET_CLAUSE_RE`) to the instant it
+ * names, the next one at or after `now`. `null` on anything it cannot
+ * resolve, never a guess: the caller then treats the wall as one whose reset
+ * is unknown.
+ */
+export function parseDatedResetClause(
+  text: string,
+  now: Temporal.Instant,
+): { at: Temporal.Instant; zone: string } | null {
+  const m = DATED_RESET_CLAUSE_RE.exec(text);
+  if (m === null) return null;
+  const month = MONTHS.indexOf((m[1] as string).slice(0, 3).toLowerCase()) + 1;
+  const day = Number.parseInt(m[2] as string, 10);
+  const hour = hourOf(Number.parseInt(m[3] as string, 10), m[5]?.toLowerCase());
+  const minute = m[4] === undefined ? 0 : Number.parseInt(m[4], 10);
+  const zone = (m[6] ?? m[7]) as string;
+  if (hour === null) return null;
+  const at = nextDatedWallClock(now, month, day, hour, minute, zone);
+  return at === null ? null : { at, zone };
+}
+
+/** The dated `resets ...` substring `parseDatedResetClause` reads, or `null`. */
+export function matchDatedResetClauseText(text: string): string | null {
+  return DATED_RESET_CLAUSE_RE.exec(text)?.[0] ?? null;
+}

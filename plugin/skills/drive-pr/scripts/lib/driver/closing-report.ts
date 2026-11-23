@@ -17,6 +17,10 @@
  *   stop's text alone is cut to the limit when it exceeds it, so the field
  *   always passes the check. Both parts are redacted before they are
  *   measured.
+ * - A pass failure (`INDETERMINATE`) whose usage-limit scan was cut short
+ *   before it found a wall (`driverRuntime.quotaScanTruncated`) says so in
+ *   `concluded`, with cause `unknown` and a next step that looks for the
+ *   notice first: a wall the scan did not reach is not a tool failure.
  * - `question` and `decision` come from the drive's own state, never from a
  *   round report: at a park (`HITL_PARKED`), the question and framed
  *   decision (`parked-decision/v1`) of the first parked item, the one the
@@ -130,13 +134,16 @@ export function composeDriverReport(input: {
   const { pr, code, state, round } = input;
   const stall = code === exitOf("STALLED") ? (input.stall ?? null) : null;
   const named = driveExitReport(code);
-  const stop = redactReportText(stopText(pr, code, state, stall));
+  const unscanned = unscannedWall(code);
+  const stop = redactReportText(
+    `${stopText(pr, code, state, stall)}${unscanned === null ? "" : unscanned.note}`,
+  );
   const probe = driverRuntime.stopProbe;
   const failure = probe?.code === code ? probeFailure(probe) : null;
   const cause =
     failure !== null
       ? "environment"
-      : named === null
+      : named === null || unscanned !== null
         ? "unknown"
         : stall !== null
           ? finishCause(stall.state)
@@ -146,8 +153,29 @@ export function composeDriverReport(input: {
     round === null ? null : redactReportText(round.concluded),
   );
   const base = baseDriverReport(pr, concluded, named, cause);
+  if (unscanned !== null) base.suggested_next = unscanned.next;
   const ask = parkAsk(code, state);
   return checkedDriverReport(base, ask, state, stop);
+}
+
+/**
+ * What a pass failure adds when its usage-limit scan was cut short
+ * (`driverRuntime.quotaScanTruncated`): a note for the stop's line and a next
+ * step that looks for the notice first. `null` for any other stop.
+ */
+function unscannedWall(
+  code: number,
+): { note: string; next: ClosingReport["suggested_next"] } | null {
+  const vendors = driverRuntime.quotaScanTruncated;
+  if (code !== exitOf("INDETERMINATE") || vendors.length === 0) return null;
+  return {
+    note: `; the usage-limit scan of the pass's ${[...new Set(vendors)].join(" and ")} transcripts was cut short before it found a wall, so a usage limit may have stopped the pass`,
+    next: {
+      step: "Look for a usage-limit notice in the failed pass's transcript before re-arming: if there is one, re-arm after its reset or on another account.",
+      owner: "person",
+      act: "Investigate",
+    },
+  };
 }
 
 function baseDriverReport(
