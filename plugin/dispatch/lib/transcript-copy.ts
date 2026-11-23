@@ -173,16 +173,28 @@ function embeddedJson(text: string): unknown {
   }
 }
 
-/** The forms a secret takes when JSON escaping is applied to it up to `LOOK_DEPTH` times: a string that encodes JSON, however it is wrapped, holds one of them. */
-function escapedForms(secret: string): string[] {
-  const forms = [secret];
-  let form = secret;
-  for (let i = 0; i < LOOK_DEPTH; i++) {
-    form = JSON.stringify(form).slice(1, -1);
-    if (form === forms[forms.length - 1]) break;
-    forms.push(form);
+/** Whether `text`, with JSON escapes of any spelling decoded up to `LOOK_DEPTH` times, holds one of `secrets`: wrapped JSON that does not parse as a whole is still looked into. */
+function holdsAfterUnescaping(
+  text: string,
+  secrets: readonly string[],
+): boolean {
+  let layer = text;
+  for (let i = 0; i <= LOOK_DEPTH; i++) {
+    if (secrets.some((secret) => layer.includes(secret))) return true;
+    if (!layer.includes("\\")) return false;
+    const next = layer.replace(
+      /\\(?:u([0-9a-fA-F]{4})|(["\\/bfnrt]))/g,
+      (_all, hex: string | undefined, plain: string | undefined) =>
+        hex !== undefined
+          ? String.fromCharCode(Number.parseInt(hex, 16))
+          : ({ b: "\b", f: "\f", n: "\n", r: "\r", t: "\t" }[plain as string] ??
+            (plain as string)),
+    );
+    if (next === layer) return false;
+    layer = next;
   }
-  return forms;
+  // Escaped deeper than is looked into: counts as holding a secret.
+  return true;
 }
 
 /** The deepest structural nesting of arrays and objects that is walked; anything deeper counts as holding a secret. */
@@ -198,13 +210,8 @@ function leaksDecoded(
 ): boolean {
   if (depth > LOOK_DEPTH || nest > NEST_LIMIT) return true;
   if (typeof value === "string") {
-    // A fenced block, a header or trailing text around encoded JSON does not parse, so every escaped form of a secret is looked for in the text itself.
-    if (
-      secrets.some((secret) =>
-        escapedForms(secret).some((f) => value.includes(f)),
-      )
-    )
-      return true;
+    // A fenced block, a header or trailing text around encoded JSON does not parse, so the text is unescaped, in any spelling, and searched for each secret.
+    if (holdsAfterUnescaping(value, secrets)) return true;
     const inner = embeddedJson(value);
     return inner !== undefined && leaksDecoded(inner, secrets, depth + 1, true);
   }

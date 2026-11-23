@@ -342,6 +342,9 @@ describe("keeping a run's transcript copy", () => {
       { out: '{"big":9007199254740993}' },
       { out: `\`\`\`json\n${JSON.stringify({ a: secret })}\n\`\`\`\ntrailing` },
       { [JSON.stringify({ a: secret })]: 1 },
+      {
+        out: `note \`${JSON.stringify(secret).replace(/e/g, "\\u0065")}\` end`,
+      },
       { deep },
       { type: "jig-omitted", marker: "source-marker-xyz" },
     ]);
