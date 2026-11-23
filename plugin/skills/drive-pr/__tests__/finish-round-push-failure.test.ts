@@ -218,6 +218,29 @@ describe("the push output's tail", () => {
     tail.observe(Buffer.from(`pass${esc}[1mword=hunter2secret\n`));
     expect(tail.text()).not.toContain("hunter2secret");
   });
+
+  it("reads a quote after a terminal escape as opening a value, across an overflow", () => {
+    const tail = outputTail();
+    const esc = String.fromCharCode(27);
+    tail.observe(Buffer.from(`password=${esc}[31m"first\n`));
+    tail.observe(Buffer.from("filler line\n".repeat(30 * 1024)));
+    tail.observe(Buffer.from('ESCSECRET"\nnext line\n'));
+    const out = tail.text();
+    expect(out).not.toContain("ESCSECRET");
+    expect(out).toContain("next line");
+  });
+
+  it("reads a doubled quote split between chunks as part of the value", () => {
+    const tail = outputTail();
+    tail.observe(Buffer.from('password="first\n'));
+    tail.observe(Buffer.from("filler line\n".repeat(30 * 1024)));
+    tail.observe(Buffer.from('mid"'));
+    tail.observe(Buffer.from('"DOUBLESECRET\nSECOND"\nnext line\n'));
+    const out = tail.text();
+    expect(out).not.toContain("DOUBLESECRET");
+    expect(out).not.toContain("SECOND");
+    expect(out).toContain("next line");
+  });
 });
 
 describe("finish-round.ts on a failed push", () => {

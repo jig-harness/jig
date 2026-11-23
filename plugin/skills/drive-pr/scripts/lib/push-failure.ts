@@ -60,6 +60,9 @@ function isUnconfirmedPush(line: string): boolean {
 /** The escape sequences terminals colour with: a gate's output is often coloured. */
 const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[A-Za-z]`, "g");
 
+/** An escape sequence the end of a chunk cut short. */
+const CUT_ESCAPE = new RegExp(`${String.fromCharCode(27)}(\\[[0-9;?]*)?$`);
+
 /** What stands where output too long to read whole was dropped. */
 const OMITTED = "[over-long output omitted]\n";
 
@@ -82,10 +85,20 @@ const RAW_MAX = 256 * 1024;
 interface QuoteState {
   q: number;
   esc: boolean;
+  /** A quote ended the last chunk inside a value: whether it closes or doubles waits on the next byte. */
+  pend?: boolean;
 }
 
 const isSpace = (b: number | undefined): boolean =>
   b === 32 || b === 9 || b === 10 || b === 13;
+
+/** Whether the quote at `buf[i]` stands in value position: after `=` or `:`, or with nothing before it. */
+function opensValue(buf: Buffer, i: number): boolean {
+  if (buf[i] !== 34 && buf[i] !== 39) return false;
+  let j = i - 1;
+  while (j >= 0 && isSpace(buf[j])) j--;
+  return j < 0 || buf[j] === 61 || buf[j] === 58;
+}
 
 /**
  * The quote state at the end of `buf`, started from `start`, and where the
@@ -101,30 +114,39 @@ function scanQuotes(
   stopAtClose = false,
 ): { state: QuoteState; openAt: number; end: number } {
   let { q, esc } = start;
+  let pend = false;
   let openAt = -1;
-  for (let i = 0; i < buf.length; i++) {
+  let i0 = 0;
+  if (buf.length === 0) return { state: start, openAt, end: -1 };
+  if (start.pend && q !== 0) {
+    // The previous chunk ended on a quote: a second one here doubles it.
+    if (buf[0] === q) i0 = 1;
+    else {
+      q = 0;
+      if (stopAtClose) return { state: { q, esc: false }, openAt, end: 0 };
+    }
+  }
+  for (let i = i0; i < buf.length; i++) {
     const b = buf[i] as number;
     if (q !== 0) {
       if (esc) esc = false;
       else if (b === 92) esc = true;
       else if (b === q) {
-        if (buf[i + 1] === q) i++;
+        if (i + 1 === buf.length && stopAtClose) {
+          pend = true;
+        } else if (buf[i + 1] === q) i++;
         else {
           q = 0;
           openAt = -1;
           if (stopAtClose) return { state: { q, esc }, openAt, end: i + 1 };
         }
       }
-    } else if (b === 34 || b === 39) {
-      let j = i - 1;
-      while (j >= 0 && isSpace(buf[j])) j--;
-      if (j < 0 || buf[j] === 61 || buf[j] === 58) {
-        q = b;
-        openAt = i;
-      }
+    } else if (opensValue(buf, i)) {
+      q = b;
+      openAt = i;
     }
   }
-  return { state: { q, esc }, openAt, end: -1 };
+  return { state: pend ? { q, esc, pend } : { q, esc }, openAt, end: -1 };
 }
 
 /**
@@ -151,6 +173,17 @@ export function outputTail(): {
   let head: QuoteState = { q: 0, esc: false };
   // Whether the rest of the current line is still to be dropped.
   let skipping = false;
+  // An escape sequence cut by the end of the last chunk, still to be completed.
+  let carry = "";
+
+  /** Strip terminal escapes from a chunk, as the masker reads the text, holding back a cut one. */
+  const normalize = (input: Uint8Array): Buffer => {
+    const text = carry + Buffer.from(input).toString("latin1");
+    const cut = CUT_ESCAPE.exec(text);
+    carry = cut ? cut[0] : "";
+    const whole = cut ? text.slice(0, cut.index) : text;
+    return Buffer.from(whole.replace(ANSI, ""), "latin1");
+  };
 
   /** Drop what a drop left unsafe from the front of `buf`. */
   const settle = (buf: Buffer): Buffer => {
@@ -173,7 +206,7 @@ export function outputTail(): {
 
   return {
     observe(input) {
-      raw = Buffer.concat([raw, settle(Buffer.from(input))]);
+      raw = Buffer.concat([raw, settle(normalize(input))]);
       if (raw.length <= RAW_MAX) return;
       omitted = true;
       const nl = raw.indexOf(10, raw.length - RAW_MAX / 2);
