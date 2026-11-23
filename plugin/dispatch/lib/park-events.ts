@@ -298,6 +298,45 @@ function goneHow(
   return "unknown";
 }
 
+/** The remembered parks of one repository that no longer show: carried while unknown, removed once withdrawn. */
+function carriedParks(
+  repo: ParkRepo,
+  read: ReadonlyMap<number, DrivenPr>,
+  memory: ParkMemory,
+  seen: ReadonlySet<string | null>,
+  nowIso: string,
+): Omit<ParkOutcomes, "ingested"> {
+  const parks: LinePark[] = [];
+  const rows: EventRow[] = [];
+  const left: ParkLeft[] = [];
+  for (const p of memory.parks ?? []) {
+    const identity = p.repo === repo.slug ? identityOf(p) : null;
+    if (identity === null || seen.has(identity)) continue;
+    const how = goneHow(repo, read, p.pr);
+    if (how === "unknown") parks.push(p);
+    else if (how === "withdrawn" && repo.owner) {
+      rows.push(
+        removedRow(p, identity, "it was withdrawn or framed again", nowIso),
+      );
+      left.push({
+        repo: p.repo,
+        target: `PR #${p.pr}`,
+        key: p.key,
+        digest: p.digest ?? null,
+        parkedAt: p.parkedAt ?? null,
+        outcome: "removed",
+        at: nowIso,
+        people: [],
+        option: null,
+        recommended: null,
+        words: [],
+        url: null,
+      });
+    }
+  }
+  return { parks, rows, left };
+}
+
 /** One repository's parks, ingested receipts and rows. */
 function repoOutcomes(
   repo: ParkRepo,
@@ -328,32 +367,16 @@ function repoOutcomes(
     });
   const rows = fresh.map((f) => receiptRow(repo.slug, f.pr, f.receipt));
   const left = fresh.map((f) => receiptLeft(repo.slug, f.pr, f.receipt));
-  for (const p of memory.parks ?? []) {
-    const identity = p.repo === repo.slug ? identityOf(p) : null;
-    if (identity === null || held.has(identity) || receipts.has(identity))
-      continue;
-    const how = goneHow(repo, read, p.pr);
-    if (how === "unknown") parks.push(p);
-    else if (how === "withdrawn" && repo.owner) {
-      rows.push(
-        removedRow(p, identity, "it was withdrawn or framed again", nowIso),
-      );
-      left.push({
-        repo: p.repo,
-        target: `PR #${p.pr}`,
-        key: p.key,
-        digest: p.digest ?? null,
-        parkedAt: p.parkedAt ?? null,
-        outcome: "removed",
-        at: nowIso,
-        people: [],
-        option: null,
-        recommended: null,
-        words: [],
-        url: null,
-      });
-    }
-  }
+  const gone = carriedParks(
+    repo,
+    read,
+    memory,
+    new Set([...held, ...receipts.keys()]),
+    nowIso,
+  );
+  parks.push(...gone.parks);
+  rows.push(...gone.rows);
+  left.push(...gone.left);
   return { parks, ingested, rows, left };
 }
 
