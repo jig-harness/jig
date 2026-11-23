@@ -352,6 +352,16 @@ function checkPageNodes(page: unknown): unknown[] | null {
   return known ? entries : null;
 }
 
+interface CheckPage {
+  entries: unknown[];
+  after: string | null;
+}
+
+/** The forge transport requires at least one second for a call. */
+function wholeSecondsLeft(deadline: number): number {
+  return Math.floor((deadline - currentMs()) / 1000);
+}
+
 /** Read a continuation pinned to the original head, using the board's deadline. */
 async function readCheckPage(
   slug: string | null,
@@ -359,28 +369,41 @@ async function readCheckPage(
   read: FactsRead,
   after: string,
   deadline: number,
-): Promise<{ entries: unknown[]; after: string | null } | null> {
-  const leftSec = (deadline - currentMs()) / 1000;
-  if (leftSec <= 0) return null;
+): Promise<Outcome<CheckPage, "unreadable">> {
+  const leftSec = wholeSecondsLeft(deadline);
+  if (leftSec <= 0)
+    return failed(
+      "unreadable",
+      "the merge facts deadline left no time for another check page",
+    );
   const next = await queryGraphql(slug, checkPageQuery(facts.number), leftSec, [
     "-f",
     `head=${facts.head}`,
     "-f",
     `after=${after}`,
   ]);
-  if (!next.ok) return null;
+  if (!next.ok)
+    return failed("unreadable", "the forge did not return the next check page");
   addPart(read, parseAnswer(next.value, []));
   const head = at(next.value, "data", "repository", "head");
   if (at(head, "oid") !== facts.head || at(next.value, "errors") !== undefined)
-    return null;
+    return failed(
+      "unreadable",
+      "the next check page did not read on the original head",
+    );
   const page = at(head, "statusCheckRollup", "contexts");
   const entries = checkPageNodes(page);
   const hasNext = at(page, "pageInfo", "hasNextPage");
-  if (entries === null || typeof hasNext !== "boolean") return null;
-  return {
+  if (entries === null || typeof hasNext !== "boolean")
+    return failed("unreadable", "the next check page was incomplete");
+  return ok({
     entries,
     after: hasNext ? str(at(page, "pageInfo", "endCursor")) : null,
-  };
+  });
+}
+
+function incompleteChecks(facts: ForgeFacts, reason: string): ForgeFacts {
+  return { ...facts, partial: `${facts.partial}; ${reason}` };
 }
 
 /** Replace the initial check page only when the connection was read to its end. */
@@ -397,15 +420,21 @@ async function completeChecks(
     return facts;
 
   const entries = checkPageNodes(initial);
-  if (entries === null) return facts;
+  if (entries === null)
+    return incompleteChecks(facts, "the first check page was incomplete");
   let after = str(at(initial, "pageInfo", "endCursor"));
   const checks = [...entries];
   const cursors = new Set<string>();
   for (let pageNumber = 1; pageNumber < CHECK_PAGES; pageNumber++) {
-    if (after === "" || cursors.has(after)) break;
+    if (after === "" || cursors.has(after))
+      return incompleteChecks(
+        facts,
+        "the next check page had no usable cursor",
+      );
     cursors.add(after);
-    const page = await readCheckPage(slug, facts, read, after, deadline);
-    if (page === null) break;
+    const result = await readCheckPage(slug, facts, read, after, deadline);
+    if (!result.ok) return incompleteChecks(facts, result.failure.reason);
+    const page = result.value;
     for (const entry of page.entries) checks.push(entry);
     if (page.after === null) {
       initial.nodes = checks;
@@ -414,7 +443,10 @@ async function completeChecks(
     }
     after = page.after;
   }
-  return facts;
+  return incompleteChecks(
+    facts,
+    `the check read reached its ${CHECK_PAGES}-page cap`,
+  );
 }
 
 /**
@@ -439,7 +471,7 @@ export async function readMergeFacts(
   const deadline = currentMs() + timeoutSec * 1000;
   const checkPulls = new Map<number, unknown>();
   for (let i = 0; i < numbers.length; i += FACTS_PAGE) {
-    const leftSec = (deadline - currentMs()) / 1000;
+    const leftSec = wholeSecondsLeft(deadline);
     if (leftSec <= 0)
       return failed("unreadable", "the merge facts deadline expired");
     const chunk = numbers.slice(i, i + FACTS_PAGE);

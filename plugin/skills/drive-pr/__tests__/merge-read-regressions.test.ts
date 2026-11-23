@@ -93,7 +93,7 @@ it("stops paging once the shared merge-facts deadline is spent", async () => {
     import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
     const root = process.env.MERGE_FIXTURE;
     appendFileSync(root + "/calls", "query\\n");
-    writeFileSync(root + "/clock", String(Number(readFileSync(root + "/clock", "utf8")) + 20000));
+    writeFileSync(root + "/clock", String(Number(readFileSync(root + "/clock", "utf8")) + 14800));
     console.log(JSON.stringify({ data: { repository: {} } }));
   `,
   );
@@ -167,12 +167,20 @@ for (const scenario of [
   "wrong-head",
   "unreadable-entry",
   "unreadable-first-page",
+  "deadline",
 ] as const) {
   it(`places a converged pull request using paginated checks (${scenario})`, async () => {
     const r = await run(
       `
       import { readMergeFacts } from ${JSON.stringify(join(LIB, "merge-facts.ts"))};
       import { readiness } from ${JSON.stringify(join(LIB, "merge-ready.ts"))};
+      import { readFileSync, writeFileSync } from "node:fs";
+      if (${JSON.stringify(scenario)} === "deadline") {
+        const clock = process.env.MERGE_FIXTURE + "/clock";
+        writeFileSync(clock, "0");
+        Temporal.Now.instant = () =>
+          Temporal.Instant.fromEpochMilliseconds(Number(readFileSync(clock, "utf8")));
+      }
       const repo = "example-org/repo";
       const read = await readMergeFacts(repo, [7], 30);
       if (!read.ok) throw new Error(read.failure.reason);
@@ -185,12 +193,13 @@ for (const scenario of [
       console.log(JSON.stringify({ placed, partial: facts.partial, count: facts.checks.length, cost: read.value.cost }));
       `,
       `#!/usr/bin/env bun
-      import { appendFileSync } from "node:fs";
+      import { appendFileSync, writeFileSync } from "node:fs";
       const head = "${"a".repeat(40)}";
       const args = process.argv.slice(2);
       const scenario = ${JSON.stringify(scenario)};
       const after = Number(args.find((arg) => arg.startsWith("after="))?.slice("after=".length) ?? 0);
       appendFileSync(process.env.MERGE_FIXTURE + "/calls", JSON.stringify(args) + "\\n");
+      if (scenario === "deadline") writeFileSync(process.env.MERGE_FIXTURE + "/clock", "29500");
       const check = (id, name, conclusion = "SUCCESS", app = "github-actions", startedAt = "2026-11-08T10:00:00Z") => ({
         __typename: "CheckRun", databaseId: id, name, status: "COMPLETED",
         conclusion, startedAt, isRequired: app !== "example-review", checkSuite: { app: { slug: app } },
@@ -231,6 +240,7 @@ for (const scenario of [
       "wrong-head": 2,
       "unreadable-entry": 2,
       "unreadable-first-page": 1,
+      deadline: 1,
     } as const;
     if (scenario in partialRequests) {
       expect(calls).toHaveLength(
@@ -238,6 +248,8 @@ for (const scenario of [
       );
       expect(result.placed).toMatchObject({ place: "stay", lane: null });
       expect(result.partial).toContain("checks");
+      if (scenario === "deadline") expect(result.partial).toContain("deadline");
+      if (scenario === "capped") expect(result.partial).toContain("4-page cap");
     } else {
       expect(calls).toHaveLength(2);
       expect(result).toMatchObject({ count: 140, partial: null });
