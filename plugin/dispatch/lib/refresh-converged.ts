@@ -105,7 +105,9 @@ async function refreshOne(
   const { opened, forge } = observation;
   const { repo } = opened;
   const pr = forge.open.find((p) => p.number === drive.number);
-  if (pr === undefined || pr.isDraft === true) return undefined;
+  // A draft cannot receive a refreshed merge-ready announcement, but an
+  // already-current ledger may still have an older announcement to withdraw.
+  if (pr === undefined) return undefined;
 
   const result = await run(
     tsArgv(

@@ -277,8 +277,6 @@ async function publishLedger(candidate: Candidate): Promise<number> {
 
 async function refresh(request: Request): Promise<number> {
   const { pr, head, verified } = request;
-  const candidate = await readCandidate(request);
-  if (typeof candidate === "number") return candidate;
   const standing = await announcements(pr);
   if (
     standing === null ||
@@ -292,6 +290,8 @@ async function refresh(request: Request): Promise<number> {
     );
     return withdrawn.every(Boolean) ? 0 : FALLBACK;
   }
+  const candidate = await readCandidate(request);
+  if (typeof candidate === "number") return candidate;
   const history = await checkHistory(candidate);
   if (history !== 0) return history;
   if (announcedIds(standing, verified).length === 0) return FALLBACK;

@@ -427,6 +427,29 @@ describe("refreshing convergence after a base merge", () => {
     ]);
   }, 90_000);
 
+  it("withdraws a stale announcement after the pull request becomes a draft", async () => {
+    const { w, verified, head } = afterBaseMerge();
+    checkEvidence(w, head, "success");
+    await apply(w);
+    w.setComments(7, [
+      ...comments(w),
+      forgeComment(704, `${OPENER}\n\n${headMarker(verified)}`, "drive-bot"),
+    ]);
+    w.setPrs("open", [
+      {
+        ...openPr(7, BRANCH, { headRefOid: head }),
+        baseRefOid: readFileSync(join(w.dir, "base-head"), "utf8"),
+        isDraft: true,
+      },
+    ]);
+
+    await apply(w);
+
+    expect(commentBodies(w).filter((body) => body.startsWith(OPENER))).toEqual([
+      expect.stringContaining(headMarker(head)),
+    ]);
+  }, 90_000);
+
   it("does not refresh a clean converged drive without stale announcement evidence", async () => {
     const { w, head } = afterBaseMerge();
     checkEvidence(w, head, "success");
