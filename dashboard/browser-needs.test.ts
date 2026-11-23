@@ -319,10 +319,17 @@ describe("Needs you", () => {
           const response = await route.fetch();
           const body = await response.json();
           const first = body.value.line.needs[0];
+          // Each asks its own question: needs identical but for their target would be one question group's card.
           body.value.line.needs = Array.from({ length: 12 }, (_, index) => ({
             ...first,
             pr: 1800 + index,
             target: `PR #${1800 + index}`,
+            decisions: first.decisions.map(
+              (d: { question: string | null }) => ({
+                ...d,
+                question: `${d.question ?? "Which one?"} (${index + 1})`,
+              }),
+            ),
           }));
           await route.fulfill({ json: body });
         });
