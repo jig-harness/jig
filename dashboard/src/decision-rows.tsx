@@ -376,7 +376,7 @@ function GuardPanel({
   sending: Sending | null;
 }) {
   const { commit, confirming } = picking;
-  const send = confirming === "send" ? sending : null;
+  const send = confirming === "send" && sending?.available ? sending : null;
   return (
     <div className="guard" role="alert">
       <p className="sm">
@@ -454,7 +454,9 @@ export function CommitControls({
         label={commit.label === "answer line" ? undefined : `Copy ${what}`}
         gate={picking.gate}
       />
-      {sending === null ? null : <SendButton need={need} sending={sending} />}
+      {sending === null || !sending.available ? null : (
+        <SendButton need={need} sending={sending} />
+      )}
       {anyPick ? (
         <button type="button" className="fbtn" onClick={picking.undo}>
           <Glyph of={CARD_ICONS.undo} />

@@ -96,6 +96,7 @@ function TokenField({ more }: { more: boolean }) {
       return;
     }
     setTest({ kind: "testing" });
+    const before = keptTokens();
     void tokenLogin(token).then((answer) => {
       if (!alive()) return;
       if (!answer.ok) {
@@ -104,6 +105,16 @@ function TokenField({ more }: { more: boolean }) {
       }
       // Checked against the tokens kept when GitHub answered, which another tab may have changed.
       const login = answer.value;
+      const atOf = (list: KeptToken[]) =>
+        list.find((t) => t.login.toLowerCase() === login.toLowerCase())?.at ??
+        null;
+      if (atOf(before) !== atOf(keptTokens())) {
+        setTest({
+          kind: "refused",
+          reason: `The token for ${login} changed while this one was tested. Test it again.`,
+        });
+        return;
+      }
       const next = withToken(
         keptTokens(),
         { token, login, at: Date.now() },

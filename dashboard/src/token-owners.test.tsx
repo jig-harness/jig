@@ -188,8 +188,24 @@ describe("what a browser has stored", () => {
         },
         { token: "pat-old", login: "old", at: 1 },
       ),
-    ).toEqual([A, { ...B, owners: ["second-org"] }]);
+    ).toEqual([A]);
     expect(tokensFrom(null, null)).toEqual([]);
+  });
+
+  test("a list entry whose owners are missing or malformed is dropped, never read as every owner", () => {
+    expect(
+      tokensFrom(
+        {
+          tokens: [
+            { token: "p", login: "a", at: 1 },
+            { token: "q", login: "b", at: 1, owners: "example-org" },
+            { token: "r", login: "c", at: 1, owners: [7] },
+            ANY,
+          ],
+        },
+        null,
+      ),
+    ).toEqual([ANY]);
   });
 });
 

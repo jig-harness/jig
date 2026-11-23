@@ -31,17 +31,19 @@ const EARLIER_KEY = "github-token";
 
 const isText = (v: unknown): v is string => typeof v === "string" && v !== "";
 
-/** One stored token, when what is there is one; `owners` absent reads as none. */
-function storedToken(value: unknown): KeptToken | null {
+/**
+ * One stored token, when what is there is one. An empty `owners` means every
+ * owner no other token names, so a list entry whose `owners` is missing or
+ * malformed is dropped whole; only the earlier single token, which never named
+ * owners, reads as naming none.
+ */
+function storedToken(value: unknown, legacy = false): KeptToken | null {
   if (!isRecord(value)) return null;
   const { token, login, at, owners } = value;
   if (!isText(token) || !isText(login) || typeof at !== "number") return null;
-  return {
-    token,
-    login,
-    at,
-    owners: Array.isArray(owners) ? owners.filter(isText) : [],
-  };
+  if (legacy) return { token, login, at, owners: [] };
+  if (!Array.isArray(owners) || !owners.every(isText)) return null;
+  return { token, login, at, owners };
 }
 
 /** The tokens what storage holds stands for: the list, else the earlier single token, each account once. */
@@ -51,8 +53,8 @@ export function tokensFrom(
 ): KeptToken[] {
   const read =
     list !== null && Array.isArray(list.tokens)
-      ? list.tokens.map(storedToken)
-      : [storedToken(earlier)];
+      ? list.tokens.map((t) => storedToken(t))
+      : [storedToken(earlier, true)];
   const tokens: KeptToken[] = [];
   for (const token of read)
     if (

@@ -106,8 +106,10 @@ function finishSend(
 /** A card's Send: how to start it, and what it is doing; `null` when the card has none. */
 export interface Sending {
   to: SendTarget;
-  /** The login of the token that answers for the target's owner. */
+  /** The login of the token that answers for the target's owner; empty when none does now. */
   login: string;
+  /** Whether a kept token answers for the target's owner now, so Send can start; what an earlier send did shows either way. */
+  available: boolean;
   phase: Phase;
   /** Whether an option is picked, so a press sends. */
   ready: boolean;
@@ -195,7 +197,6 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
   if (!("to" in need.send) || pageTransportFault() !== null) return null;
   const to = need.send.to;
   const chosen = tokenFor(tokens, ownerOf(to.repo));
-  if (chosen === null) return null;
   const send = () => {
     if (phase.kind === "sending" || sending === "sending") return;
     const commit = picking.sendGate();
@@ -302,7 +303,8 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
         : { kind: "failed", reason: uncertainReason };
   return {
     to,
-    login: chosen.login,
+    login: chosen?.login ?? "",
+    available: chosen !== null,
     phase: currentPhase,
     ready: picking.commit.picked > 0,
     uncertain: uncertainReason !== null,
@@ -376,13 +378,15 @@ export function SendSaid({
 }) {
   const sent = useSentHere(need.repo, need.target);
   const other =
+    sending.available &&
     need.people.length > 0 &&
     !need.people.some((p) => p.toLowerCase() === sending.login.toLowerCase());
   if (
     sent === null &&
     sending.phase.kind !== "failed" &&
     sending.ready &&
-    !other
+    !other &&
+    !sending.uncertain
   )
     return null;
   return (

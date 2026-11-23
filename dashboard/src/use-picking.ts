@@ -101,7 +101,8 @@ export function usePicking(
     setArmedState(to);
   };
   const current = currentIndex(need.rows, answers, held);
-  const signature = confirmationSignature(need, answers, sendCredential(need));
+  const credential = sendCredential(need);
+  const signature = confirmationSignature(need, answers, credential);
   const confirming =
     armed !== null &&
     armed.sign === signature &&
@@ -273,6 +274,12 @@ export function usePicking(
       document.removeEventListener(PALETTE_DONE, onPaletteDone);
     };
   }, [card, picks]);
+
+  // A confirmation does not survive its card's token changing, even if the same token comes back.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the credential is the trigger
+  useEffect(() => {
+    latest.current.disarm();
+  }, [credential]);
 
   // A field `r` or its button opened takes focus once it is drawn.
   useEffect(() => {
