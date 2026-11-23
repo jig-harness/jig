@@ -186,7 +186,7 @@ export function postedText(s: TargetSend, done: number): string {
  */
 export function groupSends(
   commit: GroupCommit,
-  login: string,
+  loginFor: (member: GroupMember) => string | null,
   at: string,
 ): {
   sends: TargetSend[];
@@ -201,6 +201,14 @@ export function groupSends(
     }
     if (own.answers.length === 0) {
       unsendable.push({ member, why: "nothing is picked for it" });
+      continue;
+    }
+    const login = loginFor(member);
+    if (login === null) {
+      unsendable.push({
+        member,
+        why: "no kept token answers for its repository owner",
+      });
       continue;
     }
     sends.push({

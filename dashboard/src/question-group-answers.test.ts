@@ -148,7 +148,10 @@ describe("a pick kept on a question group's card", () => {
     const reparked = (n: LineNeed): LineNeed => ({
       ...n,
       decisions: n.decisions.map(
-        (x): LineDecision => ({ ...x, parkedAt: "2026-11-23T01:00:00Z" }),
+        (x): LineDecision => ({
+          ...x,
+          parkedAt: "2026-11-23T01:00:00Z",
+        }),
       ),
     });
     for (const after of [
@@ -178,7 +181,7 @@ describe("a send with no answer from GitHub, on a question group's card", () => 
     if (group === undefined) throw new Error("no group");
     const { sends } = groupSends(
       groupCommit(group, card.rows, pickRecommended(card), new Set()),
-      "maintainer-a",
+      () => "maintainer-a",
       AT,
     );
     // GitHub answers #17 and gives no answer for #27.
@@ -212,7 +215,7 @@ describe("a send with no answer from GitHub, on a question group's card", () => 
     if (group === undefined) throw new Error("no group");
     const { sends } = groupSends(
       groupCommit(group, card.rows, pickRecommended(card), new Set()),
-      "maintainer-a",
+      () => "maintainer-a",
       AT,
     );
     const own = sends[0];
@@ -285,7 +288,7 @@ describe("a partial send of a target with several decisions", () => {
     if (group === undefined) throw new Error("no group");
     const { sends } = groupSends(
       groupCommit(group, card.rows, pickRecommended(card), new Set()),
-      "maintainer-a",
+      () => "maintainer-a",
       AT,
     );
     const s = sends[0];

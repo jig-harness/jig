@@ -179,7 +179,7 @@ describe("answering a question group's card", () => {
     const commit = groupCommit(group, card.rows, pickRecommended(card), left);
     const { sends, unsendable } = groupSends(
       commit,
-      "maintainer-a",
+      () => "maintainer-a",
       "2026-11-22T23:00:00Z",
     );
     expect(unsendable).toEqual([]);
@@ -277,10 +277,24 @@ describe("answering a question group's card", () => {
     );
     const { sends, unsendable } = groupSends(
       commit,
-      "maintainer-a",
+      () => "maintainer-a",
       "2026-11-22T23:00:00Z",
     );
     expect(sends.map((s) => s.member.target)).toEqual(["#17"]);
     expect(unsendable.map((u) => u.member.target)).toEqual(["#27"]);
+  });
+
+  it("uses the token owner for each target's answer record", () => {
+    const card = onlyGroup(lineWith(THREE));
+    const group = card.group;
+    if (group === undefined) throw new Error("no group");
+    const { sends } = groupSends(
+      groupCommit(group, card.rows, pickRecommended(card), new Set()),
+      (member) => (member.target === "#17" ? "maintainer-a" : "maintainer-b"),
+      "2026-11-22T23:00:00Z",
+    );
+    expect(
+      sends.map((send) => read(send.comments[0]?.body ?? "").writer.login),
+    ).toEqual(["maintainer-a", "maintainer-b", "maintainer-b"]);
   });
 });

@@ -68,6 +68,10 @@ export interface Picking {
 
 /** Which token the card's Send would post with now; a card with no Send has none. */
 function sendCredential(need: NeedView): string {
+  if (need.group !== undefined)
+    return need.group.members
+      .map((member) => credentialFor(member.repo))
+      .join("\n");
   return "to" in need.send ? credentialFor(need.send.to.repo) : "";
 }
 

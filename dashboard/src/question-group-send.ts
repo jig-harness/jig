@@ -19,7 +19,7 @@
  */
 import { useSyncExternalStore } from "react";
 import { announce } from "./copy.tsx";
-import { credentialFor, useKeptTokens } from "./forge-token.ts";
+import { credentialFor, tokenForRepo, useKeptTokens } from "./forge-token.ts";
 import type { NeedView } from "./needs-view.ts";
 import { cardAnswerIds, currentAnswers, forgetAnswers } from "./answers.ts";
 import {
@@ -209,12 +209,11 @@ export function useGroupSend(
   picking: Picking,
 ): GroupSending | null {
   const { tokens } = useKeptTokens();
-  const kept = tokens[0] ?? null;
   const group = need.group;
   const id = group?.id ?? "";
   const state = useGroupState(id);
   if (
-    kept === null ||
+    tokens.length === 0 ||
     group === undefined ||
     transportFault(window.location) !== null
   )
@@ -223,10 +222,9 @@ export function useGroupSend(
     if (stateOf(id).sending) return;
     const commit = picking.sendGate();
     if (commit === null || !isGroupCommit(commit)) return;
-    const token = kept;
     const { sends, unsendable } = groupSends(
       commit,
-      token.login,
+      (member) => tokenForRepo(member.repo)?.login ?? null,
       new Date().toISOString(),
     );
     if (unsendable.length > 0) {
@@ -235,19 +233,33 @@ export function useGroupSend(
       );
       return;
     }
-    const unchecked = uncheckedTargets(sends, token.login);
+    const credentials = new Map(
+      sends.map((s) => [s.member.rowKey, tokenForRepo(s.member.repo)]),
+    );
+    if ([...credentials.values()].some((token) => token === null)) {
+      announce(
+        "Not sent: a target no longer has a kept token. Confirm Send again after checking the target accounts.",
+      );
+      return;
+    }
+    const unchecked = sends.flatMap((s) => {
+      const token = credentials.get(s.member.rowKey);
+      return token === undefined || token === null
+        ? []
+        : uncheckedTargets([s], token.login);
+    });
     if (unchecked.length > 0) {
       announce(
         `Not sent: ${unchecked.map((m) => `${m.repo} ${m.target}`).join(", ")} may already have its answer from an earlier send. Open it and check, then allow Send again on its row, or leave it out.`,
       );
       return;
     }
-    const credentials = group.members
+    const credentialSignature = group.members
       .map((member) => credentialFor(member.repo))
       .join("\n");
     const held = () =>
       group.members.map((member) => credentialFor(member.repo)).join("\n") ===
-      credentials;
+      credentialSignature;
     // What the person had picked and written when they pressed Send: a change made while the send runs is newer work.
     const answerIds = cardAnswerIds(need);
     const snapshot = currentAnswers(answerIds).map((a) =>
@@ -261,10 +273,12 @@ export function useGroupSend(
       ]),
     );
     update(id, (was) => ({ ...was, sending: true, outcomes: new Map() }));
-    announce(`Sending the answers for ${need.target} as ${token.login}`);
+    announce(`Sending the answers for ${need.target}`);
     void (async () => {
       const outcomes = new Map<string, TargetOutcome>();
       for (const s of sends) {
+        const token = credentials.get(s.member.rowKey);
+        if (token === undefined || token === null) continue;
         outcomes.set(
           s.member.rowKey,
           await sendToTarget(token, s, held, reservations.get(s.member.rowKey)),
@@ -286,11 +300,26 @@ export function useGroupSend(
           ),
         );
       }
-      announce(summary(outcomes, sends.length, token.login));
+      announce(
+        summary(
+          outcomes,
+          sends.length,
+          [
+            ...new Set(
+              sends.flatMap((s) => {
+                const token = credentials.get(s.member.rowKey);
+                return token === undefined || token === null
+                  ? []
+                  : [token.login];
+              }),
+            ),
+          ].join(", "),
+        ),
+      );
     })();
   };
   return {
-    login: kept.login,
+    login: tokens.map((token) => token.login).join(", "),
     sending: state.sending,
     ready: picking.commit.picked > 0,
     outcomes: state.outcomes,
