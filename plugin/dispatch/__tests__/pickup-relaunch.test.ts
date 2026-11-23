@@ -20,6 +20,8 @@ import type { ApplyState } from "../lib/actions/launch.ts";
 import {
   pendingRelaunch,
   relaunchRecord,
+  type RelaunchContext,
+  runtimeChanged,
 } from "../lib/actions/pickup-relaunch.ts";
 import { pickupArms } from "../lib/pickup-arms.ts";
 import { type PickupInput, planPickups } from "../lib/plan-pickups.ts";
@@ -338,6 +340,31 @@ describe("a relaunch's workspace branch", () => {
       path: PATH,
       branch: "12-task",
     });
+  });
+
+  it("is compared with the runtime's branch only when the record kept one", async () => {
+    const open = {
+      id: "w12",
+      path: PATH,
+      branch: "moved",
+      items: ["#12"],
+      prs: [],
+      agents: [],
+    };
+    const ctx = {
+      sessions: async () => ({ ok: true, source: "t", workspaces: [open] }),
+    } as unknown as RelaunchContext;
+    // A record the previous version wrote has no branch: nothing to compare.
+    expect(
+      await runtimeChanged(ctx, "#12", { id: "w12", path: PATH }),
+    ).toBeNull();
+    expect(
+      await runtimeChanged(ctx, "#12", {
+        id: "w12",
+        path: PATH,
+        branch: "12-task",
+      }),
+    ).toContain("branch moved from 12-task to moved");
   });
 
   it("lets a relaunched process pickup that ends done with a drive@ handoff ask for its pull request's first drive", () => {

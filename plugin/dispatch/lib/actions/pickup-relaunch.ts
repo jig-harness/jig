@@ -151,7 +151,7 @@ function recordsChanged(
 }
 
 /** Why the runtime no longer leaves the tree's workspace open, free and on the branch the plan read; `null` when it does. */
-async function runtimeChanged(
+export async function runtimeChanged(
   ctx: RelaunchContext,
   item: string,
   workspace: PickupRelaunch["workspace"],
@@ -173,7 +173,10 @@ async function runtimeChanged(
     sessions?.ok === true
       ? sessions.workspaces.find((w) => w.path === path)
       : undefined;
-  return open !== undefined && open.branch !== workspace.branch
+  // A record the previous version wrote keeps no branch: nothing was read to compare against, so only a record that has one can see it move.
+  return open !== undefined &&
+    workspace.branch !== undefined &&
+    open.branch !== workspace.branch
     ? `its tree's branch moved from ${workspace.branch} to ${open.branch} since the plan read it`
     : null;
 }
