@@ -6,6 +6,7 @@ import {
   checkSkillRuntimeForms,
   formFindings,
   skillDirPathsIn,
+  withoutFrontmatter,
 } from "./check-skill-runtime-forms.ts";
 
 const DIR = "$" + "{CLAUDE_SKILL_DIR}";
@@ -206,6 +207,34 @@ test("a hand-over needs the arbiter as its recipient", () => {
     expect(rules(text)).toEqual([]);
 });
 
+test("the recipient is the exact agent, through links, and also after `go to`", () => {
+  const real =
+    "a thread the rubric does not decide goes to the [**Review Arbiter**](https://example.test/GLOSSARY.md) agent (`jig:review-arbiter`, shipped with the plugin; in Codex, see the [Codex notes](../../README.md#codex-notes)).\n";
+  expect(rules(real)).toEqual(["subagent-form"]);
+  for (const text of [
+    "Contested findings go to `jig:review-arbiter`.\n",
+    "Contested findings goes to `jig:review-arbiter`.\n",
+    "Send the finding to the [arbiter](../x.md) agent `jig:review-arbiter`.\n",
+  ])
+    expect(rules(text)).toEqual(["subagent-form"]);
+  for (const text of [
+    "Contested findings goe to `jig:review-arbiter`.\n",
+    "Ask the author about `jig:review-arbiter`'s earlier ruling.\n",
+    "Ask the maintainer to review `review-arbiter.md`.\n",
+    "Invoke `jig:review-arbiter-sandbox`.\n",
+    "Invoke `archived-review-arbiter.md`.\n",
+  ])
+    expect(rules(text)).toEqual([]);
+});
+
+test("HTML comment delimiters inside a fence are literal text", () => {
+  const fenced = "```sh\necho '<!--'\nbun a.ts\necho '-->'\nbun b.ts\n```\n";
+  expect(withoutFrontmatter(fenced)).toBe(fenced);
+  expect(withoutFrontmatter("a <!-- hidden --> b\n")).toBe(
+    `a ${" ".repeat(15)} b\n`,
+  );
+});
+
 test("a period before a closing quote belongs to the path", () => {
   expect(skillDirPathsIn(`run "${DIR}/scripts/run.ts." now`)).toEqual([
     "/scripts/run.ts.",
@@ -231,6 +260,9 @@ test("the gate entry point exits 1 on a violation and 2 with no pages", () => {
     writeFileSync(join(skill, "references", "notes.md"), "Plain prose.\n");
     writeFileSync(join(root, "plugin", "skills", "README.md"), "# skills\n");
     rmSync(join(skill, "README.md"));
+    expect(checkSkillRuntimeForms(root)).toBe(2);
+    // A `SKILL.md` nested under a reference directory is no entry page.
+    writeFileSync(join(skill, "references", "SKILL.md"), "Plain prose.\n");
     expect(checkSkillRuntimeForms(root)).toBe(2);
   } finally {
     rmSync(root, { recursive: true, force: true });

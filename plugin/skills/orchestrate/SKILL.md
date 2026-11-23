@@ -134,7 +134,7 @@ the topic's direction. Send a technical dilemma to a fresh session using
 fresh session using `/jig:explain`. Those sessions own any generated records;
 this session receives their findings.
 Ask through the runtime's question tool where available (Claude Code:
-AskUserQuestion), otherwise a plain-text numbered question (one numbered line per option, the recommended one first and marked as the default where there is one, which the reply `default` takes: ask one question per turn; when a batch is unavoidable, every reply names the question number and the option number, as `2.1`, including `default`). With nobody
+AskUserQuestion), otherwise a plain-text numbered question (one numbered line per option, the recommended one first and marked as the default where there is one, which the reply `default` takes: ask one question per turn; when a batch is unavoidable, every reply names the question number and then the option number or `default`, as `2.1` or `2.default`, and a question with no marked default stays unanswered when the reply says `default`). With nobody
 there to answer, stop and state the question rather than choose for them.
 
 ### 5. Record each answer

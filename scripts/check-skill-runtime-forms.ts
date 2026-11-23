@@ -37,11 +37,33 @@ interface Paragraph {
   line: number;
 }
 
-/** Blank out HTML comments, which no reader sees, keeping every line break. */
+/**
+ * Blank out HTML comments, which no reader sees, keeping every line break.
+ * Fenced code is left whole: inside it `<!--` and `-->` are literal text.
+ */
 function withoutComments(source: string): string {
-  return source.replace(/<!--[\s\S]*?-->/g, (match) =>
-    match.replace(/[^\n]/g, " "),
-  );
+  const out: string[] = [];
+  let prose: string[] = [];
+  const flushProse = (): void => {
+    if (prose.length)
+      out.push(
+        prose
+          .join("\n")
+          .replace(/<!--[\s\S]*?-->/g, (match) => match.replace(/[^\n]/g, " ")),
+      );
+    prose = [];
+  };
+  let fence: string | undefined;
+  for (const line of source.split("\n")) {
+    const after = fenceAfter(fence, unquote(line).content);
+    if (fence !== undefined || after !== undefined) {
+      if (fence === undefined) flushProse();
+      out.push(line);
+      fence = after;
+    } else prose.push(line);
+  }
+  flushProse();
+  return out.join("\n");
 }
 
 /**
@@ -216,13 +238,18 @@ function questionFindings(file: string, blocks: Paragraph[]): Finding[] {
     }));
 }
 
-const AGENT = String.raw`(?:jig:review-arbiter|review-arbiter\.md)`;
-// The agent is the recipient: a hand-over verb, then (in the same sentence,
-// with no other link between) a `to`/`from` where the verb needs one, then the
-// agent.
-const GAP = String.raw`(?:(?!\]\((?![^)]*review-arbiter))[^.!?]){0,80}?`;
+// The exact agent: its ID, or the basename of its file, never a longer name
+// (`jig:review-arbiter-sandbox`, `archived-review-arbiter.md`).
+const AGENT = String.raw`(?<![\w-])(?:jig:review-arbiter(?![\w-])|review-arbiter\.md(?!\w))`;
+// What may stand between the preposition and the agent's name: an article, the
+// words "agent" or "Review Arbiter", emphasis, a link's destination, a bracket.
+const LEAD = String.raw`(?:\s|\*+|\(|\[|\x60|\]\((?:[^)\s]*\/)?|\]\([^)\s]*\)|\b(?:the|an?|agent|subagent|(?:review )?arbiter)\b)*`;
+// A sentence's own words: a period inside a path or a name is not its end.
+const GAP = String.raw`(?:[^.!?]|\.(?=\S)){0,80}?`;
+// The agent is the recipient: it follows the verb directly (`invoke`), or the
+// `to`/`from` the verb takes, through nothing but the lead-in above.
 const HANDS_OVER = new RegExp(
-  String.raw`\b(?:(?:spawn|invoke|delegate|ask)\b${GAP}|(?:hand|give|send|route|pass)\b${GAP}\bto\b${GAP}|request\b${GAP}\bfrom\b${GAP}|goes? to\b${GAP})(?:\]\((?:[^)]*\/)?)?\x60?${AGENT}`,
+  String.raw`\b(?:(?:spawn|invoke|ask)\s+|(?:delegate|hand|give|send|route|pass)\b${GAP}\bto\s+|delegate\s+to\s+|request\b${GAP}\bfrom\s+|go(?:es)?\s+to\s+)${LEAD}${AGENT}`,
   "i",
 );
 const NO_SUBAGENTS = /\bno subagents?\b/i;
@@ -316,7 +343,11 @@ export function checkSkillRuntimeForms(root = "."): number {
     if (!readdirSync(base).length)
       return couldNotCheck("skill-runtime-forms", "no skills found");
     const pages = agentPages(base);
-    if (!pages.some((file) => basename(file) === "SKILL.md"))
+    if (
+      !pages.some(
+        (file) => file.split(sep).length === 2 && basename(file) === "SKILL.md",
+      )
+    )
       return couldNotCheck("skill-runtime-forms", "no skill pages found");
     const findings = pages.flatMap((file) => {
       const skillDir = join(base, file.split(sep)[0] as string);
