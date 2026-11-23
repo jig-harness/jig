@@ -152,7 +152,23 @@ function choiceFacts(
   };
 }
 
-function receiptRow(slug: string, pr: number, r: ResolutionReceipt): EventRow {
+/**
+ * The ledger publishes a park the forge resolved as an `answered` receipt with
+ * no answers, which readers of earlier releases accept. A human answer always
+ * leaves at least one, so that shape is the resolved-thread outcome.
+ */
+function receiptOutcome(r: ResolutionReceipt): ResolutionReceipt["outcome"] {
+  return r.outcome === "answered" && r.answers.length === 0
+    ? "resolved-thread"
+    : r.outcome;
+}
+
+function receiptRow(
+  slug: string,
+  pr: number,
+  published: ResolutionReceipt,
+): EventRow {
+  const r = { ...published, outcome: receiptOutcome(published) };
   const facts = choiceFacts(r);
   const waited = spanMs(r.parkedAt, r.answeredAt ?? r.resolvedAt);
   const said =

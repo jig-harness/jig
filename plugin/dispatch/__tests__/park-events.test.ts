@@ -147,6 +147,20 @@ describe("park outcomes", () => {
     expect(got.rows[0]?.reason).toContain("without a human answer");
   });
 
+  it("reads an answerless answered receipt, as the ledger publishes a forge resolution, as resolved", () => {
+    const got = parkOutcomes(
+      [
+        repo([
+          drive(7, [], [receipt("A", { outcome: "answered", answers: [] })]),
+        ]),
+      ],
+      {},
+      NOW,
+    );
+    expect(events(got.rows)).toEqual([["park-resolved-thread", "A"]]);
+    expect(got.rows[0]?.park?.outcome).toBe("resolved-thread");
+  });
+
   it("counts a held park that left with no receipt as removed, not answered", () => {
     const memory: ParkMemory = { parks: [linePark("A")] };
     const got = parkOutcomes([repo([drive(7, [])])], memory, NOW);

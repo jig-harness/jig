@@ -244,7 +244,15 @@ function classifyPark(
     result.unread.push(item);
     if (answers.length > 0) result.partial.push(verdict);
   }
-  if (answers.length > 0 && stale.length === 0 && !disputed && !incomplete)
+  // A condition note from someone who did not answer is not in the verdict
+  // handed on, so the item keeps waiting rather than losing it.
+  if (
+    answers.length > 0 &&
+    stale.length === 0 &&
+    !disputed &&
+    !incomplete &&
+    !hasNotes
+  )
     result.answered.push(verdict);
   else result.waiting.push(item);
 }
