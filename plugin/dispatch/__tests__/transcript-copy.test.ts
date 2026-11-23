@@ -190,7 +190,9 @@ describe("keeping a run's transcript copy", () => {
     holdCredential(ID, credential);
     try {
       const copy = keepTranscriptCopy(
-        record(config, { provider: "p" } as Partial<LaunchRecord>),
+        record(config, {
+          provider: { provider: "p" },
+        } as unknown as Partial<LaunchRecord>),
         SESSION,
         root,
       );
