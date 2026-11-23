@@ -1109,7 +1109,10 @@ stops admit it on a mechanical state:
   replaces their earlier one. Different choices, different notes, or a
   structured answer beside another person's free answer leave the item
   disputed and parked. The dispatcher notifies the disputing answers.
-  With any item unanswered nothing is unparked. If the PR conflicts with
+  An explicit re-arm can also clear a park whose review thread GitHub
+  reports as resolved. Dispatch enables this for a validated request
+  and reports what it still waits on when a pending re-arm cannot proceed.
+  With any item still waiting nothing is unparked. If the PR conflicts with
   its base, the first gate reports `PR_CONFLICTING` before the park: the
   re-arm attempts conflict repair within its budget. Successful repair lets
   the next gate park on unanswered questions; a remaining conflict stops

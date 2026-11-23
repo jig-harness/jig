@@ -571,8 +571,10 @@ stdin, and refuses a park without them; parked items stop counting as live
 work, the drive works everything else to its end, and then reaches
 `HITL_PARKED` and prints each decision in full. `drive.ts` does not wake
 itself up. A re-arm unparks the items once every parked item is answered,
-subject to the `wide` autonomy exception. If the PR conflicts with its base,
-a re-arm may repair that conflict while unanswered items stay parked.
+subject to the `wide` autonomy exception. A validated explicit dispatch
+re-arm also accepts a resolved review thread with no answer evidence to
+preserve. If the PR conflicts with its base, a re-arm may repair that
+conflict while unanswered items stay parked.
 
 ### 7. Merged mid-loop
 
@@ -971,8 +973,10 @@ which exits with its locks held), so picking it up is a **re-arm** from its
 durable state, admitted on mechanical states: after `QUOTA_PARKED` by a
 pass that bills a different account from the one the park recorded (or after
 the reset), and after `HITL_PARKED` once every parked item has an answer later
-than its park, using its comment's last edit time when edited. Each person's
-latest answer counts. A disputed item stays parked. The
+than its park, using its comment's last edit time when edited. A validated
+explicit dispatch re-arm also accepts an already-resolved review thread
+with no answer evidence to preserve. Each person's latest answer counts.
+A disputed item stays parked. The
 [structured answer rules](../SKILL.md#picking-up-a-stopped-drive) define when
 choices and notes agree and when answers stay free. A park records when it
 was made; an older park without that time is never read as answered.

@@ -765,16 +765,20 @@ mechanical state rather than on anyone's judgement:
   [structured answer](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) beside another
   person's free answer leave the question disputed and waiting. The
   dispatcher notifies you of the dispute.
-  Once every item is answered, the re-arm unparks them all, leaves in the
-  drive ledger a resolution receipt for each (which answers it consumed, and
-  when), from which the dispatcher's outcome log counts the park as
+  If you fix a parked review finding directly and resolve its review thread
+  on GitHub, an explicit re-arm can clear that park without an answer comment.
+  Dispatch enables this when it admits a validated re-arm request.
+  Dispatch explains which parks still need attention if it cannot re-arm.
+  Once every item is settled, the re-arm unparks them all, leaves in the
+  drive ledger a resolution receipt for each answered item (which comments
+  it consumed and when), from which the dispatcher's outcome log counts the park as
   answered, and hands your answers to the drive's passes as your verdicts, keeping them in
   the drive's state directory until a pass completes, so a drive that stops
   first still hands them on when it is re-armed. A structured verdict keeps
   the chosen option, its decision and your note. The pass applies the option
   with the note's conditions; a note cannot grant broader permission. If
   those conflict, the pass parks the question again and quotes the note.
-  With any item unanswered
+  With any item still waiting
   nothing is unparked. If the pull request conflicts with its base, the
   re-arm attempts conflict repair within its budget. Successful repair lets
   the next gate park on unanswered questions; a remaining conflict stops
