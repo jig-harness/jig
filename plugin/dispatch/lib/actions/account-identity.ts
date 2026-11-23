@@ -3,6 +3,8 @@
  * account's environment, then, for a Claude subscription, its sign-in, and
  * for a provider account, its credential (`provider-check.ts`).
  */
+import { harnessNamed } from "../../../shared/agent-harness/index.ts";
+import { claudeCode } from "../../../shared/agent-harness/claude-code.ts";
 import { SIGN_IN_TIMEOUT_SEC } from "../claude-sign-in.ts";
 import { checkIdentity, type IdentityCheck, type Slots } from "../accounts.ts";
 import type { LaneWait } from "../types.ts";
@@ -46,7 +48,13 @@ export async function identityOf(
         remaining >=
           settleMs(state.machine.credentials?.credentialTimeoutMs ?? 0),
     );
-  if (!identity.ok || slots.account.vendor !== "claude") return identity;
+  if (
+    !identity.ok ||
+    harnessNamed(slots.account.vendor)?.capabilities.signInProbe !== true ||
+    // prelaunchSignIn probes Claude Code's login; another harness needs its own probe first.
+    slots.account.vendor !== claudeCode.name
+  )
+    return identity;
   return prelaunchSignIn(
     state,
     slots.account,

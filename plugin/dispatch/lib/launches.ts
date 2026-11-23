@@ -48,6 +48,10 @@ import {
   uncertainCleanupState,
   type StageSupervision,
 } from "./launch-supervision.ts";
+import {
+  type HarnessName,
+  isHarnessName,
+} from "../../shared/agent-harness/index.ts";
 import { ordinalAnchors } from "./account-ordinal.ts";
 import { relaunchAnchors } from "./pickup-relaunch.ts";
 import { optionalLaunchFields } from "./launch-record-options.ts";
@@ -158,7 +162,8 @@ export interface LaunchRecord {
   account: string;
   /** Launch count for this vendor/configuration directory; absent on older records. */
   accountLaunchOrdinal?: number;
-  vendor: "claude" | "codex";
+  /** The registered agent harness the account bills through (`shared/agent-harness`). */
+  vendor: HarnessName;
   configDir: string;
   /** The machine file's `wall_backoff` when the record was written, for a wall with no known reset. */
   wallBackoffMs: number;
@@ -441,7 +446,7 @@ export function isLaunchRecord(value: unknown): value is LaunchRecord {
     ]) &&
     namesTarget(value) &&
     (value.runtime === undefined || value.runtime === "process") &&
-    (value.vendor === "claude" || value.vendor === "codex") &&
+    isHarnessName(value.vendor) &&
     typeof value.wallBackoffMs === "number" &&
     (value.replaces === null || typeof value.replaces === "string") &&
     Number.isFinite(parseMs(value.createdAt as string)) &&

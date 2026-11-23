@@ -8,6 +8,7 @@
  * it cannot be resumed, naming the worktree. The command is printed, never
  * run: the session is the person's, never counted in the account's slots.
  */
+import { harnessOrDefault } from "../../shared/agent-harness/index.ts";
 import { shellQuote } from "../../shared/cli.ts";
 import type { LaunchExit, LaunchRecord } from "./launches.ts";
 import { isDrive } from "./launch-kind.ts";
@@ -34,11 +35,11 @@ function resumeSession(facts: ResumeFacts): string | null {
 export function resumeLine(facts: ResumeFacts): string {
   const { record } = facts;
   const tree = record.workspace?.path ?? record.repoPath;
+  const harness = harnessOrDefault(record.vendor);
   const session = resumeSession(facts);
   if (session === null)
-    return `The ${record.vendor === "codex" ? "Codex" : "Claude Code"} session recorded no id, so it cannot be resumed; its worktree is ${tree}`;
+    return `The ${harness.label} session recorded no id, so it cannot be resumed; its worktree is ${tree}`;
   const cd = `cd ${shellQuote(tree)}`;
-  return record.vendor === "codex"
-    ? `${cd} && CODEX_HOME=${shellQuote(record.configDir)} codex resume ${shellQuote(session)}`
-    : `${cd} && CLAUDE_CONFIG_DIR=${shellQuote(record.configDir)} claude --resume ${shellQuote(session)}`;
+  const resume = harness.resumeCommand(session).map(shellQuote).join(" ");
+  return `${cd} && ${harness.environment.directoryVariable}=${shellQuote(record.configDir)} ${resume}`;
 }

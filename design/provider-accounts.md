@@ -25,7 +25,8 @@ model providers under the rule for outbound calls. How a provider's limits,
 failures and costs are governed is in
 [outbound-calls.md § Model providers](outbound-calls.md#model-providers); this
 page holds the account schema and everything else the build steps read.
-The account kind, the credential command, the identity forms and the
+The harness interface is built, with Claude Code and Codex behind it
+(`plugin/shared/agent-harness/`). The account kind, the credential command, the identity forms and the
 provider allow list are built, the list applying to dispatch launches; a
 provider account is reported as configured and not admitted while the
 provider admission hold stands, which comes off only once the spend-cap work lands together with the endpoint-routing, redaction and original-transcript work. The

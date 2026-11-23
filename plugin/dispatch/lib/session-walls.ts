@@ -18,6 +18,7 @@
  */
 import { resolve } from "node:path";
 import { run } from "../../shared/proc.ts";
+import { harnessNamed } from "../../shared/agent-harness/index.ts";
 import { passEnvironment } from "./accounts.ts";
 import { agentOf } from "./actions/pickup-hold.ts";
 import {
@@ -64,7 +65,13 @@ async function probe(
 ): Promise<ProbedWall | null | string> {
   const { record } = r;
   const done = await run(
-    [...probeCommand(), record.sessionId as string, cwd, record.createdAt],
+    [
+      ...probeCommand(),
+      record.sessionId as string,
+      cwd,
+      record.createdAt,
+      record.vendor,
+    ],
     { timeoutSec, env: passEnvironment(process.env, record), stderr: "pipe" },
   );
   if (done.code !== 0)
@@ -84,7 +91,7 @@ function readable(r: ReadRecord): boolean {
   return (
     isInteractive(record) &&
     r.state.kind === "alive" &&
-    record.vendor === "claude" &&
+    harnessNamed(record.vendor)?.capabilities.sessionId === "minted" &&
     typeof record.sessionId === "string"
   );
 }

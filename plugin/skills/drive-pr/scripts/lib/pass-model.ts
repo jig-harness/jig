@@ -41,6 +41,11 @@ import {
   RoutingError,
   tierNamed,
 } from "../../../do-item/scripts/lib/routing.ts";
+import { codex } from "../../../../shared/agent-harness/codex.ts";
+import {
+  defaultHarness,
+  harnessOfProgram,
+} from "../../../../shared/agent-harness/index.ts";
 import { passVendor } from "./identity.ts";
 import {
   DEFAULT_PASS_MODEL,
@@ -141,11 +146,9 @@ export function configuredCodexModel(
   };
 }
 
-/** The words that take the model as the next word: `--model` for both tools, and Codex's `-m`. */
+/** The words that take the model as the next word: the pass command's harness's (`--model` for both tools, and Codex's `-m`). */
 function modelFlags(argv: readonly string[]): ReadonlySet<string> {
-  return passVendor(argv) === "codex"
-    ? new Set(["--model", "-m"])
-    : new Set(["--model"]);
+  return new Set(harnessOfProgram(argv[0])?.modelFlags ?? ["--model"]);
 }
 
 /** Where the model option sits in a `claude` or `codex` argv, and its value. */
@@ -158,9 +161,16 @@ function modelOption(
     if (word === "--") break;
     if (flags.has(word) && i + 1 < argv.length)
       return { index: i, width: 2, value: argv[i + 1] as string };
-    if (word.startsWith("--model="))
-      return { index: i, width: 1, value: word.slice("--model=".length) };
-    if (flags.has("-m") && word.startsWith("-m") && word.length > 2)
+    const equals = [...flags].find(
+      (flag) => flag.startsWith("--") && word.startsWith(`${flag}=`),
+    );
+    if (equals !== undefined)
+      return { index: i, width: 1, value: word.slice(equals.length + 1) };
+    const short = [...flags].find(
+      (flag) =>
+        /^-[^-]$/.test(flag) && word.startsWith(flag) && word.length > 2,
+    );
+    if (short !== undefined)
       return { index: i, width: 1, value: word.slice(word[2] === "=" ? 3 : 2) };
   }
   return null;
@@ -180,6 +190,25 @@ export function withoutModel(argv: readonly string[]): string[] {
 }
 
 /**
+ * `argv` with its model set to `model` in its harness's form: every own
+ * model option removed, then the harness's own placement (Claude Code's
+ * `--model` where the first was, else after `claude`; Codex's `-m` after
+ * `exec`, after `codex` when it has none). A command no harness starts takes
+ * the default harness's form.
+ */
+export function withHarnessModel(
+  argv: readonly string[],
+  model: string,
+): string[] {
+  const harness = harnessOfProgram(argv[0]) ?? defaultHarness();
+  return harness.withModel(
+    withoutModel(argv),
+    model,
+    modelOption(argv)?.index ?? null,
+  );
+}
+
+/**
  * `argv` with its `--model` set to `model`: every own `--model` removed and
  * one put where the first was, else added after `claude`.
  */
@@ -194,9 +223,7 @@ export function withCodexModel(
   argv: readonly string[],
   model: string,
 ): string[] {
-  const rest = withoutModel(argv);
-  const at = rest[1] === "exec" ? 2 : 1;
-  return [...rest.slice(0, at), "-m", model, ...rest.slice(at)];
+  return codex.withModel(withoutModel(argv), model, null);
 }
 
 /** The pass command the driver runs, and the model it runs on. */
@@ -292,6 +319,34 @@ function codexPass(
       };
 }
 
+/** A pass of a registered harness other than the built-in two: `--pass-model` in its own form, else its own choice. */
+function registeredPass(
+  argv: readonly string[],
+  flag: string | undefined,
+): EffectivePass {
+  const other = harnessOfProgram(argv[0]);
+  if (flag === undefined || other === null)
+    return {
+      argv: [...argv],
+      model: null,
+      source: `chosen by the pass command (${basename(argv[0] ?? "")})`,
+    };
+  const chosen = resolveModelValue(
+    flag,
+    "--pass-model",
+    readOptionalOverlay,
+    other.runtime,
+  );
+  return {
+    argv: other.withModel(
+      withoutModel(argv),
+      chosen.model,
+      modelOption(argv)?.index ?? null,
+    ),
+    ...chosen,
+  };
+}
+
 /**
  * The pass command with its model decided (see the module header), from the
  * command as given, the `--pass-model` flag and the configured model.
@@ -320,12 +375,7 @@ export function effectivePass(
     );
     return { argv: withCodexModel(argv, chosen.model), ...chosen };
   }
-  if (vendor !== "claude")
-    return {
-      argv: [...argv],
-      model: null,
-      source: `chosen by the pass command (${basename(first)})`,
-    };
+  if (vendor !== "claude") return registeredPass(argv, flag);
   const own = modelOption(argv);
   if (flag !== undefined) {
     const chosen = resolveModelValue(flag, "--pass-model");

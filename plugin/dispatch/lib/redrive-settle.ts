@@ -9,12 +9,12 @@
  */
 import { conflictNote } from "./sources/ledger-probe.ts";
 import type { DrivenPr, StaleCause } from "./types.ts";
+import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 
 /**
  * Whether a stale ledger is re-driven once per change and then a person's:
  * a stop on a conflict, an unclean tree, a mechanical stop, or a failure on a
- * conflicting pull request. A converged one is only reported
- * once re-driven.
+ * conflicting pull request, including one whose drive converged.
  */
 export function settlesWithPerson(stale: StaleCause | undefined): boolean {
   return (
@@ -31,7 +31,7 @@ export function settledWhy(pr: DrivenPr, by: string): string {
       ? "its head or its base moves"
       : "its head moves";
   const stopped =
-    pr.stale?.conflictStop === true && pr.stale.recovery !== true
+    pr.evidence.exit === DRIVE_EXIT.PR_CONFLICTING
       ? "stopped on a conflict with its base"
       : `${pr.stale?.mechanicalStop === "check-runs" ? "a systematic read failure: " : ""}${pr.stale?.cause ?? pr.why}`;
   const conflict =

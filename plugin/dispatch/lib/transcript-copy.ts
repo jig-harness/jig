@@ -36,13 +36,15 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { claudeCode } from "../../shared/agent-harness/claude-code.ts";
+import { harnessOrDefault } from "../../shared/agent-harness/index.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { isCredentialKey, maskCredentials } from "../../shared/credentials.ts";
 import { holdsCredentialOf } from "./provider-held.ts";
 import { swallow } from "../../shared/errors.ts";
 import { redactStrings } from "../../shared/redact.ts";
 import { LAUNCH_RECORD_ID } from "../../shared/records/launch-claims.ts";
-import { currentIso, isoFromMs, parseMs } from "../../shared/time.ts";
+import { currentIso, parseMs } from "../../shared/time.ts";
 import {
   forEachDirEntry,
   readBoundedTail,
@@ -60,12 +62,12 @@ const KEPT_AFTER_CAUSE_DAYS = 7;
 export const CAUSE_RECORDED = "recorded";
 
 const DAY_MS = 86_400_000;
-/** The most project directories, or Codex rollouts of one day, a search reads. */
-const SEARCH_ENTRIES = 5000;
 /** The most expired run directories one tick removes. */
 const PRUNE_ENTRIES = 1000;
 const SESSION =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const SAFE_SESSION = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 /** What `copy.json` says of one run's copy. */
 export interface TranscriptCopy {
@@ -88,83 +90,20 @@ export function runDir(root: string, id: string): string {
   return join(root, "runs", id);
 }
 
-/** The escape character a terminal's color codes start with. */
-const ESC = String.fromCharCode(27);
-
-/** `text` without a terminal's color codes. */
-function withoutColor(text: string): string {
-  return text
-    .split(ESC)
-    .map((part, i) => (i === 0 ? part : part.replace(/^\[[0-9;]*m/, "")))
-    .join("");
-}
-
 /** Read the session ID from a Codex text header or JSON startup event. */
-export function codexSessionIn(text: string | undefined): string | null {
-  for (const raw of (text ?? "").split(/\r?\n/)) {
-    const line = withoutColor(raw).trim();
-    const id = /^session id:\s*(\S+)$/i.exec(line)?.[1] ?? codexThreadId(line);
-    if (id !== null && SESSION.test(id)) return id.toLowerCase();
-  }
-  return null;
-}
-
-function codexThreadId(line: string): string | null {
-  if (!line.startsWith("{") || !line.includes('"thread.started"')) return null;
-  try {
-    const event: unknown = JSON.parse(line);
-    return isMapping(event) &&
-      event.type === "thread.started" &&
-      typeof event.thread_id === "string"
-      ? event.thread_id
-      : null;
-  } catch (error) {
-    swallow(error, "Codex's startup event does not read as JSON");
-    return null;
-  }
-}
+export { codexSessionIn } from "../../shared/agent-harness/codex.ts";
 
 /** Claude Code's transcript of `session` under `configDir`, in any project. */
 export function claudeTranscript(
   configDir: string,
   session: string,
 ): string | null {
-  const root = join(configDir, "projects");
-  let found: string | null = null;
-  let entries = 0;
-  forEachDirEntry(root, (entry) => {
-    if (++entries > SEARCH_ENTRIES) return false;
-    if (!entry.isDirectory()) return true;
-    const path = join(root, entry.name, `${session}.jsonl`);
-    if (existsSync(path)) found = path;
-    return found === null;
+  return claudeCode.transcript({
+    configDir,
+    session,
+    startedMs: 0,
+    walk: forEachDirEntry,
   });
-  return found;
-}
-
-/** Codex's rollout of `session` under `configDir`, in the day directories around when the run was made. */
-function codexTranscript(
-  configDir: string,
-  session: string,
-  createdMs: number,
-): string | null {
-  const suffix = `-${session}.jsonl`;
-  for (const offset of [0, -1, 1]) {
-    const [year, month, day] = isoFromMs(createdMs + offset * DAY_MS)
-      .slice(0, 10)
-      .split("-") as [string, string, string];
-    const dir = join(configDir, "sessions", year, month, day);
-    let found: string | null = null;
-    let entries = 0;
-    forEachDirEntry(dir, (entry) => {
-      if (++entries > SEARCH_ENTRIES) return false;
-      if (entry.isFile() && entry.name.endsWith(suffix))
-        found = join(dir, entry.name);
-      return found === null;
-    });
-    if (found !== null) return found;
-  }
-  return null;
 }
 
 /** The vendor transcript of a run under `session`, or why there is none. */
@@ -172,19 +111,25 @@ function findTranscript(
   record: Pick<LaunchRecord, "vendor" | "configDir" | "createdAt">,
   session: string | null,
 ): { path: string } | { missing: string } {
+  const harness = harnessOrDefault(record.vendor);
   if (session === null)
     return {
       missing:
-        record.vendor === "codex"
-          ? "the Codex pass printed no session id"
+        harness.capabilities.sessionId === "printed"
+          ? `the ${harness.label} pass printed no session id`
           : "the run has no session id",
     };
-  if (!SESSION.test(session))
+  // Claude Code mints UUIDs; another harness prints its own shape, so only a path-safe id is required of it.
+  if (
+    !(harness.name === claudeCode.name ? SESSION : SAFE_SESSION).test(session)
+  )
     return { missing: "the run's session id is not one" };
-  const path =
-    record.vendor === "codex"
-      ? codexTranscript(record.configDir, session, parseMs(record.createdAt))
-      : claudeTranscript(record.configDir, session);
+  const path = harness.transcript({
+    configDir: record.configDir,
+    session,
+    startedMs: parseMs(record.createdAt),
+    walk: forEachDirEntry,
+  });
   return path === null
     ? { missing: "the vendor's transcript of the session was not found" }
     : { path };

@@ -63,7 +63,14 @@ import {
 import { layeredConfig } from "../../shared/consumer.ts";
 import { Defect } from "../../shared/errors.ts";
 import { run } from "../../shared/proc.ts";
-import type { AccountVendor } from "../../skills/drive-pr/scripts/lib/identity.ts";
+import {
+  credentialVariables,
+  directoryVariables,
+  type HarnessName,
+  harnessNamed,
+  harnessOrDefault,
+  isSessionMarker,
+} from "../../shared/agent-harness/index.ts";
 import {
   isPassVendor,
   onlyDeadlineBounds,
@@ -94,9 +101,7 @@ import {
 } from "./provider-allow.ts";
 import {
   CREDENTIAL_HANDOFF,
-  DIRECTORY_VARIABLE,
   type ProviderLaunch,
-  SUBSCRIPTION_CREDENTIALS,
   withheldFromPasses,
   withoutVariables,
   withProviderVariables,
@@ -105,28 +110,30 @@ import {
 type Env = Record<string, string | undefined>;
 
 /**
- * The environment a pass billed to `account` runs in: `base` with the
- * credential variables, every vendor's directory variable, the harness
- * markers (`CLAUDECODE`, `CODEX_…`), Jig's own provider-launch variables
- * and the credential command's (`credential_env`) removed, whatever their
- * letter case, and the account's configuration
+ * The environment a pass billed to `account` runs in: `base` with every
+ * registered harness's credential variables (the ones the drive's resolver
+ * reads before a configuration directory), directory variable and session
+ * markers (`CLAUDECODE`, `CODEX_…`), Jig's own provider-launch variables and
+ * the credential command's (`credential_env`) removed, whatever their letter
+ * case, and the account's configuration
  * directory set, so the drive's resolver and quota adapters read that
  * account and no other, and the session detects its own agent rather than
  * the wrapper's.
  */
 export function passEnvironment(
   base: Env,
-  account: { vendor: AccountVendor; configDir: string },
+  account: { vendor: HarnessName; configDir: string },
 ): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(base))
     if (value !== undefined) env[key] = value;
+  // Whatever the letter case: a mixed-case spelling reaches the pass as surely as the exact one.
   withoutVariables(
     env,
     [
-      ...SUBSCRIPTION_CREDENTIALS,
+      ...credentialVariables(),
+      ...directoryVariables(),
       "CLAUDECODE",
-      ...Object.values(DIRECTORY_VARIABLE),
       CREDENTIAL_HANDOFF,
       PROVIDER_IDENTITY_VARIABLE,
       SECRET_VARIABLES,
@@ -134,7 +141,10 @@ export function passEnvironment(
     ],
     ["CODEX_"],
   );
-  env[DIRECTORY_VARIABLE[account.vendor]] = account.configDir;
+  for (const name of Object.keys(env))
+    if (isSessionMarker(name)) delete env[name];
+  env[harnessOrDefault(account.vendor).environment.directoryVariable] =
+    account.configDir;
   return env;
 }
 
@@ -147,7 +157,7 @@ export function passEnvironment(
  */
 export function providerPassEnvironment(
   base: Env,
-  account: { vendor: AccountVendor; configDir: string },
+  account: { vendor: HarnessName; configDir: string },
   launch: ProviderLaunch,
   credential: string | null,
 ): Record<string, string> {
@@ -252,7 +262,10 @@ function stageRefusal(
 function vendorRefusal(vendor: string, launch: LaunchKind): string | null {
   if (!isPassVendor(vendor))
     return `the drive documents no pass command for its vendor ${vendor}, so it is accepted and not admitted`;
-  if (vendor === "codex" && !launch.codex.on)
+  if (
+    harnessNamed(vendor)?.capabilities.bypassOptIn === true &&
+    !launch.codex.on
+  )
     return `${launch.codex.why}: not admitted`;
   if (
     launch.kind === "pass" &&
@@ -282,7 +295,7 @@ function accountRefusal(
 }
 
 /** The vendor of an account a launch was admitted on, which admission only allows for a vendor with a documented pass command. */
-export function admittedVendor(account: MachineAccount): AccountVendor {
+export function admittedVendor(account: MachineAccount): HarnessName {
   const vendor = account.vendor;
   if (!isPassVendor(vendor))
     throw new Defect(
@@ -521,7 +534,10 @@ export function replaySlotBlock(
   if (refused !== null) return `${slots.account.name}: ${refused}`;
   const weightBlock = accountWeightBlock(slots);
   if (weightBlock !== null) return `${slots.account.name}: ${weightBlock}`;
-  if (record.vendor === "codex" && !codex.on)
+  if (
+    harnessNamed(record.vendor)?.capabilities.bypassOptIn === true &&
+    !codex.on
+  )
     return `${slots.account.name}: ${codex.why}`;
   if (slots.wallUnrecorded)
     return `${slots.account.name} ended on a wall that was not recorded`;
