@@ -870,12 +870,16 @@ describe("required checks and reviewer attempts", () => {
       );
     }
   });
-  it.each([false, true])(
-    "does not let an optional pending check hide an approval request (mergeQueue %p)",
-    (mergeQueue) => {
+  it.each([
+    [false, "BLOCKED"],
+    [true, "BLOCKED"],
+    [true, "CLEAN"],
+  ])(
+    "does not let an optional pending check hide an approval request (mergeQueue %p, %s)",
+    (mergeQueue, mergeState) => {
       const f = facts({
         mergeQueue,
-        mergeState: "BLOCKED",
+        mergeState,
         reviewDecision: "REVIEW_REQUIRED",
       });
       f.checks = [

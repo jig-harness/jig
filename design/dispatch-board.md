@@ -250,7 +250,7 @@ this order. The table lists the rows a reader most often needs, not every
 blocker: the predicate also places a dispatch `hold` label after the CI
 hold and before unresolved threads, lets a failing required check override a
 stale `CLEAN` state, applies failures on the merge-queue path too, and
-makes a pending required check wait whatever the merge state says, once an attempt that a later non-skipped attempt of the same name and app replaced (by their timestamps) is dropped, so a required pending attempt still waits when no such replacement is established, and the earlier blockers (a draft, a hold, a confirmed failure) have not claimed the card.
+makes a pending required check wait whatever the merge state says, once the earlier blockers (a draft, a hold, a confirmed failure, a missing review witness) have not claimed the card. Ordinary checks are first reduced to the latest attempt per name and app: an attempt that a later non-skipped attempt of the same name and app replaced (by their timestamps) is dropped, and a pending attempt still waits when no such replacement is established. The reviewer app's matching checks are not reduced that way: the witness picks the highest attempt id, and when that attempt is still pending the missing-witness row sends the card to Needs you before the wait row is reached.
 Where the card names a hold, a failing check or a wait, that reason
 comes before the approval and merge rows below:
 
