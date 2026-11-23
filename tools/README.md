@@ -30,7 +30,7 @@ coding agent" button to a workspace on this machine, through the
 also open and remove worktree workspaces by hand. `protocol/` generates the
 [Jig Protocol](../GLOSSARY.md)'s chapters in `plugin/protocol/` from the
 code's own tables and checks them
-([design/protocol.md](../design/protocol.md)).
+([Protocol maintainer reference](protocol/README.md)).
 
 ## Runtime choice
 

@@ -5,7 +5,7 @@ status: draft
 description: "Every station of the execution line on a piece of work has an address that is derived from the records the station leaves, never declared or held; asking reads those records and telling writes one record the line already acts on, so no resident agent, daemon or queue holds an address or a request; a person's conversation with the operator is kept apart, on one machine, and never read as a request"
 lifecycle: permanent
 version: "1.2"
-last_updated: 2026-11-11
+last_updated: 2026-11-22
 owner: maintainers
 decision_date: 2026-11-05
 supersedes: ~
@@ -27,7 +27,7 @@ dispatched it ([ADR-0013](ADR-0013-records-not-a-daemon.md)). Where a piece
 of work stands is read from those records by several readers, each its own
 way, and a person steers the line with a different gesture for each case: an
 assignment, a label, an `answer` comment, a mailbox directive.
-[design/addresses.md](../../design/addresses.md) gives every station on a
+[The Addresses chapter](../../plugin/protocol/addresses.md) gives every station on a
 piece of work one name, an [address](../../GLOSSARY.md)
 (`drive@jig-harness/jig#456`), which `jig ask` answers and `jig send`
 writes to.
