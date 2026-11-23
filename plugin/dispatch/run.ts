@@ -936,15 +936,18 @@ async function trackerMain(slug: string, deadline: string): Promise<number> {
   return 0;
 }
 
+/** `run.ts identity <harness>`: the account the named harness reads in this environment. */
+function identityMain(name: string): number {
+  const harness = harnessNamed(name);
+  const read = () => harness?.accountIdentity(process.env);
+  console.log(JSON.stringify(read() ?? resolveAccountIdentity([name])));
+  return 0;
+}
+
 /** The wrapper's command line; `jig dispatch run` reaches it too. */
 export async function runMain(argv: string[]): Promise<number> {
-  if (argv[0] === "identity" && argv.length === 2) {
-    const named = harnessNamed(argv[1])?.accountIdentity(process.env);
-    console.log(
-      JSON.stringify(named ?? resolveAccountIdentity([argv[1] as string])),
-    );
-    return 0;
-  }
+  if (argv[0] === "identity" && argv.length === 2)
+    return identityMain(argv[1] as string);
   if (argv[0] === "quota" && argv.length === 4) {
     const [, session, cwd, since] = argv as [string, string, string, string];
     if (!Number.isFinite(parseMs(since))) {

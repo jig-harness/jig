@@ -20,13 +20,8 @@ import type { AgentHarness, HarnessName } from "./port.ts";
 export type {
   AccountIdentity,
   AgentHarness,
-  HarnessCapabilities,
-  HarnessEnvironment,
-  HarnessIdentity,
   HarnessName,
-  InteractiveRequest,
   PassRequest,
-  TranscriptQuery,
 } from "./port.ts";
 
 const registered: AgentHarness[] = [claudeCode, codex];

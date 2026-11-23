@@ -19,6 +19,7 @@ import { swallow } from "../errors.ts";
 import { failed } from "../outcome.ts";
 import { isoFromMs } from "../time.ts";
 import { resolved, tokenFingerprint, unresolved } from "./account-identity.ts";
+import { routeWords } from "./route-words.ts";
 import type {
   AccountIdentity,
   AgentHarness,
@@ -87,50 +88,69 @@ function accountIdentity(env: Env): AccountIdentity {
       "OPENAI_API_KEY",
     );
   const path = effectiveCodexAuthPath(env);
-  const provenance = "CODEX_HOME auth.json";
+  const auth = readAuth(path);
+  return "unresolved" in auth
+    ? auth.unresolved
+    : authIdentity(path, auth.value);
+}
+
+const PROVENANCE = "CODEX_HOME auth.json";
+
+/** `auth.json` read and parsed, or the identity that says why it could not be. */
+function readAuth(
+  path: string,
+): { value: unknown } | { unresolved: AccountIdentity } {
   let text: string;
   try {
     text = readFileSync(path, "utf8");
   } catch {
-    return unresolved(NAME, provenance, `${path} could not be read`);
+    return {
+      unresolved: unresolved(NAME, PROVENANCE, `${path} could not be read`),
+    };
   }
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    return { value: JSON.parse(text) };
   } catch {
-    return unresolved(NAME, provenance, `${path} did not parse as JSON`);
+    return {
+      unresolved: unresolved(NAME, PROVENANCE, `${path} did not parse as JSON`),
+    };
   }
-  const parsedObj =
-    typeof parsed === "object" && parsed !== null
-      ? (parsed as Record<string, unknown>)
-      : undefined;
-  if (parsedObj?.auth_mode === "apikey") {
-    const persistedKey = parsedObj.OPENAI_API_KEY;
-    if (typeof persistedKey === "string" && persistedKey !== "")
-      return resolved(
-        NAME,
-        `api-key:${tokenFingerprint(persistedKey)}`,
-        `${provenance} (auth_mode: apikey)`,
-      );
-  }
-  const tokens = parsedObj?.tokens;
-  const tokensObj =
-    typeof tokens === "object" && tokens !== null
-      ? (tokens as Record<string, unknown>)
-      : undefined;
-  const idToken = tokensObj?.id_token;
+}
+
+function mapping(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/** The identity a parsed `auth.json` names: a persisted key, the id token's email, else the account id. */
+function authIdentity(path: string, parsed: unknown): AccountIdentity {
+  const auth = mapping(parsed);
+  const persistedKey = auth?.OPENAI_API_KEY;
+  if (
+    auth?.auth_mode === "apikey" &&
+    typeof persistedKey === "string" &&
+    persistedKey !== ""
+  )
+    return resolved(
+      NAME,
+      `api-key:${tokenFingerprint(persistedKey)}`,
+      `${PROVENANCE} (auth_mode: apikey)`,
+    );
+  const tokens = mapping(auth?.tokens);
+  const idToken = tokens?.id_token;
   const email = typeof idToken === "string" ? jwtEmailClaim(idToken) : null;
-  if (email !== null) return resolved(NAME, email, provenance);
-  const accountId = tokensObj?.account_id;
+  if (email !== null) return resolved(NAME, email, PROVENANCE);
+  const accountId = tokens?.account_id;
   if (typeof accountId === "string" && accountId !== "")
     return resolved(
       NAME,
       accountId,
-      `${provenance} (account_id — no email claim)`,
+      `${PROVENANCE} (account_id — no email claim)`,
     );
   return unresolved(
     NAME,
-    provenance,
+    PROVENANCE,
     `${path} carries no id_token email claim or account_id`,
   );
 }
@@ -200,14 +220,11 @@ function effort(value: string): string[] {
   return ["-c", `model_reasoning_effort="${value}"`];
 }
 
-function routeWords(request: {
+function route(request: {
   model?: string | null;
   effort?: string | null;
 }): string[] {
-  return [
-    ...(request.model == null ? [] : model(request.model)),
-    ...(request.effort == null ? [] : effort(request.effort)),
-  ];
+  return routeWords(request, model, effort);
 }
 
 const environment: HarnessEnvironment = {
@@ -256,12 +273,12 @@ export const codex: AgentHarness = {
     "exec",
     ...(request.bypass === true ? [CODEX_BYPASS] : []),
     ...(request.hostArgs ?? []),
-    ...routeWords(request),
+    ...route(request),
     request.prompt,
   ],
   interactiveCommand: (request: InteractiveRequest) => [
     "codex",
-    ...routeWords(request),
+    ...route(request),
     request.prompt,
   ],
   resumeCommand: (session) => ["codex", "resume", session],

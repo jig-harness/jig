@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { swallow } from "../errors.ts";
 import { failed } from "../outcome.ts";
 import { resolved, tokenFingerprint, unresolved } from "./account-identity.ts";
+import { routeWords } from "./route-words.ts";
 import type {
   AccountIdentity,
   AgentHarness,
@@ -123,14 +124,11 @@ function effort(value: string): string[] {
   return ["--effort", value];
 }
 
-function routeWords(request: {
+function route(request: {
   model?: string | null;
   effort?: string | null;
 }): string[] {
-  return [
-    ...(request.model == null ? [] : model(request.model)),
-    ...(request.effort == null ? [] : effort(request.effort)),
-  ];
+  return routeWords(request, model, effort);
 }
 
 const environment: HarnessEnvironment = {
@@ -192,7 +190,7 @@ export const claudeCode: AgentHarness = {
   passCommand: (request: PassRequest) => [
     "claude",
     ...sessionWords(request.sessionId),
-    ...routeWords(request),
+    ...route(request),
     ...(request.hostArgs ?? []),
     "-p",
     request.prompt,
@@ -200,7 +198,7 @@ export const claudeCode: AgentHarness = {
   interactiveCommand: (request: InteractiveRequest) => [
     "claude",
     ...sessionWords(request.sessionId),
-    ...routeWords(request),
+    ...route(request),
     request.prompt,
   ],
   resumeCommand: (session) => ["claude", "--resume", session],
