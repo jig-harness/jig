@@ -404,6 +404,21 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.304.1] - 2026-11-23
+
+### Fixed
+
+- Re-arming a drive that stopped on its round budget (`MAX_ROUNDS`) now
+  runs review passes again instead of stopping with exit `6` on its first
+  check. A re-arm a person asks for (`jig send drive@<repo> <PR> rearm`) and
+  `arm-drive.ts --rearm-budget` grant the drive one more round budget:
+  `drive.max_rounds` (or `--max-rounds`) more distinct heads, counting the
+  head it resumes on, and a fresh count of passes on that head. The steward's
+  and the tick's re-drives never grant it. The grant is kept in the drive
+  state and published to the ledger so a restart or a takeover keeps it, and
+  is never renewed without another re-arm: the drive stops on `MAX_ROUNDS` again
+  once it spends it. `jig send … rearm` on such a stop says so.
+
 ## [0.304.0] - 2026-11-23
 
 ### Added
@@ -10781,7 +10796,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.304.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.304.1...HEAD
+[0.304.1]: https://github.com/jig-harness/jig/compare/v0.304.0...v0.304.1
 [0.304.0]: https://github.com/jig-harness/jig/compare/v0.303.1...v0.304.0
 [0.303.1]: https://github.com/jig-harness/jig/compare/v0.303.0...v0.303.1
 [0.303.0]: https://github.com/jig-harness/jig/compare/v0.302.0...v0.303.0
