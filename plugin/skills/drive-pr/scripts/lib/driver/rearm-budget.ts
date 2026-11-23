@@ -138,8 +138,9 @@ export async function roundBudget(
     attempts: base,
   });
   if (!rearm) {
-    // A plain restart relies on a stored grant only once it is published.
-    if (spent.granted > 0 && !dryRun) await publishGrant(pr);
+    // A plain restart relies on what an earlier re-arm stored (a grant, or an
+    // attempt-only reset no counter shows) only once it is published.
+    if (!dryRun) await publishGrant(pr);
     return limits(spent.granted);
   }
   const grant = rearmGrant(spent, base);
