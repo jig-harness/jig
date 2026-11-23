@@ -75,9 +75,9 @@ export async function confirmCarriedReview(
   head: string,
   base: string | undefined,
   rules: ReadyRules,
-): Promise<{ reviewCarriedFrom?: string }> {
-  if (checkout == null || typeof from !== "string" || base === undefined)
-    return {};
+): Promise<{ reviewCarriedFrom?: string; reviewCarriedUnavailable?: true }> {
+  if (typeof from !== "string" || base === undefined) return {};
+  if (checkout == null) return { reviewCarriedUnavailable: true };
   return (await basePreservesReview(checkout, from, head, base)) &&
     (await witnessedReview(slug, from, rules))
     ? { reviewCarriedFrom: from }

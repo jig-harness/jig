@@ -195,9 +195,12 @@ async function checkCi({ pr, head, reviewed }: Candidate): Promise<number> {
     { timeoutSec: ciHoldTimeoutSeconds() },
   );
   if (checked.code === 0) return 0;
-  return checked.code === 4 && checked.stdout.trim() === BASE_MERGE_CI_PENDING
-    ? WAIT
-    : FALLBACK;
+  if (checked.code === 4 && checked.stdout.trim() === BASE_MERGE_CI_PENDING)
+    return WAIT;
+  diagnostic(
+    `the refreshed head's CI check exited ${checked.code}${checked.stderr.trim() === "" ? "" : `: ${checked.stderr.trim()}`}`,
+  );
+  return FALLBACK;
 }
 
 /** Resume a refresh that posted before updating the ledger. */
@@ -276,15 +279,22 @@ async function refresh(request: Request): Promise<number> {
   const { pr, head, verified } = request;
   const candidate = await readCandidate(request);
   if (typeof candidate === "number") return candidate;
-  const history = await checkHistory(candidate);
-  if (history !== 0) return history;
   const standing = await announcements(pr);
   if (
     standing === null ||
-    standing.some((comment) => comment.unreadable !== undefined) ||
-    announcedIds(standing, verified).length === 0
+    standing.some((comment) => comment.unreadable !== undefined)
   )
     return FALLBACK;
+  if (head === verified) {
+    const stale = standing.filter((comment) => comment.head !== head);
+    const withdrawn = await Promise.all(
+      stale.map(({ id }) => withdraw(pr, id)),
+    );
+    return withdrawn.every(Boolean) ? 0 : FALLBACK;
+  }
+  const history = await checkHistory(candidate);
+  if (history !== 0) return history;
+  if (announcedIds(standing, verified).length === 0) return FALLBACK;
 
   const ci = await checkCi(candidate);
   if (ci !== 0) return ci;

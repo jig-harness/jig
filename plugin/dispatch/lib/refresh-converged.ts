@@ -36,7 +36,6 @@ function refreshArgs(drive: DrivenPr): string[] | null {
     mergeable !== "MERGEABLE" ||
     typeof headSha !== "string" ||
     typeof verifiedSha !== "string" ||
-    headSha === verifiedSha ||
     typeof generation !== "number"
   )
     return null;

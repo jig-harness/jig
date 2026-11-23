@@ -136,6 +136,8 @@ export interface MergeFacts extends ForgeFacts {
   verifiedSha: string;
   /** Earlier app review independently confirmed against the current Git history. */
   reviewCarriedFrom?: string;
+  /** The historical review exists, but this reader has no checkout to prove its history. */
+  reviewCarriedUnavailable?: true;
   /** A person's hold label stands the dispatcher down from it. */
   held: boolean;
 }
@@ -282,7 +284,7 @@ function witness(
   if (
     facts.reviewCarriedFrom !== undefined &&
     facts.verifiedSha === facts.head &&
-    runs.every((run) => run.state !== "failure")
+    runs.every((run) => run.state === "success" || run.state === "neutral")
   )
     return {
       met: true,
@@ -292,7 +294,9 @@ function witness(
   if (runs.length === 0)
     return {
       met: false,
-      fact: `${rules.reviewerApp} posted no review check on this head`,
+      fact: facts.reviewCarriedUnavailable
+        ? "the carried review could not be verified without a checkout"
+        : `${rules.reviewerApp} posted no review check on this head`,
       byApp: true,
     };
   const met = runs.every(

@@ -155,6 +155,27 @@ describe("whose approval counts", () => {
 });
 
 describe("the review witness, run by run", () => {
+  it("does not carry a review while its replacement is still running", () => {
+    const r = at({
+      reviewCarriedFrom: OTHER,
+      checks: [
+        {
+          name: "AI review",
+          app: "example-review",
+          required: false,
+          state: "pending",
+          startedAt: null,
+        },
+      ],
+    });
+    expect(r.place).toBe("needs-you");
+  });
+
+  it("explains when a carried review cannot be checked without a checkout", () => {
+    const r = at({ checks: [], reviewCarriedUnavailable: true });
+    expect(r.says).toContain("could not be verified without a checkout");
+  });
+
   it("takes a reviewer run not started yet as the newest, over an older success", () => {
     const r = at({
       checks: [
