@@ -51,7 +51,7 @@ function parseComment(comment: unknown): CommentLike | null {
     Number.isNaN(parseMs(comment.createdAt))
   )
     return null;
-  const edited = comment.lastEditedAt;
+  const edited = comment.lastEditedAt ?? null;
   if (
     edited !== null &&
     (typeof edited !== "string" || Number.isNaN(parseMs(edited)))
