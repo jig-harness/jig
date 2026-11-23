@@ -69,24 +69,45 @@ const LINE_MAX = 200;
 /** The longest quoted excerpt. */
 const EXCERPT_MAX = 600;
 
-/** Keeps the last `TAIL_BYTES` of a stream observed chunk by chunk. */
+/** The longest unfinished line held raw, so a credential or a character split across chunks is still read whole. */
+const PENDING_MAX = 256 * 1024;
+
+/** The raw bytes a forced flush of an over-long line keeps, as context for what follows. */
+const PENDING_KEEP = 4 * 1024;
+
+/**
+ * Keeps the last `TAIL_BYTES` of a stream observed chunk by chunk. Bytes are
+ * held raw until their line is complete, and masked and decoded whole: a
+ * credential or a multi-byte character split between chunks is never read in
+ * halves. Only a line longer than `PENDING_MAX` is masked before it ends.
+ */
 export function outputTail(): {
   observe: (bytes: Uint8Array) => void;
   text: () => string;
 } {
-  let kept = Buffer.alloc(0);
+  let done = "";
+  let pending: Buffer = Buffer.alloc(0);
+  const settle = (raw: Buffer): void => {
+    done += redactReportText(raw.toString("utf8"));
+    if (done.length > TAIL_BYTES) done = done.slice(done.length - TAIL_BYTES);
+  };
   return {
     observe(bytes) {
-      // Mask before dropping the prefix.  A credential key can occur at the
-      // start of one very long stderr line, with its value still in the tail
-      // after the key would otherwise have been discarded.
-      kept = Buffer.from(
-        redactReportText(Buffer.concat([kept, bytes]).toString("utf8")),
-      );
-      if (kept.length > TAIL_BYTES)
-        kept = kept.subarray(kept.length - TAIL_BYTES);
+      pending = Buffer.concat([pending, bytes]);
+      const end = pending.lastIndexOf(10);
+      if (end >= 0) {
+        settle(pending.subarray(0, end + 1));
+        pending = pending.subarray(end + 1);
+      }
+      if (pending.length > PENDING_MAX) {
+        // Cut at a character boundary: back over UTF-8 continuation bytes.
+        let cut = pending.length - PENDING_KEEP;
+        while (cut > 0 && (pending[cut]! & 0xc0) === 0x80) cut--;
+        settle(pending.subarray(0, cut));
+        pending = pending.subarray(cut);
+      }
     },
-    text: () => kept.toString("utf8"),
+    text: () => done + redactReportText(pending.toString("utf8")),
   };
 }
 

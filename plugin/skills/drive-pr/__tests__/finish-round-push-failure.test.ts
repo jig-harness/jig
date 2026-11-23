@@ -105,6 +105,19 @@ describe("a failed push's reason", () => {
     expect(tail.text()).toContain("pre-push failed");
   });
 
+  it("masks a credential and keeps a character that arrive split between chunks", () => {
+    const tail = outputTail();
+    tail.observe(Buffer.from("error: token ghp_abcdefgh"));
+    tail.observe(Buffer.from("ijklmnopqrstuvwxyz0123456789 rejected\n"));
+    const bytes = Buffer.from("fehler: größe\n");
+    tail.observe(bytes.subarray(0, 10));
+    tail.observe(bytes.subarray(10));
+    expect(tail.text()).not.toContain("ijklmnop");
+    expect(tail.text()).toContain("<redacted>");
+    expect(tail.text()).toContain("größe");
+    expect(tail.text()).not.toContain("�");
+  });
+
   it("names the exit, the kind and what it means", () => {
     expect(pushFailureReason(1, HOOK_FAILURE)).toStartWith(
       "guarded-push.ts exited 1 (pre-push-gate): the pre-push hook's gates refused the push — ",
