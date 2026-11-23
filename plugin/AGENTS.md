@@ -142,10 +142,10 @@ here reaches every repository at once.
   forms are held by `scripts/check-skill-runtime-forms.ts`, which
   `bun run gates` runs over the body of each `SKILL.md` and reference page
   (not READMEs, templates, fixtures or test directories, nor frontmatter),
-  for three forms only: the skill directory, the structured question and the
+  for these forms only: the skill directory, the structured question and the
   review arbiter:
   - **The skill's directory.** `SKILL.md` writes it as `${CLAUDE_SKILL_DIR}`
-    (a page that names `CLAUDE_PLUGIN_ROOT` explains that one the same way)
+    (a page that names `CLAUDE_PLUGIN_ROOT` explains how to substitute the installed plugin's absolute root directory, not the skill's)
     and, in a paragraph before its commands, says that Claude Code
     fills it in and that in any other harness the agent replaces it with the
     absolute path of the directory containing that `SKILL.md`; a reference

@@ -7,7 +7,10 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { skillDirPathsIn } from "../../scripts/check-skill-runtime-forms.ts";
+import {
+  skillDirPathsIn,
+  withoutFrontmatter,
+} from "../../scripts/check-skill-runtime-forms.ts";
 import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   LEAKY_GIT_ENV,
@@ -45,7 +48,9 @@ test("every path a skill writes under its directory exists in the plugin copy", 
   for (const entry of fs.readdirSync(cache, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const dir = join(cache, entry.name);
-    const text = fs.readFileSync(join(dir, "SKILL.md"), "utf8");
+    const text = withoutFrontmatter(
+      fs.readFileSync(join(dir, "SKILL.md"), "utf8"),
+    );
     for (const path of skillDirPathsIn(text))
       if (!fs.existsSync(join(dir, `.${path}`)))
         missing.push(`${entry.name}: ${variable}${path}`);

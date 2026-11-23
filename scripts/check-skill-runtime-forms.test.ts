@@ -167,7 +167,9 @@ test("block boundaries follow Markdown: quotes, indented fences, comments, table
     "question-form",
   ]);
   // A fence marker indented four spaces is indented code, not a fence.
-  expect(rules(`    \`\`\`\nUse ${q}, or ${fallback}.\n`)).toEqual([]);
+  expect(rules(`    \`\`\`\n\nUse ${q}.\n\nElsewhere, ${fallback}.\n`)).toEqual(
+    ["question-form"],
+  );
   // A fallback in an HTML comment is not visible.
   expect(rules(`Use ${q}. <!-- ${fallback} -->\n`)).toEqual(["question-form"]);
   // Table rows without a leading pipe are separate blocks.
@@ -191,6 +193,19 @@ test("asking the person after an arbiter ruling is no hand-over; delegating to i
   ).toEqual(["subagent-form"]);
 });
 
+test("a hand-over needs the arbiter as its recipient", () => {
+  for (const text of [
+    "Send contested threads to `jig:review-arbiter`.\n",
+    "Request a ruling from `jig:review-arbiter`.\n",
+  ])
+    expect(rules(text)).toEqual(["subagent-form"]);
+  for (const text of [
+    "Ask the [maintainer](maintainers.md) about the `jig:review-arbiter` escalation.\n",
+    "Give feedback on `review-arbiter.md` in the issue.\n",
+  ])
+    expect(rules(text)).toEqual([]);
+});
+
 test("a period before a closing quote belongs to the path", () => {
   expect(skillDirPathsIn(`run "${DIR}/scripts/run.ts." now`)).toEqual([
     "/scripts/run.ts.",
@@ -209,6 +224,13 @@ test("the gate entry point exits 1 on a violation and 2 with no pages", () => {
     expect(checkSkillRuntimeForms(root)).toBe(1);
     rmSync(join(skill, "SKILL.md"));
     writeFileSync(join(skill, "README.md"), "# x\n");
+    expect(checkSkillRuntimeForms(root)).toBe(2);
+    // Notes in a reference directory and a README at the skills root are no
+    // skill entry page.
+    mkdirSync(join(skill, "references"));
+    writeFileSync(join(skill, "references", "notes.md"), "Plain prose.\n");
+    writeFileSync(join(root, "plugin", "skills", "README.md"), "# skills\n");
+    rmSync(join(skill, "README.md"));
     expect(checkSkillRuntimeForms(root)).toBe(2);
   } finally {
     rmSync(root, { recursive: true, force: true });

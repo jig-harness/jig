@@ -48,7 +48,7 @@ function withoutComments(source: string): string {
  * The file without its YAML frontmatter, which grants tools and is no form,
  * and without HTML comments, which nobody reads.
  */
-function withoutFrontmatter(source: string): string {
+export function withoutFrontmatter(source: string): string {
   const lines = source.split(/\r?\n/);
   let body = source;
   if (lines[0] === "---") {
@@ -217,19 +217,19 @@ function questionFindings(file: string, blocks: Paragraph[]): Finding[] {
 }
 
 const AGENT = String.raw`(?:jig:review-arbiter|review-arbiter\.md)`;
-const AGENT_ID = new RegExp(AGENT);
-// The agent is the recipient: after a hand-over verb, or the object of `ask`.
+// The agent is the recipient: a hand-over verb, then (in the same sentence,
+// with no other link between) a `to`/`from` where the verb needs one, then the
+// agent.
+const GAP = String.raw`(?:(?!\]\((?![^)]*review-arbiter))[^.!?]){0,80}?`;
 const HANDS_OVER = new RegExp(
-  String.raw`\b(?:spawn|invoke|hand|give|goes to|go to|route|delegate)\b|\bask\s+(?:the\s+)?(?:\[[^\]]*\]\([^)]*\)|\x60?${AGENT})`,
+  String.raw`\b(?:(?:spawn|invoke|delegate|ask)\b${GAP}|(?:hand|give|send|route|pass)\b${GAP}\bto\b${GAP}|request\b${GAP}\bfrom\b${GAP}|goes? to\b${GAP})(?:\]\((?:[^)]*\/)?)?\x60?${AGENT}`,
   "i",
 );
 const NO_SUBAGENTS = /\bno subagents?\b/i;
 const CALLING_SESSION = /\bcalling session\b/i;
 
 function subagentFindings(file: string, blocks: Paragraph[]): Finding[] {
-  const hands = blocks.find(
-    ({ text }) => AGENT_ID.test(text) && HANDS_OVER.test(text),
-  );
+  const hands = blocks.find(({ text }) => HANDS_OVER.test(text));
   if (!hands) return [];
   const covered = blocks.some(
     ({ text }) => NO_SUBAGENTS.test(text) && CALLING_SESSION.test(text),
@@ -306,7 +306,7 @@ export function formFindings(
 /** The pages an agent reads: `SKILL.md` and the references, not the README. */
 function agentPages(base: string): string[] {
   return walk(base, ["__tests__", "fixtures", "templates"]).filter(
-    (file) => file.endsWith(".md") && !file.endsWith(`${sep}README.md`),
+    (file) => file.endsWith(".md") && basename(file) !== "README.md",
   );
 }
 
@@ -316,7 +316,7 @@ export function checkSkillRuntimeForms(root = "."): number {
     if (!readdirSync(base).length)
       return couldNotCheck("skill-runtime-forms", "no skills found");
     const pages = agentPages(base);
-    if (!pages.length)
+    if (!pages.some((file) => basename(file) === "SKILL.md"))
       return couldNotCheck("skill-runtime-forms", "no skill pages found");
     const findings = pages.flatMap((file) => {
       const skillDir = join(base, file.split(sep)[0] as string);
