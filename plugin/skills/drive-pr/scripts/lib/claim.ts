@@ -21,16 +21,16 @@
 
 import { definedFields } from "../../../../shared/defined-fields.ts";
 import {
+  type HarnessName,
+  isHarnessName,
+} from "../../../../shared/agent-harness/index.ts";
+import {
   SESSION_LEASE_MIN,
   sameHost,
   thisHost,
 } from "../../../../shared/liveness.ts";
 import { isDigits } from "./cli.ts";
-import {
-  type AccountIdentity,
-  type AccountVendor,
-  formatAccountIdentity,
-} from "./identity.ts";
+import { type AccountIdentity, formatAccountIdentity } from "./identity.ts";
 import { pidAlive } from "./proc.ts";
 
 /** The diagnostics line — every field required, either a string or (for
@@ -119,9 +119,7 @@ function parseAccount(value: unknown): AccountIdentity | null {
   const { account, vendor, provenance, reason } = o;
   if (account !== null && (typeof account !== "string" || account === ""))
     return null;
-  if (vendor !== null && vendor !== "claude" && vendor !== "codex") {
-    return null;
-  }
+  if (vendor !== null && !isHarnessName(vendor)) return null;
   if (typeof provenance !== "string" || provenance === "") return null;
   if (reason !== null && (typeof reason !== "string" || reason === ""))
     return null;
@@ -129,7 +127,7 @@ function parseAccount(value: unknown): AccountIdentity | null {
   if (account === null && reason === null) return null;
   return {
     account: account as string | null,
-    vendor: vendor as AccountVendor | null,
+    vendor: vendor as HarnessName | null,
     provenance,
     reason: reason as string | null,
   };

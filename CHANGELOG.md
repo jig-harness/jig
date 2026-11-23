@@ -404,6 +404,25 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.302.0] - 2026-11-23
+
+### Changed
+
+- The dispatcher and `drive-pr` reach Claude Code and Codex through one agent-harness interface, with the two as its first implementations in `plugin/shared/agent-harness/` ([ADR-0026](docs/adr/ADR-0026-the-agent-harness-is-an-interface.md)). A pass's command, its model and effort words, the launch environment, the account's identity, the session id, the transcript, the resume command and the wall readers now come from the harness the account's `vendor` names. Every command a pass or a session runs is the same as before, so nothing changes for a host or a repository.
+
+## [0.301.5] - 2026-11-23
+
+### Fixed
+
+- Refresh the verified head of a merge-ready pull request after a clean base
+  merge and passing required checks, without running new review rounds.
+  The refresh rechecks the live head before deleting an older announcement,
+  and keeps that cleanup running when the current head becomes draft or red.
+  Conflicts still get a re-drive at each pair of heads and go to a person if
+  the re-drive leaves the conflict in place. **Consumer action:** none.
+- Show the person who investigates when a drive uses its round budget in
+  the outcome log, dashboard and `jig ask`. **Consumer action:** none.
+
 ## [0.301.4] - 2026-11-23
 
 ### Changed
@@ -10740,7 +10759,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.301.4...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.302.0...HEAD
+[0.302.0]: https://github.com/jig-harness/jig/compare/v0.301.5...v0.302.0
+[0.301.5]: https://github.com/jig-harness/jig/compare/v0.301.4...v0.301.5
 [0.301.4]: https://github.com/jig-harness/jig/compare/v0.301.3...v0.301.4
 [0.301.3]: https://github.com/jig-harness/jig/compare/v0.301.2...v0.301.3
 [0.301.2]: https://github.com/jig-harness/jig/compare/v0.301.1...v0.301.2
