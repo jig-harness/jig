@@ -387,12 +387,12 @@ async function refresh(request: Request): Promise<number> {
   const { pr, head, verified } = request;
   const standing = await freshAnnouncements(pr);
   if (standing === null) return FALLBACK;
-  // Do this before the publish/ledger eligibility checks: a stale claim must
-  // not survive merely because the current head has become draft or red.
-  if ((await cleanStaleAnnouncements(pr, head, standing)) !== 0)
-    return FALLBACK;
   const candidate = await readCandidate(request);
   if (typeof candidate === "number") return candidate;
+  // An advanced head needs the verified-head announcement as durable evidence
+  // until its replacement is published and the refreshed ledger is durable.
+  // refreshAdvancedHead retires the now-stale public claim only after that
+  // handoff succeeds.
   return head === verified
     ? cleanCurrentHead(candidate)
     : refreshAdvancedHead(candidate, standing);
