@@ -34,7 +34,9 @@ import {
 const NEW_TOKEN_URL = "https://github.com/settings/personal-access-tokens/new";
 
 type Test =
-  { kind: "idle" } | { kind: "testing" } | { kind: "refused"; reason: string };
+  | { kind: "idle" }
+  | { kind: "testing" }
+  | { kind: "refused"; reason: string };
 
 /** Invalidates a callback once its settings component no longer exists. */
 function useRequestGeneration(): () => boolean {
