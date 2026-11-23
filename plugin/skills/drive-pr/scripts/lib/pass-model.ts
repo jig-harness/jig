@@ -166,7 +166,11 @@ function modelOption(
     );
     if (equals !== undefined)
       return { index: i, width: 1, value: word.slice(equals.length + 1) };
-    if (flags.has("-m") && word.startsWith("-m") && word.length > 2)
+    const short = [...flags].find(
+      (flag) =>
+        /^-[^-]$/.test(flag) && word.startsWith(flag) && word.length > 2,
+    );
+    if (short !== undefined)
       return { index: i, width: 1, value: word.slice(word[2] === "=" ? 3 : 2) };
   }
   return null;

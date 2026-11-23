@@ -98,7 +98,10 @@ export interface HarnessCapabilities {
   bypassOptIn: boolean;
   /** When the host's extra pass words are read: as the pass starts, or kept on the launch record at admission. */
   hostArgsAt: "launch" | "admission";
-  /** Whether the dispatcher checks the account's sign-in before a launch and reads a sign-in failure at startup. */
+  /**
+   * Whether the dispatcher checks the account's sign-in before a launch and reads a sign-in failure at startup.
+   * Both are Claude Code's probe and phrases today: only a harness that supplies its own may declare it.
+   */
   signInProbe: boolean;
   /** Background tasks, which a headless pass turns off where the harness has them. */
   backgroundTasks: boolean;
