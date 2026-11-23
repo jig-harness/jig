@@ -86,6 +86,7 @@ import {
   hostFault,
   latestPickupFor,
 } from "./pickup-host-fault.ts";
+import { holdsItem } from "./launch-pickups.ts";
 import { namedMembers, wholeBatchQuestion } from "./batch-question.ts";
 import { relaunched, relaunchStep } from "./pickup-relaunch.ts";
 import { lockWaitStop } from "./pickup-lock-wait.ts";
@@ -353,7 +354,7 @@ function planStopped(
     plan.quiet.push({
       target: item.key,
       class: "pickup-ended",
-      why: `waits on the question its batch's pass asked on ${hold.record.record.item}, which names no member; the answer releases every member the record holds (launch record ${hold.record.record.id})`,
+      why: `waits on the question its batch's pass asked on ${hold.record.record.item}, which names no member; the answer releases the anchor and the members the pass never claimed, and a claimed member keeps its claim (launch record ${hold.record.record.id})`,
     });
     return;
   }
@@ -678,12 +679,31 @@ function planIdleClaimed(
     pickup.kind === "ended" &&
     batchQuestionForSibling(pickup.record, item.key)
   ) {
-    // A question about the whole batch is one need, on its anchor: a claimed sibling waits on it quietly.
-    if (wholeBatchQuestion(pickup.record)) {
+    // A question about the whole batch is one need, on its anchor: a claimed
+    // sibling waits on it quietly only while the anchor holds it and shows it.
+    // A released anchor carries no question, so the sibling is planned as any
+    // claimed item; an anchor an open pull request carries shows none, so the
+    // sibling raises the need itself.
+    const anchor = pickup.record.record.item;
+    const whole = wholeBatchQuestion(pickup.record);
+    if (whole && anchor !== null && !holdsItem(pickup.record.record, anchor)) {
+      planIdle(item, input, plan, { held, pr, latest });
+      return;
+    }
+    if (
+      whole &&
+      anchor !== null &&
+      readLaunchPr(
+        { ...item, key: anchor },
+        input.launches,
+        input.sessions,
+        input.prOpen,
+      ).read.kind !== "open"
+    ) {
       plan.quiet.push({
         target: item.key,
         class: "pickup-ended",
-        why: `waits on the question its batch's pass asked on ${pickup.record.record.item}, which names no member; the answer releases every member the record holds (launch record ${pickup.record.record.id})`,
+        why: `waits on the question its batch's pass asked on ${anchor}, which names no member; the answer releases the anchor and the members the pass never claimed, and this member keeps its claim (launch record ${pickup.record.record.id})`,
       });
       return;
     }
