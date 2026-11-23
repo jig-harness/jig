@@ -1,3 +1,29 @@
+/** Index of the closing quote of the literal opened at `open`, or -1 when it never closes. */
+function closingQuote(text: string, open: number): number {
+  let j = open + 1;
+  while (j < text.length && text[j] !== '"') {
+    // A backslash skips the character after it. For a `\uXXXX` escape this
+    // skips only the `\u`; the hex digits cannot be `"` or `\`, so they scan
+    // as plain characters.
+    j += text[j] === "\\" ? 2 : 1;
+  }
+  return j < text.length ? j : -1;
+}
+
+function decodeLiteral(literal: string): unknown {
+  try {
+    return JSON.parse(literal);
+  } catch {
+    return undefined;
+  }
+}
+
+function followedByColon(text: string, from: number): boolean {
+  let k = from;
+  while (k < text.length && /\s/.test(text[k] ?? "")) k++;
+  return text[k] === ":";
+}
+
 /**
  * Does an otherwise-unparseable JSON text still contain a string-literal
  * property KEY that DECODES to `target`, anywhere in the text?
@@ -10,46 +36,17 @@
  * the key.
  */
 export function rawTextMentionsJsonKey(text: string, target: string): boolean {
-  let i = 0;
-  while (i < text.length) {
-    if (text[i] !== '"') {
-      i++;
-      continue;
-    }
-    let j = i + 1;
-    while (j < text.length) {
-      if (text[j] === "\\") {
-        // Skip the backslash and the character immediately after it. For a
-        // `\uXXXX` escape this skips only the `\u`, leaving the four hex
-        // digits to be scanned normally on subsequent iterations — none of
-        // which can themselves be `"` or `\`, so they safely fall through
-        // to the plain-character path below without special-casing the
-        // escape's length.
-        j += 2;
-        continue;
-      }
-      if (text[j] === '"') break;
-      j++;
-    }
-    if (j >= text.length) {
-      // Unterminated string literal — nothing further to scan.
-      break;
-    }
-    const literal = text.slice(i, j + 1);
-    let decoded: unknown;
-    try {
-      decoded = JSON.parse(literal);
-    } catch {
-      // Not actually a valid string literal despite the scan above (should
-      // not happen for well-formed escape sequences) — skip and continue.
-      decoded = undefined;
-    }
-    if (decoded === target) {
-      let k = j + 1;
-      while (k < text.length && /\s/.test(text[k] ?? "")) k++;
-      if (text[k] === ":") return true;
-    }
-    i = j + 1;
+  let i = text.indexOf('"');
+  while (i !== -1) {
+    const j = closingQuote(text, i);
+    // An unterminated literal leaves nothing further to scan.
+    if (j === -1) return false;
+    if (
+      decodeLiteral(text.slice(i, j + 1)) === target &&
+      followedByColon(text, j + 1)
+    )
+      return true;
+    i = text.indexOf('"', j + 1);
   }
   return false;
 }
