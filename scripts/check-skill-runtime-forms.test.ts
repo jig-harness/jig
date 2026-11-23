@@ -390,3 +390,39 @@ test("unmatched brackets, ticks and openers scan in linear time", () => {
     arbiter(`Send it to ${unit.repeat(16000)}\n`);
   expect(performance.now() - started).toBeLessThan(2000);
 });
+
+test("a comment lookup stops at the heading or bullet that ends the paragraph", () => {
+  const q = "AskUserQuestion";
+  const fallback = "a plain-text numbered question, marked as the default";
+  for (const boundary of ["# Heading `", "- bullet `"])
+    expect(rules(`Use ${q} \`x\n${boundary} <!-- ${fallback} -->\n`)).toEqual([
+      "question-form",
+    ]);
+});
+
+test("a link with nested brackets or parentheses is one link", () => {
+  for (const text of [
+    "Hand it to [agent for contested reviews](../(agents)/review-arbiter.md).\n",
+    "Hand it to [the [contested] agent](../review-arbiter.md).\n",
+  ])
+    expect(rules(text)).toEqual(["subagent-form"]);
+});
+
+test("a code span's padding spaces are not part of its text", () => {
+  expect(
+    rules("Ask the maintainer to review ` jig:review-arbiter `'s ruling.\n"),
+  ).toEqual([]);
+  expect(rules("Invoke ` jig:review-arbiter `.\n")).toEqual(["subagent-form"]);
+});
+
+test("distinct unmatched tick lengths scan in linear time", () => {
+  const ticks = Array.from({ length: 400 }, (_, i) => "`".repeat(i + 1));
+  for (const text of [
+    `Send it to ${ticks.join(" ")}\n`,
+    `Send it to ${ticks.join("\n")}\n`,
+  ]) {
+    const started = performance.now();
+    arbiter(text);
+    expect(performance.now() - started).toBeLessThan(2000);
+  }
+});

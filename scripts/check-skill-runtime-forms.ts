@@ -45,17 +45,56 @@ function runLength(text: string, at: number): number {
 }
 
 /**
- * The index just past the first backtick run of exactly `n` ticks at or after
- * `from`, or -1. A longer or shorter run is skipped whole, never entered.
+ * The backtick runs of one text, matched in one pass: `closeOf(at)` is the
+ * index just past the first later run of the same length as the run starting
+ * at `at`, and `first(n)` the index just past the first run of `n` ticks, or
+ * -1 for both. A longer or shorter run is skipped whole, never entered, and
+ * no lookup rescans.
  */
-function closeOfRun(text: string, from: number, n: number): number {
-  let at = text.indexOf("`", from);
-  while (at >= 0) {
+function runMatcher(text: string): {
+  closeOf: (at: number) => number;
+  first: (n: number) => number;
+} {
+  const byStart = new Map<number, number>();
+  const starts: number[] = [];
+  const lengths: number[] = [];
+  for (let at = text.indexOf("`"); at >= 0; ) {
     const length = runLength(text, at);
-    if (length === n) return at + length;
+    byStart.set(at, starts.length);
+    starts.push(at);
+    lengths.push(length);
     at = text.indexOf("`", at + length);
   }
-  return -1;
+  const next = new Array<number>(starts.length).fill(-1);
+  const seen = new Map<number, number>();
+  for (let r = starts.length - 1; r >= 0; r--) {
+    next[r] = seen.get(lengths[r] as number) ?? -1;
+    seen.set(lengths[r] as number, r);
+  }
+  const end = (r: number | undefined): number =>
+    r === undefined || r < 0
+      ? -1
+      : (starts[r] as number) + (lengths[r] as number);
+  return {
+    closeOf: (at) => {
+      const r = byStart.get(at);
+      return r === undefined ? -1 : end(next[r]);
+    },
+    first: (n) => end(seen.get(n)),
+  };
+}
+
+/**
+ * Whether a line ends the Markdown paragraph it would continue: a blank line,
+ * and, after the paragraph's first line, an ATX heading or a bullet.
+ */
+function endsParagraph(line: string, continued: boolean): boolean {
+  const content = unquote(line).content;
+  if (content.trim() === "") return true;
+  return (
+    continued &&
+    (/^ {0,3}#{1,6}(?:\s|$)/.test(content) || /^ {0,3}[-*+]\s/.test(content))
+  );
 }
 
 /**
@@ -73,25 +112,34 @@ function withoutComments(source: string): string {
   let open = false;
   let span = 0;
   let paragraphEnd = -1;
-  const unclosed = new Map<number, number>();
+  // The last line of the current paragraph holding a run of each length.
+  let lastWith = new Map<number, number>();
   const endOf = (from: number): number => {
     if (from >= paragraphEnd) {
       let end = from;
-      while (end < lines.length && (lines[end] as string).trim() !== "") end++;
+      while (
+        end < lines.length &&
+        !endsParagraph(lines[end] as string, end > from)
+      )
+        end++;
       paragraphEnd = end;
-      unclosed.clear();
+      lastWith = new Map();
+      for (let j = from; j < end; j++) {
+        const line = lines[j] as string;
+        for (let at = line.indexOf("`"); at >= 0; ) {
+          const n = runLength(line, at);
+          lastWith.set(n, j);
+          at = line.indexOf("`", at + n);
+        }
+      }
     }
     return paragraphEnd;
   };
   // Whether a run of `n` ticks opened on `index` is closed on a later line of
-  // its paragraph; a run found unclosed stays so for the rest of it.
+  // its paragraph.
   const closesLater = (index: number, n: number): boolean => {
-    const end = endOf(index);
-    if (unclosed.get(n) === end) return false;
-    for (let j = index + 1; j < end; j++)
-      if (closeOfRun(lines[j] as string, 0, n) >= 0) return true;
-    unclosed.set(n, end);
-    return false;
+    endOf(index);
+    return (lastWith.get(n) ?? -1) > index;
   };
   return lines
     .map((line, index) => {
@@ -113,18 +161,19 @@ function withoutComments(source: string): string {
           rest = rest.slice(end + 3);
           open = false;
         } else if (span > 0) {
-          const close = closeOfRun(rest, 0, span);
+          const close = runMatcher(rest).first(span);
           if (close < 0) return out + rest;
           out += rest.slice(0, close);
           rest = rest.slice(close);
           span = 0;
         } else {
           let i = 0;
+          const runs = runMatcher(rest);
           while (i < rest.length && !rest.startsWith("<!--", i)) {
             if (rest[i] === "\\") i += 2;
             else if (rest[i] === "`") {
               const n = runLength(rest, i);
-              const close = closeOfRun(rest, i + n, n);
+              const close = runs.closeOf(i);
               if (close >= 0) i = close;
               else if (closesLater(index, n)) {
                 span = n;
@@ -366,63 +415,89 @@ function namesAgentFile(destination: string): boolean {
 }
 
 /**
+ * Each `open` character's matching `close` index, by one stack pass that
+ * skips backslash escapes: nested pairs balance, an unmatched one is absent.
+ */
+function pairsOf(
+  text: string,
+  open: string,
+  close: string,
+): Map<number, number> {
+  const pairs = new Map<number, number>();
+  const stack: number[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === "\\") i += 1;
+    else if (c === open) stack.push(i);
+    else if (c === close && stack.length) pairs.set(stack.pop() as number, i);
+  }
+  return pairs;
+}
+
+/** A code span's text as a reader sees it: one padding space on each side goes. */
+function spanText(raw: string): string {
+  return /^ .*[^ ].* $|^ [^ ] $/.test(raw) ? raw.slice(1, -1) : raw;
+}
+
+/**
  * A paragraph reduced to the words a reader sees, for recognising a recipient,
  * in one left-to-right pass: a link to the agent's own file becomes that
  * file's name (its label is prose), any other link keeps its label and loses
- * its destination, a code span keeps its contents untouched, and emphasis
- * marks outside code are dropped, so none of them breaks the phrase between a
- * verb and its recipient. Each `[`, `]` and `)` is searched for once.
+ * its destination, a code span keeps its contents minus the padding Markdown
+ * removes, and emphasis marks outside code are dropped, so none of them
+ * breaks the phrase between a verb and its recipient. Brackets and
+ * parentheses are paired once for the whole text, nested pairs included.
  */
 export function recipientText(text: string): string {
-  let out = "";
-  let plain = "";
-  let i = 0;
-  let bracket = -1;
-  let paren = -1;
-  const flush = () => {
-    out += plain.replace(/\*+/g, "").replace(UNDERSCORE, "");
-    plain = "";
-  };
-  while (i < text.length) {
-    const c = text[i] as string;
-    if (c === "`") {
-      const n = runLength(text, i);
-      const close = closeOfRun(text, i + n, n);
-      if (close < 0) {
-        i += n;
-      } else {
-        flush();
-        out += text.slice(i + n, close - n);
-        i = close;
-      }
-    } else if (c === "[" && bracket !== -2) {
-      if (bracket <= i) {
-        bracket = text.indexOf("]", i + 1);
-        if (bracket < 0) bracket = -2;
-      }
-      if (bracket >= 0 && text[bracket + 1] === "(" && paren !== -2) {
-        if (paren < bracket + 2) {
-          paren = text.indexOf(")", bracket + 2);
-          if (paren < 0) paren = -2;
+  const brackets = pairsOf(text, "[", "]");
+  const parens = pairsOf(text, "(", ")");
+  const runs = runMatcher(text);
+  return reduce(0, text.length);
+
+  function reduce(from: number, to: number): string {
+    let out = "";
+    let plain = "";
+    let i = from;
+    const flush = () => {
+      out += plain.replace(/\*+/g, "").replace(UNDERSCORE, "");
+      plain = "";
+    };
+    while (i < to) {
+      const c = text[i] as string;
+      if (c === "`") {
+        const n = runLength(text, i);
+        const close = runs.closeOf(i);
+        if (close < 0 || close > to) {
+          plain += text.slice(i, i + n);
+          i += n;
+        } else {
+          flush();
+          out += spanText(text.slice(i + n, close - n));
+          i = close;
         }
+        continue;
       }
-      if (bracket >= 0 && paren >= 0 && text[bracket + 1] === "(") {
+      const label = c === "[" ? brackets.get(i) : undefined;
+      const paren = label === undefined ? undefined : parens.get(label + 1);
+      if (
+        label !== undefined &&
+        label < to &&
+        paren !== undefined &&
+        paren < to
+      ) {
         flush();
-        out += namesAgentFile(text.slice(bracket + 2, paren))
+        out += namesAgentFile(text.slice(label + 2, paren))
           ? "review-arbiter.md"
-          : recipientText(text.slice(i + 1, bracket));
+          : reduce(i + 1, label);
         i = paren + 1;
       } else {
         plain += c;
         i += 1;
       }
-    } else {
-      plain += c;
-      i += 1;
     }
+    flush();
+    return out;
   }
-  flush();
-  return out;
 }
 
 const NO_SUBAGENTS = /\bno subagents?\b/i;
