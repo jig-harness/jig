@@ -61,3 +61,10 @@ export function boardUnread(report: RepoReport): {
     readyOmitted: Math.max(0, board.cards.length - MAX_READY),
   };
 }
+
+/** A version-1 reader's closed list has no `unarmed`: the line stores it as undecided and the reason says it waits to be armed. */
+export function storedDrive<D extends string>(
+  drive: D,
+): Exclude<D, "unarmed"> | "unplaced" {
+  return drive === "unarmed" ? "unplaced" : (drive as Exclude<D, "unarmed">);
+}

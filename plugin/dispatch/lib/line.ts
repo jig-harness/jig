@@ -40,7 +40,7 @@ import { isFailureCause } from "./failure-notices.ts";
 import { lowQuotaNeeds, type QuotaRisk } from "./outbound-report.ts";
 import { preflightNeeds } from "./preflight.ts";
 import { groupItems } from "./release-groups.ts";
-import { boardUnread, readyOf } from "./line-ready.ts";
+import { boardUnread, readyOf, storedDrive } from "./line-ready.ts";
 import { needWorkspace } from "./line-workspace.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { SessionsReport } from "./runtime/port.ts";
@@ -981,11 +981,7 @@ export function buildLine(input: LineInput): LineSnapshot {
                     target: q.target,
                     pr: q.carried.pr,
                     url: q.carried.url,
-                    // A version-1 reader's closed list has no `unarmed`: the line stores it as undecided and the reason says it waits to be armed.
-                    drive:
-                      q.carried.drive === "unarmed"
-                        ? "unplaced"
-                        : q.carried.drive,
+                    drive: storedDrive(q.carried.drive),
                     why: q.why,
                   },
                 ]
