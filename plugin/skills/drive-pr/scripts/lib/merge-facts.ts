@@ -9,10 +9,9 @@
  * `jig ask` read through it, so all three place a pull request on the same
  * facts.
  *
- * Every connection reads one page. A pull request whose connection reports
- * another page is marked partial with the reason, never read as whole: an
- * unread failing check, thread, approval or reviewer cannot be ruled out, so
- * the predicate places it nowhere it would need them.
+ * The head's check contexts can continue across bounded pages. Other
+ * connections read one page. The predicate keeps a pull request partial
+ * when it cannot rule out an unread failing check, thread, approval or reviewer.
  */
 import { OVERLAY_RELPATH } from "../../../../shared/config-layers.ts";
 import { isRecord } from "../../../../shared/guards.ts";
@@ -32,11 +31,22 @@ export const BOARD_QUERY_NAME = "DispatchBoard";
 
 /** Entries per connection the query reads. */
 const CHECKS = 100;
+/** Maximum check contexts per pull request: 4 pages of up to CHECKS each. */
+const CHECK_PAGES = 4;
 const THREADS = 100;
 const REVIEWS = 20;
 
 /** The most pull requests one query names. */
 export const FACTS_PAGE = 20;
+
+/** The same check fields on the board and every continuation page. */
+function checkContexts(number: number, after = ""): string {
+  return `statusCheckRollup { contexts(first: ${CHECKS}${after}) { pageInfo { hasNextPage endCursor } nodes {
+    __typename
+    ... on CheckRun { databaseId name status conclusion startedAt completedAt isRequired(pullRequestNumber: ${number}) checkSuite { app { slug } } }
+    ... on StatusContext { context state isRequired(pullRequestNumber: ${number}) }
+  } } }`;
+}
 
 /** One pull request's part of the query, aliased by its number. */
 function pullFields(n: number): string {
@@ -46,12 +56,17 @@ function pullFields(n: number): string {
       reviewThreads(first: ${THREADS}) { pageInfo { hasNextPage } nodes { isResolved } }
       reviewRequests(first: ${REVIEWS}) { pageInfo { hasNextPage } nodes { requestedReviewer { __typename ... on User { login } ... on Bot { login } ... on Team { slug } ... on Mannequin { login } } } }
       latestReviews(first: ${REVIEWS}) { pageInfo { hasNextPage } nodes { state authorAssociation author { __typename login } commit { oid } } }
-      commits(last: 1) { nodes { commit { oid statusCheckRollup { contexts(first: ${CHECKS}) { pageInfo { hasNextPage } nodes {
-        __typename
-        ... on CheckRun { databaseId name status conclusion startedAt completedAt isRequired(pullRequestNumber: ${n}) checkSuite { app { slug } } }
-        ... on StatusContext { context state isRequired(pullRequestNumber: ${n}) }
-      } } } } } }
+      commits(last: 1) { nodes { commit { oid ${checkContexts(n)} } } }
     }`;
+}
+
+function checkPageQuery(number: number): string {
+  return `query MergeCheckContexts($owner: String!, $name: String!, $head: GitObjectID!, $after: String!) {
+  rateLimit { cost remaining limit }
+  repository(owner: $owner, name: $name) {
+    head: object(oid: $head) { ... on Commit { oid ${checkContexts(number, ", after: $after")} } }
+  }
+}`;
 }
 
 /** The query over `numbers` of one repository. */
@@ -200,7 +215,7 @@ function states(
   };
 }
 
-/** Why a pull request did not read whole: a connection longer than one page, or checks of another commit; `null` when it did. */
+/** Why a pull request did not read whole, or `null` when it did. */
 function partialOf(
   node: Record<string, unknown>,
   head: string,
@@ -269,12 +284,13 @@ export function parseAnswer(
   };
 }
 
-/** One query of `chunk`, or why it did not read. */
-async function queryOnce(
+/** One bounded GraphQL read through the forge transport. */
+async function queryGraphql(
   slug: string | null,
-  chunk: readonly number[],
+  query: string,
   timeoutSec: number,
-): Promise<Outcome<FactsRead, "unreadable">> {
+  fields: readonly string[] = [],
+): Promise<Outcome<unknown, "unreadable">> {
   const [owner = "", name = ""] =
     slug === null ? ["{owner}", "{repo}"] : slug.split("/");
   // `-F` fills the forge client's `{owner}` and `{repo}` placeholders; `-f` passes a name as it is.
@@ -284,11 +300,12 @@ async function queryOnce(
       "api",
       "graphql",
       "-f",
-      `query=${factsQuery(chunk)}`,
+      `query=${query}`,
       flag,
       `owner=${owner}`,
       flag,
       `name=${name}`,
+      ...fields,
     ],
     { stderr: "pipe", env: ghRepoEnvFor(slug), timeoutSec },
   );
@@ -300,9 +317,13 @@ async function queryOnce(
     );
   }
   try {
-    return ok(parseAnswer(JSON.parse(r.stdout), chunk));
+    return ok(JSON.parse(r.stdout));
   } catch (error) {
-    return failed("unreadable", "the board query's answer is not JSON", error);
+    return failed(
+      "unreadable",
+      "the merge facts query's answer is not JSON",
+      error,
+    );
   }
 }
 
@@ -313,6 +334,87 @@ function addPart(read: FactsRead, part: FactsRead): void {
   read.remaining = part.remaining ?? read.remaining;
   read.limit = part.limit ?? read.limit;
   if (part.config !== undefined) read.config = part.config;
+}
+
+/** An unreadable entry withholds the whole check connection. */
+function checkPageNodes(page: unknown): unknown[] | null {
+  const entries = at(page, "nodes");
+  if (!Array.isArray(entries)) return null;
+  const known = entries.every(
+    (entry) =>
+      isRecord(entry) &&
+      typeof entry.isRequired === "boolean" &&
+      (entry.__typename === "CheckRun"
+        ? str(entry.status) !== ""
+        : entry.__typename === "StatusContext" && str(entry.state) !== "") &&
+      checkOf(entry) !== null,
+  );
+  return known ? entries : null;
+}
+
+/** Read a continuation pinned to the original head, using the board's deadline. */
+async function readCheckPage(
+  slug: string | null,
+  facts: ForgeFacts,
+  read: FactsRead,
+  after: string,
+  deadline: number,
+): Promise<{ entries: unknown[]; after: string | null } | null> {
+  const leftSec = (deadline - currentMs()) / 1000;
+  if (leftSec <= 0) return null;
+  const next = await queryGraphql(slug, checkPageQuery(facts.number), leftSec, [
+    "-f",
+    `head=${facts.head}`,
+    "-f",
+    `after=${after}`,
+  ]);
+  if (!next.ok) return null;
+  addPart(read, parseAnswer(next.value, []));
+  const head = at(next.value, "data", "repository", "head");
+  if (at(head, "oid") !== facts.head || at(next.value, "errors") !== undefined)
+    return null;
+  const page = at(head, "statusCheckRollup", "contexts");
+  const entries = checkPageNodes(page);
+  const hasNext = at(page, "pageInfo", "hasNextPage");
+  if (entries === null || typeof hasNext !== "boolean") return null;
+  return {
+    entries,
+    after: hasNext ? str(at(page, "pageInfo", "endCursor")) : null,
+  };
+}
+
+/** Replace the initial check page only when the connection was read to its end. */
+async function completeChecks(
+  slug: string | null,
+  pull: unknown,
+  facts: ForgeFacts,
+  read: FactsRead,
+  deadline: number,
+): Promise<ForgeFacts> {
+  const commit = at(nodes(at(pull, "commits"))[0], "commit");
+  const initial = at(commit, "statusCheckRollup", "contexts");
+  if (!more(initial) || at(commit, "oid") !== facts.head || !isRecord(initial))
+    return facts;
+
+  const entries = checkPageNodes(initial);
+  if (entries === null) return facts;
+  let after = str(at(initial, "pageInfo", "endCursor"));
+  const checks = [...entries];
+  const cursors = new Set<string>();
+  for (let pageNumber = 1; pageNumber < CHECK_PAGES; pageNumber++) {
+    if (after === "" || cursors.has(after)) break;
+    cursors.add(after);
+    const page = await readCheckPage(slug, facts, read, after, deadline);
+    if (page === null) break;
+    for (const entry of page.entries) checks.push(entry);
+    if (page.after === null) {
+      initial.nodes = checks;
+      initial.pageInfo = { hasNextPage: false };
+      return parsePull(pull, facts.methods) ?? facts;
+    }
+    after = page.after;
+  }
+  return facts;
 }
 
 /**
@@ -335,17 +437,28 @@ export async function readMergeFacts(
     limit: null,
   };
   const deadline = currentMs() + timeoutSec * 1000;
+  const checkPulls = new Map<number, unknown>();
   for (let i = 0; i < numbers.length; i += FACTS_PAGE) {
     const leftSec = (deadline - currentMs()) / 1000;
     if (leftSec <= 0)
       return failed("unreadable", "the merge facts deadline expired");
-    const part = await queryOnce(
-      slug,
-      numbers.slice(i, i + FACTS_PAGE),
-      leftSec,
-    );
-    if (!part.ok) return part;
-    addPart(read, part.value);
+    const chunk = numbers.slice(i, i + FACTS_PAGE);
+    const answer = await queryGraphql(slug, factsQuery(chunk), leftSec);
+    if (!answer.ok) return answer;
+    const part = parseAnswer(answer.value, chunk);
+    addPart(read, part);
+    for (const [n, facts] of part.pulls) {
+      if (facts.partial !== null)
+        checkPulls.set(n, at(answer.value, "data", "repository", `pr${n}`));
+    }
+  }
+  for (const [n, pull] of checkPulls) {
+    const facts = read.pulls.get(n);
+    if (facts !== undefined)
+      read.pulls.set(
+        n,
+        await completeChecks(slug, pull, facts, read, deadline),
+      );
   }
   return ok(read);
 }

@@ -371,13 +371,19 @@ budget with them:
 - **The detail**, one query naming each pull request of the detail set by
   number: the converged pull requests, the ones in Needs you, and any whose
   rollup is failing. Per pull request: its head commit's id, its head's
-  check contexts (up to 100, each with whether it is required, its app and
+  check contexts (100 per page, each with whether it is required, its app and
   its link), its labels (for the `hold` and CI hold labels), its review
   requests and its reviewers' latest reviews (up to 20 each). The same
   query reads, by the ids the listing found, the first comment's author
   (`login` and `__typename`) of each unresolved thread the board has not
   seen before, for the split of the thread mark, within the author cap
   below.
+
+When the first page of check contexts has a continuation, the detail read
+follows it against the same commit. It reads at most four pages per pull
+request, including the first, under the same deadline as the rest of the
+board read. If the connection is still incomplete, the card gives the
+partial-read reason and stays out of Ready to merge.
 
 A held pull request the marks must tell from a broken build is in the
 detail set already: it is converged, or its required checks fail and its
