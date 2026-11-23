@@ -20,7 +20,8 @@ here have a design in this folder ([README.md](README.md)).
 Now is the line that runs with nobody watching: a team's pull requests
 driven to merge-ready while a person keeps every decision that is theirs.
 First what keeps an unattended pass from getting past a person, then what
-keeps the line from stranding work, then one place to see and steer it,
+keeps the line from stranding work, then one place to see and steer it
+with the related work and its correspondence together,
 then what a dispatched run leaves behind and where it runs, then Orca, the
 dispatcher's first session runtime, then the accounts and agent programs a
 dispatched run may use.
@@ -397,71 +398,6 @@ merge now, and the history view filtered to yesterday shows how many
 pull requests became ready, were merged, are still waiting, and were lost
 to waiting.
 
-### 39. Addresses: asking and telling the stations of the line
-
-Where a piece of work stands is read from many places (the dispatcher's
-report, receipts and log, the dashboard, the ledger comment, the drive's
-doctor), and a person steers the line with a different gesture for each
-case: an assignment, a label, an `answer` comment, a mailbox directive.
-Every session and interface that shows or steers the line reads those
-records its own way. [design/addresses.md](addresses.md) has how it works.
-What it will build: an address for every station on a piece of work,
-`station@repository#key` (`drive@jig#456`), resolved from the records the
-line already keeps and declared nowhere; `jig ask <address>`, which answers
-who holds the station, its state, what it waits on and its last outcome,
-names every record it could not read, with `--thread` adds the address's
-correspondence (requests, questions, answers, launches and outcomes, each
-linked to its record) in one shape the command line and a panel both
-read, and with `--waiting` lists every address that waits on a person,
-from the newest tick's line; `jig send <address> <verb>`, which writes the one record
-the line already acts on, from a closed list of verbs, and refuses a
-person's commands inside a session the line started; an operator skill
-that turns a person's sentence into those commands and holds no state;
-a launch's result naming what follows it; and a park naming the person it
-waits on. No agent stays resident to hold an address, and no daemon or
-queue holds a request
-([ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md)). One pull
-request per step, in the design's order; built so far: `jig ask`, with its
-thread and the list of what waits on a person, the outcome log's key column
-and the rule it rests on,
-[ADR-0014](../docs/adr/ADR-0014-addresses-are-derived-and-requests-are-records.md)
-([plugin/README.md § Asking a station where it stands](../plugin/README.md#asking-a-station-where-it-stands));
-`jig send`, its verbs, their checks and the refusal of a person's
-commands in a session the line started
-([plugin/README.md § Telling a station what to do](../plugin/README.md#telling-a-station-what-to-do));
-the operator skill, `/jig:operator`
-([plugin/skills/operator/](../plugin/skills/operator/SKILL.md)); a
-launch's result naming its next owner, in the outcome row and `last.next`;
-and a park naming the person it waits on, in `waitsOn` and
-`jig ask --waiting --person`. Still
-open, for the dashboard (item 42), which builds them as its stage 2's first
-step: the thread grows under `ask`'s version 1, each entry with a stable
-id, a question with its key, its class and a status (open, answered, acted
-on, expired), an answer with the question it replies to, who answered and
-that person's permission on the repository, and an answered park kept from
-the drive ledger's resolved parks; the addresses of one piece of work fold
-into one thread by its aliases (the item key, the branch, the pull
-request), each join with its evidence and only on evidence the
-repository's own people wrote, and a work-batch's batch key makes
-its members one thread; and `ask` lists the threads that hold something
-for a person (an open question, an act a merge waits on, a follow-up's
-question) only while they hold it, storing nothing when a reader hides
-one.
-
-Done when `jig ask` answers the address of a pick-up, a drive and a
-follow-up on the machine that dispatched them and, from the forge and the
-tracker alone, on a machine that did not, saying what it could not read;
-an address nobody holds answers with its last outcome; the thread a panel
-shows for an address is the one `jig ask --thread` prints; each verb of
-`jig send` writes a record its reader acts on at its next run, and a
-session the line started is refused the verbs that are a person's; the
-operator answers "where does this stand" and "what waits on me" from those
-commands alone; every ended launch names what follows it; every parked
-question names the person it waits on; an answered park stays in its
-thread with its answer and status; and a pick-up, the drive of the pull
-request it opened and that pull request's follow-up read as one thread,
-which leaves the thread list once nothing in it waits on a person.
-
 ### 58. Declared priorities and a progress review
 
 A person can see each failure on its own, but not whether the team's goals
@@ -503,8 +439,22 @@ read and none of them stored; marks on item 36's status row (the
 drive's round and its time, the unresolved threads by bot and not a bot,
 and the CI hold, which reads held and never failing); a `pickup-progress`
 record that `do-item` and `work-batch` write at each phase, so a Picking
-up card shows the last phase and its age; item 39's thread grown under
-`ask`'s version 1 into one thread per piece of work; the views API from a
+up card shows the last phase and its age; [a thread per piece of
+work](addresses.md) in `jig ask` and on the dashboard, extending version 1
+of the answer. Each entry has a stable ID. Questions carry a key, a
+registry class and a status (open, answered, acted or expired); answers
+name the question they reply to, the author and the permission evidence
+recorded when they counted. Resolved parks keep their questions and answer
+metadata available from the drive ledger; source text is shown only when a
+bounded, cancellable read of the configured forge validates the receipt's
+repository and pull request, compares it with the retained body hash, and
+identifies later edits; a legacy receipt without a hash is unverified, and
+older or unavailable receipts say what is unavailable. The item key, branch and pull request join
+addresses on evidence from the repository's own people, and a batch key
+joins its member items. Each join names its evidence. `jig ask` lists
+threads while they hold an open question, a merge action or a follow-up
+question, with any hiding kept by the reader. The dashboard also builds
+the views API from a
 page to its own server and the source feed, which the hub (item 49)
 serves for every host it serves, every fact stamped with its host and a
 visibility class; a host's dashboard read-only on loopback, answering only
@@ -550,8 +500,8 @@ repository's tick refreshes, pickup progress, then one design round for the
 whole dashboard and the Running, Queue and Work views), with phone support part of
 each view's acceptance and the resident dashboard install, URL sharing and
 private-network front guidance filed as items that do not wait on the later
-stages ([dispatch-dashboard.md § Phone scope and access](dispatch-dashboard.md#phone-scope-and-access)); then each piece of work across machines (item 39's thread
-additions, `jig send --json` with `--expect`, the `jig dashboard` server, its
+stages ([dispatch-dashboard.md § Phone scope and access](dispatch-dashboard.md#phone-scope-and-access)); then each piece of work across machines (the shared thread and the list
+of threads waiting on a person, `jig send --json` with `--expect`, the `jig dashboard` server, its
 Needs you across every source, Hosts and History views and its install,
 the private-network front, the Orca plugin's "Open the dashboard" command and its install from a catalog);
 then the chat, and writes once item 40 settles. Stages 2 and 3 are
@@ -574,7 +524,158 @@ for byte. For a stage a person decides to build, stage 2 is done when a
 laptop's dashboard shows each host's work, read through the hub, beside its own in any
 browser, with the host's dashboard listening on loopback only, and says since
 when a host stopped answering; one piece of work opens as one Work page,
-its item, pull request and follow-up under one thread; Orca's browser opens
+its item, pull request and follow-up under the same thread that `jig ask`
+prints. Entries keep stable IDs across reads, questions report their
+keys, classes and statuses, and answers identify their questions,
+authors and recorded permission evidence; a legacy receipt remains visible
+with its historical permission marked unknown. When an unanswered park ends,
+the drive ledger makes one locked, idempotent transition that writes its
+expired-park receipt (key, class, question, question time, expiry and the ledger
+occurrence id) and clears the active park, so the thread keeps that question and
+distinguishes expiry from absent history; the receipt preserves the original
+question time across expiry, and a retry leaves one receipt for that occurrence.
+Resolved parks
+remain in the thread while their bounded receipts remain; the view marks
+history incomplete when count eviction or byte trimming removed any receipt,
+including a trim with no survivors, but not for an intact known-empty history.
+The Work page initially shows the newest 20 retained thread entries, names the
+omitted count, and lets the reader reveal the older retained entries. Source
+text is rendered only after the configured forge scope validates the receipt
+URL's repository and pull request and, when a retained hash exists, the body
+matches it; a mismatch is labelled as a later edit while the retained verdict
+stays unchanged. A legacy receipt without a hash renders successfully fetched
+source text as unverified. An absent, unauthorized, expired or cancelled source
+read leaves its retained author and time visible and source text unavailable;
+a scope-validated receipt URL remains plain text, not an actionable link. Joins
+expose evidence from the repository's own people, and a batch key joins its
+members into one thread. The waiting list contains every
+eligible thread once, and removes it when its final need for a person's answer
+or action settles. Each source row and each settlement receipt carries the
+same source-independent occurrence identifier for that need, so evidence can
+settle or supersede only that occurrence and only when its source is entitled
+to do so; a newer occurrence with the same key remains open. Settlement evidence
+is an attestation by the source's then-current authority, binding the [occurrence
+identity](../GLOSSARY.md#occurrence-identity), source, observation time, [coverage
+revision](../GLOSSARY.md#coverage-revision) and [authority epoch](../GLOSSARY.md#authority-epoch);
+replay verifies the attestation against the authority record for that epoch. The
+hub independently records acceptance time and the epoch fence for each report;
+replay accepts it after a later handoff only when both the observation and that
+acceptance happened while the recorded revision and epoch covered the repository.
+A delayed delivery of such an attestation remains valid, but a former owner
+cannot create a new report after handoff with an old observation time or revision.
+A source input
+without one occurrence identifier stays unresolved unless authoritative
+evidence identifies it, including a legacy park whose timestamp is absent. A
+mixed read keeps each current repository's entries while
+identifying every unread repository as incomplete, so an unread repository's
+missing row or `gone` event never proves its final need settled; a source emits
+`gone` only after a complete read that identifies the occurrence and proves the
+source's coverage, and otherwise reports the repository as incomplete. A
+consumer distinguishes a complete authoritative settlement from an incomplete
+read, a scope invalidation, or a legacy row whose occurrence cannot be
+established; the latter cases remain unresolved. A scope invalidation tells the
+consumer to discard the row without recording settlement, whereas an incomplete
+read retains an authorized stale row. A source can settle an occurrence only
+while its coverage still includes that occurrence. On a cursor reset, the
+replacement snapshot either carries authoritative settlement evidence for every
+previously open omitted occurrence or leaves that occurrence internally unresolved
+until a bounded `settlement.get(occurrence)` read returns that evidence; the
+source retains the evidence for that lookup window. The page keeps an omitted
+occurrence visible only while its current grant and visibility class allow it;
+otherwise it retains the unresolved state without displaying the row. A
+wholly unavailable host is shown as unavailable rather than treated as an empty
+list. Fresh evidence for
+the same need supersedes a stale copy from another source, while staleness alone
+leaves an otherwise unread need unresolved. A source that was previously read
+successfully keeps its last rows visible with that timestamp marked stale while
+healthy sources continue to refresh, but only after the server reapplies the
+viewer’s current grant and visibility class. Every authoritative scope
+confirmation carries its [grant revision](../GLOSSARY.md#grant-revision) and expiry and starts a bounded
+authorization lifetime, whether or not the grant changed. The browser accepts a
+confirmation only when its revision is at least the one already applied; a late
+broader confirmation cannot renew or restore content after a narrower grant. At
+the documented revocation bound the browser hides every cached protected view —
+lists, an open Work thread and an open receipt — unless a current renewal
+succeeds; this holds when the front is unreachable and the page stays open.
+Renewal with a narrower grant may retain only rows that pass that grant and their
+visibility check. Hub-backed rows expire at the earliest of the laptop and hub
+grants, and only a current hub confirmation renews the hub-backed portion. Every
+protected response and stream delivery binds the viewer, issuing authority instance,
+grant revision and expiry
+that authorized it; hub-backed delivery carries both the laptop and hub bindings,
+and the browser compares every applicable binding with its current grant before
+displaying or caching it. A change to either issuing authority instance clears
+the affected cache and requires a fresh handshake before another protected result
+is shown. The page serializes each binding's handshakes, so a new request
+supersedes every outstanding earlier request before it can install a grant;
+it retires prior instances before installing a replacement grant, and accepts a
+response only for the live handshake and generation. An old instance's delayed response cannot
+restore either laptop or hub access. Acceptance covers that ordering for both
+grants as well as an offline phone resuming with
+its existing page after expiry, an open Work page whose thread is revoked, and
+late confirmations or protected responses from an earlier grant; the first visible
+render keeps expired content hidden. It retains in-scope rows only after the
+current confirmation. Removed grants hide stale rows too. An interrupted forge-ledger
+publication first writes a pending expiry record, keyed by the park occurrence,
+to a non-evictable authoritative shared ledger location and reads back the
+complete recovery record before local state clears the active park. That record
+contains the occurrence id, key, class, original question, question time and
+expiry and survives a lost disk, so a successor can distinguish a published expiry, a
+pending publication and an active park that never expired. If that first shared
+write fails, local state leaves the park active and retryable. Publication uses
+one atomic compare-and-set fence shared by answer acceptance and terminal expiry,
+or a durable pending reconciliation state with the same ordering: the writer
+records the pending occurrence, closes answer admission or atomically chooses its
+winner at that final boundary, and records the occurrence-bound terminal decision
+durably before it publishes a terminal receipt. An answer admitted before that
+fence is the decision and is recorded as an answered receipt; if expiry wins the
+fence, the decision is the explicit `expired` result rather than a missing winner.
+An answer after the reader snapshot is recorded only when it was admitted before
+the fence; one after an expiry fence remains visible without changing the expired
+decision. A later forge comment remains visible but does not alter either receipt. Readers
+treat expiry as terminal only after that decision is read back. Pending expiry is
+enabled only after a compatibility fence rejects an older writer that cannot
+preserve its separate record before it mutates anything; acceptance exercises that
+rejection, then an ordinary rewrite and takeover by a compatible successor after a
+pending record exists and requires both to preserve the complete record and produce
+exactly one terminal outcome. The compatibility transition drains or fences every
+legacy write admitted before it takes effect; acceptance exercises that in-flight
+legacy write alongside the rewrite and takeover cases. If it crashes after the patch, a
+successor resumes that pending state and repeats the reconciliation before any
+reader treats it as terminal. An answer written after the reader's snapshot but
+admitted before the fence is never overwritten, and the resulting terminal receipt
+records that answer; an answer after an expiry fence does not replace its expired receipt.
+Until a successor recovers and publishes a pending
+receipt, it leaves the old active park unsettled rather than treating its
+absence as settlement. A successor whose original host and disk are unavailable
+reconstructs that pending expiry from the authoritative ledger before replay;
+replay preserves an already-recorded answer, does not reopen a settled
+occurrence from an older observation, and leaves a newer occurrence with the
+same key open. It records exactly one terminal outcome for the expired
+occurrence: an unanswered recovery yields one expired receipt, while recovery
+with a racing accepted answer yields one answered terminal receipt and no
+expired duplicate. Acceptance replays settlement observations on both sides of
+a coverage change, exercises a ledger-at-capacity recovery, receives a retryable
+`history-pending` result that later reconciles, and exhausts a recovery window
+without evidence while keeping the occurrence unresolved and recording the
+host-facing outcome. It pauses a legacy writer after its final read, attempts
+the compatibility transition, then releases that writer and proves verified
+drainage or no effect before checking the complete recovery record and sole
+terminal outcome through a fresh read. Answer admission binds a comment to the
+exact park occurrence the person saw; an ambiguous legacy `answer <key>:`
+line never settles a later occurrence with the same key. It forces an answer
+admitted after the snapshot but before the fence to produce one answered
+receipt, then forces expiry to win and leaves the later answer visible only as
+correspondence beside one expired receipt. It also keeps an assigned host
+silent through the deadline and proves that the hub records the timeout,
+returns `history-exhausted` on later reads, and leaves the occurrence
+unresolved. It covers a crash after a patch before reconciliation, to prove
+those rules. After recovery, another host sees
+the terminal status appropriate to each case — one expired occurrence when
+unanswered or one answered receipt when an accepted answer raced — and no active
+copy. Hiding a thread writes nothing to
+Jig.
+Orca's browser opens
 the same page; and a phone through the front sees only the repositories
 its grant names. For a stage a person decides to build, stage 3 is done
 when the operator chat proposes and never sends and, once item 40 has
@@ -679,10 +780,10 @@ report states its verdict; and the default-harness ruling is recorded.
 ## Next
 
 Next starts with delegated merge, once item 40 holds. Then come what lets a
-second team adopt Jig, the hub for a team on several hosts, the line in a
-team's chat, work that
-arrives complete, reviews that catch what gates cannot, and doctrine and
-measurement. Last come the developer machine and the runs a person owes.
+second team adopt Jig, including a reference reviewer and the hub for a
+team on several hosts. The hub brings the line to a team's chat. Then come
+work that arrives complete, reviews that catch what gates cannot, doctrine,
+measurement and tooling for the developer machine.
 
 ### 9. Delegated merge (`pull_requests.merge: auto-on-converged`)
 
@@ -706,40 +807,6 @@ ships, the design must guarantee that:
 - the doctrine (M7 invariant, the human-in-the-loop registry's Merge row, the
   maturity criteria) changes in the same pull request, in the direction the
   decision picks.
-
-### 47. A repository's own rules for starting, reviewing and finishing work
-
-A team that runs agents on its tracker has rules for that work: work starts
-only from a validated ready state and only on an item for this repository,
-the item shows "in review" while its pull request waits, only a person or
-the release tooling closes it, and the board shows stopped work as blocked,
-with a reason. `do-item`, `work-batch` and the dispatcher claim, move and
-close items by one fixed rule, so a team whose rules differ keeps them in
-hooks and scripts outside Jig, where an agent can skip them. This item
-lets a repository state those rules as configuration that every skill which
-claims, moves or closes an item honours. Every setting is optional, and an
-unset one keeps today's behaviour. Its settings are built
-([CHANGELOG.md](../CHANGELOG.md)); what remains is a run on a working
-repository, owed by a person.
-
-Done when a repository on Jira with all of these set runs an item from its
-ready pool to a merged pull request without a hook or script of its own,
-and an item that fails a rule is refused before anything is written.
-
-### 48. Fitting the drive to a repository's reviewer
-
-The drive reads a reviewer that reviews through the forge's own [review
-objects](../GLOSSARY.md) (CodeRabbit, for one) from its latest review and
-its check run on the head. It counts inline threads and findings in every
-review body whose format the built-in reviewer profile names; CodeRabbit
-is the first. Each body finding must be answered before convergence.
-
-What remains is a run on a working repository, owed by a person: a drive to
-merge-ready on a repository whose reviewer is CodeRabbit, with no bridge of
-its own.
-
-Done when a repository whose AI reviewer is CodeRabbit runs a drive to
-merge-ready with no bridge of its own.
 
 ### 60. A reference reviewer for pull requests
 
@@ -968,11 +1035,11 @@ how it works and what is left. Done when:
 - the adoption page shows an audit sheet of Jig's own audit, with a direct
   link from the home page.
 
-### 52. Present Jig as a software factory, told in three layers
+### 52. Present Jig through its delivery line, told in three layers
 
 A reader should learn in one screen what Jig does for a team and who
-merges. [The website design](website.md#the-message-a-software-factory-first)
-sets the message: the factory comes first; what runs by itself, what a team
+merges. [The website design](website.md#the-message-the-delivery-line)
+sets the message: the delivery line comes first; what runs by itself, what a team
 gets and what it is built from order the site. The home page tells one
 work-item loop, with a direct path to the audit for a team adopting one
 module at a time. The [epic](https://github.com/jig-harness/jig/issues/1019)
@@ -1013,47 +1080,39 @@ and each genre's contrast test holds its light and dark pairs.
 
 ### 41. Configurable issue attributes: type, priority and size
 
-The [tracker interface](../GLOSSARY.md) carries an issue's type, priority
-and size as canonical values. Its callers read those values, and every
-filing through the interface checks them inside the write, refusing when
-a required value is missing (an epic needs no size). A repository chooses where each is kept through
-`issue_tracker.facets`: the tracker's own field, a named custom field or
-labels, with a documented default per adapter:
+The stores for an issue's type, priority and size are built
+([Tracker facets chapter](../plugin/protocol/tracker-facets.md)); the Protocol chapter stays
+provisional until item 41 is done. What is open:
 
-- **GitHub Issues**: the issue type; the organization's Priority field; the
-  Effort field when its options carry the size names, else size labels;
-  each only for a repository that keeps no labels for it.
-- **Jira**: type labels, with every new issue filed as the configured
-  `issue_tracker.jira.issue_type` until a type store is named; the priority
-  field; size as labels until a size field is named.
-- **Linear**: labels for type and size; its priority field; the estimate as
-  an option for size.
+- the live runs of Jira's issue-type and custom-field stores and Linear's
+  estimate store ([#892](https://github.com/jig-harness/jig/issues/892));
+- one issue opened from the bug form, confirming it is filed as a Bug, and
+  one filed through `report-bug.ts` from a draft whose labels include `bug`,
+  run with an account and a `gh` that can set the native issue type (when
+  the typed create fails, the script retries without the type only if the
+  error names the type and an issue listing establishes that no matching
+  issue was created; when filing still fails and creation may have occurred,
+  the failure report checks the listing and reports the existing issue's URL
+  if found, offers the bug form only when the listing establishes absence,
+  or reports an unknown outcome to check by hand whenever the listing is
+  inconclusive, including an unreadable response or a window filled with
+  newer issues),
+  confirming the filed issue reads back with the native type `Bug` and
+  without the `bug` label (the form declares its own type, so it cannot
+  stand in for the script);
+- a person's step on Jig's own organization: retiring GitHub's default Task
+  issue type ([#1830](https://github.com/jig-harness/jig/issues/1830));
+- a person's acceptance of the delivered scope on
+  [#518](https://github.com/jig-harness/jig/issues/518), plus an explicit
+  waiver there for any acceptance check above that is waived rather than
+  run.
 
-GitHub detects an unnamed store, keeps a facet's existing labels and refuses
-conflicting label and field evidence. A named store never waits on detection.
-Jig keeps type and priority in GitHub's issue type and Priority field, and
-size in its Effort field. The issue forms and `report-bug.ts`,
-which file around the interface, set the type and leave priority and size
-to triage; `report-bug.ts` still also applies the `bug` label.
-
-Jira's issue-type and custom-field stores and Linear's estimate store are
-built. What remains is their live runs, one issue opened from the bug form
-to confirm it is filed as a Bug, `report-bug.ts` no longer applying the
-`bug` label, and a person's step on Jig's own
-organization: retiring GitHub's default Task issue type, so the web
-interface offers no type that names nothing. These are the remaining steps
-of [the design's build order](tracker-facets.md#build-order).
-A store kept by the repository's own command waits until a repository names
-a facet that needs it.
-
-Changes to the design follow from a Jira team's use. An issue of a
-listed native type (`issue_tracker.labels.epic_types`) reads as an epic on
-every adapter with issue types, replacing the non-goal that kept the epic a
-label.
-
-Done when a repository on each adapter files and reads all three in its
-configured store, and Jig's own repository keeps them in GitHub's fields
-with no type, priority or size labels.
+Done when each acceptance check above has either a recorded result or an
+explicit waiver on [#518](https://github.com/jig-harness/jig/issues/518),
+GitHub's default Task issue type is retired on Jig's own organization
+([#1830](https://github.com/jig-harness/jig/issues/1830)), the delivered
+scope is accepted on [#518](https://github.com/jig-harness/jig/issues/518),
+and the chapter is marked stable.
 
 ### 43. Consumer actions: which Jig changes a repository must act on
 
@@ -1351,6 +1410,11 @@ and the install guide names the validated setup path. The design records the
 conditions for considering a tap without adopting one ahead of that evidence.
 
 ## Later
+
+- **Command store for tracker facets.** Let a repository supply a command
+  per facet when the tracker cannot represent that facet in its own fields
+  or labels. Build it when a repository names the facet it needs, following
+  the [command store design](tracker-facets.md#later-the-command-store).
 
 - **Dashboard overview.** Show team goals, issue groups beside their pull
   requests, running work and decisions waiting for a person. The overview

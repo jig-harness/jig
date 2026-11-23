@@ -1,7 +1,7 @@
 /**
  * The GitHub default's rules and their cache: which store a facet whose
  * store the configuration does not name is kept in, from what detection read
- * of the tracker (design/tracker-facets.md, "Defaults per adapter").
+ * of the tracker (plugin/protocol/tracker-facets.md, "Why a store is in force").
  *
  * - A key of today that names the facet's labels, or labels of the facet on
  *   any issue, open or closed, are evidence for the label store; a value in

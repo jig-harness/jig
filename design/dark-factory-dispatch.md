@@ -2755,11 +2755,11 @@ when an agent waits, blocks or finishes or a workspace is removed
 ([Waking the dispatcher](orca-integration.md)); and `jig send`, once it
 has written a record the tick reads (`assign`, `drive`, `hold`, `release`,
 `answer`), where the machine file lists the repository with the stage the
-tick acts under ([`jig send`](addresses.md)). Both follow one rule: one
+tick acts under ([`jig send`](../plugin/protocol/addresses.md)). Both follow one rule: one
 tick at a time for a repository, no sooner than a minute after the last
 one started, a request made inside that minute taken by one trailing
 tick, and a tick refused for a held lock tried again after the minute. `send` keeps its pending requests on disk
-(`plugin/shared/wake.ts`), since it exits at once; its waiter runs the
+([the wake runtime](../plugin/shared/wake.ts)), since it exits at once; its waiter runs the
 tick with the installed timer's command and environment and exits after
 it. A systemd timer's are read as systemd runs them, its drop-ins applied
 (`plugin/runtime/systemd-dropins.ts`), so a drop-in that wraps the command

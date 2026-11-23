@@ -1,6 +1,6 @@
 /**
  * The read position the comment-only sweep keeps between runs
- * (design/tracker-facets.md, "The weekly sweep"): the cursor of the last
+ * (plugin/skills/file-issue/README.md, "The weekly sweep"): the cursor of the last
  * issue a run handled, which the next run resumes after, or `null` to start
  * from the oldest issue. A scheduled runner keeps the file between runs (a
  * file on the host, or a CI cache).
