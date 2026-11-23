@@ -185,6 +185,10 @@ function escapedForm(secret: string): string {
   return form;
 }
 
+const ESCAPE = /\\(?:u([0-9a-fA-F]{4})|(["\\/bfnrt]))/g;
+/** The same escape, for testing without the global flag's state. */
+const DECODABLE_ESCAPE = new RegExp(ESCAPE.source);
+
 /** Whether `text`, with JSON escapes of any spelling decoded up to `LOOK_DEPTH` times, holds one of `secrets`: wrapped JSON that does not parse as a whole is still looked into. */
 function holdsAfterUnescaping(
   text: string,
@@ -197,7 +201,7 @@ function holdsAfterUnescaping(
     if (secrets.some((secret) => layer.includes(secret))) return true;
     if (!layer.includes("\\")) return false;
     const next = layer.replace(
-      /\\(?:u([0-9a-fA-F]{4})|(["\\/bfnrt]))/g,
+      ESCAPE,
       (_all, hex: string | undefined, plain: string | undefined) =>
         hex !== undefined
           ? String.fromCharCode(Number.parseInt(hex, 16))
@@ -207,9 +211,10 @@ function holdsAfterUnescaping(
     if (next === layer) return false;
     layer = next;
   }
-  // Escaped deeper than is looked into counts as holding a secret, unless nothing but literal backslashes is left: such a run holds no encoding and no secret to look into.
+  // Decoded as deep as is looked into: the last layer is searched for each secret, and counts as holding one only while it still holds a decodable escape, unless nothing but literal backslashes is left.
   return (
-    secrets.some((secret) => layer.includes(secret)) || !/^\\+$/.test(layer)
+    secrets.some((secret) => layer.includes(secret)) ||
+    (DECODABLE_ESCAPE.test(layer) && !/^\\+$/.test(layer))
   );
 }
 

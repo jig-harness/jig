@@ -327,6 +327,35 @@ describe("keeping a run's transcript copy", () => {
     }
   });
 
+  it("keeps a line whose benign text is escaped nine times and holds no secret", () => {
+    const root = scratch();
+    const config = join(root, "config");
+    let benign = "é";
+    for (let i = 0; i < 9; i++)
+      benign = JSON.stringify(benign)
+        .slice(1, -1)
+        .replace(
+          /[^\\"\w]/g,
+          (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+        );
+    claudeTranscript(config, [{ out: `benign-note ${benign}` }]);
+    holdCredential(ID, "some-other-credential");
+    try {
+      const copy = keepTranscriptCopy(
+        record(config, {
+          provider: { provider: "p" },
+        } as unknown as Partial<LaunchRecord>),
+        SESSION,
+        root,
+      );
+      expect(readFileSync(String(copy?.transcript), "utf8")).toContain(
+        "benign-note",
+      );
+    } finally {
+      holdCredential("none", "unused-placeholder");
+    }
+  });
+
   it("leaves out lines whose JSON after a header, JSON string, deep nesting or credential key could hide a secret, and a marker-shaped source record", () => {
     const root = scratch();
     const config = join(root, "config");
@@ -368,6 +397,12 @@ describe("keeping a run's transcript copy", () => {
       expect(text).not.toContain("ef-credential");
       expect(text).not.toContain("note ");
       expect(text).not.toContain("layered");
+      const backslashed = text
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l))
+        .filter((e) => typeof e.out === "string" && /^\\+$/.test(e.out));
+      expect(backslashed).toHaveLength(1);
       expect(text).toContain("9007199254740993");
       expect(text).not.toContain("source-marker-xyz");
       expect(text).not.toContain("trailing");
