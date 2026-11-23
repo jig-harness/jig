@@ -543,6 +543,14 @@ describe("the forge's facts", () => {
     expect(pull?.partial).toContain("another commit");
   });
 
+  it("reads a missing head commit node as partial, never as an empty check list", () => {
+    const pull = parseAnswer(
+      { data: { repository: { pr12: { number: 12, headRefOid: HEAD } } } },
+      [12],
+    ).pulls.get(12);
+    expect(pull?.partial).toContain("not read");
+  });
+
   it("reads check runs and commit statuses with their app and state", () => {
     const node = {
       number: 12,

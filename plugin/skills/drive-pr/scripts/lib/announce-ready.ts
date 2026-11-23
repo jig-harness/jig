@@ -14,6 +14,7 @@
 import { isRecord } from "../../../../shared/guards.ts";
 import { reconcileWording } from "./announce-wording.ts";
 import { withdrawAnnouncement } from "./announce.ts";
+import { confirmCarriedReview } from "./carried-review.ts";
 import { readMergeFacts } from "./merge-facts.ts";
 import {
   checkPattern,
@@ -219,13 +220,23 @@ export async function announceReady(
     ghCallTimeoutSeconds(),
     runCache,
   );
+  // The caller's historical SHA is a claim: prove it again under these live
+  // rules, as the board does, before it can stand in for a check on the head.
+  const carried = await confirmCarriedReview(
+    process.cwd(),
+    null,
+    reviewCarriedFrom,
+    head,
+    facts.base,
+    rules,
+  );
   const answer = readiness(
     {
       ...facts,
       slug: "",
       converged: true,
       verifiedSha: head,
-      ...(reviewCarriedFrom === undefined ? {} : { reviewCarriedFrom }),
+      ...carried,
       held: facts.labels.includes(hold),
       ...(automation === undefined ? {} : { automation }),
     },
@@ -240,8 +251,9 @@ export async function laneHolds(
   head: string,
   lane: Lane | null,
   standingIds: readonly number[] = [],
+  reviewCarriedFrom?: string,
 ): Promise<number> {
-  const now = await readyOrWithdraw(pr, head, standingIds);
+  const now = await readyOrWithdraw(pr, head, standingIds, reviewCarriedFrom);
   if (now.rc !== 0) return now.rc;
   if (now.lane === lane) return 0;
   // The surviving wording is for another lane; remove it rather than leave
@@ -290,8 +302,9 @@ export async function readyOrWithdraw(
   pr: string,
   head: string,
   ids: readonly number[],
+  reviewCarriedFrom?: string,
 ): Promise<AnnounceReady> {
-  const answer = await announceReady(pr, head);
+  const answer = await announceReady(pr, head, reviewCarriedFrom);
   if (answer.rc === 0) return answer;
   console.error(`announce-merge-ready: ${answer.says} — refusing to announce`);
   const withdrawn = answer.rc !== 4 || (await withdrawAll(pr, ids));
@@ -304,11 +317,12 @@ export async function reconcileStanding(
   head: string,
   ids: readonly number[],
   dryRun: boolean,
+  reviewCarriedFrom?: string,
 ): Promise<number> {
   const standing = dryRun ? [] : ids;
-  const current = await readyOrWithdraw(pr, head, standing);
+  const current = await readyOrWithdraw(pr, head, standing, reviewCarriedFrom);
   if (current.rc !== 0) return current.rc;
   const wording = await reconcileWording(pr, ids, head, current.lane, dryRun);
   if (wording !== 0) return wording;
-  return await laneHolds(pr, head, current.lane, standing);
+  return await laneHolds(pr, head, current.lane, standing, reviewCarriedFrom);
 }

@@ -146,6 +146,12 @@ Ready to merge, lane **merge now**, when all of these hold at the tick:
    repository sets one), completed and neither failed nor was skipped; any
    other check the app published on the head does not count; where the
    repository names none, a person's approving review stands on the head.
+   One route keeps an earlier witness: when the head differs from the
+   verified one only by a clean merge of the base, and the same app's check
+   completed green on the earlier head, the earlier witness stands, provided
+   the head's commit and its checks were read and none of them failed. The
+   proof is made again under the live rules by each caller, never taken on a
+   caller's word.
 4. The forge reports it mergeable with its base (`mergeable` is
    `MERGEABLE`).
 5. It is not a draft.
@@ -198,9 +204,13 @@ the other rows decide the lane. The list is
 read from the default branch by every caller, the drive's announcement
 included, never from the pull request's own configuration, which could
 otherwise list its own author. The commits and files are read from the
-pull request's own listings, pinned to the head, only for a pull request
-by a listed bot that nothing else already satisfies, and kept between ticks
-by head and base commit.
+pull request's own listings, only for a pull request by a listed bot that
+nothing else already satisfies, and kept between ticks by head and base
+commit. The listings are fetched by pull request number, not by an
+immutable revision; the read brackets them with metadata reads and refuses
+when the head, the base or a count differs before and after, so the
+evidence establishes that nothing moved across the read, not that the
+forge froze the listing.
 
 `announce-merge-ready.ts` posts only when the predicate says merge now or
 approve first, and words the second as "an approval is still required".

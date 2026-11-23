@@ -70,7 +70,7 @@ export async function witnessedReview(
 /** A caller without the Git objects or the review cannot reuse either. */
 export async function confirmCarriedReview(
   checkout: string | null | undefined,
-  slug: string,
+  slug: string | null,
   from: unknown,
   head: string,
   base: string | undefined,

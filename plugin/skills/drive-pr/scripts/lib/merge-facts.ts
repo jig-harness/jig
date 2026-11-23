@@ -232,8 +232,8 @@ function partialOf(
     long.length === 0 ? [] : [`more ${long.join(", ")} than one read holds`];
   // The checks belong to the head only when the commit they were read on is it.
   const checked = str(at(commit, "commit", "oid"));
-  if (checked !== "" && checked !== head)
-    why.push("its checks were read on another commit");
+  if (checked === "") why.push("its head commit's checks were not read");
+  else if (checked !== head) why.push("its checks were read on another commit");
   return why.length === 0 ? null : why.join("; ");
 }
 
