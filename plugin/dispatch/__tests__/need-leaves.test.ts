@@ -595,3 +595,25 @@ describe("what is not credited", () => {
     ).toEqual([before]);
   });
 });
+
+describe("the occurrence lookups", () => {
+  it("read both sources by index, not by scanning the window", () => {
+    const db = stateDb(root);
+    const leaves = db
+      .query(
+        "EXPLAIN QUERY PLAN SELECT value FROM need_leaves WHERE at_ms >= ? AND json_extract(value, '$.occurrence') IN (?, ?)",
+      )
+      .all(0, "a", "b") as Array<{ detail: string }>;
+    expect(leaves.map((r) => r.detail).join("\n")).toContain(
+      "need_leaves_occurrence",
+    );
+    const answers = db
+      .query(
+        "EXPLAIN QUERY PLAN SELECT repo FROM station_answers a WHERE claimed_at >= ? AND outcome IN ('held', 'refused') AND answer IN (?, ?)",
+      )
+      .all("", "a", "b") as Array<{ detail: string }>;
+    expect(answers.map((r) => r.detail).join("\n")).toContain(
+      "station_answers_unsettled_answer",
+    );
+  });
+});

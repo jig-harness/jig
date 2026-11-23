@@ -628,6 +628,15 @@ export const MIGRATIONS: readonly Migration[] = [
     WHERE outcome IN ('held', 'refused');
   `,
   },
+  {
+    // The settled list's follow-up reads by occurrence identity (`readSettled`): each looks up the kept answers' rows by index, not by scanning the day.
+    additive: true,
+    sql: `
+  CREATE INDEX need_leaves_occurrence ON need_leaves (json_extract(value, '$.occurrence'));
+  CREATE INDEX station_answers_unsettled_answer ON station_answers (answer)
+    WHERE outcome IN ('held', 'refused');
+  `,
+  },
 ];
 
 /** The schema version this plugin writes. */
