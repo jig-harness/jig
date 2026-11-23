@@ -162,11 +162,13 @@ const LOOK_DEPTH = 8;
 /** The JSON a string holds as a whole, or after a header line, or as a quoted JSON string; `undefined` when it holds none. */
 function embeddedJson(text: string): unknown {
   const start = text.search(/[[{"]/);
-  if (start === -1) return undefined;
+  // Ordinary prose rarely ends where JSON does, so most text never reaches the parser.
+  if (start === -1 || !/[\]}"]\s*$/.test(text)) return undefined;
   try {
     return JSON.parse(text.slice(start));
   } catch {
-    // Text that is not JSON is the ordinary case; the parser's message can quote the text, so nothing of it is kept or logged.
+    // Only a fixed diagnostic: the parser's own message can quote the text.
+    swallow(new SyntaxError("not JSON"), "a string that is not JSON is text");
     return undefined;
   }
 }
