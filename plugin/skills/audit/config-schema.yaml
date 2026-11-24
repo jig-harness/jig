@@ -128,6 +128,8 @@ null_refused:
   - file_issue
   - file_issue.sweep
   - file_issue.sweep.move
+  - routing.model_tiers
+  - routing.stages
 
 # Sections a skill refuses outright, with what to do instead.
 refused:

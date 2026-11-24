@@ -221,6 +221,12 @@ describe("the host and the repository layers", () => {
     ).toThrow("routing.model_tiers is null");
   });
 
+  it("reads routing: null as a whole-section reset to the defaults", () => {
+    expect(
+      parseRoutingModels({ routing: null }, "steward").codex?.complex,
+    ).toBe("sol");
+  });
+
   it("lets a run's environment win over both files", () => {
     layered(HOST, null);
     const config = loadLayeredConfig(repo, {

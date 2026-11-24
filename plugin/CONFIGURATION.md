@@ -824,8 +824,16 @@ model.
   by the literal key: a host's declaration of `sol` and a repository's of
   `gpt-6.2-sol` both survive, and are refused if their tiers differ, so
   re-tiering an inherited declaration means using its exact key, spelling
-  included. A run's
-  `JIG__ROUTING__…` variable replaces both.
+  included. Two spellings of one family that survive in different layers
+  (`routing.family_tiers.codex.sol` in one, `routing.model_tiers.codex.sol` or
+  `gpt-6.2-sol` in another) must agree on the tier, so an override matches the
+  full declaration path and every surviving spelling of the family. A
+  `routing: null` in a higher layer resets the whole section to its defaults,
+  protected declarations included; to keep inherited cells, omit the key. A run's
+  `JIG__ROUTING__…` variable wins for the paths it sets and leaves the file
+  layers' other cells in place. A model key that ends in an underscore cannot be
+  a leaf override (the split reads `___` as a separator and a child that starts
+  with one); set the model's whole entry as a mapping instead.
 - **Precedence.** For a stage, a runtime and a tier, the first of: the stage's
   cell (highest layer that sets it), the all-stages `routing.models` cell
   (highest layer that sets it), the runtime's default. A stage's cell is
