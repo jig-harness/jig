@@ -215,11 +215,15 @@ Where the host has no dispatcher, use its configured work-start procedure
 ask the person how to start the filed issues. Record what actually started, and each held task with the decision that
 blocks it. Track filing and starting separately: when a task is filed but
 not started (the work-start procedure was unknown, or a launch failed), reuse
-its recorded issue key and check whether it has started before retrying the
-start. When a held task's decision arrives, file and start only the newly
-eligible remainder, never a task already filed. After each such late handoff,
-send the plan keeper (step 9, when the plan has one) the newly resolved
-decisions and the issue keys that now carry them.
+its recorded issue key. Before retrying the start, check whether the start
+request was accepted: an assignment can land before its confirmation read
+fails, and a repeated assignment is refused. Wait when pickup is pending (it
+happens on a later tick), and retry only when a fresh read shows the request
+did not land. When a held task's decision arrives, file and start only the
+newly eligible remainder, never a task already filed. Send the plan keeper
+(step 9, when the plan has one) each decision when it is recorded, including
+a rejection that leaves no task to hand off, and each issue key as soon as
+filing succeeds, whatever the launch outcome.
 
 ### 11. Pick up the state on every return
 
