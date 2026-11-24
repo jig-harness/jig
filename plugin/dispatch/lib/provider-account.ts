@@ -334,7 +334,7 @@ function baseUrl(
   const url = new URL(raw.value);
   // The path as written is checked before the URL parser normalizes it: a dot segment or an escaped dot could otherwise remove text the checks below never see.
   // Only a plain form is accepted: the URL parser also reads a backslash as a separator and drops tabs and line breaks, which would hide a path segment from these checks.
-  const written = /^[a-z][a-z0-9+.-]*:\/\/[^/?#\\]*(\/[^?#\\]*)?$/i.exec(
+  const written = /^[a-z][a-z0-9+.-]*:\/\/[^/?#\\]+(\/[^?#\\]*)?$/i.exec(
     raw.value.split(/[?#]/)[0] ?? "",
   );
   if (written === null)

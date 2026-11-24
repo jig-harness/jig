@@ -243,7 +243,9 @@ describe("resolving a credential reference", () => {
   it("learns trimmed failed-output lines and marker-collision output", async () => {
     const trimmed = "trimmed-opaque-secret-1234";
     await resolveCredential(
-      command(`process.stdout.write('  ${trimmed}  '); process.exit(1)`),
+      command(
+        `process.stdout.write('unrelated before\\n  ${trimmed}  \\nunrelated after'); process.exit(1)`,
+      ),
       "ref",
       process.env,
     );
@@ -252,11 +254,15 @@ describe("resolving a credential reference", () => {
     );
 
     const collision = "marker-collision-secret-1234";
-    await resolveCredential(
+    const refused = await resolveCredential(
       command(`process.stdout.write('prefix<redacted>${collision}')`),
       "ref",
       process.env,
     );
+    expect(refused).toMatchObject({
+      ok: false,
+      failure: { reason: expect.stringContaining("redaction marker") },
+    });
     expect(maskCredentials(`value ${collision}`, "[masked]")).toBe(
       "value [masked]",
     );

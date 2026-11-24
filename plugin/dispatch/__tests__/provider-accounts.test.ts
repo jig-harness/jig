@@ -125,6 +125,7 @@ describe("a provider account", () => {
       "https://openrouter.ai\\api\\..\\x",
       "https://openrouter.ai/api/\t./x",
       "https://openrouter.ai/api/\n../x",
+      "https:///openrouter.ai/api",
     ])
       expect(refusal([router({ base_url: url })])).toMatch(
         /plain URL|no percent escapes|no credential-shaped value/,
