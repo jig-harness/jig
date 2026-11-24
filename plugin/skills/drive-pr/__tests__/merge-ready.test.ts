@@ -701,7 +701,7 @@ describe("required checks and reviewer attempts", () => {
           app: null,
           state: "failure" as const,
         };
-        return noId as HeadCheck;
+        return noId;
       })(),
     ];
     const r = readiness(f, RULES);
