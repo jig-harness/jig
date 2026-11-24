@@ -89,7 +89,7 @@ export function declarationToken(
 ): string {
   if (typeof value !== "string" || !DECLARATION_TOKEN_PATTERN.test(value))
     throw new RoutingError(
-      `${field} must be ${what}: one word that contains no control characters, whitespace, comma, semicolon or equals sign`,
+      `${field} must be ${what}: one word that contains no NUL, whitespace, comma, semicolon or equals sign`,
     );
   return value;
 }

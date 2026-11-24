@@ -146,6 +146,21 @@ describe("a model outside the families", () => {
     ).toThrow(`routing.model_tiers.codex."${OUTSIDE}".reason must say why`);
   });
 
+  it("escapes controls in an unused declaration's audit report", () => {
+    const declared = "unused\u0080model";
+    const reported = rules({
+      routing: {
+        model_tiers: {
+          codex: { [declared]: { tier: "strategic", reason: "reserved" } },
+        },
+      },
+    }).reported.join("\n");
+    expect(reported).toContain(
+      '"unused\\u0080model" reads "unused\\u0080model"',
+    );
+    expect(reported).not.toContain(declared);
+  });
+
   it("keeps an unused legacy declaration from changing a selected model route", () => {
     expect(
       parseRoutingModels({

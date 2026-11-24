@@ -321,7 +321,15 @@ export function repositoryConfigPath(
  */
 export function formatField(path: readonly string[]): string {
   return path
-    .map((key) => (/^[A-Za-z0-9_-]+$/.test(key) ? key : JSON.stringify(key)))
+    .map((key) =>
+      /^[A-Za-z0-9_-]+$/.test(key)
+        ? key
+        : JSON.stringify(key).replace(
+            /\p{Cc}/gu,
+            (character) =>
+              `\\u${character.codePointAt(0)?.toString(16).padStart(4, "0")}`,
+          ),
+    )
     .join(".");
 }
 

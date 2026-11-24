@@ -180,7 +180,7 @@ function parseTierEntries(raw: unknown, key: TierKey): FamilyTiers {
       const tier = oneOf(fields.tier, M0_TIERS, `${field}.tier`);
       if (typeof fields.reason !== "string" || fields.reason.trim() === "")
         throw new RoutingError(
-          `${field}.reason must say why ${family} is a ${tier} model here; a model's tier is never declared without one`,
+          `${field}.reason must say why ${formatField([family])} is a ${tier} model here; a model's tier is never declared without one`,
         );
       row[family] = { tier, reason: fields.reason.trim(), key };
     }
@@ -205,7 +205,7 @@ function refuseConflictingSpellings(
     const tiers = new Set(keys.map((key) => declared[key]?.tier));
     if (tiers.size > 1)
       throw new RoutingError(
-        `routing.${key}.${formatField([runtime])} declares ${keys.join(", ")}, which are one family, with different tiers; keep one`,
+        `routing.${key}.${formatField([runtime])} declares ${keys.map((name) => formatField([name])).join(", ")}, which are one family, with different tiers; keep one`,
       );
   }
 }
