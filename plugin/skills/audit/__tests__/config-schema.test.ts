@@ -559,6 +559,8 @@ describe("the reading skills", () => {
       "dispatch.labels.prefix": DEFAULT_LABELS.prefix,
       "dispatch.labels.only_labeled": DEFAULT_LABELS.onlyLabeled,
       "dispatch.adopt.enabled": dispatch.value.adopt.enabled,
+      "dispatch.adopt.trusted_automation":
+        dispatch.value.adopt.excludeTrusted !== true,
       "dispatch.overlap.max_per_file": dispatch.value.overlap?.maxPerFile,
       "dispatch.overlap.file_rate": dispatch.value.overlap?.fileRate,
       "dispatch.overlap.area_rate": dispatch.value.overlap?.areaRate,
