@@ -24,7 +24,9 @@ import {
 } from "./foreground-wait-observation.ts";
 
 const SCRIPT = resolve(import.meta.dir, "../scripts/foreground-wait.ts");
-const T = 150_000;
+// Readiness, cancellation grace, and the command deadline are sequential.
+// Keep a margin for process startup, observations, and finally cleanup.
+const T = 180_000;
 const PACING = {
   DRIVE_PR_FOREGROUND_WAIT_POLL_MS: "100",
   DRIVE_PR_FOREGROUND_WAIT_TRACK_MS: "200",

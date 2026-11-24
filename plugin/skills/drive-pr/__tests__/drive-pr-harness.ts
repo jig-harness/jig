@@ -1216,7 +1216,7 @@ if [ -n "$rest_pr" ]; then
   if [ -n "\${DRIVE_PR_STUB_GH_TIMES:-}" ]; then
     for a in "$@"; do
       if [ "$a" = "X-Drive-Pr-Caller: snapshot" ]; then
-        printf '%s000\n' "\${EPOCHREALTIME//./}" >> "$DRIVE_PR_STUB_GH_TIMES"
+        perl -MTime::HiRes=time -e 'printf "%.0f\\n", time * 1_000_000_000' >> "$DRIVE_PR_STUB_GH_TIMES"
       fi
     done
   fi
