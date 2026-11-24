@@ -402,8 +402,10 @@ protection) still decide its lane:
      at the manifest's own indentation. Two-space and one-tab layouts are
      supported; a layout whose opener reads as nested (three or more
      leading spaces, such as four-space indentation) withholds the
-     exception, and the card says the dependency is "not inside a
-     dependency section". Unchanged hunk context outside the patch grammar
+     exception. The card then says the dependency "sits in a hunk that does
+     not show its section, so its containing object is not proven", or, for
+     a dependency line indented too little to be inside a section, that it
+     is "not inside a dependency section". Unchanged hunk context outside the patch grammar
      the classifier reads (such as an inline array, `"files": ["dist"],`)
      withholds it too, and the card then says "the forge gives no diff", the
      same reason as for a patch the forge did not return: read the
@@ -416,13 +418,16 @@ protection) still decide its lane:
      lockfile selection) and moving a manifest away can remove the preference
      from its former directory. A lockfile-only change can qualify when
      `update_types` is unset or includes `lockfile`, subject to the other
-     trust rules. Any lockfile added, removed, moved or copied can change
-     which installer a directory selects, so compare the installer each
-     affected directory selects before and after the change.
+     trust rules.
    - A withheld exception changes only the exception; a qualifying approval
      can still allow merge now, and the ordinary placement rules still
      apply to a behind branch or another blocker, and to forge facts that
      are incomplete or a mergeability not yet known.
+
+Whatever `update_types` says, a bare login included, the classifier does not
+see what a lockfile added, removed, moved or copied changes in a directory:
+compare, before and after, the lockfile each affected directory selects, the
+installer and command it implies, and the effective install configuration.
 
 For trusted automation the review of the head must
 still be witnessed by the reviewer app's check run, so where
