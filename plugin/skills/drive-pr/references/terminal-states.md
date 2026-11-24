@@ -1984,8 +1984,10 @@ neither a stamp nor a notice leaves that evidence in place. If the list is
 absent, the diff is unreadable or has multiple merge bases, or any path
 remains, the drive stops with
 `REVIEW_SKIPPED` and names the notice and head. A notice for an older head
-supplies no evidence for the current head: the drive awaits review when no
-workable finding remains, otherwise it runs the live findings as a round.
+supplies no evidence for the current head. A completed reviewer check can
+still let the drive work live findings, but it awaits review when no workable
+finding remains; a skipped check without a current-head notice awaits review
+before either work-state outcome applies.
 
 The pull request's diff at a head is the diff from that head's merge base with
 the base branch (`baseRefOid`) to the head, the change the forge shows, read
