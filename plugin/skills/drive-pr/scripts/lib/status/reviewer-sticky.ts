@@ -51,6 +51,11 @@ function markdownIndentation(line: string): { columns: number; end: number } {
   return { columns, end };
 }
 
+/** Remove inline-code payloads before looking for protocol markers. */
+function withoutInlineCode(line: string): string {
+  return line.replace(/(`+)(?:[^`]|`(?!\1))*\1/g, "");
+}
+
 /** The last reviewed-SHA stamp in one sticky body under the configured marker. */
 export function reviewedShaIn(body: string, shaMarker: string): string {
   const markerRe = new RegExp(
@@ -104,10 +109,11 @@ export function reviewerStickyBody(
       fence = null;
       continue;
     }
-    const trimmed = line.trimStart();
+    const evidenceLine = withoutInlineCode(line);
+    const trimmed = evidenceLine.trimStart();
     if (fence !== null || indentation.columns >= 4) continue;
     if (/^ {0,3}>/.test(line)) continue;
-    structural.push(line);
+    structural.push(evidenceLine);
     if (trimmed.startsWith(summaryMarker)) structuralMarker = true;
   }
   // Every evidence parser consumes this structural view. Returning the raw

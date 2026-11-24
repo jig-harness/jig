@@ -20,6 +20,23 @@ export interface SkipNotice {
 
 const MAX_TEXT = 300;
 
+/** Strip code examples: protocol notices are prose, never rendered samples. */
+function proseOnly(body: string): string {
+  let fenced = false;
+  return body
+    .split(/\r?\n/)
+    .map((line) => {
+      const bare = line.replace(/^\s*>\s?/, "");
+      if (/^\s*(`{3,}|~{3,})/.test(bare)) {
+        fenced = !fenced;
+        return "";
+      }
+      if (fenced || /^\s{4}/.test(bare)) return "";
+      return bare.replace(/(`+)(?:[^`]|`(?!\1))*\1/g, "");
+    })
+    .join("\n");
+}
+
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -40,11 +57,12 @@ export function skipNoticeIn(
   ];
   const inner = blocks.at(-1)?.[1];
   if (inner === undefined) return null;
-  const head =
-    /`([0-9a-f]{7,40})`/.exec(inner)?.[1] ??
-    /(?<![0-9A-Za-z])([0-9a-f]{7,40})(?![0-9A-Za-z])/.exec(inner)?.[1];
+  const prose = proseOnly(inner);
+  const head = /(?<![0-9A-Za-z])([0-9a-f]{7,40})(?![0-9A-Za-z])/.exec(
+    prose,
+  )?.[1];
   if (head === undefined) return null;
-  const text = inner
+  const text = prose
     .replace(/\[![A-Za-z]+\]/g, "")
     .replace(/^\s*>\s?/gm, "")
     .replace(/\*\*|__/g, "")
