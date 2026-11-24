@@ -1,6 +1,11 @@
 import { isRecord } from "../../../../../shared/guards.ts";
-import { parseReviewRound } from "../../summary-findings.ts";
 import { type SkipNotice, skipNoticeIn } from "./skip-notice.ts";
+
+/** `<!-- ai-review-round: N -->` from a sticky or inline reviewer comment. */
+export function parseReviewRound(body: string): number | null {
+  const m = body.match(/<!--\s*ai-review-round:\s*(\d+)\s*-->/);
+  return m ? Number.parseInt(m[1] ?? "", 10) : null;
+}
 
 export interface ReviewerSticky {
   /** The `ai-reviewed-sha` marker from the newest STICKY comment, or `''`

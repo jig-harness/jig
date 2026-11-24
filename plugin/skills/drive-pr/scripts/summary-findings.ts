@@ -79,7 +79,11 @@ import {
   reviewerProfile,
 } from "./lib/reviewer-profiles.ts";
 import { reviewsBy } from "./lib/status/review-object.ts";
-import { reviewerStickyBody } from "./lib/status/reviewer-sticky.ts";
+import {
+  parseReviewRound,
+  reviewerStickyBody,
+} from "./lib/status/reviewer-sticky.ts";
+import { skipNoticeIn } from "./lib/status/skip-notice.ts";
 import {
   headerOf,
   SEVERITY_FIELD,
@@ -609,11 +613,6 @@ export function categoryOf(text: string): string {
 }
 
 /** `<!-- ai-review-round: N -->` from a sticky or inline reviewer comment. */
-export function parseReviewRound(body: string): number | null {
-  const m = body.match(/<!--\s*ai-review-round:\s*(\d+)\s*-->/);
-  return m ? Number.parseInt(m[1] ?? "", 10) : null;
-}
-
 export interface ClassifyInput {
   pr: number;
   stickyCommentId: number | null;
@@ -1333,11 +1332,25 @@ export function reviewerSticky(
   configuredOnly: boolean,
 ): IssueComment | undefined {
   if (configuredOnly && !reviewerExpected()) return undefined;
-  return comments
-    .filter(
-      (c) => reviewerStickyBody(c, isReviewerLogin, stickyMarker()) !== null,
-    )
-    .pop();
+  // Keep the summary source aligned with status evidence.  In particular, a
+  // later auxiliary comment with only the visible sticky marker must not hide
+  // the stamped sticky and its unaddressed summary findings.
+  let selected: IssueComment | undefined;
+  let selectedHasStamp = false;
+  const stamp = new RegExp(
+    `<!--\\s*${reviewedShaMarker().replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}:\\s*[0-9a-f]{7,40}\\s*-->`,
+    "i",
+  );
+  for (const comment of comments) {
+    const body = reviewerStickyBody(comment, isReviewerLogin, stickyMarker());
+    if (body === null) continue;
+    const hasStamp = stamp.test(body);
+    const hasSkip = skipNoticeIn(body) !== null;
+    if (!hasStamp && (selectedHasStamp || !hasSkip)) continue;
+    selected = comment;
+    selectedHasStamp = hasStamp;
+  }
+  return selected;
 }
 
 /** The PR number from `argv`, else the current branch's PR. */
