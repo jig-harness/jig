@@ -217,17 +217,27 @@ blocks it. Track filing and starting separately: when a task is filed but
 not started (the work-start procedure was unknown, or a launch failed), reuse
 its recorded issue key. Before sending a start, record
 the issue key, the time, and the settings the send resolves (the tracker
-target, the identity and the dispatch states). A start whose result is not a
-verified rejection made before anything was written (a refused result whose
-confirmation read threw, a timeout) is **unconfirmed**: it may still be in
-flight, so never resend it on a guess. Settle it only by the mechanism's own
-terminal answer for that attempt: a launch record or assignment record tied
-to the issue, or the work-start procedure's receipt or status read. A state
-someone set by hand (assigned, in progress), an earlier launch of the same
-issue, or a missing entry in a thread is not evidence either way. Resend
-only when the mechanism gives a terminal answer that the attempt did not
-land, or accepts a retry keyed to the same attempt; when it can give
-neither, leave the start unresolved, say so, and ask the person. Wait
+target, the identity and the dispatch states). Classify each start's result three ways. A **confirmed success** is
+the send's own success (it read back the expected assignee and reported
+`sent`): record it and wait for pickup. A **verified rejection made before
+anything was written** is a failed start: record the reason. Anything else
+(a refused result whose confirmation read threw, a timeout, or a recorded
+attempt with no saved outcome, as after a crash) is **unconfirmed**: it may
+still be in flight, so never resend it on a guess. Settle it only by the
+mechanism's own terminal answer for that attempt: a launch record or receipt
+tied to that attempt, or the work-start procedure's status read. An
+issue-level assignment record does not identify an attempt (it carries no
+time, and another trusted writer's assignment looks the same), so it is not
+confirmation; a current pickup shows only that work is already underway. A
+state someone set by hand, an earlier launch of the same issue, or a missing
+entry in a thread is not evidence either way. A direct read of the item's
+assignee, state and assignment history is allowed to diagnose partial effects
+(an assignment outside the dispatch states, a state change without its
+assignment), but its absence or ambiguity is inconclusive, never a reason to
+retry. Resend only when the mechanism gives a terminal answer that the
+attempt did not land, or accepts a retry keyed to the same attempt; when it
+can give neither, leave the start unresolved, say so, and ask the person.
+Wait
 when pickup is pending (it happens on a later tick). When an accepted pickup
 claimed the item and then stalled, follow the recovery the status reports, or
 surface the blocker, keeping the issue key. When the assignment landed but the issue is still outside the
@@ -247,7 +257,12 @@ the operator's pickup thread read for that issue (the ordinary status can
 report a claim from tracker membership alone), any other work-start
 procedure through its own receipt or status read. Read it with the settings
 recorded for the attempt in step 10, never the current checkout's or a
-later configuration's, and apply the same rule: an unreadable source or
+later configuration's. The pickup thread read resolves the tracker from the
+current checkout, so when the adapter, team, identity or states may differ
+from the recorded ones and the match cannot be established, leave the result
+unresolved instead of trusting that read. Treat every recorded attempt with
+no saved outcome as unconfirmed and reconcile it before any other send.
+Apply the same rule: an unreadable source or
 inconclusive answer keeps the start unconfirmed and is never a reason to
 retry. Then read the
 state of started work through
