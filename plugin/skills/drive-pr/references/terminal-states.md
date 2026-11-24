@@ -1974,7 +1974,9 @@ carries a stamp for an earlier head, Jig compares the two diffs:
 | names another head, or is absent                                                                 | `STALE_REVIEW`, as before                                                                                                                                                                        |
 
 When the comment carries no stamp and no earlier selected review stamp, and its skip notice names the current head,
-Jig checks the changed paths against `review.skip_excluded_paths`. If an
+Jig checks the changed paths against `review.skip_excluded_paths`. A separate
+unstamped skip notice does not borrow an earlier comment's stamp: that case
+remains `STALE_REVIEW` (or awaits the reviewer for a skipped check). If an
 explicit list covers every changed path, the head becomes
 `reviewer.reviewedSha` with source `skip-notice`, and the drive may converge
 when threads and summary findings are clear. A later auxiliary reply with

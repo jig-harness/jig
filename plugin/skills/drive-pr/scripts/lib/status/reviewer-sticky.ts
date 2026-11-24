@@ -14,19 +14,36 @@ export function parseReviewRound(body: string): number | null {
 }
 
 /** A malformed or out-of-range round is not equivalent to an absent round. */
-function hasInvalidReviewRound(body: string): boolean {
+export function hasInvalidReviewRound(body: string): boolean {
+  const openers = [...body.matchAll(/<!--\s*ai-review-round:/g)];
+  if (openers.length === 0) return false;
+  const markers = [
+    ...body.matchAll(/<!--\s*ai-review-round:\s*([\s\S]*?)-->/g),
+  ];
+  // A protocol comment has one unambiguous ordering claim. Do not recover
+  // from an unterminated or competing marker by trusting one fragment.
   return (
-    /<!--\s*ai-review-round:/.test(body) && parseReviewRound(body) === null
+    openers.length !== 1 ||
+    markers.length !== 1 ||
+    parseReviewRound(body) === null
   );
 }
 
 /** A SHA marker was present but did not satisfy the marker grammar. */
-function hasInvalidReviewedSha(body: string, marker: string): boolean {
+export function hasInvalidReviewedSha(body: string, marker: string): boolean {
   const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return (
-    new RegExp(`<!--\\s*${escaped}\\s*:`, "i").test(body) &&
-    reviewedShaIn(body, marker) === ""
-  );
+  const openers = [
+    ...body.matchAll(new RegExp(`<!--\\s*${escaped}\\s*:`, "gi")),
+  ];
+  if (openers.length === 0) return false;
+  const markers = [
+    ...body.matchAll(
+      new RegExp(`<!--\\s*${escaped}\\s*:\\s*([0-9a-f]{7,40})\\s*-->`, "gi"),
+    ),
+  ];
+  // The last marker is the witness. Any malformed attempt makes the whole
+  // comment unreadable instead of allowing an earlier stamp to win.
+  return openers.length !== markers.length;
 }
 
 export interface ReviewerSticky {
@@ -206,7 +223,7 @@ export function reviewerStickyBody(
  * Complete skip-notice blocks whose delimiters are structural Markdown, while
  * retaining their deliberately blockquoted payload for the skip decoder.
  */
-function structuralSkipNotices(body: string, marker: string): string {
+export function structuralSkipNotices(body: string, marker: string): string {
   body = withoutProtocolInlineCode(body);
   const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const opener = new RegExp(`^ {0,3}<!--\\s*${escaped}\\s*-->\\s*$`);
@@ -231,7 +248,9 @@ function structuralSkipNotices(body: string, marker: string): string {
       token.length >= fence.length &&
       /^[ \t]*$/.test(line.slice(line.indexOf(token) + token.length))
     ) {
+      if (open) kept.push(line);
       fence = null;
+      if (open && closer.test(line)) open = false;
       continue;
     }
     if (fence !== null || indentation.columns >= 4 || /^ {0,3}>/.test(line)) {
@@ -317,6 +336,10 @@ export function reviewerStickyIn(
             !lowerRound))
       )
         sticky = { ...sticky, skip };
+      // A skip does not replace review evidence, but its explicit ordering
+      // boundary prevents an older stamp becoming the witness later.
+      if (skip !== null && round !== null)
+        highestExplicitRound = Math.max(highestExplicitRound ?? round, round);
       continue;
     }
     if (round !== null)

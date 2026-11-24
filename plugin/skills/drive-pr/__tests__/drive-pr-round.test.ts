@@ -1687,6 +1687,14 @@ describe("summary-findings marker overrides", () => {
              '<!-- other-review -->',
            ),
            latestStamp: m.reviewedShaFrom('<!-- custom+sha: abc1234 -->\\n<!-- custom+sha: def5678 -->'),
+           malformedRoundKeepsSummary: m.reviewerSticky([
+             { id: 23, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 2 -->\\n- \`a.ts\` — finding' },
+             { id: 24, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: def5678 -->\\n<!-- ai-review-round: 1 -->\\n<!-- ai-review-round: 3 -->\\nall clear' },
+           ], false)?.id,
+           malformedRound: s.hasInvalidReviewRound('<!-- ai-review-round: 2 -->\\n<!-- ai-review-round:'),
+           malformedSha: s.hasInvalidReviewedSha('<!-- custom+sha: abc1234 -->\\n<!-- custom+sha: malformed -->', 'custom+sha'),
+           declaredNegative: (() => { try { m.parseDeclaredUnanchored('-1.0 findings without a diff-anchorable line'); return false; } catch { return true; } })(),
+           declaredConflict: (() => { try { m.parseDeclaredUnanchored('0 findings without a diff-anchorable line\\n4 findings without a diff-anchorable line'); return false; } catch { return true; } })(),
          }));`,
       ],
       {
@@ -1767,6 +1775,13 @@ describe("summary-findings marker overrides", () => {
     // marks a different finding addressed on the next.
     expect(got.parsed).toBe("abc1234");
     expect(got.latestStamp).toBe("def5678");
+    // Invalid marker sequences are not an absent round or stamp: a clean
+    // acknowledgement carrying either one cannot erase an earlier summary.
+    expect(got.malformedRoundKeepsSummary).toBe(23);
+    expect(got.malformedRound).toBe(true);
+    expect(got.malformedSha).toBe(true);
+    expect(got.declaredNegative).toBe(true);
+    expect(got.declaredConflict).toBe(true);
   });
 });
 

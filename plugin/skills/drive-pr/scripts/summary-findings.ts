@@ -82,11 +82,14 @@ import {
 import { reviewsBy } from "./lib/status/review-object.ts";
 import {
   parseReviewRound,
+  hasInvalidReviewRound,
+  hasInvalidReviewedSha,
   reviewerStickyBody,
-  reviewerStickyIn,
   reviewedShaIn,
+  structuralSkipNotices,
   differentReviewedHead,
 } from "./lib/status/reviewer-sticky.ts";
+import { skipNoticeIn } from "./lib/status/skip-notice.ts";
 import {
   headerOf,
   SEVERITY_FIELD,
@@ -477,7 +480,7 @@ export function parseDeclaredUnanchored(body: string): number {
     .join("");
   const declarations = [
     ...prose.matchAll(
-      /([^\s]+)\s+findings?(?:\(s\))?\s+without\s+a\s+diff-anchorable\s+line/gi,
+      /(?:^|\s)([^\s]+)\s+findings?(?:\(s\))?\s+without\s+a\s+diff-anchorable\s+line/gi,
     ),
   ];
   if (declarations.length === 0) return 0;
@@ -1379,6 +1382,11 @@ export function reviewerSticky(
   for (const comment of comments) {
     const body = reviewerStickyBody(comment, isReviewerLogin, stickyMarker());
     if (body === null) continue;
+    if (
+      hasInvalidReviewRound(body) ||
+      hasInvalidReviewedSha(body, reviewedShaMarker())
+    )
+      continue;
     const round = parseReviewRound(body);
     const reviewedSha = reviewedShaIn(body, reviewedShaMarker());
     // A lower-round candidate cannot affect the selected summary, including
@@ -1411,13 +1419,10 @@ export function reviewerSticky(
     const replacesSelection = carriesFindingEvidence || cleanReplacement;
     const skipOnly =
       !carriesFindingEvidence &&
-      reviewerStickyIn(
-        [comment],
-        isReviewerLogin,
-        stickyMarker(),
-        reviewedShaMarker(),
+      skipNoticeIn(
+        structuralSkipNotices(String(comment.body ?? ""), skipNoticeMarker()),
         skipNoticeMarker(),
-      ).skip !== null;
+      ) !== null;
     // A skip notice never describes a review summary. In particular it must
     // not establish the initial selection or an ordering watermark that hides
     // a later affirmative review with findings.
@@ -1450,7 +1455,8 @@ function isCleanReplacement(
     !carriesFindingEvidence &&
     reviewedSha !== "" &&
     (selectedReviewedSha === null ||
-      differentReviewedHead(reviewedSha, selectedReviewedSha))
+      (selectedReviewedSha !== "" &&
+        differentReviewedHead(reviewedSha, selectedReviewedSha)))
   );
 }
 
