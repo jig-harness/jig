@@ -126,7 +126,7 @@ describe("the plan of an item whose read a failed call stopped", () => {
 });
 
 describe("a silent drive the trusted automation opt-out blocks", () => {
-  it("is still reported to a person, and never taken over", () => {
+  it("is still reported to a person, not left quiet", () => {
     const plan = planTick(
       input({
         drives: [
@@ -150,5 +150,24 @@ describe("a silent drive the trusted automation opt-out blocks", () => {
     expect(plan.actions[0]?.reason).toContain(
       "dispatch.adopt.trusted_automation",
     );
+  });
+
+  it("leaves a silent idle automation drive quiet, without the opt-out", () => {
+    const plan = planTick(
+      input({
+        drives: [
+          drive({
+            class: "silent",
+            why: "its driver is silent",
+            evidence: {
+              started: "2026-11-15T06:00:00Z",
+              automationIdle: true,
+            },
+          }),
+        ],
+      }),
+    );
+    expect(plan.actions).toHaveLength(0);
+    expect(plan.quiet.map((q) => q.target)).toContain("PR #7");
   });
 });

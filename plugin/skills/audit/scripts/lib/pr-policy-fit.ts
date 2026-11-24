@@ -98,7 +98,7 @@ export function trustedFit(config: Config): Finding[] {
     findings.push({
       id: "derivation:pull_requests.trusted_automation:adopt",
       severity: "info",
-      message: `dispatch.adopt.trusted_automation is false: no automatic start is left for a listed bot's pull request. Its first drive, a restart after a head that moved and a conflict repair all wait for a person, and a pickup handoff cannot start it. Review the install inputs (manifests, installer configuration, lockfiles) against a trusted baseline, then start the drive directly from a verified checkout, and review the merge of the base too, since the drive merges it and may install from the merged tree (stop the drive and recheck if the inputs move). Retire every outstanding drive and rearm request first: one made before the switch can still start a drive without a new review${
+      message: `dispatch.adopt.trusted_automation is false: no automatic start is left for a listed bot's pull request. Its first drive, a restart after a head that moved and a conflict repair all wait for a person, and a pickup handoff cannot start it. Review the install inputs (manifests, installer configuration, lockfiles) against a trusted baseline, and the inputs of the merge of the base too, since the drive merges it and may install from the merged tree, before you start the drive directly from a verified checkout. Recheck whenever the head, the base or a conflict resolution changes the inputs, and stop the drive if they move. Retire every outstanding drive and rearm request first: one made before the switch can still start a drive without a new review${
         labels.enabled
           ? ". A drive or rearm label is not a substitute: it pins neither the reviewed head nor the base the drive merges, and a rearm label needs a trusted request bound to an eligible stop, so the dispatcher may start from inputs nobody reviewed"
           : " (dispatch.labels.enabled is off, so there is no label route)"
@@ -108,8 +108,9 @@ export function trustedFit(config: Config): Finding[] {
     findings.push({
       id: "derivation:pull_requests.trusted_automation:adopt",
       severity: "info",
-      message:
-        "Author-based adoption is off, so a listed bot's pull request with no ledger is not adopted by its author; a person can still label it drive (where dispatch.labels.enabled is on) or arm a drive by hand. A completed process pickup can still start the first drive of its own same-repository pull request, and a drive that stopped in an eligible state can restart from its ledger. Set dispatch.adopt.trusted_automation: false to require a person to start every listed bot's drive, and review its install inputs first.",
+      message: `Author-based adoption is off, so a listed bot's pull request with no ledger is not adopted by its author. Its first drive starts when a person ${
+        labels.enabled ? "labels it drive or " : ""
+      }arms it by hand, or when a completed process pickup starts it for its own same-repository pull request; a drive that stopped in an eligible state can restart from its ledger. Set dispatch.adopt.trusted_automation: false to require a person to start every listed bot's drive, and review its install inputs first.`,
     });
   return findings;
 }

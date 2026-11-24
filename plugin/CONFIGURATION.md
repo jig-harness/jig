@@ -427,7 +427,9 @@ protection) still decide its lane:
 **The drive can install dependencies before the Ready decision.** To review
 install inputs before a listed bot's drive starts, set
 `dispatch.adopt.trusted_automation: false` and start each drive after review.
-Stop any running drives while putting this procedure in place. For a clean
+Stop any running drives while putting this procedure in place, and retire
+every outstanding `drive` and `rearm` request (remove the labels): a request
+made before the switch can still start a drive without a new review. For a clean
 base merge, compare the merged tree with its first parent (the pre-merge branch).
 For a conflict resolution, compare the resolved index with that branch.
 Recheck when the head, base or resolution changes the inputs. Review the

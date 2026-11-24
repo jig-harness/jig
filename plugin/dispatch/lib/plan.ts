@@ -700,7 +700,8 @@ function plannable(
   // (planDrive), only the takeover is withheld.
   const waiting =
     backingOff(pr, input.nowMs) ??
-    (startsBlocked === null || pr.class === "silent"
+    (startsBlocked === null ||
+    (pr.class === "silent" && pr.evidence.trustedDriveManual === true)
       ? null
       : `${pr.why}; ${startsBlocked}`);
   if (waiting === null) return pr;
@@ -750,8 +751,11 @@ function planDrive(
     blocked === null && hold.kind === "takeover" ? hold.record.record.id : null;
   // Another host's open takeover on these ledger facts holds the drive even
   // where this host's own record would take it over.
-  const placed = blocked === null ? planForeign(input, pr, plan, want) : null;
-  if (placed === true) return;
+  // The opt-out withholds only the takeover: the other host's claim is still
+  // placed, and its diagnostics raised.
+  const claimed = planForeign(input, pr, plan, want);
+  if (claimed === true) return;
+  const placed = blocked === null ? claimed : null;
   const foreign = takeover === null ? placed : null;
   const { holder, gone, unread } =
     blocked === null

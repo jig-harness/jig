@@ -107,7 +107,7 @@ test("the trusted automation adoption opt-out is accepted and reported", () => {
   expect(adopt?.message).toContain("nor the base");
   expect(adopt?.message).toContain("bound to an eligible stop");
   expect(adopt?.message).not.toContain("use a label only");
-  expect(adopt?.message).toContain("review the merge of the base too");
+  expect(adopt?.message).toContain("inputs of the merge of the base too");
   expect(adopt?.message).toContain(
     "Retire every outstanding drive and rearm request",
   );
