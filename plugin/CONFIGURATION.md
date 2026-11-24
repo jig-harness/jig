@@ -426,20 +426,31 @@ protection) still decide its lane:
 
 Whatever `update_types` says, a bare login included, the classifier does not
 see what a lockfile added, removed, moved or copied, or a manifest edit,
-changes in a directory. Compare, before and after, the lockfile each affected
-directory selects, the installer and command it implies, and the effective
-install configuration. A manifest-only edit such as `packageManager` can
-switch the installer with no lockfile change, and can select a different
-existing lockfile that the pull request leaves untouched: read the newly
-selected lockfile's contents, since the diff omits the resolutions it
-activates, and compare the old resolutions and command with it. Treat the
-file the actual install consumes as the one to compare (npm documents
-`npm-shrinkwrap.json` ahead of `package-lock.json`, the reverse of Jig's
-choice), the installer's full version and source (the whole `packageManager`
-declaration, not the name before `@`), installer configuration files an
-entry's `paths` allow (an added `.yarnrc.yml` switches Yarn's frozen
-flag), and a lockfile or frozen install that disappears: record it and
-verify what CI or the release does then. An entry
+changes in a directory. The drive host runs the install itself, during a
+base merge and a conflict resolution and before the Ready decision, so a
+review at merge time cannot prevent it: make this comparison before the
+pull request reaches the host's drive, and include the host's install in it.
+Compare, before and after, for each affected directory:
+
+- the lockfile the install consumes, which can differ from Jig's choice (npm 11
+  prefers `npm-shrinkwrap.json` over `package-lock.json`; npm 12 ignores it),
+  and, when a manifest-only edit such as `packageManager` selects a different
+  existing lockfile the pull request leaves untouched, that lockfile's
+  contents, since the diff omits the resolutions it activates;
+- the installer's full version and source (the whole `packageManager`
+  declaration, not the name before `@`);
+- the command the drive runs: `drive.dependency_install` is selected by the
+  lockfile name Jig detects, so a changed name can select another override
+  even when the installer consumes the same file, and without an override
+  Jig's built-in command applies;
+- installer configuration files an entry's `paths` allow: an added
+  `.yarnrc.yml` is outside what schedules an install, so check whether an
+  install runs and which Yarn executable it uses, since the frozen flag
+  depends on it;
+- a lockfile or frozen install that disappears: record it and verify what CI
+  or the release does then.
+
+An entry
 without `update_types` skips manifest classification, so such an edit can
 still qualify for the exception and approval is not owed on that ground; an
 entry with `update_types` set withholds the exception for a direct edit to the
