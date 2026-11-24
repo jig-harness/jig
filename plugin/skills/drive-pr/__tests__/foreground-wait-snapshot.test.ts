@@ -24,11 +24,12 @@ import {
 } from "./foreground-wait-observation.ts";
 
 const SCRIPT = resolve(import.meta.dir, "../scripts/foreground-wait.ts");
-const T = 60_000;
+const T = 150_000;
 const PACING = {
   DRIVE_PR_FOREGROUND_WAIT_POLL_MS: "100",
   DRIVE_PR_FOREGROUND_WAIT_TRACK_MS: "200",
   DRIVE_PR_FOREGROUND_WAIT_KILL_GRACE_MS: "1000",
+  DRIVE_PR_FOREGROUND_WAIT_DEADLINE_GATE_TIMEOUT_MS: "120000",
 };
 const busy = "setInterval(() => {}, 1000)";
 const bunCommand = (source: string) => [process.execPath, "-e", source];
@@ -69,6 +70,7 @@ describe("foreground-wait snapshot recovery", () => {
         deadlineGate,
         flag,
         nativeFailure,
+        nativeFailed,
         path,
         restored,
       } = installSnapshotFailureFixture(cwd);
@@ -128,7 +130,9 @@ describe("foreground-wait snapshot recovery", () => {
         );
         writeFileSync(nativeFailure, "");
         rmSync(flag);
-        await Bun.sleep(200);
+        await awaitObserved("the native process snapshot failed", () =>
+          existsSync(nativeFailed),
+        );
         expect(existsSync(restored)).toBe(false);
         rmSync(nativeFailure);
         await awaitObserved("the process snapshot recovered", () =>
