@@ -339,8 +339,9 @@ assignment edits the layer's `model:` value or configuration setting back to
 the baseline's family alias, together with the declared cost tier beside it
 where the metadata carries one (the check rejects a tier that contradicts the
 model). Where shared routing selects the model, change the cell that selects
-the affected layer and check every consumer of that cell; consumers in the
-same stage can already be separated by runtime or complexity-tier cells. A
+the affected layer and check tier ordering across every affected effective
+row, including inherited rows and other cells in the same stage; consumers in
+the same stage can already be separated by runtime or complexity-tier cells. A
 stage override can isolate the change only when the affected launch reads that
 stage row and its consumers run in different stages; otherwise split the
 affected layer into a separately configured selection before changing it. It

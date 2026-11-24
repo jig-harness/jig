@@ -1948,7 +1948,7 @@ make, use the entry's term instead.
   each part, the source (the rules, or the person who chose instead, whose
   choice always wins) and whether it was applied recorded on the pull request
   ([design](design/agent-routing.md)).
-- **Complexity tier** — how hard one piece of work is, for its *route*:
+- **Complexity tier** — how hard one piece of work is, for its *route*; it is not chosen from how important the job sounds:
   simple, standard or complex, derived from its *work type*, its size and
   the flags a repository marks complex at any size (a migration, an API
   change). Each tier maps to a model per agent tool, by default Sonnet or
