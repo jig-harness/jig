@@ -268,8 +268,10 @@ reviewer, [below](#the-reviewer-is-identified-by-app-slug-not-by-check-name)):
 If any parked item remains while 3 and 4 are otherwise satisfied, the state is
 `HITL_PARKED`, not `CONVERGED`. That includes a standalone park, one that
 names no thread or summary finding, such as a CI repair's decision on a rule.
-A park whose thread has since been resolved still counts: a re-arm unparks
-nothing until every stored park is answered.
+A park whose thread has since been resolved still counts toward the hand-back.
+A re-arm settles it without an answer when nobody left an answer, a condition
+note or an unreadable history on it; every other stored park waits for its
+answer, and nothing is unparked until all of them are settled.
 
 ### The final status re-read
 

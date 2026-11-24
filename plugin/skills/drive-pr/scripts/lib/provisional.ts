@@ -212,8 +212,9 @@ export function unlistedParkDetails(
 
 /**
  * The parked keys a hand-back waits on: every park. A park of a thread that
- * has since been resolved still waits for its answer, since a re-arm unparks
- * nothing until every stored park is answered.
+ * has since been resolved is still handed back; the re-arm settles it without
+ * an answer when none, no condition note and no unreadable history stands on
+ * it, and unparks nothing until every stored park is settled.
  */
 export function actionableParkKeys(parked: ParkedSets): string[] {
   return [...parked.keys].sort((a, b) => a.localeCompare(b));
