@@ -22,6 +22,7 @@ import { DRIVE_EXIT } from "../status/terminal-states.ts";
 import { recordCiAttempt } from "./ci-attempt-record.ts";
 import { afterTakeover } from "./ci-repair-pass.ts";
 import { mirrorNow } from "./ledger.ts";
+import { threadComments } from "./park-answers.ts";
 import { readDriveState } from "./rearm.ts";
 import { type RepairCi, runRepairPass } from "./repair.ts";
 import type { DriveRoundContext } from "./round-context.ts";
@@ -171,6 +172,10 @@ export async function judgeReceipt(
   answer: DiagnosisReport | null,
   readState: (pr: string) => Promise<DriveState | null> = (p) =>
     readDriveState(p, true),
+  threadOpen: (key: string) => Promise<boolean | null> = async (key) => {
+    const thread = await threadComments(key);
+    return thread?.isResolved == null ? null : !thread.isResolved;
+  },
 ): Promise<Receipt> {
   if (answer === null) return { refused: INCOMPLETE };
   if ("staleHead" in answer || "standDown" in answer) return answer;
@@ -187,20 +192,27 @@ export async function judgeReceipt(
       refused:
         "The diagnosing repair report names an open park, but the drive state could not be read to verify it.",
     };
-  // A review thread's park can outlive its thread, so only a park that is
-  // not a thread's can stand for the decision the diagnosis waits on.
-  const parked = state.parked.some(
-    (p) => p.key === answer.parked && p.kind !== "thread",
-  );
-  return parked
-    ? {
-        text: `${parkTag(answer.parked ?? "")}no issue filed (parked for a person). ${diagnosis}`,
-        pushedHead,
-        parked,
-      }
-    : {
-        refused: `The diagnosing repair report names park ${redactReportText(answer.parked ?? "")}, but that key is not open in the drive's parked set.`,
-      };
+  const park = state.parked.find((p) => p.key === answer.parked);
+  // A review thread's park can outlive its thread: it stands for the decision
+  // only while the forge reports the thread open.
+  const open =
+    park === undefined
+      ? false
+      : park.kind === "thread"
+        ? await threadOpen(park.key)
+        : true;
+  if (open === true)
+    return {
+      text: `${parkTag(answer.parked ?? "")}no issue filed (parked for a person). ${diagnosis}`,
+      pushedHead,
+      parked: true,
+    };
+  return {
+    refused:
+      open === null
+        ? `The diagnosing repair report names park ${redactReportText(answer.parked ?? "")}, a review thread whose state could not be read.`
+        : `The diagnosing repair report names park ${redactReportText(answer.parked ?? "")}, but that key is not open in the drive's parked set.`,
+  };
 }
 
 async function reportOutcome(
@@ -374,22 +386,16 @@ async function settleDiagnosis(
   if (result.code === 5) return 5;
   const undiagnosed = await settleUndiagnosed(pr, head, result.code, receipt);
   if (undiagnosed !== null || !("text" in receipt)) return undiagnosed ?? 1;
-  if (result.code !== 0 && receipt.parked && receipt.pushedHead === undefined) {
+  const replaced =
+    receipt.pushedHead !== undefined && receipt.pushedHead !== head;
+  if (result.code !== 0 && !replaced) {
+    const detail = `${receipt.text} (pass exit ${result.code}; no replacement head pushed)`;
+    if (!receipt.parked) return await stopWithDiagnosis(pr, head, detail);
     // The decision the receipt names stays open: hand it back, not a failure.
-    const recorded = await reportOutcome(
-      pr,
-      head,
-      `${receipt.text} (pass exit ${result.code}; no replacement head pushed)`,
-    );
-    return recorded ? DRIVE_EXIT.HITL_PARKED : 1;
+    return (await reportOutcome(pr, head, detail)) ? DRIVE_EXIT.HITL_PARKED : 1;
   }
-  if (result.code !== 0)
-    return await stopWithDiagnosis(
-      pr,
-      head,
-      `${receipt.text} (pass exit ${result.code})`,
-    );
-  return await pushedHeadOutcome(pr, head, receipt);
+  const note = result.code === 0 ? "" : ` (pass exit ${result.code})`;
+  return await pushedHeadOutcome(pr, head, receipt, note);
 }
 
 /**
@@ -455,8 +461,10 @@ async function pushedHeadOutcome(
   pr: string,
   head: string,
   receipt: Extract<Receipt, { text: string }>,
+  passNote = "",
 ): Promise<number | "continue"> {
-  const { text: diagnosis, pushedHead, parked } = receipt;
+  const { pushedHead, parked } = receipt;
+  const diagnosis = `${receipt.text}${passNote}`;
   const exit = parked ? DRIVE_EXIT.HITL_PARKED : CI_REPAIR_SPENT_EXIT;
   if (pushedHead === undefined || pushedHead === head) {
     const recorded = await reportOutcome(
@@ -476,5 +484,5 @@ async function pushedHeadOutcome(
   );
   if (current.ok && current.value.state !== "OPEN") return 5;
   if (!recorded) return 1;
-  return verified ? "continue" : CI_REPAIR_SPENT_EXIT;
+  return verified ? "continue" : exit;
 }

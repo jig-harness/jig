@@ -67,17 +67,6 @@ export function diagnosedParkKey(
   return splitParkTag(last.detail.slice(diagnosisPrefix(head).length)).key;
 }
 
-/** The park the latest recorded diagnosis, on any head, handed to a person. */
-export function latestDiagnosedParkKey(
-  actions: readonly CiAction[],
-): string | null {
-  const last = actions.findLast(
-    (a) => a.action === "repair" && a.detail.startsWith("diagnosis: head "),
-  );
-  if (last === undefined) return null;
-  return splitParkTag(last.detail.replace(/^diagnosis: head \S+: /, "")).key;
-}
-
 /** The latest escalation at `head`: a started, recorded or skipped diagnosis. */
 export function lastDiagnosisAt(
   actions: readonly CiAction[],
