@@ -218,8 +218,13 @@ not started (the work-start procedure was unknown, or a launch failed), reuse
 its recorded issue key. Before retrying the start, check whether the start
 request was accepted: an assignment can land before its confirmation read
 fails, and a repeated assignment is refused. Count it accepted only on
-trusted evidence (the pickup thread's assignment record, or an observed
-claim); an unreadable or rejected assignment is blocked, not accepted. Wait
+trusted evidence. For a dispatcher start that is a pickup launch record or
+assignment record tied to the issue; a tracker state someone set by hand
+(assigned, in progress) is not proof. For a configured work-start
+procedure it is that mechanism's own receipt or status read. A rejected
+start is blocked; one whose confirmation cannot be read is unconfirmed:
+record it so and recheck the same issue on return (step 11) before deciding
+on a retry. Wait
 when pickup is pending (it happens on a later tick). When an accepted pickup
 claimed the item and then stalled, follow the recovery the status reports, or
 surface the blocker, keeping the issue key. Retry only when a fresh read shows
@@ -231,7 +236,7 @@ filing succeeds, whatever the launch outcome.
 
 ### 11. Pick up the state on every return
 
-Each time the person returns, read the state of started work through
+Each time the person returns, recheck any start still unconfirmed, then read the state of started work through
 `/jig:operator` in a fresh session when the `jig` command is available.
 Otherwise, query the configured tracker or delivery mechanism read-only and
 mark unavailable evidence explicitly. Bring any parked question back with a
