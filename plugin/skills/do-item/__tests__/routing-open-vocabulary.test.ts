@@ -266,6 +266,35 @@ describe("the host and the repository layers", () => {
     expect(() => parseRoutingModels(config)).not.toThrow();
   });
 
+  it("routes a model the environment declares after a repository null, and refuses one only the host declared", () => {
+    const run = (selected: string) => {
+      writeFileSync(
+        join(home, "jig.yaml"),
+        `routing:
+  models:
+    codex:
+      standard: ${selected}
+  model_tiers:
+    codex:
+      gpt-house: { tier: execution, reason: "the house model" }
+`,
+      );
+      writeFileSync(
+        join(repo, ".config", "jig.yaml"),
+        "routing:\n  model_tiers: null\n",
+      );
+      return loadLayeredConfig(repo, {
+        JIG_HOME: home,
+        JIG__ROUTING__MODEL_TIERS__CODEX__OTHER_HOUSE__TIER: "execution",
+        JIG__ROUTING__MODEL_TIERS__CODEX__OTHER_HOUSE__REASON: "from the run",
+      }).values;
+    };
+    expect(parseRoutingModels(run("other_house")).codex?.standard).toBe(
+      "other_house",
+    );
+    expect(() => parseRoutingModels(run("gpt-house"))).toThrow();
+  });
+
   it("lets a run's environment win over both files", () => {
     layered(HOST, null);
     const config = loadLayeredConfig(repo, {
