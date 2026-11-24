@@ -22,78 +22,58 @@ const markdownText = (value: string, startsLine: boolean) => {
   return startsLine ? rendered : rendered.slice(1);
 };
 
-/** Every GFM bare-autolink form, rendered as source text rather than a link. */
-const URL_AUTOLINK =
-  /\b(?:(?:https?|ftp):\/\/[^\s<>()]+|(?:www\.)[^\s<>()]+|(?:mailto|xmpp):[^\s<>()]+)/gi;
-const EMAIL_LOCAL = /[a-z0-9.!#$%&'*+/=?^_`{|}~-]/i;
-const EMAIL_DOMAIN = /[a-z0-9_-]/i;
+/**
+ * A whitespace-delimited word that GFM's autolink extension could link: it
+ * holds an email `@`, a URL scheme or `www.`. GFM starts a bare autolink after
+ * whitespace or one of `*_~(`, and an email's local part may include dots,
+ * slashes and underscores, so the whole word is the unit of protection rather
+ * than a pattern for each form. Words never overlap, so no candidate can be
+ * dropped or repeated.
+ */
+const LINKABLE_WORD = /@|:\/\/|www\.|mailto:|xmpp:/i;
+const TRAILING_PUNCTUATION = ".,;:!?\"'\u2019\u201D)]}>";
 
 type Autolink = { index: number; value: string };
 
-const emailStart = (value: string, at: number) => {
-  let start = at;
-  while (start > 0 && EMAIL_LOCAL.test(value[start - 1] ?? "")) start--;
-  return start;
-};
+const LEADING_BOUNDARY = "([{<\"'\u2018\u201C]";
 
-const emailEnd = (value: string, at: number): number | null => {
-  let end = at + 1;
-  while (end < value.length && EMAIL_DOMAIN.test(value[end] ?? "")) end++;
-  if (end === at + 1) return null;
-  const suffix = value.slice(end).match(/^(?:\.[a-z0-9_-]+)+/i)?.[0];
-  return suffix === undefined ? null : end + suffix.length;
-};
-
-/** Find email candidates from their `@`, avoiding a backtracking scan of prose. */
-const emailAutolinks = (value: string): Autolink[] => {
+/**
+ * The linkable words, each starting after any opening bracket or quote that
+ * precedes its first autolink marker: neither can begin a URL or an email's
+ * local part, so `![x](https://example.org)` protects only the URL.
+ */
+const bareAutolinks = (value: string): Autolink[] => {
   const found: Autolink[] = [];
-  for (
-    let at = value.indexOf("@");
-    at !== -1;
-    at = value.indexOf("@", at + 1)
-  ) {
-    const start = emailStart(value, at);
-    const end = emailEnd(value, at);
-    if (start < at && end !== null)
-      found.push({ index: start, value: value.slice(start, end) });
+  for (const word of value.matchAll(/\S+/g)) {
+    const marker = word[0].search(LINKABLE_WORD);
+    if (marker === -1) continue;
+    let cut = -1;
+    for (let i = 0; i < marker; i++)
+      if (LEADING_BOUNDARY.includes(word[0][i] ?? "")) cut = i;
+    found.push({
+      index: (word.index ?? 0) + cut + 1,
+      value: word[0].slice(cut + 1),
+    });
   }
   return found;
 };
 
-const bareAutolinks = (value: string): Autolink[] => {
-  const found = [
-    ...[...value.matchAll(URL_AUTOLINK)].map((match) => ({
-      index: match.index ?? 0,
-      value: match[0],
-    })),
-    ...emailAutolinks(value),
-  ];
-  const nonOverlapping: Autolink[] = [];
-  let acceptedEnd = 0;
-  for (const match of found.sort(
-    (left, right) =>
-      left.index - right.index || right.value.length - left.value.length,
-  )) {
-    if (match.index < acceptedEnd) continue;
-    nonOverlapping.push(match);
-    acceptedEnd = match.index + match.value.length;
-  }
-  return nonOverlapping;
-};
-
+/** Sentence punctuation and closing quotes stay outside the code span. */
 const trimAutolinkPunctuation = (value: string) => {
   let end = value.length;
-  while (end > 0 && ".,;:!?".includes(value[end - 1] ?? "")) end--;
-  return value.slice(0, end);
+  while (end > 0 && TRAILING_PUNCTUATION.includes(value[end - 1] ?? "")) end--;
+  return end === 0 ? value : value.slice(0, end);
 };
 
 /**
  * Source text is literal text, never markup. Bare autolinks need a parsing
  * boundary rather than punctuation escaping: GFM decodes those escapes before
  * its autolink extension runs. Code spans preserve the source spelling and
- * are skipped by that extension.
+ * are skipped by that extension. In a table cell the pipes inside a code span
+ * are escaped too, since the row splits before inline parsing; pipes in plain
+ * text are escaped already.
  */
-export const lit = (value: string) => {
+export const lit = (value: string, inTable = false) => {
   let at = 0;
   let rendered = "";
   for (const match of bareAutolinks(value)) {
@@ -103,7 +83,7 @@ export const lit = (value: string) => {
       value.slice(at, start),
       at === 0 || value[at - 1] === "\n",
     );
-    rendered += code(target);
+    rendered += code(inTable ? target.replace(/\|/g, "\\|") : target);
     at = start + target.length;
   }
   return (
@@ -112,9 +92,7 @@ export const lit = (value: string) => {
 };
 /** Source text inside a table cell: escaped, and on one line. */
 export const cell = (value: string) =>
-  lit(value)
-    .replace(/\|/g, "\\|")
-    .replace(/\s*\n\s*/g, " ");
+  lit(value, true).replace(/\s*\n\s*/g, " ");
 /**
  * A URL inside a link target. Characters that end or escape the destination,
  * or split a table row, are percent-encoded; `&` becomes an entity because

@@ -32,13 +32,38 @@ test("code fences handle long backtick runs without spreading their matches", ()
   expect(code("`a".repeat(150_000))).toBe(`\`\` ${"`a".repeat(150_000)} \`\``);
 });
 
-test("literal Markdown does not repeat overlapping autolinks", () => {
+test("literal Markdown protects whole words, so overlapping candidates never leak", () => {
   expect(lit("https://example.org/a@b.co;c@d.co/path")).toBe(
     "`https://example.org/a@b.co;c@d.co/path`",
   );
+  expect(lit("a@b.example/bob@c.example")).toBe("`a@b.example/bob@c.example`");
+});
+
+test("literal Markdown protects words GFM links after delimiter characters", () => {
+  for (const word of [
+    "_www.example.org",
+    "_https://example.org",
+
+    "*mailto:a@b.co",
+  ])
+    expect(lit(word)).toBe(`\`${word}\``);
+});
+
+test("literal Markdown keeps sentence punctuation and closing quotes outside the span", () => {
+  expect(lit('See "https://example.org."')).toBe(
+    'See "`https://example.org`."',
+  );
+  expect(lit("(see https://example.org)")).toBe("(see `https://example.org`)");
+});
+
+test("table cells escape each pipe once, in text and in code spans", () => {
+  expect(cell("a | b")).toBe("a \\| b");
+  expect(cell("x@y.co|z")).toBe("`x@y.co\\|z`");
 });
 
 test("literal Markdown scans non-email prose in linear time", () => {
   const input = "a-".repeat(30_000);
   expect(lit(input)).toBe(input);
+  const nearMisses = "a.b-c@".repeat(5_000);
+  expect(lit(nearMisses)).toBe(`\`${nearMisses}\``);
 });
