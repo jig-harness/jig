@@ -70,7 +70,12 @@ export function recordProbeStop(
         ? actionable
         : undefined,
   });
-  if (probe !== null) console.error(`${PREFIX}${JSON.stringify(probe)}`);
+  if (probe !== null) {
+    // The printed line is read back from bounded launch output, so it carries
+    // only the fixed-size fields; the park keys stay with the in-process probe.
+    const { parkKeys: _inProcess, ...line } = probe;
+    console.error(`${PREFIX}${JSON.stringify(line)}`);
+  }
   return probe;
 }
 

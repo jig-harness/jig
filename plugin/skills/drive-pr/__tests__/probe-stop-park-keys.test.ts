@@ -37,6 +37,9 @@ test("a park stop keeps every valid parked key, however long or many", () => {
       work: { actionableParkKeys: keys },
     });
     expect(probe?.parkKeys).toEqual(keys);
+    const printed = String(log.mock.calls.at(-1)?.[0]);
+    expect(printed.length).toBeLessThan(1024);
+    expect(printed).not.toContain("parkKeys");
   } finally {
     log.mockRestore();
   }
