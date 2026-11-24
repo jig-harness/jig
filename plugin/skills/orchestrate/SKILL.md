@@ -251,7 +251,10 @@ launch that ended or failed) stops any resend while who caused it stays
 unknown: record it as "started, attribution unknown", and keep the send
 attempt's own attribution unresolved. Positive evidence is a live holder
 matching the issue, or an equivalent current observation from the host that
-dispatched it. A launch entry from a historical record with no visible
+dispatched it. A live holder shows that the launch wrapper was admitted and
+is running, not that the agent session has begun: where a prerequisite needs
+the session itself, require evidence of it, and otherwise treat "pickup
+started" as exactly that wrapper admission. A launch entry from a historical record with no visible
 outcome is not evidence: its process may be dead, and an unknown process
 state may only mean the wrapper has not yet claimed the launch.
 Wait
@@ -277,13 +280,21 @@ removal in step 13):
 - Before delegating filing, record a pending filing entry for the task, with
   a marker the issue body will carry. On return, recover the key from the
   filing session's durable result or by searching the tracker for that
-  marker before filing the task again; a lost reply is then not a lost key.
+  marker, matching it exactly across open and closed issues, before filing the
+  task again; a lost reply is then not a lost key. When the result is lost and
+  the search is empty, unreadable or ambiguous, keep the filing pending and
+  ask the person, unless reliable evidence shows it did not land or a retry is
+  idempotent.
 - On every return, reconcile the owed updates against the plan the keeper
   holds before repeating or clearing any (a keeper may have applied one
-  whose acknowledgment was lost).
+  whose acknowledgment was lost). Independently verifying the exact update
+  (decision and revision) in the durable plan is sufficient confirmation to
+  clear it.
 - A later revision of a decision supersedes an earlier one. Once the
   replacement is verified applied, clear the older owed update; never replay
-  it, since replay would undo the newer choice.
+  it, since replay would undo the newer choice. Stop retrying the older update
+  as soon as it is superseded, and tell the keeper to reject any delivery
+  older than the revision it has applied.
 
 ### 11. Pick up the state on every return
 
@@ -304,7 +315,8 @@ start unconfirmed, holds the work that depends on it, and is never a reason
 to retry; recording the result does not release dependents. Track the
 observed pickup and the send's attribution separately. Work whose
 prerequisite is only that the pickup has started is released by verified
-evidence of a pickup underway (step 10); work that needs the send itself
+evidence of a pickup underway (step 10), or by a verified outcome for the
+matching work showing it ran; work that needs the send itself
 confirmed keeps waiting for the mechanism's terminal answer. Then read the
 state of started work through
 `/jig:operator` in a fresh session when the `jig` command is available.
