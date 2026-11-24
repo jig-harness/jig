@@ -404,6 +404,22 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.306.3] - 2026-11-24
+
+### Fixed
+
+- A drive whose every pass failed to push (a pre-push gate the base branch
+  breaks, a remote that rejects the push) no longer stops as a plain
+  `STALLED` that the dispatcher re-drives onto the same refusal. The pass's
+  `PUSH_FAILED` reason now says why the push failed, a pre-push gate, the
+  remote's rejection, the connection, a timeout or an unconfirmed head, and
+  quotes the last lines the push wrote. The drive's stop event, its ledger
+  and its closing report carry that reason, and the closing report's next
+  step sends a person to fix what refuses the push before re-arming. The
+  dispatcher reads the stop as a person's need, with that reason, instead of
+  re-driving it on the same head; a push to the pull request re-drives it
+  once for the new head. **Consumer action:** none.
+
 ## [0.306.2] - 2026-11-24
 
 ### Fixed
@@ -10898,7 +10914,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.306.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.306.3...HEAD
+[0.306.3]: https://github.com/jig-harness/jig/compare/v0.306.2...v0.306.3
 [0.306.2]: https://github.com/jig-harness/jig/compare/v0.306.1...v0.306.2
 [0.306.1]: https://github.com/jig-harness/jig/compare/v0.306.0...v0.306.1
 [0.306.0]: https://github.com/jig-harness/jig/compare/v0.305.0...v0.306.0
