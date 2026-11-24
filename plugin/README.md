@@ -431,7 +431,7 @@ launch claim with no end, holds it, and `jig ask` names that hold as what it
 waits on. Once the hold has lasted 30 minutes, counted from the later of the
 launch and the drive's stop, the tick notifies it as needing a person.
 
-The machine file lists two kinds of account. A subscription account bills
+The machine file lists subscription accounts and provider accounts. A subscription account bills
 a vendor's plan through its signed-in configuration directory; a
 [provider account](CONFIGURATION.md#provider-accounts) bills a model
 provider with the host's own key, named by a credential reference that the

@@ -345,6 +345,8 @@ fields:
     since: 0.298.0
   dispatch.allowed_providers:
     type: list
+    nullable: true
+    distinct: true
     items: { type: string, pattern: "^[a-z][a-z0-9-]*$" }
     read_by: [dispatch]
     repository_only: true

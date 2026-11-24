@@ -11,10 +11,10 @@ it.each(["overflow", "timeout"])(
       import { FORGE_ACCOUNTING_UNAVAILABLE as marker } from ${JSON.stringify(join(import.meta.dir, "../trace.ts"))};
       const child = { stdout: new PassThrough(), stderr: new PassThrough() };
       let timedOut = false;
-      const { timers, output } = captureRun(child, {maxBufferBytes: ${stop === "overflow" ? 1 : 1024}}, {
+      const { timers, output } = captureRun(child, {maxBufferBytes: ${stop === "overflow" ? 2 : 1024}}, {
         timedOut: () => timedOut, signalTree: () => {}, settle: () => {},
       });
-      child.stderr.emit("data", "before");
+      child.stderr.emit("data", "éb");
       if (${JSON.stringify(stop)} === "timeout") timedOut = true;
       child.stderr.emit("data", marker.slice(0, 10));
       child.stderr.emit("data", marker.slice(10));
@@ -35,8 +35,8 @@ it.each(["overflow", "timeout"])(
     expectSpawnExit({ stdout, stderr, exitCode }, 0);
     expect(stderr).toContain("jig-forge-accounting-unavailable");
     expect(JSON.parse(stdout)).toEqual({
-      // The byte bound is enforced before appending: one byte of room keeps one byte.
-      stderr: stop === "overflow" ? "b" : "before",
+      // The byte bound is enforced before appending: two bytes of room keep the whole two-byte character, not two UTF-16 units.
+      stderr: stop === "overflow" ? "é" : "éb",
       tail: "z".repeat(4096),
       overflow: stop === "overflow",
     });

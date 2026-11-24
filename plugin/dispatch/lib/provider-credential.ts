@@ -115,7 +115,10 @@ export async function resolveCredential(
   // A value that is, or contains, a sink's replacement text could not be told apart from redacted output.
   if (
     /<redacted>|\[redacted\]|\[launch token\]/i.test(value) ||
-    OMITTED_LINE_TEXT.includes(value)
+    OMITTED_LINE_TEXT.includes(value) ||
+    ["<redacted>", "[redacted]", "[launch token]"].some((marker) =>
+      marker.includes(value.toLowerCase()),
+    )
   )
     return failed(
       "unauthorized",
