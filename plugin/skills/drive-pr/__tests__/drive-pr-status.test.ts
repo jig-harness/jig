@@ -567,7 +567,7 @@ describe("drive-status.ts terminal states", () => {
       dir,
       stateDir,
       HEAD,
-      ["--timeout", "11", "--interval", "1", "--no-count"],
+      ["--timeout", "16", "--interval", "1", "--no-count"],
       {
         once: false,
         env: {
@@ -584,9 +584,9 @@ describe("drive-status.ts terminal states", () => {
     // An AWAITING_REVIEWER evaluation returns after its opening PR snapshot.
     // Only a terminal result takes the second, still-on-head snapshot, so each
     // observed read marks one complete evaluation and an odd count is ordinary.
-    // The 1s → 2s → 3s capped cadence makes at most six evaluations; a loaded
-    // runner may fit fewer, so the count has a loose lower bound.
-    // Fixed one-second polling would make about eleven evaluations.
+    // The longer observation window leaves room for the first 1s and 2s
+    // waits even when fixture processes are scheduled late. A fixed one-second
+    // loop would still produce many more observations.
     // Each observed read starts one evaluation. A timer never fires early, so
     // each observed gap is at least its wait whatever the runner's load; only
     // lower bounds are asserted, and only for the gaps a loaded runner fitted.
@@ -596,10 +596,10 @@ describe("drive-status.ts terminal states", () => {
       .trim()
       .split("\n")
       .map((l) => Number(BigInt(l) / 1_000_000n));
-    expect(stamps.length).toBeGreaterThanOrEqual(2);
-    expect(stamps.length).toBeLessThanOrEqual(12);
+    expect(stamps.length).toBeGreaterThanOrEqual(4);
+    expect(stamps.length).toBeLessThanOrEqual(17);
     const gaps = stamps.slice(1).map((t, i) => t - (stamps[i] ?? t));
-    expect(gaps.length).toBeGreaterThanOrEqual(1);
+    expect(gaps.length).toBeGreaterThanOrEqual(3);
     // The last gap is exempt: the final sleep is clamped to the wall-clock
     // deadline, while the closing evaluation keeps its own call deadlines.
     // The portable timestamp helper starts separately from the stubbed
@@ -608,7 +608,7 @@ describe("drive-status.ts terminal states", () => {
     gaps.slice(0, Math.min(3, gaps.length - 1)).forEach((gap, i) => {
       expect(gap).toBeGreaterThanOrEqual((i + 1) * 1000 - slackMs);
     });
-  }, 20_000);
+  }, 25_000);
 });
 
 // The single pass-start entry point: on ROUND_READY, `--bump-attempt`

@@ -26,7 +26,7 @@ import {
 const SCRIPT = resolve(import.meta.dir, "../scripts/foreground-wait.ts");
 // Readiness, cancellation grace, and the command deadline are sequential.
 // Keep a margin for process startup, observations, and finally cleanup.
-const T = 180_000;
+const T = 240_000;
 const PACING = {
   DRIVE_PR_FOREGROUND_WAIT_POLL_MS: "100",
   DRIVE_PR_FOREGROUND_WAIT_TRACK_MS: "200",
@@ -34,7 +34,7 @@ const PACING = {
   // The gate waits behind several readiness observations, each of which may
   // take its full allowance under load. Leave enough budget for the complete
   // setup while still staying below this test's overall timeout.
-  DRIVE_PR_FOREGROUND_WAIT_DEADLINE_GATE_TIMEOUT_MS: "90000",
+  DRIVE_PR_FOREGROUND_WAIT_DEADLINE_GATE_TIMEOUT_MS: "150000",
 };
 const busy = "setInterval(() => {}, 1000)";
 const bunCommand = (source: string) => [process.execPath, "-e", source];
