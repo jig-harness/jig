@@ -152,6 +152,26 @@ describe("resolving a credential reference", () => {
     ).toMatchObject({ ok: false, failure: { code: "unauthorized" } });
   });
 
+  it("refuses a part of a redaction marker and keeps a nearby value", async () => {
+    for (const printed of ["redacted", "<redacted", "launch token"]) {
+      const value = await resolveCredential(
+        command(`process.stdout.write(${JSON.stringify(printed)})`),
+        "ref",
+        process.env,
+      );
+      expect(value).toMatchObject({
+        ok: false,
+        failure: { code: "unauthorized" },
+      });
+    }
+    const usable = await resolveCredential(
+      command("process.stdout.write('REDACTED')"),
+      "ref",
+      process.env,
+    );
+    expect(usable.ok).toBe(true);
+  });
+
   it("is unreachable when the command does not answer in time", async () => {
     const value = await resolveCredential(
       command("await Bun.sleep(10_000)", 1000),

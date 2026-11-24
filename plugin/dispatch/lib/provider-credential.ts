@@ -110,16 +110,21 @@ export async function resolveCredential(
   const value = done.stdout.replace(/\r?\n$/, "");
   if (value === "")
     return failed("unauthorized", "the credential command printed no value");
-  // A refused value is still remembered, so nothing this process records later can carry it.
-  rememberSecret(value);
-  // A value that is, or contains, a sink's replacement text could not be told apart from redacted output.
+  // A value that is only part of a sink's replacement text is refused before it is remembered: remembering it would make masking treat the marker's own text as secret. The sinks emit these markers in lowercase and match exactly.
   if (
-    /<redacted>|\[redacted\]|\[launch token\]/i.test(value) ||
     OMITTED_LINE_TEXT.includes(value) ||
     ["<redacted>", "[redacted]", "[launch token]"].some((marker) =>
-      marker.includes(value.toLowerCase()),
+      marker.includes(value),
     )
   )
+    return failed(
+      "unauthorized",
+      "the credential command printed a value that contains a redaction marker",
+    );
+  // A refused value is still remembered, so nothing this process records later can carry it.
+  rememberSecret(value);
+  // A value that contains a sink's replacement text could not be told apart from redacted output.
+  if (/<redacted>|\[redacted\]|\[launch token\]/i.test(value))
     return failed(
       "unauthorized",
       "the credential command printed a value that contains a redaction marker",
