@@ -16,6 +16,7 @@ import type { QuotaSnapshot } from "../scripts/lib/quota/index.ts";
 
 const ENV_KEYS = [
   "DRIVE_PR_CLAUDE_PROJECTS_DIR",
+  "DRIVE_PR_CODEX_SESSIONS_DIR",
   "DRIVE_PR_QUOTA_MAX_SCAN_MS",
 ] as const;
 
@@ -25,8 +26,13 @@ let savedEnv: Record<string, string | undefined>;
 beforeEach(() => {
   savedEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
   root = mkdtempSync(join(tmpdir(), "drive-pr-review-failure-"));
-  mkdirSync(join(root, "claude"), { recursive: true });
+  // One project entry makes the Claude walk visit an entry, which is where
+  // the zero-millisecond budget cuts it short; the Codex root is an empty
+  // directory so the host's own sessions never decide the outcome.
+  mkdirSync(join(root, "claude", "project"), { recursive: true });
+  mkdirSync(join(root, "codex"), { recursive: true });
   process.env.DRIVE_PR_CLAUDE_PROJECTS_DIR = join(root, "claude");
+  process.env.DRIVE_PR_CODEX_SESSIONS_DIR = join(root, "codex");
   process.env.DRIVE_PR_QUOTA_MAX_SCAN_MS = "0";
   driverRuntime.quotaScanTruncated = [];
 });
@@ -81,5 +87,5 @@ test("a clear mailbox keeps the cut-short scan note for the failure report", asy
   } finally {
     console.error = realError;
   }
-  expect(driverRuntime.quotaScanTruncated.length).toBeGreaterThan(0);
+  expect(driverRuntime.quotaScanTruncated).toContain("claude");
 });
