@@ -37,16 +37,16 @@
  * request's mergeability as the forge reports it, read with the pull
  * request, and its head commit against the head the ledger says the drive
  * verified (`verifiedSha`). A base that merely moved past a pull request
- * that still merges cleanly leaves the converged drive waiting for a person's
- * merge. On apply, a stopped drive with a trusted announcement at the
- * prior head can refresh after a clean merge of its base. The check and
- * ledger write run without review rounds. Changed or unprovable history
- * goes through the ordinary stale re-drive.
+ * that still merges cleanly leaves the converged drive waiting for a
+ * person's merge. On apply, a stopped drive with a trusted announcement at
+ * the prior head can refresh after a clean merge of its base. The check and
+ * ledger write run without review rounds. Changed or unprovable history goes
+ * through the ordinary stale re-drive.
  *
  * A ledger that stopped `PR_CONFLICTING` is read beside its pull request's
  * mergeability, its head and its base branch's head, which is read for no
- * other ledger. Its change is the pair of heads, whatever the forge reports of
- * its mergeability: still conflicting, the drive's conflict-resolve round
+ * other ledger. Its change is the pair of heads, whatever the forge reports
+ * of its mergeability: still conflicting, the drive's conflict-resolve round
  * tries again; mergeable, the stop no longer describes the pull request and
  * the drive's rounds take it from there. Once this machine re-drove that
  * change and the ledger still stopped `PR_CONFLICTING`, it is a person's
@@ -57,35 +57,33 @@
  * base. Conflicting, it is re-driven like a stop on a conflict, once for each
  * pair of its head and its base branch's head: the drive's first gate
  * reports the conflict before the park, its conflict-resolve round merges
- * the base if repair succeeds, then the drive parks on unanswered questions. A
- * re-drive that leaves it parked or stopped `PR_CONFLICTING` at the same pair
- * hands it back to a person (`settleConflictStops`): a conflict the drive
- * could not resolve, such as two requirements that contradict each other, is
- * that person's decision too.
+ * the base if repair succeeds, then the drive parks on unanswered questions.
+ * A re-drive that leaves it parked or stopped `PR_CONFLICTING` at the same
+ * pair hands it back to a person (`settleConflictStops`): a conflict the
+ * drive could not resolve, such as two requirements that contradict each
+ * other, is that person's decision too.
  *
  * A stall, an unreadable check-runs listing (`CHECK_RUNS_UNREADABLE`), or a
- * CI stop without a diagnosis on the current head, is
- * eligible for recovery. Its change is its head commit and
- * its exit, so it is re-driven once for each; once this machine or another
- * host re-drove that change and the ledger still stopped the same way, it is
- * a person's (`settleConflictStops`). A stall whose stop recorded work left
- * in its tree, or never measured it (the ledger's last `stop` event,
- * `leftWork`), names that tree, where its re-drive must run
- * (`stall-tree.ts`). One whose head is not known
- * is `unplaced`; one whose passes all failed to push is a person's.
-
+ * CI stop without a diagnosis on the current head, is eligible for recovery.
+ * Its change is its head commit and its exit, so it is re-driven once for
+ * each; once this machine or another host re-drove that change and the ledger
+ * still stopped the same way, it is a person's (`settleConflictStops`). A
+ * stall whose stop recorded work left in its tree, or never measured it (the
+ * ledger's last `stop` event, `leftWork`), names that tree, where its
+ * re-drive must run (`stall-tree.ts`). One whose head is not known is
+ * `unplaced`; one whose passes all failed to push is a person's.
  *
  * A ledger that stopped `PASS_DEADLINE`, the driver having spent its
  * restarts from a pass killed at its deadline, is re-driven the same way,
  * once per head commit, by a fresh pass, in the tree it stopped in when its
- * stop measured work left there, since the killed passes' work stays there. One that stopped `INDETERMINATE`
- * (`1`) while its pull request conflicts with its base is re-driven once per
- * pair of its head and its base branch's head, the change a stop on a
- * conflict is keyed on, so the drive's conflict-resolve round runs once for
- * it; its base branch's head is read for it, and
- * while the forge still computes its mergeability it is `unplaced`. Both
- * re-drives draw on the pull request's recovery budget (`recovery`,
- * `no-cause-stops.ts`).
+ * stop measured work left there, since the killed passes' work stays there.
+ * One that stopped `INDETERMINATE` (`1`) while its pull request conflicts
+ * with its base is re-driven once per pair of its head and its base branch's
+ * head, the change a stop on a conflict is keyed on, so the drive's
+ * conflict-resolve round runs once for it; its base branch's head is read
+ * for it, and while the forge still computes its mergeability it is
+ * `unplaced`. Both re-drives draw on the pull request's recovery budget
+ * (`recovery`, `no-cause-stops.ts`).
  *
  * A silent ledger is read beside what this host shows of the driver it names
  * (`silent-driver.ts`): `driverGone` where the driver ran on this host and
@@ -97,8 +95,8 @@
  * `unplaced`: reported, never planned. So is a converged one whose
  * mergeability the forge is still computing, or whose head or verified head
  * is not known, since whether it is stale cannot be told this tick, and one
- * that stopped `PR_CONFLICTING` whose mergeability, head or base branch's head
- * is not known, since the change a re-drive would act on cannot be told.
+ * that stopped `PR_CONFLICTING` whose mergeability, head or base branch's
+ * head is not known, since the change a re-drive would act on cannot be told.
  * Where a failed call stopped the read (its comments, a thread's answers,
  * its base branch's head), the drive carries that call's failure class,
  * which decides whether the tick waits it out (`read-failures.ts`); a read
@@ -396,11 +394,7 @@ function diagnosedStopWhy(
     : `stopped ${exit} after escalating CI repair on head ${short(head)}: ${detail}`;
 }
 
-/**
- * A ledger that stopped `STALLED`, `CI_REPAIR_SPENT` or `PASS_DEADLINE`,
- * read beside its pull request's head: `stale`, keyed on that head and the
- * exit, and `unplaced` while the head is not known.
- */
+/** A `STALLED`, `CI_REPAIR_SPENT` or `PASS_DEADLINE` stop: `stale`, keyed on the pull request's head and the exit, `unplaced` while the head is unknown. */
 function mechanicalStopClass(
   ledger: Ledger,
   exit: number,
