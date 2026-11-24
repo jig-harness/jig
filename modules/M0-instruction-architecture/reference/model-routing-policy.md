@@ -304,7 +304,7 @@ can be searched for and audited:
 |---------|----------------------------|
 | Agent | `model:` in the agent's metadata, checked and rendered into the roster |
 | Skill that pins a model | `model:` in that skill's own metadata |
-| Judgment pass inside a skill | an explicit model setting in that skill's configuration |
+| Pass inside a skill | an explicit model setting in that skill's configuration |
 
 Shared routing is not a pin declaration point: its `routing.model_tiers`,
 `routing.models`, and stage rows classify and select runtime models. It may
@@ -320,11 +320,14 @@ an invocation-time value outranks the definition's own metadata
 tier declared in any of those places is invisible to the check and to the
 audit. An invocation-time argument declares nothing new and is allowed only
 when it forwards a value read from one of the places above, such as a skill
-passing its own configured judgment-pass model to the subagent it calls, or
-when shared routing selects a value for a field the effective definition
-leaves open. An explicit one-run operator choice is also allowed: it is
-recorded as the operator's choice and wins over a metadata pin. Shared routing
-never replaces a valid metadata pin.
+passing its own configured pass model to the subagent it calls, or when shared
+routing selects a value for a field the effective definition leaves open. A
+documented built-in default is allowed only as the fallback when neither a
+configured nor routed value applies. A persistent setting that selects an
+invocation model is a skill configuration declaration, not a built-in default,
+and is checked and audited as such. An explicit one-run operator choice is
+also allowed: it is recorded as the operator's choice and wins over a metadata
+pin. Shared routing never replaces a valid metadata pin.
 
 **An A/B baseline is mandatory.** Every Judgment-tier assignment names its
 Strategic-tier baseline next to the assignment, in a field of its own (such
@@ -343,8 +346,11 @@ the affected layer and check tier ordering across every affected effective
 row, including inherited rows and other cells in the same stage; consumers in
 the same stage can already be separated by runtime or complexity-tier cells. A
 stage override can isolate the change only when the affected launch reads that
-stage row and its consumers run in different stages; otherwise split the
-affected layer into a separately configured selection before changing it. It
+stage row. Consumers in different stages are one way to isolate the change;
+consumers in the same stage are already isolated when they resolve different
+runtime or complexity-tier cells. Split the affected layer into a separately
+configured selection only when consumers that must stay on different models
+resolve to the same cell. It
 is an exact reversal only while the alias still
 resolves to the measured release. Once the family has moved on, or when the
 measured baseline itself can no longer be used and some other model stands in

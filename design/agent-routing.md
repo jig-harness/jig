@@ -574,7 +574,10 @@ refused `do_item` section does today; it is never read as absent.
   would run those judgment layers on a cheaper model, which is the depth
   inside the drive [work types left out](work-types.md#left-out) for the
   same reason. The session's model is the person's or the launcher's
-  choice; a pass keeps the model the drive was armed with.
+  choice. A pass is not changed by an item-derived implementer route, but an
+  explicitly requested complexity tier resolves through `routing.models`, and
+  its ordinary Codex fallback reads the all-stages `codex.standard` cell.
+  Changing either shared cell can therefore change a pass.
 - **Routing the scouts and the review tiers.** Each skill chooses them in
   its own text (the scouts and the pattern review on a fast model, the
   semantic review on the strongest available), the place M0 puts a skill's

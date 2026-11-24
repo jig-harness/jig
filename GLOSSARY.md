@@ -1925,6 +1925,7 @@ make, use the entry's term instead.
 - **Scout** — a small, cheap agent (fast model, read-only) sent ahead of
   implementation to gather facts; part of tiered model routing (expensive
   models decide, cheap models explore).
+
 - **Model tier** <a id="model-tier"></a> — the cost class of model an agent or
   skill runs on, named by role: *Judgment*, Strategic, Execution or *Scout*;
   it is not chosen from how important the job sounds.

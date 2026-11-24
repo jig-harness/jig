@@ -112,9 +112,13 @@ show, from the reports, the class of item the rules get wrong, and admit
 the pass for that class alone. The routing table selects models for runtime
 stages; it is not a policy declaration point for a Judgment decision layer.
 That layer records its own admission and baseline beside its metadata or
-configuration declaration, as the policy and audit criterion require. The session, the scouts, the review
-tiers and the drive's passes keep the model they have, so the judgment
-layers a pickup runs are never routed down with its implementer.
+configuration declaration, as the policy and audit criterion require. The
+session, the scouts and the review tiers keep the model they have, so the
+judgment layers a pickup runs are never routed down with its implementer. A
+drive pass is likewise unaffected by an item-derived implementer route, but it
+can use an explicit complexity tier through `routing.models` or the all-stages
+`codex.standard` cell; changing either of those shared cells can therefore
+change a drive pass.
 
 ## Extraction (decisions-become-checks)
 
