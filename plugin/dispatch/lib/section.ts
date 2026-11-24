@@ -15,6 +15,7 @@ import {
   type CanonicalState,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { parseLabelConfig } from "../../shared/pr-labels/config.ts";
+import { trustedAutomationOf } from "../../skills/drive-pr/scripts/lib/trusted-automation.ts";
 import type { LabelConfig } from "./labels.ts";
 import { duration } from "./machine-config.ts";
 import { parseOverlap, unknownKeys } from "./overlap-config.ts";
@@ -514,8 +515,22 @@ export function dispatchSection(
       reviewerFailureThreshold.value,
     ),
     labels: rules.value.labels,
-    adopt: rules.value.adopt,
+    adopt: withTrusted(rules.value.adopt, values),
   });
+}
+
+/**
+ * The adoption rule with the bots `pull_requests.trusted_automation` names.
+ * A list that does not read names none here: the board then reports why on
+ * each of the bots' cards, and no section is refused for it.
+ */
+function withTrusted(
+  adopt: AdoptRule,
+  values: Record<string, unknown>,
+): AdoptRule {
+  const list = trustedAutomationOf(values);
+  if (!list.ok || list.value.length === 0) return adopt;
+  return { ...adopt, trusted: list.value.map((e) => e.login) };
 }
 
 /**

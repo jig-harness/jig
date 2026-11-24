@@ -307,10 +307,170 @@ issue on merge, merged by a human.
 | `pull_requests.title_pattern` | pattern | none | The title a pull request takes under `title_format: pattern`, for a repository whose protected branches require the tracker key in every commit. The pattern is one line. Placeholders: `{key}` (the issue key as the tracker writes it: `ENG-12`, or `#12` on GitHub Issues) and `{summary}`, each exactly once, such as `{key}: {summary}`. `pr-plan.ts open` prints the title with the key filled in and `<summary>` left for the title (`ENG-12: <summary>`), or, given `--issue-json <file>` too, with the issue's title as the summary (`ENG-12: Fix the export`); the audit checks the pattern against the integration branch's last 30 commit subjects, a squash merge's ` (#n)` suffix aside, warning when fewer than 80% follow it (a pattern ending in a GitHub `(#n)` key is left unchecked, as is a history the clone cannot establish, since a squash merge's suffix looks the same). Set only with `title_format: pattern` |
 | `pull_requests.base_rules` | list of `{when: {labels}, base}` | none: every pull request is based on the integration branch | The base branch a pull request is cut from and opened against, chosen by the item's labels, for a product whose fixes land on a maintained [release line](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). Each `when` is a rule over the item's labels, and the first rule that matches (as [rule matchers](protocol/rule-matchers.md) say) names its `base`, a branch name without the remote's prefix; with none, the base is the integration branch (`repository.base_branch`). A label may be one an `issue_tracker.jira.field_labels` entry reads from a field: Jira's Fix versions behind `fixversion:` gives `fixversion:2.4` for an item targeted at 2.4. `pr-plan.ts branch` prints the base to cut the branch from, `pr-plan.ts open` opens against it, names the rule and label that chose it in the matcher's wording (`pull_requests.base_rules[0], for the item's label hotfix`), and refuses a base the remote does not have; both need `--issue-json` while rules are declared. The drive already reviews each pull request against its own base. The audit warns of a base the repository does not have. Example: `[{ when: { labels: ["fixversion:2.4"] }, base: release/2.4 }]` |
 | `pull_requests.commit_prefix` | pattern | none: commit messages are not checked | What every commit message on the pull request's branch starts with, for an organisation that refuses commits without a tracker key on its protected branches. Placeholder, required: `{key}`, the key the branch name carries under `branch_name` (`ENG-12` on `eng-12-fix-the-export`). Example: `"{key}: "`. drive-pr's `finish-round.ts` runs `drive-pr/scripts/commit-prefix.ts` itself before every round's push (refusing the push, exit `9`, when the check cannot run), and fix-ci and resolve-conflicts (before a push) and do-item (before the first push) run it, which rewords each unpushed commit that lacks the prefix, merge commits included, keeping its tree and author, and reports one already pushed (exit `4`): rewriting that needs a force-push a person decides on. A reworded commit loses a signature it had |
+| `pull_requests.trusted_automation` | list of bot logins, or of `{login, paths, update_types, signed, committers}` | none: no trusted-automation exception (a pull request's own author association still counts) | Bots whose converged pull requests count as the repository's own for the Ready predicate's condition 8, under the rules in [Trusted automation](#trusted-automation). Read from the default branch only, by `drive-pr`'s merge-ready announcement, the dispatcher and `jig ask`. A list that does not read trusts nobody, and each bot's card says why |
 
 Before opening, `pr-plan.ts` warns when a merge commit brings in commits from
 a parent outside the planned base, naming those commits. Merges of the base
 produce no warning. A failed history or configured catalog read stops planning.
+
+### Trusted automation
+
+A dependency bot's pull request (Renovate, Dependabot) is usually an
+outside author's to the Ready predicate: its association is typically neither `OWNER`,
+`MEMBER` nor `COLLABORATOR`. Without a qualifying approval or a trusted-automation
+exception, an outside author adds an approval requirement, so a converged pull
+request waits in **approve first** (when the rest of the predicate permits
+it), even where the forge requires no approval. A repository can name
+the bots it trusts, so that their converged pull requests can reach **merge
+now** when the rest of the predicate permits it (the rules below say what
+else it needs), where a person still merges:
+
+```yaml
+pull_requests:
+  trusted_automation:
+    - login: renovate[bot]
+      update_types: [patch, minor, pin, lockfile]
+    - dependabot[bot]
+```
+
+A listed bot's pull request meets condition 8 only when all of these hold.
+Any fact that does not read withholds the exception, and the card's fact
+names the rule. Where an own author association or a person's qualifying
+approval already satisfies condition 8, the pull request is placed on that
+evidence, and the other rows (a draft, a branch behind its base, branch
+protection) still decide its lane:
+
+1. Its head is in the repository, not a fork.
+2. Every commit's author, as the forge links it, is the bot or one of
+   `committers` (by default the people `dispatch.adopt.authors` names,
+   whose sessions push a drive's repairs). Unless `signed: false`, each
+   such commit must also carry a valid signature and name the same account
+   as its committer, so a signature is bound to the account the commit is
+   attributed to. The forge verifies the commits an app makes through its
+   API only when the request is authenticated as that app and sets no
+   custom author, committer or signature: confirm that your bot's commits
+   show as verified before you list it, or set `signed: false` for a bot
+   that commits unsigned, which trusts the author attribution alone.
+3. Every changed file, and the original path of a file the forge reports as renamed or copied, matches one of
+   `paths`. By default those are `package.json` and the JavaScript
+   lockfiles (`bun.lock`, `bun.lockb`, `pnpm-lock.yaml`, `yarn.lock`,
+   `package-lock.json`, `npm-shrinkwrap.json`) anywhere in the repository;
+   a repository in another ecosystem lists its own. The default gives a bot
+   authority over executable configuration and dependency resolution:
+   `package.json` can declare lifecycle scripts that run on install, and a
+   lockfile decides which packages resolve. Without `update_types`, a bare
+   login is not restricted to the dependency fields of those files, so set
+   `update_types` to bind the manifest diff to dependency updates. Listing
+   CI definitions (`.github/workflows/**`) lets a merged change run with the
+   repository's secrets: do it only on purpose.
+4. Where `update_types` is set, every dependency change the manifest diff
+   shows is one of them, so a pull request grouping a minor and a patch
+   update needs both listed: `major`, `minor` or `patch` by the version
+   numbers before and after (with the same range operator), `pin` for a
+   range made exact with a full version (a bare partial version such as
+   `1.3` is a range of its own and never equals an exact one), `lockfile` when only lockfiles
+   changed. A change inside a section other than the dependency sections,
+   a hunk that does not show the root-level section opener with no closing
+   brace before the line, a patch the forge cut short (its added and
+   removed line counts differ from the file's), a file the forge reports as moved or copied to a lockfile
+   name from a name that is not a recognized lockfile (a copy the forge lists as a plain addition is judged on its destination alone), a decrease, a
+   prerelease version, or a range change that moves the operator with the
+   numbers does not read. The branch, title and description are not read:
+   they are text the bot or the upstream wrote. A manifest other than
+   `package.json`, a dependency added or removed, or a range that is not a
+   version does not read.
+
+   A lockfile may accompany an allowed manifest update without `lockfile`
+   being listed; `lockfile` is needed only when lockfiles alone change. The
+   Ready predicate never validates a lockfile's contents, whether it
+   accompanies a manifest update or is the only change, and never checks it
+   against the manifest. Every changed `package.json`, a renamed or copied
+   one included, must show at least one classifiable change to an existing
+   dependency's version or range; a formatting-only edit to one manifest
+   withholds the exception for the whole pull request even when another
+   manifest holds an allowed bump. An edit outside the recognized
+   dependency-line shape, a version change it cannot classify, or a
+   dependency added or removed, also disqualifies the whole manifest. The
+   classifier reads only the manifest's textual patch, so these limits
+   rest on the operator:
+
+   - It does not compare file modes: review a file-mode change separately.
+   - It cannot determine the effective value of a duplicate. Keep the
+     top-level dependency section names, and the keys within each section,
+     unique.
+   - It needs the patch to show the root-level dependency section's opener
+     at the manifest's own indentation. Two-space and one-tab layouts are
+     supported; a layout whose opener reads as nested (three or more
+     leading spaces, such as four-space indentation) withholds the
+     exception. The card then says the dependency "sits in a hunk that does
+     not show its section, so its containing object is not proven", or, for
+     a dependency line indented too little to be inside a section, that it
+     is "not inside a dependency section". Unchanged hunk context outside the patch grammar
+     the classifier reads (such as an inline array, `"files": ["dist"],`)
+     withholds it too, and the card then says "the forge gives no diff", the
+     same reason as for a patch the forge did not return: read the
+     manifest's patch before concluding the forge withheld it.
+   - It judges a moved or copied manifest by the patch alone, so review the
+     effective install configuration at both locations, and the
+     destination's whole contents: unchanged fields such as
+     `packageManager` can change their effect at the new location (a
+     manifest moved to the repository root can start to govern root
+     lockfile selection) and moving a manifest away can remove the preference
+     from its former directory. A lockfile-only change can qualify when
+     `update_types` is unset or includes `lockfile`, subject to the other
+     trust rules.
+   - A withheld exception changes only the exception; a qualifying approval
+     can still allow merge now, and the ordinary placement rules still
+     apply to a behind branch or another blocker, and to forge facts that
+     are incomplete or a mergeability not yet known.
+
+**Warning: the drive host installs what the pull request selects.** The
+classifier reads the textual patch, not its effect on the install: which
+lockfile is consumed, which installer runs, and which command applies. Jig
+picks the command from the lockfile it detects; for `yarn.lock`, an existing
+`.yarnrc.yml` alone selects `--immutable` over `--frozen-lockfile`. The drive
+host runs that install during a base merge or a conflict resolution, before
+the Ready decision, so a review at merge time comes too late. With
+`dispatch.adopt` on, a listed bot's pull request can be adopted and installed
+before anyone has looked at it.
+
+An entry
+without `update_types` skips manifest classification, so such an edit can
+still qualify for the exception and approval is not owed on that ground; an
+entry with `update_types` set withholds the exception for a direct edit to the
+top-level `packageManager` field, which fails classification.
+
+For trusted automation the review of the head must
+still be witnessed by the reviewer app's check run, so where
+`review.reviewer_app` names none, a person's approval is still the witness
+and the setting changes nothing for the approval requirement. The list is read from the default branch
+by the board, `jig ask` and the drive's merge-ready announcement alike,
+never from the pull request's own configuration; for a listed bot the
+announcement takes the reviewer app, its check pattern and both hold
+labels from the default branch too. The
+commits and files are read from the pull request's own commit and file
+listings, with the pull request read before and after: the read counts only
+when its head and base are unchanged both times and its commit and file
+counts equal what the listings hold. Each page is checked as it arrives for
+its shape, its count, duplicates and the final commit's head; the records
+themselves are parsed once the closing read is confirmed, so a malformed
+record is refused after the listings are read. A count no single listing page
+can hold is refused before any listing is requested. The requests share one
+deadline, and none starts once the enclosing bound has ended.
+They are made only for a pull request by a listed bot whose condition 8
+nothing else satisfies and where a reviewer app is named; a pull request with
+a full page of either does not read whole.
+The dispatcher keeps the read between ticks, keyed by the head and the base
+commit, and the drive's announcement keeps it for the run.
+
+With `dispatch.adopt` on, a listed bot's pull request is adopted whether or
+not `adopt.authors` names the bot, and it is driven to convergence while
+healthy, and again when its head moves, so the board can place it. Adoption
+needs a head known to be in the repository, a recent update and no hold; the
+commit, path and update-type rules apply only afterwards, when the board
+places it, so a listed pull request can be driven and still not reach merge
+now. The
+review prompt still reads its description as data.
 
 ### Reviewers on a draft
 
@@ -1668,7 +1828,8 @@ person's approval is no failure), it conflicts with its base, or a review
 thread is unresolved. That holds for its adoption (below) and for every
 re-drive, takeover and re-arm the dispatcher would start of itself, a
 converged drive whose head moved among them: a healthy one is reported and
-left for a person to merge. A person's `jig:drive` label or bound `jig send … rearm` request still
+left for a person to merge, unless [`pull_requests.trusted_automation`](#trusted-automation)
+lists the bot that opened it, which is driven to convergence. A person's `jig:drive` label or bound `jig send … rearm` request still
 starts one.
 
 A serialized change area (`serialize: true` on an area of the
@@ -1785,9 +1946,12 @@ dispatcher reads the forge as, which is the identity the host's sessions
 open pull requests under) and it was updated within `adopt.within`. A
 draft is adopted like any other, since a drive marks its pull request
 ready. A bot's pull request (a dependency update, say) is adopted only
-when `authors` names the bot, and one carrying `jig:hold` never is. An
-automation pull request (above) is adopted only while it needs work; a
-healthy one is left for a person to merge, and `jig:drive` still drives
+when `authors` names the bot or
+[`pull_requests.trusted_automation`](#trusted-automation) lists it, and one
+carrying `jig:hold` never is. An automation pull request (above) is adopted
+only while it needs work, except a listed bot's, which is driven while
+healthy too; a healthy one is otherwise left for a person to merge, and
+`jig:drive` still drives
 one on a person's word. A bot the rule names is the host's own identity, so
 its pull requests are adopted as any own pull request unless they carry an
 automation label. A check that failed on the CI
@@ -2310,6 +2474,10 @@ pull_requests:
     - when: { labels: ["fixversion:2.4"] }
       base: release/2.4
   commit_prefix: "{key}: "               # every commit message starts with the key
+  trusted_automation:                    # bots whose converged pull requests count as the repository's own
+    - login: renovate[bot]
+      update_types: [patch, minor, pin, lockfile]
+    - dependabot[bot]
 drive:
   validation_plan_command: "<your plan command>"   # changed files on stdin, JSON plan on stdout
   load_guard_command: "<your load-guard command>"  # returns once the machine can take heavy checks

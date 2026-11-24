@@ -2,7 +2,8 @@
  * The forge's facts the Ready predicate (`merge-ready.ts`) needs, for a set
  * of pull requests of one repository in one GraphQL query: each one's head,
  * draft state, mergeability and merge state, review decision, author
- * association, labels, review threads' resolution, the head's check contexts
+ * association, login and fork flag, its base branch, labels, review threads'
+ * resolution, the head's check contexts
  * (with whether each is required and which app posted it), the review
  * requests and the reviewers' latest reviews; and the repository's merge
  * methods. The dispatcher's board read, the merge-ready announcement and
@@ -24,6 +25,7 @@ import {
 import type { ForgeFacts, HeadCheck, HeadReview } from "./merge-ready.ts";
 import { ghRepoEnvFor } from "../../../../shared/gh-repo-env.ts";
 import { ghCall } from "./proc.ts";
+import { authorLogin } from "./trusted-automation.ts";
 import { currentMs } from "../../../../shared/time.ts";
 
 /** The query's name, which a fake forge recognises. */
@@ -52,6 +54,7 @@ function checkContexts(number: number, after = ""): string {
 function pullFields(n: number): string {
   return `pr${n}: pullRequest(number: ${n}) {
       number headRefOid baseRefOid isDraft mergeable mergeStateStatus reviewDecision authorAssociation isMergeQueueEnabled
+      author { __typename login } isCrossRepository
       labels(first: 100) { pageInfo { hasNextPage } nodes { name } }
       reviewThreads(first: ${THREADS}) { pageInfo { hasNextPage } nodes { isResolved } }
       reviewRequests(first: ${REVIEWS}) { pageInfo { hasNextPage } nodes { requestedReviewer { __typename ... on User { login } ... on Bot { login } ... on Team { slug } ... on Mannequin { login } } } }
@@ -218,7 +221,11 @@ function states(
   | "mergeQueue"
   | "reviewDecision"
   | "authorAssociation"
+  | "author"
+  | "crossRepository"
+  | "baseOid"
 > {
+  const cross = node.isCrossRepository;
   return {
     draft: node.isDraft === true,
     mergeable: str(node.mergeable) || "UNKNOWN",
@@ -226,6 +233,12 @@ function states(
     mergeQueue: node.isMergeQueueEnabled === true,
     reviewDecision: str(node.reviewDecision) || null,
     authorAssociation: str(node.authorAssociation),
+    author: authorLogin(
+      str(at(node, "author", "__typename")),
+      str(at(node, "author", "login")),
+    ),
+    crossRepository: typeof cross === "boolean" ? cross : null,
+    baseOid: str(node.baseRefOid),
   };
 }
 
@@ -322,6 +335,33 @@ export function parseAnswer(
   };
 }
 
+/** Run a `gh api` call and decode its JSON answer, returning `unreadable` on exit or parse failure. */
+export async function ghApiJson(
+  args: readonly string[],
+  slug: string | null,
+  timeoutSec: number,
+  callLabel: string,
+  answerLabel: string = callLabel,
+): Promise<Outcome<unknown, "unreadable">> {
+  const r = await ghCall(["api", ...args], {
+    stderr: "pipe",
+    env: ghRepoEnvFor(slug),
+    timeoutSec,
+  });
+  if (r.code !== 0) {
+    const tail = ghDiagnostic(r.stderr);
+    return failed(
+      "unreadable",
+      `gh api ${callLabel} exited ${r.code}${tail === "" ? "" : `: ${tail}`}`,
+    );
+  }
+  try {
+    return ok(JSON.parse(r.stdout));
+  } catch (error) {
+    return failed("unreadable", `the ${answerLabel} answer is not JSON`, error);
+  }
+}
+
 /** One bounded GraphQL read through the forge transport. */
 async function queryGraphql(
   slug: string | null,
@@ -333,9 +373,8 @@ async function queryGraphql(
     slug === null ? ["{owner}", "{repo}"] : slug.split("/");
   // `-F` fills the forge client's `{owner}` and `{repo}` placeholders; `-f` passes a name as it is.
   const flag = slug === null ? "-F" : "-f";
-  const r = await ghCall(
+  return ghApiJson(
     [
-      "api",
       "graphql",
       "-f",
       `query=${query}`,
@@ -345,24 +384,11 @@ async function queryGraphql(
       `name=${name}`,
       ...fields,
     ],
-    { stderr: "pipe", env: ghRepoEnvFor(slug), timeoutSec },
+    slug,
+    timeoutSec,
+    "graphql",
+    "merge facts query's",
   );
-  if (r.code !== 0) {
-    const tail = ghDiagnostic(r.stderr);
-    return failed(
-      "unreadable",
-      `gh api graphql exited ${r.code}${tail === "" ? "" : `: ${tail}`}`,
-    );
-  }
-  try {
-    return ok(JSON.parse(r.stdout));
-  } catch (error) {
-    return failed(
-      "unreadable",
-      "the merge facts query's answer is not JSON",
-      error,
-    );
-  }
 }
 
 /** `part` added into `read`. */

@@ -56,3 +56,27 @@ test("a review gate without its skill is refused", () => {
     found.find((f) => f.id === "rejected:do-item (review gates)")?.message,
   ).toContain("do_item.gates[0].skill must name a skill");
 });
+
+test("a trusted automation list that does not read is refused, naming the setting", () => {
+  const found = findings("pull_requests:\n  trusted_automation: renovate\n");
+  expect(
+    found.find((f) => f.id === "rule:pull_requests.trusted_automation")
+      ?.message,
+  ).toContain("pull_requests.trusted_automation must be a list");
+});
+
+test("a trusted automation list with no reviewer app and no adoption is said to change nothing yet", () => {
+  const found = findings(
+    'pull_requests:\n  trusted_automation: ["renovate[bot]"]\n',
+  ).map((f) => f.id);
+  expect(found).toContain(
+    "derivation:pull_requests.trusted_automation:witness",
+  );
+  expect(found).toContain("derivation:pull_requests.trusted_automation:adopt");
+  const witnessed = findings(
+    'review:\n  reviewer_app: example-review\npull_requests:\n  trusted_automation: ["renovate[bot]"]\n',
+  ).map((f) => f.id);
+  expect(witnessed).not.toContain(
+    "derivation:pull_requests.trusted_automation:witness",
+  );
+});

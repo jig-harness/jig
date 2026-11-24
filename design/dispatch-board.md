@@ -154,7 +154,24 @@ Ready to merge, lane **merge now**, when all of these hold at the tick:
    (`mergeStateStatus` is `CLEAN` or `HAS_HOOKS`), or its base requires a
    merge queue (`isMergeQueueEnabled`), whose own rules then decide.
 8. Its author is the repository's own (association `OWNER`, `MEMBER` or
-   `COLLABORATOR`), or a person approved it.
+   `COLLABORATOR`), or a person approved it, or its author is
+   [trusted automation](../GLOSSARY.md): a bot the default branch's
+   `pull_requests.trusted_automation` lists, whose head is in the
+   repository, whose commits are all the bot's own or a listed
+   committer's (each signed for its account unless the entry says
+   `signed: false`), whose changed files are all within the entry's paths (the original path of a file the forge reports as renamed or
+   copied counts too),
+   and, where the entry names update types, whose whole change is
+   classified: every changed file is a manifest or a recognized lockfile
+   whose edit is of a listed type (a lockfile-only change can qualify
+   without a manifest; a grouped minor-plus-patch change needs both
+   listed; a recognized lockfile may accompany a manifest update and needs
+   `lockfile` only where lockfiles alone changed; a rename or copy the forge reports into a
+   recognized lockfile name passes only from another recognized lockfile name; a copy the forge lists as a plain addition is judged on its destination alone), and an unsupported file or an unclassifiable manifest edit
+   withholds the exception even where the path policy allows it. The
+   exception applies only where the repository names a reviewer app: with
+   none, a person's approval is the review witness and the commits and
+   files are not read.
 9. It carries neither the `hold` label nor the
    [CI hold](../GLOSSARY.md) label (`ci.hold_label`), under which its
    required checks fail on purpose.
@@ -179,6 +196,21 @@ recorded by the forge against the head it approved. So merge now never
 rests on the ledger alone. Condition 8 keeps a pull request from outside
 the repository from reaching merge now on an agent's review alone, so text
 written to steer the reviewer never becomes a "merge now" for a person.
+Trusted automation narrows that only for a bot the repository names, and
+only where the change stays within what the bot is trusted to change: a
+dependency bot's identity is trusted, while the third-party text it
+carries (release notes, upstream code) is not, so the rules bound what the
+change may touch rather than what it says. A commit by anyone else, a path
+outside the entry, a fork, or a fact that does not read leaves the pull
+request without the exception, and the card's fact names the rule; an
+own association or a person's approval can still satisfy condition 8, and
+the other rows decide the lane. The list is
+read from the default branch by every caller, the drive's announcement
+included, never from the pull request's own configuration, which could
+otherwise list its own author. The commits and files are read from the
+pull request's own listings, pinned to the head, only for a pull request
+by a listed bot that nothing else already satisfies, and kept between ticks
+by head and base commit.
 
 `announce-merge-ready.ts` posts only when the predicate says merge now or
 approve first, and words the second as "an approval is still required".

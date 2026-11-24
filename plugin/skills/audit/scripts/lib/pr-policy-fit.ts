@@ -1,10 +1,12 @@
 /**
  * Whether the pull-request policy fits what the forge shows: the labels it
  * adds exist (`label-fit.ts`) and each base `pull_requests.base_rules` names
- * is a branch of the repository.
+ * is a branch of the repository. And, offline, whether
+ * `pull_requests.trusted_automation` can do anything in this configuration.
  */
 import { ghJson } from "../../../../shared/detect.ts";
 import { isRecord } from "../../../../shared/guards.ts";
+import { trustedAutomationOf } from "../../../drive-pr/scripts/lib/trusted-automation.ts";
 import { labelFindings } from "./label-fit.ts";
 import { at, type Finding } from "./schema.ts";
 
@@ -54,4 +56,43 @@ export async function policyFindings(
     ...(await labelFindings(config, root, slug)),
     ...(await baseRuleFindings(config, root, slug)),
   ];
+}
+
+/**
+ * What `pull_requests.trusted_automation` does in this configuration: a list
+ * that does not read trusts nobody; with no `review.reviewer_app` a person's
+ * approval is still the review witness, so the list changes no approval
+ * requirement; and with `dispatch.adopt` off a listed bot's healthy pull
+ * request is not adopted on its own, so it is driven only where a person
+ * labels it `drive` or arms a drive by hand.
+ */
+export function trustedFit(config: Config): Finding[] {
+  if (at(config, "pull_requests.trusted_automation") === undefined) return [];
+  const list = trustedAutomationOf(config);
+  if (!list.ok)
+    return [
+      {
+        id: "rule:pull_requests.trusted_automation",
+        severity: "error",
+        message: `${list.failure.reason}. The trusted automation exception is disabled.`,
+      },
+    ];
+  if (list.value.length === 0) return [];
+  const findings: Finding[] = [];
+  const app = at(config, "review.reviewer_app");
+  if (typeof app !== "string" || app.trim() === "")
+    findings.push({
+      id: "derivation:pull_requests.trusted_automation:witness",
+      severity: "warning",
+      message:
+        "pull_requests.trusted_automation does not change the approval requirement for merge now without review.reviewer_app: a person's approval is then the witness of every review and also satisfies the author condition",
+    });
+  if (at(config, "dispatch.adopt.enabled") !== true)
+    findings.push({
+      id: "derivation:pull_requests.trusted_automation:adopt",
+      severity: "info",
+      message:
+        "dispatch.adopt is off, so a listed bot's healthy pull request is not adopted automatically: a person labels it drive or arms a drive by hand before it can reach Ready to merge",
+    });
+  return findings;
 }

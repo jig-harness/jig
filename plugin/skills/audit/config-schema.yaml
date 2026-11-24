@@ -640,6 +640,22 @@ fields:
     pattern: "\\{key\\}"
     since: 0.206.0
     read_by: [do-item, drive-pr, fix-ci, resolve-conflicts]
+  pull_requests.trusted_automation:
+    type: list
+    items:
+      or: string
+      fields:
+        login: string
+        paths: { type: list, items: string }
+        update_types:
+          type: list
+          items: { type: enum, values: [lockfile, pin, patch, minor, major] }
+        signed: boolean
+        committers: { type: list, items: string }
+      optional: [paths, update_types, signed, committers]
+    repository_only: true
+    read_by: [drive-pr, dispatch]
+    since: 0.308.0
 
   drive.validation_plan_command:
     type: command
