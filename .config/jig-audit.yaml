@@ -1,9 +1,9 @@
 # Jig audit record: written by /jig:audit, read by its next run.
 # Each criterion carries its level, pass bar and statement as comments.
 version: 1
-plugin_version: 0.17.0
-date: "2026-10-13"
-commit: b14469664fb17700b76e6c8091ff5a923c14bd48
+plugin_version: 0.308.0
+date: "2026-11-24"
+commit: 4f25e1d0aa729832685df26efd7a274488067e82
 shape: "toolkit"   # library | application | service | monorepo | documentation | …
 profile: team-standard   # solo-lite | team-standard | regulated-strict; null when the team has not chosen
 profile_conditions: [M3, M12]
@@ -56,6 +56,10 @@ criteria:
     # Every model tier an agent or skill declares lives in its metadata (or, for a judgment pass inside a skill, in that skill's configuration) as a family alias, never a versioned model id (where the runtime has no family aliases, the vendor's most general model name, or one central name mapped to a release in a single place), a CI check over that metadata enforces it, and any committed roster of the assignments is generated from the metadata and drift-checked. This pin check is expected-absent when a repository's agents and skills pin no model in metadata or at invocation; shared routing is assessed separately.
     score: expected-absent
     evidence: "No agent or skill pins a model in the audited plugin and runtime definitions: git grep for model: front matter in plugin/ and .claude/ finds none, plugin/agents/review-arbiter.md states that none is pinned and a consumer pins it in its own definition, no skill configuration carries a model setting, and invocation model arguments in plugin/skills only forward a pass command's model, its documented built-in default, a configured judgment-pass setting, an explicit one-run operator choice, or a shared-routing selection into a field the effective definition leaves open; no roster file is tracked. Seed projects are examples, outside this audit record's plugin/runtime scope."
+  M0/judgment-tier-admission-and-baseline:   # standard, requires convention
+    # Every Judgment-tier metadata pin, skill Judgment-pass setting, and decision layer that shared routing selects onto a Judgment model records its admission and A/B baseline beside that layer's own declaration; a shared routing row is not that declaration because one row can serve several decision layers.
+    score: expected-absent
+    evidence: "At 4f25e1d0, plugin/agents/review-arbiter.md declares no pinned model and directs a consumer-specific route to its own agent definition; no repository routing configuration selects a Judgment model and no skill Judgment-pass setting exists."
   M0/runtime-capabilities-name-fallbacks:   # standard, requires convention
     # Every instruction and skill step that relies on a runtime-specific capability (a slash command for a skill outside a plugin, a built-in tool such as a question tool, a tool the host injects) names its portable fallback or the equivalent in each runtime the team uses, and no gate, hook, script or skill step depends on a host-injected tool.
     score: absent
