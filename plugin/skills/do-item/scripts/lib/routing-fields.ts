@@ -48,7 +48,7 @@ const RUNTIME_NAME = /^[a-z][a-z0-9_-]*$/;
 export const MODEL_TOKEN_PATTERN = /^(?!-)[^\p{Cc}\s,;=]+$/u;
 
 /** A declared model name, which need not itself be an argv operand. */
-export const DECLARATION_TOKEN_PATTERN = /^[^\p{Cc}\s,;=]+$/u;
+export const DECLARATION_TOKEN_PATTERN = /^[^\s,;=\0]+$/;
 
 export function oneOf<T extends string>(
   value: unknown,

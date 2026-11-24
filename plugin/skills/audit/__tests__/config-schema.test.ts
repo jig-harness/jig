@@ -373,7 +373,17 @@ describe("the reading skills", () => {
     const passModelPattern = field("drive.pass_model")?.pattern;
     expect(passModelPattern).toBeDefined();
     const schemaPassModel = new RegExp(passModelPattern as string);
-    for (const value of ["sonnet", "-sonnet", "has space", "has\u001bescape"])
+    for (const value of [
+      "sonnet",
+      "provider/model",
+      "-sonnet",
+      "has space",
+      "has,comma",
+      "has;semicolon",
+      "has=equals",
+      "has\u001bescape",
+      "has\u0085control",
+    ])
       expect(schemaPassModel.test(value)).toBe(PASS_MODEL_PATTERN.test(value));
     expect(field("ci.repair_skill")?.pattern).toBe(SKILL_NAME_PATTERN.source);
     expect(field("drive.pass_args")?.items).toEqual({

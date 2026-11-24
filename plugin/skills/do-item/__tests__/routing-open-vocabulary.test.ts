@@ -160,6 +160,14 @@ describe("a model outside the families", () => {
               [OUTSIDE]: { tier: "strategic", reason: "the selected model" },
             },
           },
+          family_tiers: {
+            codex: {
+              "-older-retired": {
+                tier: "strategic",
+                reason: "a retained legacy key",
+              },
+            },
+          },
         },
       }).codex?.complex,
     ).toBe(OUTSIDE);
