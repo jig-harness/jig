@@ -386,8 +386,14 @@ protection) still decide its lane:
    accompanies a manifest update or is the only change, and never checks it
    against the manifest. A `package.json` that the forge reports as renamed
    or copied must show at least one classifiable change to an existing
-   dependency's version or range; an unrelated edit, or a dependency added
-   or removed, disqualifies the whole manifest.
+   dependency's version or range; an unrelated textual edit, or a dependency
+   added or removed, disqualifies the whole manifest. The classifier reads
+   only the manifest's textual patch: it does not compare file modes, and
+   it does not resolve a duplicate dependency key to its effective value, so
+   keep manifests free of both. It also needs the patch to show the
+   root-level dependency section's opener at the manifest's own indentation;
+   a layout where that opener reads as nested (for example four-space
+   indentation) stays in approve first.
 
 For trusted automation the review of the head must
 still be witnessed by the reviewer app's check run, so where

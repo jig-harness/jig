@@ -18,7 +18,10 @@ release: minor
   A rename or copy the forge reports for a `package.json` must pass the
   path allowlist, and its destination's diff must show at least one
   classifiable change to an existing dependency's version or range, with no
-  unrelated edit and no dependency added or removed. A rename or copy the forge reports to a
+  unrelated textual edit and no dependency added or removed. Only the
+  textual patch is read: file modes and duplicate dependency keys are not
+  compared, and a layout that nests the root dependency section's opener
+  (such as four-space indentation) stays in approve first. A rename or copy the forge reports to a
   recognized lockfile needs a recognized lockfile name at its original
   path; a copy the forge reports as a plain addition has no original name
   and is judged on its destination alone. Any other destination is
