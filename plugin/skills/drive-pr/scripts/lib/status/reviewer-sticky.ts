@@ -57,11 +57,13 @@ export function reviewerStickyBody(
     ((raw.user as Record<string, unknown> | null)?.login ?? "") || "",
   );
   const body = String(raw.body ?? "");
-  // Protocol markers are structural: a quoted marker in an auxiliary comment
-  // cannot replace the reviewer's sticky witness.
-  return reviewerLogin(login) && body.trimStart().startsWith(summaryMarker)
-    ? body
-    : null;
+  // A structural marker may follow a heading, but a quoted example is never
+  // reviewer evidence.  Requiring it at byte zero rejected valid configured
+  // summaries while accepting neither more evidence nor a safer protocol.
+  const structuralMarker = body
+    .split(/\r?\n/)
+    .some((line) => line.trimStart().startsWith(summaryMarker));
+  return reviewerLogin(login) && structuralMarker ? body : null;
 }
 
 /** The review stamp and its companion markers from the newest qualifying sticky. */

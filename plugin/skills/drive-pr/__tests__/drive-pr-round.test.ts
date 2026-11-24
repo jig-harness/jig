@@ -1640,7 +1640,8 @@ describe("summary-findings marker overrides", () => {
     expect(got.defaultSha).toBe("ai-reviewed-sha");
     expect(got.sticky).toBe("<!-- other-review -->");
     expect(got.selected).toBe(1);
-    expect(got.unstampedSelected).toBe(4);
+    // A later auxiliary comment cannot erase a finding-bearing sticky.
+    expect(got.unstampedSelected).toBe(3);
     // And the reviewed SHA is actually extracted under the custom name — it
     // scopes the unaccounted-slot keys, so failing to read it degrades every
     // slot to the shared `nohead` scope, where an answer given on one head

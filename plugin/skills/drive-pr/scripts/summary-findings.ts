@@ -1344,9 +1344,9 @@ export function reviewerSticky(
       skipNoticeIn(body, skipNoticeMarker()) !== null ||
       body.includes("ai-review-backlog") ||
       parseBodyFindings(body).length > 0;
-    const acknowledgement = /\backnowledged\b/i.test(body);
-    if (selected === undefined || carriesEvidence || !acknowledgement)
-      selected = comment;
+    // An auxiliary response never supersedes a finding-bearing summary just
+    // because it happens not to use a particular acknowledgement word.
+    if (selected === undefined || carriesEvidence) selected = comment;
   }
   return selected;
 }
