@@ -80,8 +80,8 @@ export async function resolveCredential(
   const done = await run([...command, reference], {
     timeoutSec,
     env,
-    // Standard output is bounded to the longest value plus a line ending and one byte to tell an overlong value apart; error output is captured only to drain the pipe, within its own allowance, and never read or recorded.
-    maxBufferBytes: LONGEST_VALUE + 3 + STDERR_TAIL_BYTES,
+    // The runner counts both streams together, so the bound is the longest value plus a line ending and one byte, plus a full error-output allowance; error output is captured only to drain the pipe and is never read or recorded. A value over the longest is refused below by its own length.
+    maxBufferBytes: LONGEST_VALUE + 3 + STDERR_TAIL_BYTES * 2,
     reapGroup: true,
   });
   if (done.bufferExceeded) {

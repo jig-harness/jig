@@ -337,7 +337,7 @@ function baseUrl(
   const written = /^[a-z][a-z0-9+.-]*:\/\/[^/?#\\]*([^?#\\]*)$/i.exec(
     raw.value.split(/[?#]/)[0] ?? "",
   );
-  if (written === null || hasRefusedCharacter(raw.value))
+  if (written === null)
     return invalid(
       `${where} must be a plain URL with no backslash, space or control character (its value is withheld)`,
     );

@@ -74,6 +74,17 @@ describe("resolving a credential reference", () => {
     expect(!wide.ok && wide.failure.reason).toContain("8 characters");
   });
 
+  it("keeps a 4 KiB value whose command also prints 5 KiB of diagnostics", async () => {
+    const done = await resolveCredential(
+      command(
+        "process.stdout.write('k'.repeat(4096)); process.stderr.write('d'.repeat(5120))",
+      ),
+      "ref",
+      process.env,
+    );
+    expect(done.ok && done.value).toBe("k".repeat(4096));
+  });
+
   it("refuses a value with a malformed byte, which decodes to U+FFFD", async () => {
     const bad = await resolveCredential(
       command(
