@@ -79,6 +79,7 @@ import {
   reviewerProfile,
 } from "./lib/reviewer-profiles.ts";
 import { reviewsBy } from "./lib/status/review-object.ts";
+import { reviewerStickyBody } from "./lib/status/reviewer-sticky.ts";
 import {
   headerOf,
   SEVERITY_FIELD,
@@ -1334,9 +1335,7 @@ export function reviewerSticky(
   if (configuredOnly && !reviewerExpected()) return undefined;
   return comments
     .filter(
-      (c) =>
-        isReviewerLogin(c.user?.login ?? "") &&
-        c.body?.includes(stickyMarker()),
+      (c) => reviewerStickyBody(c, isReviewerLogin, stickyMarker()) !== null,
     )
     .pop();
 }

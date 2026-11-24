@@ -181,7 +181,8 @@ reviewer has never stamped a commit, Jig can accept the skip when
 For a stacked pull request, that policy is the integration-bound policy, not
 the unreviewed layer immediately below it. Otherwise a skip
 notice for the current head without a stamp stops with `REVIEW_SKIPPED`.
-With no current-head notice or stamp, the drive continues awaiting review.
+With no current-head notice or stamp, the drive awaits review when no
+workable finding remains; otherwise it runs the live findings as a round.
 
 Jig ships no reviewer that implements this protocol. The defaults in the
 table above are configuration: a repository changes them to match its own

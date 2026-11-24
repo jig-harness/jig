@@ -33,7 +33,7 @@ function lastStamp(body: string, markerRe: RegExp): string {
 }
 
 /** A comment's body when the reviewer wrote it as its sticky summary, else `null`. */
-function stickyBody(
+export function reviewerStickyBody(
   raw: unknown,
   reviewerLogin: (login: string) => boolean,
   summaryMarker: string,
@@ -69,7 +69,7 @@ export function reviewerStickyIn(
     skip: null,
   };
   for (const raw of comments) {
-    const body = stickyBody(raw, reviewerLogin, summaryMarker);
+    const body = reviewerStickyBody(raw, reviewerLogin, summaryMarker);
     if (body === null) continue;
     const bodySha = lastStamp(body, markerRe);
     const skip = skipNoticeIn(body, skipNoticeMarker);

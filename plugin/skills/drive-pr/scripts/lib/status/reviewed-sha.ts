@@ -265,6 +265,11 @@ function skipExcludedPathsAt(
   // Review excludes have their own schema. Do not make an otherwise readable
   // review policy depend on unrelated autonomy fields in that same config.
   // A stack's bound is the reviewed policy that may narrow this proof.
+  if (
+    Object.hasOwn(process.env, "DRIVE_PR_POLICY_BASE") &&
+    (process.env.DRIVE_PR_POLICY_BASE ?? "").trim() === ""
+  )
+    return { reason: "the reviewed policy base could not be resolved" };
   const bound = (process.env.DRIVE_PR_POLICY_BOUND ?? "").trim();
   const commit = bound === "" ? baseHead : bound;
   const snapshot = readSnapshotAt(
