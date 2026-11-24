@@ -9,10 +9,9 @@ import { definedFields } from "../../../../shared/defined-fields.ts";
  * answers `304` and costs nothing.
  *
  * Only the reads that want NOTHING ELSE belong here. `stillOnHead` and the
- * opening snapshot compare `state` against `headRefOid`/`baseRefOid`/
- * `mergeable` from the SAME response, and REST and GraphQL disagree on
- * `baseRefOid` and mergeability — those stay GraphQL, so a comparison never
- * spans two sources.
+ * opening snapshot compare `state` against the head, the base and
+ * mergeability from the SAME response, so they read the whole pull document
+ * through `status/pr-snapshot.ts` instead.
  *
  * A URL or branch argument has no REST path (`readPrLiveness` needs a PR
  * number), so it is served by `gh pr view`, which resolves those itself. That

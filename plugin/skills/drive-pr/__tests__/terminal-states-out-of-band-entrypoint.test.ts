@@ -45,6 +45,7 @@ describe("runCheck — the lease.ts + drive-status.ts out-of-band checks reach t
   // drive.ts-specific checks in runCheck() pass and execution actually
   // reaches the lease.ts/drive-status.ts checks this block exercises.
   const healthyDriveTsModule = [
+    "export const UNSUPPORTED_CLI_EXIT = 2;",
     "export const MAX_ROUNDS_EXIT = 6;",
     "export const SINGLE_INSTANCE_LOCK_EXIT = 11;",
     "export const WORKTREE_UNCLEAN_EXIT = 12;",
@@ -60,6 +61,7 @@ describe("runCheck — the lease.ts + drive-status.ts out-of-band checks reach t
   ].join("\n");
   const healthyDriveTsSource = [
     "import { driverOnlyExitCode } from './lib/status/terminal-states.ts';",
+    "export const UNSUPPORTED_CLI_EXIT = driverOnlyExitCode('UNSUPPORTED_CLI');",
     "export const PASS_DEADLINE_EXIT = driverOnlyExitCode('PASS_DEADLINE');",
     "export const QUOTA_PARKED_EXIT = driverOnlyExitCode('QUOTA_PARKED');",
     "export const MAILBOX_STOPPED_EXIT = driverOnlyExitCode('MAILBOX_STOPPED');",
@@ -270,6 +272,7 @@ describe("runCheck — the outOfBand name-pairing check reaches the real entry p
   };
 
   const healthyDriveTsModule = [
+    "export const UNSUPPORTED_CLI_EXIT = 2;",
     "export const MAX_ROUNDS_EXIT = 6;",
     "export const SINGLE_INSTANCE_LOCK_EXIT = 11;",
     "export const WORKTREE_UNCLEAN_EXIT = 12;",
@@ -285,6 +288,7 @@ describe("runCheck — the outOfBand name-pairing check reaches the real entry p
   ].join("\n");
   const healthyDriveTsSource = [
     "import { driverOnlyExitCode } from './lib/status/terminal-states.ts';",
+    "export const UNSUPPORTED_CLI_EXIT = driverOnlyExitCode('UNSUPPORTED_CLI');",
     "export const PASS_DEADLINE_EXIT = driverOnlyExitCode('PASS_DEADLINE');",
     "export const QUOTA_PARKED_EXIT = driverOnlyExitCode('QUOTA_PARKED');",
     "export const MAILBOX_STOPPED_EXIT = driverOnlyExitCode('MAILBOX_STOPPED');",

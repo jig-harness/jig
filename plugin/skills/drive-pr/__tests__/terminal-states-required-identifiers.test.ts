@@ -352,10 +352,11 @@ describe("driverOnlyExitBindings — requires a real module for live export valu
   test("reads all real driver-only values from the actual drive.ts", () => {
     const path = fileURLToPath(new URL("../scripts/drive.ts", import.meta.url));
     const bindings = driverOnlyExitBindings(path);
-    expect(bindings).toHaveLength(11);
+    expect(bindings).toHaveLength(12);
     const byName = Object.fromEntries(
       bindings.map((b) => [b.constantName, b.constantValue]),
     );
+    expect(byName.UNSUPPORTED_CLI_EXIT).toBe(2);
     expect(byName.MAX_ROUNDS_EXIT).toBe(6);
     expect(byName.SINGLE_INSTANCE_LOCK_EXIT).toBe(11);
     expect(byName.WORKTREE_UNCLEAN_EXIT).toBe(12);
