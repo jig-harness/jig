@@ -203,15 +203,16 @@ test("the Markdown rendering leaves configured autolink forms literal", () => {
         id: "report:routing.models",
         severity: "info",
         message:
-          "routing.model_tiers.codex.example has reason https://example.org/model-notes, www.example.org, team@example.org, mailto:team@example.org and xmpp:team@example.org",
+          "routing.model_tiers.codex.example has reason https://example.org/model-notes, ftp://example.org/model-notes, www.example.org, team@example.org, mailto:team@example.org and xmpp:team@example.org",
       },
     ],
     declined: [],
     suggestions: [],
   };
-  expect(render(report)).toContain("https\\://example.org/model-notes");
-  expect(render(report)).toContain("www\\.example.org");
-  expect(render(report)).toContain("team@example\\.org");
-  expect(render(report)).toContain("mailto\\:team@example\\.org");
-  expect(render(report)).toContain("xmpp\\:team@example\\.org");
+  expect(render(report)).toContain("`https://example.org/model-notes`");
+  expect(render(report)).toContain("`www.example.org`");
+  expect(render(report)).toContain("`team@example.org`");
+  expect(render(report)).toContain("`mailto:team@example.org`");
+  expect(render(report)).toContain("`xmpp:team@example.org`");
+  expect(render(report)).toContain("`ftp://example.org/model-notes`");
 });

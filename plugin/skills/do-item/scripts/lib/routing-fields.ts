@@ -80,7 +80,7 @@ export function refuseUnknownKeys(
 export function token(value: unknown, field: string, what: string): string {
   if (typeof value !== "string" || !MODEL_TOKEN_PATTERN.test(value))
     throw new RoutingError(
-      `${field} must be ${what}: one word that does not start with a dash or contain control or bidirectional characters, whitespace, a comma, semicolon or equals sign (got ${typeof value === "string" ? formatDisplayValue(value) : String(value)})`,
+      `${field} must be ${what}: one word that does not start with a dash or contain control or bidirectional characters, whitespace, a comma, semicolon or equals sign (got ${typeof value === "string" ? formatDisplayValue(value) : typeof value})`,
     );
   return value;
 }

@@ -12,18 +12,35 @@
  * indentation is dropped (it would open a code block) and a leading `-`, `+`,
  * `=` or list number is escaped (thematic break, setext heading, list).
  */
-export const lit = (value: string) =>
+const markdownText = (value: string) =>
   value
     .replace(/^[ \t]+/gm, "")
     .replace(/[\\`*_[\]<>&|#~]/g, "\\$&")
-    // Break every GFM bare-autolink form while keeping the displayed text
-    // unchanged. A backslash before the punctuation is rendered literally,
-    // but prevents the parser from recognizing a URI, www host, or email.
-    .replace(/(https?|mailto|xmpp):/gi, "$1\\:")
-    .replace(/\bwww\./gi, "www\\.")
-    .replace(/\b([a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+)\./gi, "$1\\.")
     .replace(/^([-+=])/gm, "\\$1")
     .replace(/^(\d{1,9})([.)])/gm, "$1\\$2");
+
+/** Every GFM bare-autolink form, rendered as source text rather than a link. */
+const BARE_AUTOLINK =
+  /\b(?:(?:https?|ftp):\/\/[^\s<>()]+|(?:www\.)[^\s<>()]+|(?:mailto|xmpp):[^\s<>()]+|[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+)/gi;
+
+/**
+ * Source text is literal text, never markup. Bare autolinks need a parsing
+ * boundary rather than punctuation escaping: GFM decodes those escapes before
+ * its autolink extension runs. Code spans preserve the source spelling and
+ * are skipped by that extension.
+ */
+export const lit = (value: string) => {
+  let at = 0;
+  let rendered = "";
+  for (const match of value.matchAll(BARE_AUTOLINK)) {
+    const start = match.index ?? 0;
+    const target = match[0].replace(/[.,;:!?]+$/, "");
+    rendered += markdownText(value.slice(at, start));
+    rendered += code(target);
+    at = start + target.length;
+  }
+  return rendered + markdownText(value.slice(at));
+};
 /** Source text inside a table cell: escaped, and on one line. */
 export const cell = (value: string) => lit(value).replace(/\s*\n\s*/g, " ");
 /**

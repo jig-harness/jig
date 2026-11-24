@@ -103,6 +103,20 @@ describe("a model outside the families", () => {
     );
   });
 
+  it("reports non-string selected models without coercing configuration values", () => {
+    const hostile = {
+      toString: () => {
+        throw new Error("must not coerce");
+      },
+    };
+    expect(() =>
+      rules({ routing: { models: { codex: { complex: hostile } } } }),
+    ).toThrow("routing.models.codex.complex must be a model");
+    expect(() =>
+      rules({ routing: { models: { codex: { complex: hostile } } } }),
+    ).toThrow("(got object)");
+  });
+
   it("keeps a declared outside model available to route derivation", () => {
     const config = {
       routing: {

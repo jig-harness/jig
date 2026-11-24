@@ -324,6 +324,7 @@ function codexPass(
 function registeredPass(
   argv: readonly string[],
   flag: string | undefined,
+  resolve: (value: string, where: string, runtime?: string) => PassModel,
 ): EffectivePass {
   const other = harnessOfProgram(argv[0]);
   if (flag === undefined || other === null)
@@ -332,12 +333,7 @@ function registeredPass(
       model: null,
       source: `chosen by the pass command (${basename(argv[0] ?? "")})`,
     };
-  const chosen = resolveModelValue(
-    flag,
-    "--pass-model",
-    readOptionalOverlay,
-    other.runtime,
-  );
+  const chosen = resolve(flag, "--pass-model", other.runtime);
   return {
     argv: other.withModel(
       withoutModel(argv),
@@ -376,7 +372,7 @@ export function effectivePass(
     const chosen = resolve(flag, "--pass-model", CODEX_RUNTIME);
     return { argv: withCodexModel(argv, chosen.model), ...chosen };
   }
-  if (vendor !== "claude") return registeredPass(argv, flag);
+  if (vendor !== "claude") return registeredPass(argv, flag, resolve);
   const own = modelOption(argv);
   if (flag !== undefined) {
     const chosen = resolve(flag, "--pass-model");
@@ -387,7 +383,7 @@ export function effectivePass(
       source:
         replaced === null
           ? chosen.source
-          : `${chosen.source}, replacing the pass command's --model ${replaced.value}`,
+          : `${chosen.source}, replacing the pass command's --model ${formatDisplayValue(replaced.value)}`,
     };
   }
   if (own !== null) return ownModel(argv, own.value, configured);

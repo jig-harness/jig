@@ -197,6 +197,16 @@ describe("effectivePass", () => {
     );
   });
 
+  it("escapes a replaced model before including it in the driver log source", () => {
+    const pass = effectivePass(
+      ["claude", "--model", "old\u202Emodel", "-p", "x"],
+      "opus",
+      configured,
+    );
+    expect(pass.source).toContain('"old\\u202emodel"');
+    expect(pass.source).not.toContain("old\u202Emodel");
+  });
+
   it("knows Claude Code's CLI by its program name, a full path or a Windows launcher", () => {
     for (const program of ["/home/me/.local/bin/claude", "claude.exe"])
       expect(
@@ -390,6 +400,27 @@ describe("withoutModel for a registered harness's compact short flag", () => {
           "-p",
           "x",
         ]);
+    } finally {
+      off();
+    }
+  });
+
+  it("passes the caller's resolver to a registered harness", () => {
+    const off = registerHarness({ ...fakeHarness, modelFlags: ["-M"] });
+    try {
+      const resolve = (value: string, where: string, runtime?: string) => ({
+        model: `${runtime}-${value}`,
+        source: where,
+      });
+      expect(
+        effectivePass(
+          [fakeHarness.program, "run", "x"],
+          "complex",
+          configured,
+          undefined,
+          resolve,
+        ),
+      ).toMatchObject({ model: `${fakeHarness.runtime}-complex` });
     } finally {
       off();
     }
