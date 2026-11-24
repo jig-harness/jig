@@ -98,23 +98,33 @@ test("the trusted automation adoption opt-out is accepted and reported", () => {
   expect(adopt?.message).toContain(
     "dispatch.adopt.trusted_automation is false",
   );
-  expect(adopt?.message).toContain("install inputs");
+  expect(adopt?.message).toContain("no automatic start is left");
+  expect(adopt?.message).toContain("a pickup handoff cannot start it");
+  expect(adopt?.message).toContain("conflict repair all wait for a person");
+  expect(adopt?.message).toContain("does not pin the reviewed head");
+  expect(adopt?.message).toContain(
+    "never a converged head that moved, so start that drive directly",
+  );
 });
 
-test("the opt-out with adoption and labels off says to start the drive directly, and refusal hides the guidance", () => {
+test("the opt-out with labels off has no label route, and refusal hides the guidance", () => {
   const direct = findings(
     'dispatch:\n  adopt: { enabled: false, trusted_automation: false }\npull_requests:\n  trusted_automation: ["renovate[bot]"]\n',
   ).find((f) => f.id === "derivation:pull_requests.trusted_automation:adopt");
   expect(direct?.message).toContain("start the drive directly");
-  expect(direct?.message).not.toContain("labels it drive");
+  expect(direct?.message).toContain("there is no label route");
+  expect(direct?.message).not.toContain("does not pin");
   const plain = findings(
     'dispatch:\n  adopt: { enabled: false }\npull_requests:\n  trusted_automation: ["renovate[bot]"]\n',
   ).find((f) => f.id === "derivation:pull_requests.trusted_automation:adopt");
   expect(plain?.message).toContain("pickup");
   const refused = findings(
-    'dispatch:\n  adopt: { enabled: true, trusted_automation: 3 }\npull_requests:\n  trusted_automation: ["renovate[bot]"]\n',
-  ).map((f) => f.id);
-  expect(refused).not.toContain(
+    'dispatch:\n  labels: { enabled: true }\n  adopt: { enabled: true, trusted_automation: 3 }\npull_requests:\n  trusted_automation: ["renovate[bot]"]\n',
+  );
+  expect(refused.map((f) => f.id)).not.toContain(
     "derivation:pull_requests.trusted_automation:adopt",
+  );
+  expect(JSON.stringify(refused)).toContain(
+    "dispatch.adopt.trusted_automation",
   );
 });
