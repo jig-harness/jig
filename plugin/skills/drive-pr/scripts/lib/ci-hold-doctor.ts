@@ -348,7 +348,7 @@ async function readReview(
   e.review =
     report.state === "CONVERGED" && report.apiHead === head
       ? "converged"
-      : ["INDETERMINATE", "UNSUPPORTED_CLI"].includes(report.state)
+      : report.state === "INDETERMINATE"
         ? "unknown"
         : "pending";
   if (e.review !== "converged")
