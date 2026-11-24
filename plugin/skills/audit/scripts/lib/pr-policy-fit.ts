@@ -103,7 +103,7 @@ export function trustedFit(config: Config): Finding[] {
       severity: "info",
       message: `dispatch.adopt.trusted_automation is false: no automatic start is left for a listed bot's pull request. Its first drive, a restart after a head that moved and a conflict repair all wait for a person, and a pickup handoff cannot start it. Before switching, pause dispatch on every host that dispatches this repository, let active ticks finish, stop any drive already running on a listed bot's pull request and retire every outstanding drive and rearm request${
         labels.enabled ? "" : " (labels are off, so no label starts a drive)"
-      }. Review the install inputs and every command a start or restart would run, then, for each listed bot's pull request you decide should be driven, start its first drive directly, and restart each drive whose stop allows a restart (not one a person stopped, one converged on its verified head that is still mergeable, or a superseded driver) directly; resume dispatch once the policy is in effect on every host. The full procedure, which names the trusted baseline and the restart rules, is in ${TRUSTED_AUTOMATION_PROCEDURE}`,
+      }. Review the install inputs and every command a start or restart would run, then, for each listed bot's pull request you decide should be driven, start its first drive directly, and restart each stopped drive directly where the procedure's restart rules call for one (they say which stops need none and how a head moved by a clean base merge is refreshed); resume dispatch once the policy is in effect on every host. The full procedure, which names the trusted baseline and the restart rules, is in ${TRUSTED_AUTOMATION_PROCEDURE}`,
     });
   else if (!adopt.enabled)
     findings.push({

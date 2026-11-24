@@ -445,13 +445,13 @@ any checkout or merge, review the Git hooks they run, the merge drivers and
 the checkout and clean filters (smudge, process and clean) the host configures and the
 branch's path attributes can select; or use an isolated checkout that carries
 no unreviewed executable Git configuration. Then prepare and review the actual
-merge in a scratch checkout of the bot's head and the base tip before the drive
-starts. The drive performs its own merge in its own worktree, so confirm that
-worktree resolves the same effective merge drivers, filters and hooks as the
-scratch checkout and review the actual effective install inputs in that worktree
-after its merge and before the install (a filter that depends on local state can
-produce different bytes under identical commits and configuration), or prepare
-and review the merge in the drive's worktree itself. The drive installs right after its own clean
+merge before the drive starts, in the drive's own worktree: the drive merges
+there and installs right after, so a filter that depends on local state can
+produce different bytes under identical commits and configuration. Use a
+scratch checkout instead only when you can establish that it resolves the same
+effective merge drivers, filters and hooks as the drive's worktree and
+produces the same effective install inputs; otherwise prepare the worktree
+first and start the drive in it. The drive installs right after its own clean
 merge and cannot wait for a recheck, so keep the base branch from moving
 between that review and the install, and when the head or base has moved since
 the review, repeat it before starting the drive. Recheck when the head, base or resolution changes the
@@ -493,13 +493,27 @@ decision; for a usage-limit stop, follow "Picking up a stopped drive" in the dri
 bills a known, different account may pick the drive up now, while the same
 account or an unresolvable one waits for the reset unless a person knows the
 window reopened and passes `--window-reopened`; grant a spent
-round budget). A drive a person stopped stays stopped, a drive converged on
-a head that is still its verified head and mergeable needs no restart (a base
-that merely advanced does not stale it; a head the dispatcher proves moved only by a clean base
-merge does not count as moved, though dispatch can withhold a re-drive while verification of the new head is pending; the convergence carries forward only once the refresh succeeds, which also needs an applicable review witness and passing checks on the new head, and a refresh that proves the merge but falls back leaves the `stale` classification in place, which under the opt-out waits for a manual restart, so read the refreshed ledger to see whether the convergence still holds; any other moved head, or a new conflict, is a
-new stop to restart or a ledger recovery, when the ledger reading shows the
-prior convergence no longer settles the pull request), and a drive that stopped
-`TAKEN_OVER` stays stopped: its successor's ledger says whether it can restart.
+round budget). What needs a restart depends on how the drive ended:
+
+- A drive a person stopped stays stopped.
+- A drive that stopped `TAKEN_OVER` stays stopped: its successor's ledger says
+  whether it can restart.
+- A drive converged on a head that is still its verified head and mergeable
+  needs no restart. A base that merely advanced does not stale it.
+- A head the dispatcher proves moved only by a clean base merge is refreshed,
+  not restarted, once the refresh records the convergence: it needs the merge
+  proof, an applicable review witness, passing checks on the new head and a
+  standing announcement on the previously verified head. Until then the head is
+  stale, and dispatch can withhold a re-drive while verification of the new head
+  is pending.
+- When a refresh falls back, check the canonical ledger before restarting: a
+  fallback can follow a ledger that already carries the new verified head, in
+  which case the convergence holds. When the ledger still shows the old head,
+  the pull request stays `stale`, which under the opt-out waits for a manual
+  restart.
+- Any other moved head, or a new conflict, is a new stop to restart, or a
+  ledger recovery when the ledger reading shows the prior convergence no
+  longer settles the pull request.
 
 An entry
 without `update_types` skips manifest classification, so such an edit can
