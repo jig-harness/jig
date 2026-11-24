@@ -29,6 +29,7 @@ import { run } from "../../shared/proc.ts";
 import { currentMs, isoFromMs } from "../../shared/time.ts";
 import { stateRoot } from "../receipts.ts";
 import { OMITTED_LINE_TEXT } from "./provider-held.ts";
+import { TRUNCATED_LINE } from "./runtime/process-spool.ts";
 import {
   recordAccountSignInSuccess,
   recordAccountStartupProblem,
@@ -50,8 +51,26 @@ const LONGEST_VALUE = 4096;
  * be recognised.
  */
 function learnPrinted(stdout: string): void {
-  for (const part of [stdout.trim(), ...stdout.split(/\r?\n/)])
-    rememberSecret(part.trim());
+  for (const part of [stdout.trim(), ...stdout.split(/\r?\n/)]) {
+    const line = part.trim();
+    if (!collidesWithMarker(line)) rememberSecret(line);
+  }
+}
+
+/** The replacement texts the sinks emit, in lowercase and matched exactly. */
+const MARKERS = ["<redacted>", "[redacted]", "[launch token]", TRUNCATED_LINE];
+
+/**
+ * Whether `value` is part of a sink's replacement text, or contains one:
+ * remembering it would make masking treat the marker's own text as secret.
+ * Both directions are compared case-sensitively, as the sinks match.
+ */
+function collidesWithMarker(value: string): boolean {
+  return (
+    OMITTED_LINE_TEXT.includes(value) ||
+    value.includes(OMITTED_LINE_TEXT) ||
+    MARKERS.some((marker) => marker.includes(value) || value.includes(marker))
+  );
 }
 
 /**
@@ -110,25 +129,14 @@ export async function resolveCredential(
   const value = done.stdout.replace(/\r?\n$/, "");
   if (value === "")
     return failed("unauthorized", "the credential command printed no value");
-  // A value that is only part of a sink's replacement text is refused before it is remembered: remembering it would make masking treat the marker's own text as secret. The sinks emit these markers in lowercase and match exactly.
-  if (
-    OMITTED_LINE_TEXT.includes(value) ||
-    ["<redacted>", "[redacted]", "[launch token]"].some((marker) =>
-      marker.includes(value),
-    )
-  )
+  // A value that is part of, or contains, a sink's replacement text is refused before it is remembered. The sinks emit these markers in lowercase and match exactly.
+  if (collidesWithMarker(value))
     return failed(
       "unauthorized",
       "the credential command printed a value that contains a redaction marker",
     );
   // A refused value is still remembered, so nothing this process records later can carry it.
   rememberSecret(value);
-  // A value that contains a sink's replacement text could not be told apart from redacted output.
-  if (/<redacted>|\[redacted\]|\[launch token\]/i.test(value))
-    return failed(
-      "unauthorized",
-      "the credential command printed a value that contains a redaction marker",
-    );
   // The output was decoded as UTF-8 before it reached here: a malformed byte became U+FFFD, so the value is not what the command printed.
   if (value.includes("\uFFFD"))
     return failed(

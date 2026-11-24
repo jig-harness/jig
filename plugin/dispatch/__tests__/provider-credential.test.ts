@@ -15,6 +15,7 @@ import {
   type CredentialSettings,
   providerIdentity,
 } from "../lib/provider-account.ts";
+import { maskCredentials } from "../../shared/credentials.ts";
 import { resolveCredential } from "../lib/provider-credential.ts";
 import { existingStateDb } from "../lib/state.ts";
 import { accountWall } from "../lib/walls.ts";
@@ -153,7 +154,13 @@ describe("resolving a credential reference", () => {
   });
 
   it("refuses a part of a redaction marker and keeps a nearby value", async () => {
-    for (const printed of ["redacted", "<redacted", "launch token"]) {
+    for (const printed of [
+      "redacted",
+      "<redacted",
+      "launch token",
+      "oversized line",
+      "[redacted: oversized line dropped]",
+    ]) {
       const value = await resolveCredential(
         command(`process.stdout.write(${JSON.stringify(printed)})`),
         "ref",
@@ -170,6 +177,28 @@ describe("resolving a credential reference", () => {
       process.env,
     );
     expect(usable.ok).toBe(true);
+  });
+
+  it("does not remember a refused marker, from a value or from failed output", async () => {
+    await resolveCredential(
+      command("process.stdout.write('redacted')"),
+      "ref",
+      process.env,
+    );
+    await resolveCredential(
+      command(
+        "process.stdout.write('launch token\\n<redacted>'); process.exit(1)",
+      ),
+      "ref",
+      process.env,
+    );
+    const masked = maskCredentials(
+      "a <redacted> b [launch token] c redacted [redacted: oversized line dropped]",
+      "<redacted>",
+    );
+    expect(masked).toContain("[launch token]");
+    expect(masked).toContain("[redacted: oversized line dropped]");
+    expect(masked).toContain("<redacted>");
   });
 
   it("is unreachable when the command does not answer in time", async () => {
