@@ -29,6 +29,13 @@ test("code fences preserve backticks in source text", () => {
 
 test("code fences handle long backtick runs without spreading their matches", () => {
   expect(code("`".repeat(150_000))).toHaveLength(450_004);
+  expect(code("`a".repeat(150_000))).toBe(`\`\` ${"`a".repeat(150_000)} \`\``);
+});
+
+test("literal Markdown does not repeat overlapping autolinks", () => {
+  expect(lit("https://example.org/a@b.co;c@d.co/path")).toBe(
+    "`https://example.org/a@b.co;c@d.co/path`",
+  );
 });
 
 test("literal Markdown scans non-email prose in linear time", () => {

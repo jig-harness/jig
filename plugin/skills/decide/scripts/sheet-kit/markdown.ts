@@ -68,18 +68,17 @@ const bareAutolinks = (value: string): Autolink[] => {
     })),
     ...emailAutolinks(value),
   ];
-  return found
-    .sort(
-      (left, right) =>
-        left.index - right.index || right.value.length - left.value.length,
-    )
-    .filter((match, index, matches) => {
-      const previous = matches[index - 1];
-      return (
-        previous === undefined ||
-        match.index >= previous.index + previous.value.length
-      );
-    });
+  const nonOverlapping: Autolink[] = [];
+  let acceptedEnd = 0;
+  for (const match of found.sort(
+    (left, right) =>
+      left.index - right.index || right.value.length - left.value.length,
+  )) {
+    if (match.index < acceptedEnd) continue;
+    nonOverlapping.push(match);
+    acceptedEnd = match.index + match.value.length;
+  }
+  return nonOverlapping;
 };
 
 const trimAutolinkPunctuation = (value: string) => {
