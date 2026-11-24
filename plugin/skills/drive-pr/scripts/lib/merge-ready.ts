@@ -17,7 +17,9 @@
  * else a person's approving review of that head. A clean base merge can
  * carry an earlier app check once the caller independently confirms both the
  * Git history and the app check. A pull request from outside
- * the repository needs a person's approval whatever the app says.
+ * the repository needs a person's approval whatever the app says, unless its
+ * author is trusted automation and every rule of `trusted-automation.ts`
+ * holds.
  *
  * The rows of the placement table are first match, and every blocker other
  * than an approval comes before the approval rows, so a pull request enters
@@ -27,7 +29,15 @@
  */
 
 /** The lanes of Ready to merge, in the order of the work they ask. */
+import type { Outcome } from "../../../../shared/outcome.ts";
 import { parseMs } from "../../../../shared/time.ts";
+import {
+  type AutomationFacts,
+  type TrustedList,
+  type TrustVerdict,
+  trustedEntryFor,
+  trustVerdict,
+} from "./trusted-automation.ts";
 
 export const LANES = ["merge-now", "approve-first", "update-next"] as const;
 export type Lane = (typeof LANES)[number];
@@ -112,6 +122,12 @@ export interface ForgeFacts {
   reviewDecision: string | null;
   /** Its author's association with the repository. */
   authorAssociation: string;
+  /** Its author's login, a bot's as `<name>[bot]`; absent when not read. */
+  author?: string;
+  /** Whether its head is in a fork; `null` or absent when not read. */
+  crossRepository?: boolean | null;
+  /** The commit that branch pointed at when the forge computed the pull request's diff; absent when not read. */
+  baseOid?: string;
   labels: string[];
   /** A truncated label connection cannot prove a pull request is outside the dispatch scope. */
   labelsPartial?: boolean;
@@ -140,6 +156,8 @@ export interface MergeFacts extends ForgeFacts {
   reviewCarriedUnavailable?: true;
   /** A person's hold label stands the dispatcher down from it. */
   held: boolean;
+  /** A trusted bot's commits and files at the head, or why they did not read; absent when not read. */
+  automation?: Outcome<AutomationFacts, "unreadable">;
 }
 
 /** The repository's rules the predicate applies. */
@@ -150,6 +168,8 @@ export interface ReadyRules {
   reviewerCheck: RegExp;
   /** The CI hold label, under which required checks fail on purpose; `null` where none is configured. */
   ciHoldLabel: string | null;
+  /** The bots whose pull requests count as the repository's own (`pull_requests.trusted_automation`), read from the default branch; absent for none. */
+  trustedAutomation?: TrustedList;
 }
 
 /** One Ready condition, met or not, with the fact behind it. */
@@ -319,6 +339,11 @@ function witness(
   };
 }
 
+/** Whether condition 8 already holds without trusted automation: an own author association, or a qualifying approval. */
+export function authorSatisfied(facts: ForgeFacts): boolean {
+  return OWN.has(facts.authorAssociation) || approvedHere(facts);
+}
+
 /** What every row and condition reads of one pull request. */
 interface Read {
   facts: MergeFacts;
@@ -329,6 +354,8 @@ interface Read {
   /** The forge's merge state, `null` where a merge queue decides instead. */
   state: string | null;
   own: boolean;
+  /** A trusted bot's verdict; `null` when the author is not a listed bot. */
+  trusted: TrustVerdict | null;
   approved: boolean;
 }
 
@@ -340,7 +367,10 @@ function protection(r: Read): boolean | null {
 
 /** Who wrote it, and who approved it. */
 function authorFact(r: Read): string {
-  if (r.own) return `author is ${r.facts.authorAssociation}`;
+  if (r.trusted?.met === true) return r.trusted.fact;
+  if (OWN.has(r.facts.authorAssociation))
+    return `author is ${r.facts.authorAssociation}`;
+  if (r.trusted !== null && !r.approved) return r.trusted.fact;
   return r.approved
     ? "outside author, approved by a person"
     : `outside author (${r.facts.authorAssociation})`;
@@ -627,10 +657,33 @@ function mergeNow(
   return ["ready", person("merge"), says, "merge-now", built];
 }
 
+/**
+ * A trusted bot's verdict for the pull request: `null` when its author is
+ * a person, or a bot the list does not name; a verdict that is not met
+ * when the list itself does not read.
+ */
+function trustOf(facts: MergeFacts, rules: ReadyRules): TrustVerdict | null {
+  const list = rules.trustedAutomation;
+  if (list === undefined) return null;
+  if (!list.ok)
+    return facts.author?.endsWith("[bot]") === true
+      ? { met: false, fact: list.failure.reason }
+      : null;
+  const entry = trustedEntryFor(facts.author, list.value);
+  if (entry === null) return null;
+  if (rules.reviewerApp === null)
+    return {
+      met: false,
+      fact: `${entry.login} is trusted automation, but no reviewer app is named, so a person's approval is the review witness and its commits and files were not read`,
+    };
+  return trustVerdict(facts, entry);
+}
+
 /** What every row and condition reads, worked out once. */
 function readOf(facts: MergeFacts, rules: ReadyRules): Read {
   const checks = latestChecks(facts, rules);
   const runs = reviewerRuns(facts, rules);
+  const trusted = trustOf(facts, rules);
   return {
     facts,
     seen: witness(facts, rules, runs),
@@ -647,7 +700,8 @@ function readOf(facts: MergeFacts, rules: ReadyRules): Read {
         (runs === null || !isReviewerCheck(c, rules) || runs.includes(c)),
     ),
     state: facts.mergeQueue ? null : facts.mergeState,
-    own: OWN.has(facts.authorAssociation),
+    own: OWN.has(facts.authorAssociation) || trusted?.met === true,
+    trusted,
     approved: approvedHere(facts),
   };
 }

@@ -11,6 +11,10 @@
 import { confirmCarriedReview } from "../../skills/drive-pr/scripts/lib/carried-review.ts";
 import { readMergeFacts } from "../../skills/drive-pr/scripts/lib/merge-facts.ts";
 import {
+  automationFor,
+  needsAutomation,
+} from "../../skills/drive-pr/scripts/lib/trusted-automation-read.ts";
+import {
   type Act,
   type ForgeFacts,
   readiness,
@@ -126,6 +130,23 @@ function dispatchLabels(values: Record<string, unknown>): {
   };
 }
 
+/** A trusted bot's commits and files at its head, within the answer's deadline; `undefined` when it needs none. */
+async function trustedRead(
+  ctx: AskContext,
+  facts: ForgeFacts,
+  rules: ReadyRules,
+): Promise<Awaited<ReturnType<typeof automationFor>>> {
+  if (!needsAutomation(facts, rules)) return undefined;
+  ctx.reading.forgeCall();
+  const bounded = await within(ctx.reading.sourceSec(), () =>
+    automationFor(ctx.address.repo, facts, rules, ctx.reading.sourceSec()),
+  );
+  return (
+    bounded?.value ??
+    failed("unreadable", "the forge did not give its commits and files in time")
+  );
+}
+
 /** Whether the ledger stopped converged on an open pull request. */
 function convergedOpen(ledger: Ledger | null, doc: PullDoc): ledger is Ledger {
   return (
@@ -150,6 +171,7 @@ export async function convergedWait(
   if (!read.ok)
     return { waiting: `the merge facts did not read: ${read.failure.reason}` };
   const { prefix, onlyLabeled } = dispatchLabels(read.value.values);
+  const automation = await trustedRead(ctx, read.value.facts, read.value.rules);
   const answer = readiness(
     {
       ...read.value.facts,
@@ -166,6 +188,7 @@ export async function convergedWait(
       )),
       held:
         prefix !== null && read.value.facts.labels.includes(`${prefix}hold`),
+      ...(automation === undefined ? {} : { automation }),
     },
     read.value.rules,
   );
