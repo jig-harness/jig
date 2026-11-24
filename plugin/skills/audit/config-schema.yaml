@@ -122,7 +122,8 @@ strict:
 # not set: a higher layer's `null` there would otherwise put a lower layer's
 # value back to its default unnoticed. At other declared field and section
 # paths a repository may set, the schema reads a `null` as not set (a field only
-# the user file may set is an error whatever its value); nested map types and a skill's
+# the user file may set is an error in a repository's file whatever its value,
+# `null` included); nested map types and a skill's
 # own validators can still reject it (a work-type entry must be a mapping, and
 # routing's validation refuses a `null` for `routing.stages.<stage>.models`
 # separately, and the loader refuses one that survives the merge).
