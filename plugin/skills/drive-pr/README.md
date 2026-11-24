@@ -177,7 +177,9 @@ certifies convergence from one posting reviewer that provides all of these:
 A reviewer that skips a push may say so in that comment, in a notice marked
 with `review.skip_notice_marker` that names the skipped commit. If the
 reviewer has never stamped a commit, Jig can accept the skip when
-`review.skip_excluded_paths` covers the entire diff. Otherwise a skip
+`review.skip_excluded_paths` in the reviewed policy covers the entire diff.
+For a stacked pull request, that policy is the integration-bound policy, not
+the unreviewed layer immediately below it. Otherwise a skip
 notice for the current head without a stamp stops with `REVIEW_SKIPPED`.
 With no current-head notice or stamp, the drive continues awaiting review.
 

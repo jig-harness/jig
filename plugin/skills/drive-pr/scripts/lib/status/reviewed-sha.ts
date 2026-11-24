@@ -252,8 +252,7 @@ async function changedPathsOutsideExcluded(
     return "git returned a malformed NUL-delimited path list";
   let remaining = 0;
   for (const path of paths) {
-    if (path === "" || path.includes("\uFFFD"))
-      return "git did not return a valid UTF-8 path";
+    if (path === "") return "git returned an empty path";
     if (!excluded.has(path)) remaining += 1;
   }
   return remaining;
@@ -263,12 +262,18 @@ async function changedPathsOutsideExcluded(
 function skipExcludedPathsAt(
   baseHead: string,
 ): { paths: string[] } | { reason: string } {
+  // Review excludes have their own schema. Do not make an otherwise readable
+  // review policy depend on unrelated autonomy fields in that same config.
+  // A stack's bound is the reviewed policy that may narrow this proof.
+  const bound = (process.env.DRIVE_PR_POLICY_BOUND ?? "").trim();
+  const commit = bound === "" ? baseHead : bound;
   const snapshot = readSnapshotAt(
-    baseHead,
-    "pull request base",
-    "base",
+    commit,
+    bound === "" ? "pull request base" : "DRIVE_PR_POLICY_BOUND",
+    bound === "" ? "base" : "integration",
     process.env,
     process.env.DRIVE_PR_WORKTREE || process.cwd(),
+    false,
   );
   if (snapshot.from === "unreadable")
     return {
@@ -310,8 +315,7 @@ function skipExcludedPathsAt(
 }
 
 function isExactRepositoryPath(path: string): boolean {
-  if (path === "" || path.includes("\0") || path.includes("\uFFFD"))
-    return false;
+  if (path === "" || path.includes("\0")) return false;
   if (isAbsolute(path) || path.startsWith("/")) return false;
   return path
     .split("/")

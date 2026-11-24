@@ -519,6 +519,8 @@ fields:
   review.skip_excluded_paths:
     type: list
     items: string
+    distinct: true
+    repository_only: true
     read_by: [drive-pr]
     since: next
   review.code_scanning_severities:

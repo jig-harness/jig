@@ -43,7 +43,11 @@ function stickyBody(
     ((raw.user as Record<string, unknown> | null)?.login ?? "") || "",
   );
   const body = String(raw.body ?? "");
-  return reviewerLogin(login) && body.includes(summaryMarker) ? body : null;
+  // Protocol markers are structural: a quoted marker in an auxiliary comment
+  // cannot replace the reviewer's sticky witness.
+  return reviewerLogin(login) && body.trimStart().startsWith(summaryMarker)
+    ? body
+    : null;
 }
 
 /** The review stamp and its companion markers from the newest qualifying sticky. */
