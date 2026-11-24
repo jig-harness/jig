@@ -757,8 +757,9 @@ implementation. Skip this check for issues about the repository's own code.
    first resolve the delegated agent's effective definition, then validate the
    model it will actually receive. A pinned definition keeps its pin. If an
    open field cannot accept the selected exact identifier, do not silently
-   substitute an alias: leave that field unpinned and report the selected
-   identifier as unapplied in the delegation and fix-loop status. Before forwarding, resolve
+   substitute an alias or omit the field: refuse the dispatched pickup before
+   the claim and report that the delegated runtime cannot accept the selected
+   identifier. Before forwarding, resolve
    the delegated agent's definition: a model or effort it pins is kept, and
    only the fields it leaves open are forwarded; when no single effective
    definition can be found, or a scope that might hold one cannot be read,

@@ -118,6 +118,9 @@ describe("resolveModelValue", () => {
     expect(() =>
       resolveModelValue("--model sonnet", "--pass-model", noRouting),
     ).toThrow(PassModelUsageError);
+    expect(() =>
+      resolveModelValue("sonnet\u001b", "--pass-model", noRouting),
+    ).toThrow(PassModelUsageError);
     expect(() => resolveModelValue("", "--pass-model", noRouting)).toThrow(
       PassModelUsageError,
     );

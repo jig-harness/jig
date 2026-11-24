@@ -1,5 +1,6 @@
 import { shellQuote } from "../../../../shared/cli.ts";
 import { definedFields } from "../../../../shared/defined-fields.ts";
+import { MODEL_TOKEN_PATTERN } from "../../../do-item/scripts/lib/routing-fields.ts";
 /**
  * The consumer repository's drive-loop values, read from its Jig
  * configuration (every layer, `.config/jig.yaml` among them) through the
@@ -432,7 +433,7 @@ export const DEFAULT_PASS_MODEL = "sonnet";
  * dash (a model id, a Claude Code alias such as `sonnet`, or a routing tier).
  */
 /** Keep pass-command operands compatible with routing's model-token grammar. */
-export const PASS_MODEL_PATTERN = /^(?!-)[^\s,;=\0]+$/;
+export const PASS_MODEL_PATTERN = MODEL_TOKEN_PATTERN;
 
 /** `drive.pass_model`: the model, alias or routing tier each pass runs on; `undefined` when not configured. */
 export function passModelSetting(): string | undefined {

@@ -958,8 +958,8 @@ model.
 
 - **Naming a model.** `routing.models.<runtime>.<tier>` and
   `routing.stages.<stage>.models.<runtime>.<tier>` take any model the selected
-  launch can pass to its runtime, one word with no whitespace, comma, semicolon
-  or equals sign (the same
+  launch can pass to its runtime, one word with no control characters,
+  whitespace, comma, semicolon or equals sign and not beginning with a dash (the same
   holds for a `model_tiers` key). A declaration key, unlike a model value, may
   not be `__proto__`: the shared loader rejects that mapping key before routing
   reads it. For a runtime with a list (`claude-code`, `codex`) a name
@@ -969,11 +969,13 @@ model.
   that key. A runtime with no list accepts every name as written, as before,
   and the checks below apply to a name once its tier is declared. For a
   runtime that takes the alias itself (`claude-code`), a cataloged release ID
-  (the pinned spelling of a known family) is still refused as a route even
-  when `model_tiers` declares it, since it would freeze the pin: use the
-  family alias. Codex also has a list of aliases but its CLI accepts the release
-  ID the family names, so its cataloged IDs are accepted as written. The same
-  holds in both tables. A run's environment variable segment allows only letters,
+  (the pinned spelling of a known family) is accepted for its compatible CLI
+  launch when `model_tiers` declares it. A delegated Agent-tool invocation is
+  stricter: its open `model` field accepts only a family alias, so an exact
+  identifier is refused before delegation rather than silently falling back.
+  Codex also has a list of aliases but its CLI accepts the release ID the family
+  names, so its cataloged IDs are accepted as written. The same holds in both
+  tables. A run's environment variable segment allows only letters,
   digits and single underscores, and is lowercased, so a model ID with a dot,
   a slash, a capital letter or a double underscore, or the runtime
   `claude-code`, cannot be a leaf override; set the parent key to a
