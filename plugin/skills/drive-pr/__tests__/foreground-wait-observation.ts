@@ -41,15 +41,21 @@ export async function capturedCommand(marker: string, pids: number[]) {
   return captured;
 }
 
-export async function capturedRunner(runner: number, pids: number[]) {
+export async function capturedRunner(
+  runner: number,
+  pids: number[],
+  observed?: (targets: { pid: number; start: string }[]) => void,
+) {
   const deadline = Date.now() + 20_000;
   let targets = await captureProcessTree(runner);
+  if (targets !== null) observed?.(targets);
   while (
     !pids.every((pid) => targets?.some((target) => target.pid === pid)) &&
     Date.now() < deadline
   ) {
     await sleepMs(20);
     targets = await captureProcessTree(runner);
+    if (targets !== null) observed?.(targets);
   }
   for (const pid of pids)
     expect(targets?.some((target) => target.pid === pid)).toBe(true);
