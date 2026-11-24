@@ -837,9 +837,11 @@ model.
   a leaf variable leaves the file layers' other cells in place, but a variable
   that sets a parent key to a non-mapping (`JIG__ROUTING__MODELS=null`) replaces
   everything below it, and the loader refuses a `null` only when it is the value
-  that survives the merge, at `routing.model_tiers`, `routing.stages` or a
-  stage's `models` map (`routing.models` accepts it and restores the default
-  rows): a higher layer's mapping at the same path replaces it and the lower
+  that survives the merge. Those three paths, `routing.model_tiers`,
+  `routing.stages` and a stage's `models` map, have dedicated null messages
+  (`routing.models` accepts a null and restores the default rows); a null
+  deeper down, such as a stage, a runtime's row or a tier's cell, fails the
+  mapping or model-token check that field requires: a higher layer's mapping at the same path replaces it and the lower
   layer's cells with it. The audit's `null_refused` check reads the selected
   repository file on its own, so it can still flag that file's `null` where
   the loader accepts it; a `null` only in the host file is outside that
