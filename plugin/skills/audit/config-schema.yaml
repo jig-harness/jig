@@ -646,7 +646,7 @@ fields:
       optional: [paths, update_types, signed, committers]
     repository_only: true
     read_by: [drive-pr, dispatch]
-    since: next
+    since: 0.308.0
 
   drive.validation_plan_command:
     type: command
