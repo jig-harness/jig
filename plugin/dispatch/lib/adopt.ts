@@ -148,8 +148,11 @@ export function adoptionNote(
   )
     return "; dispatch.adopt names no author and the dispatcher's forge login does not read, so it adopts none";
   const adopted = drives.filter((d) => typeof d.evidence.adopted === "string");
+  const trustedSet = new Set(adoption.trusted);
   const who = [
-    ...adoption.authors,
+    ...(adoption.excludeTrusted === true
+      ? adoption.authors.filter((a) => !trustedSet.has(normalLogin(a)))
+      : adoption.authors),
     ...adoption.trusted.map((login) =>
       adoption.excludeTrusted === true
         ? `${login} (trusted automation, manual drive)`
