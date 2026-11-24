@@ -9,7 +9,10 @@
  */
 import type { ParkedItem } from "../state/park-frame.ts";
 import type { DriveState } from "../state/schema.ts";
-import { diagnosisDetail, diagnosedParkKey } from "../state/ci-actions.ts";
+import {
+  diagnosisDetail,
+  latestDiagnosedParkKey,
+} from "../state/ci-actions.ts";
 import { lastStopEvent, stopInstant } from "../state/events.ts";
 import {
   DRIVE_EXIT,
@@ -29,16 +32,12 @@ export function oneLine(text: string): string {
 }
 
 /**
- * The parked item a park's stop prints: the one the diagnosis of the head the
- * drive stands on handed to a person, else the first. A diagnosis of another
- * head never selects it.
+ * The parked item a park's stop prints: the one the latest CI diagnosis
+ * handed to a person while it is still parked, else the first.
  */
 export function leadPark(state: DriveState | null): ParkedItem | undefined {
   const parked = state?.parked ?? [];
-  const key = diagnosedParkKey(
-    state?.ciActions ?? [],
-    state?.lastCountedHead ?? "",
-  );
+  const key = latestDiagnosedParkKey(state?.ciActions ?? []);
   return parked.find((p) => p.key === key) ?? parked[0];
 }
 

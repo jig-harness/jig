@@ -67,6 +67,22 @@ export function diagnosedParkKey(
   return splitParkTag(last.detail.slice(diagnosisPrefix(head).length)).key;
 }
 
+/**
+ * The park the latest recorded diagnosis, of whichever head, handed to a
+ * person. The diagnosed head is not the head the drive counted last (a red
+ * head can converge without a counted round), so the park is read from the
+ * receipt itself; a key no longer parked selects nothing.
+ */
+export function latestDiagnosedParkKey(
+  actions: readonly CiAction[],
+): string | null {
+  const last = actions.findLast(
+    (a) => a.action === "repair" && a.detail.startsWith("diagnosis: head "),
+  );
+  if (last === undefined) return null;
+  return splitParkTag(last.detail.replace(/^diagnosis: head \S+: /, "")).key;
+}
+
 /** The latest escalation at `head`: a started, recorded or skipped diagnosis. */
 export function lastDiagnosisAt(
   actions: readonly CiAction[],

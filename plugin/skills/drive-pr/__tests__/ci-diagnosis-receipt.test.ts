@@ -1,4 +1,8 @@
-import { parkTag, splitParkTag } from "../scripts/lib/state/ci-actions.ts";
+import {
+  latestDiagnosedParkKey,
+  parkTag,
+  splitParkTag,
+} from "../scripts/lib/state/ci-actions.ts";
 /**
  * The diagnosing repair pass's receipt, judged without a drive: what
  * `readDiagnosis` accepts from the report file, and what `judgeReceipt` makes
@@ -257,5 +261,25 @@ describe("park tag", () => {
     const key = 'filing "with" quotes';
     expect(splitParkTag(`${parkTag(key)}rest`)).toEqual({ key, text: "rest" });
     expect(splitParkTag("rest")).toEqual({ key: null, text: "rest" });
+  });
+});
+
+describe("latest diagnosed park", () => {
+  const action = (head: string, detail: string) => ({
+    at: STARTED_AT,
+    round: 0,
+    action: "repair" as const,
+    detail: `diagnosis: head ${head}: ${detail}`,
+  });
+  it("names the park of the latest diagnosis whatever head it ran on", () => {
+    const actions = [
+      action("b".repeat(40), "untagged"),
+      action(HEAD, `${parkTag(FILING)}parked`),
+    ];
+    expect(latestDiagnosedParkKey(actions)).toBe(FILING);
+  });
+  it("names none when the latest diagnosis handed back no park", () => {
+    expect(latestDiagnosedParkKey([action(HEAD, "plain")])).toBeNull();
+    expect(latestDiagnosedParkKey([])).toBeNull();
   });
 });
