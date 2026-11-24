@@ -329,7 +329,7 @@ on Linear, `issue-123` for `#123`.
 Where this skill says "ask the user", use `AskUserQuestion` under Claude Code
 where the session can use it; in any interactive harness where it cannot
 (another harness, or a permission mode that denies the tool), ask a
-plain-text numbered question and end the turn; under a [headless runner](#headless-runners), raise it through the
+plain-text numbered question and end the turn (one numbered line per option, the recommended one first and marked as the default where there is one, which the reply `default` takes); under a [headless runner](#headless-runners), raise it through the
 runner. With nobody to answer and no runner, stop and state the question,
 as a [dispatched pass](#dispatched-passes) does.
 Never pick on the user's behalf.
