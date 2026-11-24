@@ -275,14 +275,18 @@ initial handoff in step 9, decisions and issue keys here, and a track
 removal in step 13):
 
 - Record the update in the notebook as owed before sending it, identified by
-  its kind (decision, issue key, track removal), its target (the decision or
-  issue key it concerns) and its revision, so one decision revision that
-  yields several updates yields several owed entries. Clear each only once
+  its kind (decision, issue key, track removal), its target (the one plan
+  entry or track the update changes, never the decision as a whole), the
+  originating decision and its revision, so one decision revision that
+  yields several updates yields several owed entries, each with its own
+  target. Clear each only once
   the keeper confirms that exact update applied, never on the strength of
   a sibling update or the revision alone.
 - Before delegating filing, record a pending filing entry for the task, with
   a unique marker the issue body will carry and the tracker the filing
-  targets, both persisted with the entry. On return, recover the key from the
+  targets, both persisted with the entry. Every retry reuses the recorded
+  tracker and marker; changing the tracker needs an explicit decision from
+  the person before anything is written. On return, recover the key from the
   filing session's durable result or by searching that tracker for the marker
   (search semantics differ between trackers and may match words), then read
   each candidate's body, across open and closed issues, and accept the key
@@ -293,17 +297,23 @@ removal in step 13):
   idempotent.
 - On every return, reconcile the owed updates against the plan the keeper
   holds before repeating or clearing any (a keeper may have applied one
-  whose acknowledgment was lost). Independently verifying the exact update
-  (decision and revision) in the durable plan is sufficient confirmation to
-  clear it.
+  whose acknowledgment was lost). Only the keeper's durable applied record for the full update identity
+  (kind, target, originating decision, revision), or the plan state that
+  record names, confirms it: finding the decision and revision in the plan
+  clears nothing for a sibling update of the same revision.
 - A later revision of a decision supersedes an earlier one. Once the
   replacement is verified applied, clear the older owed update; never replay
   it, since replay would undo the newer choice. Stop retrying the older update
   as soon as it is superseded, and tell the keeper to reject any delivery
   older than the revision it has applied. The keeper retains an applied record
-  (kind, target, revision) with the plan itself, removals included, so a
-  delayed older delivery cannot recreate a removed track; it acknowledges a
-  repeat of an already applied update without applying it again.
+  (kind, target, originating decision, revision) with the plan itself,
+  removals included. Revision order is judged per originating decision and
+  target; a track's recorded removal also names the decision revision it
+  followed, and before any delivery that could recreate that track (a
+  decision update naming it) the keeper checks that removal and rejects a
+  delivery of an older revision, while an unrelated owed update for another
+  target is unaffected. It acknowledges a repeat of an already applied
+  update without applying it again.
 
 ### 11. Pick up the state on every return
 
@@ -327,7 +337,11 @@ prerequisite is only that the pickup has started is released by verified
 evidence of a pickup underway (step 10), or by a verified outcome for the
 matching work showing it ran, where the outcome identifies this pickup
 (not a superseded one for the same issue) and establishes the milestone the
-dependent needs, such as wrapper admission or session start, so an earlier
+dependent needs. The thread read does not expose a launch ID or session
+evidence, so it alone cannot do this when several launches exist for the
+issue: inspect the per-launch record (`plugin/dispatch/lib/launches.ts`,
+which carries the launch ID and session result), and where it is
+unreadable leave the milestone unconfirmed. A milestone is wrapper admission or session start; an earlier
 failure before admission does not release it; work that needs the send itself
 confirmed keeps waiting for the mechanism's terminal answer. Then read the
 state of started work through
