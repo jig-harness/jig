@@ -74,7 +74,7 @@ export function installSnapshotFailureFixture(cwd: string) {
   expect(actual).not.toBeNull();
   writeFakeProgram(
     join(shim, native),
-    `#!/usr/bin/env bun\nconst fs=require("node:fs");if(fs.existsSync(${JSON.stringify(flag)})){fs.writeFileSync(${JSON.stringify(broken)},"");process.exit(1)}if(fs.existsSync(${JSON.stringify(nativeFailure)}))process.exit(1);const result=Bun.spawnSync([${JSON.stringify(actual)},...process.argv.slice(2)], {stdout:"pipe",stderr:"inherit"});process.stdout.write(result.stdout);if(fs.existsSync(${JSON.stringify(broken)})&&result.exitCode===0)fs.writeFileSync(${JSON.stringify(restored)},"");process.exit(result.exitCode);`,
+    `#!/usr/bin/env bun\nconst fs=require("node:fs");if(fs.existsSync(${JSON.stringify(flag)})){fs.writeFileSync(${JSON.stringify(broken)},"");process.exit(1)}if(fs.existsSync(${JSON.stringify(nativeFailure)}))process.exit(1);const recovering=fs.existsSync(${JSON.stringify(broken)});const result=Bun.spawnSync([${JSON.stringify(actual)},...process.argv.slice(2)], {stdout:"pipe",stderr:"inherit"});process.stdout.write(result.stdout);if(recovering&&result.exitCode===0)fs.writeFileSync(${JSON.stringify(restored)},"");process.exit(result.exitCode);`,
   );
   return {
     broken,

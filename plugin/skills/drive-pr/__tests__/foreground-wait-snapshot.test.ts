@@ -11,7 +11,10 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { processTable } from "../../../shared/process-table.ts";
-import { signalIdentityTargets } from "../../../shared/process-tree.ts";
+import {
+  captureProcessTree,
+  signalIdentityTargets,
+} from "../../../shared/process-tree.ts";
 import { byPlatform } from "../../../../lib/test-helpers/windows-skip.ts";
 import {
   awaitObserved,
@@ -70,6 +73,7 @@ describe("foreground-wait snapshot recovery", () => {
         restored,
       } = installSnapshotFailureFixture(cwd);
       let descendant: number | null = null;
+      let runner: number | null = null;
       let cleanupTargets: { pid: number; start: string }[] = [];
       try {
         expectSpawnExit(
@@ -96,7 +100,7 @@ describe("foreground-wait snapshot recovery", () => {
           () => pidOf("cmd.pid") !== null,
         );
         const command = pidOf("cmd.pid") as number;
-        const runner = pidOf("runner.pid") as number;
+        runner = pidOf("runner.pid") as number;
         cleanupTargets = await capturedRunner(runner, [command]);
         await awaitObserved("the descendant announced itself", () =>
           existsSync(join(cwd, "descendant.pid")),
@@ -105,8 +109,8 @@ describe("foreground-wait snapshot recovery", () => {
           readFileSync(join(cwd, "descendant.pid"), "utf8"),
           10,
         );
-        await capturedCommand(captured, [command, descendant]);
         cleanupTargets = await capturedRunner(runner, [command, descendant]);
+        await capturedCommand(captured, [command, descendant]);
         rmSync(restored, { force: true });
         writeFileSync(flag, "");
         writeFileSync(deadlineGate, "");
@@ -147,6 +151,10 @@ describe("foreground-wait snapshot recovery", () => {
       } finally {
         rmSync(flag, { force: true });
         rmSync(nativeFailure, { force: true });
+        if (runner !== null) {
+          const liveTargets = await captureProcessTree(runner);
+          if (liveTargets !== null) cleanupTargets = liveTargets;
+        }
         await signalIdentityTargets(cleanupTargets, "SIGKILL");
       }
     },
