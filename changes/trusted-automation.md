@@ -16,15 +16,21 @@ release: minor
   `update_types`, every dependency edit must be covered by the allowed
   types, and only a `package.json` is classified, by its dependency diff.
   A rename or copy the forge reports for a `package.json` must pass the
-  path allowlist, and its destination's diff must show at least one
-  classifiable change to an existing dependency's version or range, with no
-  edit outside the recognized dependency-line shape, no unclassifiable
-  version change and no dependency added or removed. Only the textual patch
-  is read: file modes are not compared, and the effective value of a
-  duplicate dependency key whose other occurrence lies outside the changed
-  lines cannot be determined, so keep keys unique and review mode changes
-  separately. A layout that nests the root dependency section's opener
-  (such as four-space indentation) withholds the exception. A rename or copy the forge reports to a
+  path allowlist. Every changed `package.json`, those included, must show at
+  least one classifiable change to an existing dependency's version or
+  range, with no edit outside the recognized dependency-line shape, no
+  unclassifiable version change and no dependency added or removed; a
+  formatting-only edit to one manifest withholds the exception for the whole
+  pull request. Only the textual patch is read, so the operator reviews
+  what it cannot see: file modes are not compared, top-level dependency
+  section names and keys must be unique because a duplicate's effective
+  value cannot be determined, and a moved or copied manifest's whole
+  destination needs its own review since unchanged fields such as
+  `packageManager` can change their effect at the new location. Two-space
+  and one-tab layouts are supported; a layout whose root dependency section
+  opener reads as nested (such as four-space indentation) withholds the
+  exception, which does not by itself decide the pull request's placement.
+  A rename or copy the forge reports to a
   recognized lockfile needs a recognized lockfile name at its original
   path; a copy the forge reports as a plain addition has no original name
   and is judged on its destination alone. Any other destination is

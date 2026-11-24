@@ -384,19 +384,33 @@ protection) still decide its lane:
    being listed; `lockfile` is needed only when lockfiles alone change. The
    Ready predicate never validates a lockfile's contents, whether it
    accompanies a manifest update or is the only change, and never checks it
-   against the manifest. A `package.json` that the forge reports as renamed
-   or copied must show at least one classifiable change to an existing
-   dependency's version or range; an edit outside the recognized
+   against the manifest. Every changed `package.json`, a renamed or copied
+   one included, must show at least one classifiable change to an existing
+   dependency's version or range; a formatting-only edit to one manifest
+   withholds the exception for the whole pull request even when another
+   manifest holds an allowed bump. An edit outside the recognized
    dependency-line shape, a version change it cannot classify, or a
-   dependency added or removed, disqualifies the whole manifest. The
-   classifier reads only the manifest's textual patch: it does not compare
-   file modes, and it cannot determine the effective value of a duplicate
-   dependency key whose other occurrence lies outside the changed lines, so
-   keep dependency keys unique and review file-mode changes separately. It
-   also needs the patch to show the root-level dependency section's opener
-   at the manifest's own indentation; a layout where that opener reads as
-   nested (for example four-space indentation) withholds the
-   trusted-automation exception.
+   dependency added or removed, also disqualifies the whole manifest. The
+   classifier reads only the manifest's textual patch, so these limits
+   rest on the operator:
+
+   - It does not compare file modes: review a file-mode change separately.
+   - It cannot determine the effective value of a duplicate. Keep the
+     top-level dependency section names, and the keys within each section,
+     unique.
+   - It needs the patch to show the root-level dependency section's opener
+     at the manifest's own indentation. Two-space and one-tab layouts are
+     supported; a layout whose opener reads as nested (three or more
+     leading spaces, such as four-space indentation) withholds the
+     exception.
+   - It judges a moved or copied manifest by the patch alone, so review the
+     destination's whole contents separately: unchanged fields such as
+     `packageManager` can change their effect at the new location (a
+     manifest moved to the repository root can start to govern root
+     lockfile selection).
+   - A withheld exception changes only the exception; a qualifying approval
+     can still allow merge now, and a behind branch or another blocker
+     still places the pull request as update next or Needs you.
 
 For trusted automation the review of the head must
 still be witnessed by the reviewer app's check run, so where
