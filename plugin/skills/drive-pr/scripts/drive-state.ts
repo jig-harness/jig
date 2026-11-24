@@ -57,7 +57,7 @@
  *   drive-state.ts rule         [PR]  < {"key","verdict","class"?,"humanDecision"?}
  *                                     # the review arbiter's ruling on a thread
  *   drive-state.ts unpark       [PR] --key K [--key K …] [--stdin]  # all, or none; --stdin: receipts
- *   drive-state.ts parked-keys  [PR]  # newline-delimited keys (reversal-parked-keys: reversed provisional decisions')
+ *   drive-state.ts parked-keys  [PR]  # newline-delimited keys (reversal-parked-keys: reversed provisional decisions'; thread-parked-keys: parked threads')
  *   drive-state.ts hold         [PR] --key K --kind thread|finding --outcome accepted|moot
  *                                     [--comment-url URL] [--unconfirmed]
  *                                     (--kind finding also requires the reason body on stdin)
@@ -358,7 +358,7 @@ function usage(): void {
   record-event [PR]                 a self-restart or re-arm, JSON on stdin
   rule         [PR]                 the arbiter's ruling on a thread, JSON on stdin
   unpark       [PR] --key K [--key K …] [--stdin]  every key, or none when one is not parked (--stdin: the consumed verdicts, JSON, for receipts)
-  parked-keys  [PR]                 newline-delimited keys (reversal-parked-keys: reversed provisional decisions')
+  parked-keys  [PR]                 newline-delimited keys (reversal-parked-keys: reversed provisional decisions'; thread-parked-keys: parked threads')
   hold        [PR] --key K --kind thread|finding --outcome accepted|moot
                [--comment-url URL] [--unconfirmed]
                     (--kind finding also requires the reason body on stdin)
@@ -1715,9 +1715,14 @@ async function main(): Promise<number> {
 
     case "parked-keys":
     case "reversal-parked-keys":
+    case "thread-parked-keys":
       return decisions.printParkedKeys(
         store.read().state,
-        a.cmd === "reversal-parked-keys",
+        a.cmd === "reversal-parked-keys"
+          ? "reversals"
+          : a.cmd === "thread-parked-keys"
+            ? "threads"
+            : "all",
       );
 
     case "hold": {

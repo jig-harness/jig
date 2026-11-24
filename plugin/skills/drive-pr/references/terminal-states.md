@@ -266,7 +266,10 @@ reviewer, [below](#the-reviewer-is-identified-by-app-slug-not-by-check-name)):
 4. **Zero** unaddressed summary-only findings.
 
 If any parked item remains while 3 and 4 are otherwise satisfied, the state is
-`HITL_PARKED`, not `CONVERGED`.
+`HITL_PARKED`, not `CONVERGED`. That includes a standalone park, one that
+names no thread or summary finding, such as a CI repair's decision on a rule.
+A parked thread that is no longer open does not count, unless it holds a
+reversed provisional decision.
 
 ### The final status re-read
 

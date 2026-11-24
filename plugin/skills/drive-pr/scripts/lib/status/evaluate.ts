@@ -1007,11 +1007,12 @@ async function evaluateFresh(
   );
   const summaryParked = summary.unaddressed.length - summaryLive.length;
   report.summaryParked = summaryParked;
-  const { reversalParked, standaloneNote } = unlistedParkDetails(
-    parked,
-    report.openThreadKeys,
-    report.summaryUnaddressedKeys,
-  );
+  const { reversalParked, standaloneParked, standaloneNote } =
+    unlistedParkDetails(
+      parked,
+      report.openThreadKeys,
+      report.summaryUnaddressedKeys,
+    );
 
   // A thread/finding held for `resolve-held-thread.ts` /
   // `answer-summary-finding.ts` to dispatch (an `accepted` or `moot`
@@ -1137,7 +1138,10 @@ async function evaluateFresh(
         `PR #${ctx.pr} conflicts with its base (mergeable=${report.mergeable}${report.mergeStateStatus !== "" ? `, mergeStateStatus=${report.mergeStateStatus}` : ""}) and has no workable findings on ${report.apiHead} (${report.threadsParked} parked thread(s), ${summaryParked} parked summary finding(s)${standaloneNote}). Merge ${report.baseRefName !== "" ? report.baseRefName : "the base branch"} into this one, push, and re-run; nothing here becomes judgeable with time`,
       );
     }
-    if (parkedKeys.size > 0) {
+    if (
+      report.threadsParked + summaryParked + reversalParked + standaloneParked >
+      0
+    ) {
       const rc = await stillOnHead();
       if (rc !== 0) return rc;
       let hitlReason = `every remaining item awaits a human decision (${report.threadsParked} thread(s), ${summaryParked} summary finding(s), ${reversalParked} other reversed provisional decision(s)${standaloneNote}) — handing back rather than re-arming`;
