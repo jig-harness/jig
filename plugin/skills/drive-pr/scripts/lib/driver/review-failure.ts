@@ -194,8 +194,12 @@ export async function handleFailedReviewPass(
   // `stopped`/`pause-timeout`/`unreadable` return their own exit code in
   // its place.
   const mailboxBeforeFailureReport = await context.mailboxCheckpoint();
-  if (typeof mailboxBeforeFailureReport === "number")
+  if (typeof mailboxBeforeFailureReport === "number") {
+    // The stop is the mailbox's, not the pass failure's, so a cut-short scan
+    // must not colour its closing report.
+    driverRuntime.quotaScanTruncated = [];
     return mailboxBeforeFailureReport;
+  }
   console.error(
     `pass failed on round ${round} (exit ${passRes.code}); not driving further`,
   );

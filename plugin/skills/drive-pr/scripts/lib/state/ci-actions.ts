@@ -81,6 +81,20 @@ export function retainedDiagnosis(actions: readonly CiAction[]): CiAction[] {
   return [...latest.values()];
 }
 
+/**
+ * `ledger` with its CI telemetry trimmed to the latest diagnosis per head, or
+ * `ledger` itself when that trims nothing.
+ */
+export function withTelemetryCut<
+  L extends { ciActions?: CiAction[]; cut: readonly string[] },
+>(ledger: L): L {
+  const actions = ledger.ciActions ?? [];
+  const diagnosis = retainedDiagnosis(actions);
+  return actions.length > diagnosis.length
+    ? { ...ledger, ciActions: diagnosis, cut: [...ledger.cut, "CI telemetry"] }
+    : ledger;
+}
+
 const ACTION_LIMIT = 10;
 const DETAIL_LIMIT = 1024;
 

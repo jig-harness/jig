@@ -564,7 +564,8 @@
                       "reviewerHead": true,
                       "reviewerApp": true,
                       "until": true,
-                      "probe": true
+                      "probe": true,
+                      "finish": true
                     },
                     "required": ["at", "round", "kind", "cause"],
                     "additionalProperties": true
@@ -1410,7 +1411,8 @@
                   "reviewerHead": true,
                   "reviewerApp": true,
                   "until": true,
-                  "probe": true
+                  "probe": true,
+                  "finish": true
                 },
                 "required": ["at", "round", "kind", "cause"],
                 "additionalProperties": true
