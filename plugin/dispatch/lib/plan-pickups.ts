@@ -219,8 +219,9 @@ const waitingSiblings = new WeakMap<PickupPlan, WaitingSibling[]>();
 /**
  * A claimed sibling of a whole-batch question waits quietly only while the
  * anchor's own plan raised that question; the answer is the anchor's to
- * settle. Otherwise (the anchor was released, or is carried or quiet) the
- * sibling is planned as any claimed item, and raises no need of the batch's.
+ * settle. When the anchor is carried by an open pull request and so cannot
+ * show it, the sibling raises the need itself. Otherwise (the anchor was
+ * released) the sibling is planned as any claimed item.
  */
 function settleBatchSiblings(plan: PickupPlan): void {
   for (const w of waitingSiblings.get(plan) ?? []) {
@@ -230,6 +231,18 @@ function settleBatchSiblings(plan: PickupPlan): void {
         a.cause === "pickup-question" &&
         a.evidence.record === w.record.record.id,
     );
+    const carried = plan.quiet.some(
+      (q) => q.target === w.anchor && q.class === "claimed-carried",
+    );
+    if (!shows && carried) {
+      // The anchor's pull request carries it, so it cannot show the question:
+      // the sibling raises the need, with the framed decision, for a person.
+      const asked = questionAsked(w.input, w.item, w.record, true);
+      if (asked !== null) {
+        plan.actions.push(asked);
+        continue;
+      }
+    }
     if (!shows) {
       planIdle(w.item, w.input, plan, {
         held: w.held,
@@ -938,6 +951,8 @@ function questionAsked(
   input: Pick<PickupInput, "slug" | "rerunsHeld">,
   item: { key: string; title: string; state: string },
   latest: ReadRecord,
+  /** The anchor cannot show a whole-batch question, so this sibling carries it. */
+  forSibling = false,
 ): Action | null {
   const { slug } = input;
   const unwritten = unwrittenResult(latest);
@@ -947,7 +962,10 @@ function questionAsked(
   // Without a decision the pass framed, an unwritten result gets the generic prompt.
   const generic = unwritten && !hasDecision;
   const asked = resultQuestion(latest, item.key, unwritten, hasDecision);
-  if (asked === null || (!generic && batchQuestionForSibling(latest, item.key)))
+  if (
+    asked === null ||
+    (!generic && !forSibling && batchQuestionForSibling(latest, item.key))
+  )
     return null;
   const report = generic ? null : latest.report;
   const question = reportQuestion(report, asked);

@@ -348,6 +348,41 @@ describe("a claimed item an open pull request carries", () => {
   });
 });
 
+describe("a claimed sibling of a whole-batch question whose anchor an open pull request carries", () => {
+  it("raises the batch question itself, since its anchor cannot show it", () => {
+    const batch = endedPickup(
+      "20261114T145000Z-abcdef12",
+      "2026-11-14T14:54:00Z",
+    );
+    Object.assign(batch.record, {
+      batchItems: [{ key: "#12" }, { key: "#13" }],
+      claimedItems: ["#12", "#13"],
+    });
+    if (batch.state.kind === "ended")
+      batch.state.exit.said =
+        "Question: Should the batch follow the shared approach?\n";
+    const base = input(stalled([pr()], [LIVE]));
+    const plan = planPickups({
+      ...base,
+      claimed: [
+        { key: "#12", title: "issue 12", state: "In Progress" },
+        { key: "#13", title: "issue 13", state: "In Progress" },
+      ],
+      launches: [batch],
+      idleSince: new Map([
+        ["#12", NOW - 2 * HOUR],
+        ["#13", NOW - 2 * HOUR],
+      ]),
+    });
+    expect(plan.quiet).toContainEqual(
+      expect.objectContaining({ target: "#12", class: "claimed-carried" }),
+    );
+    expect(
+      plan.actions.filter((a) => a.cause === "pickup-question"),
+    ).toMatchObject([{ target: "#13" }]);
+  });
+});
+
 describe("the line", () => {
   const why = `in In Progress with no running session: carried by pull request #31 (${URL}), which links it; its drive is live`;
 
