@@ -108,6 +108,17 @@ export function reviewedShaIn(body: string, shaMarker: string): string {
   return lastStamp(body, markerRe);
 }
 
+/** A stamp replaces prior summary evidence only at an explicit review boundary. */
+export function isReviewReplacement(
+  body: string,
+  round: number | null,
+  shaMarker: string,
+): boolean {
+  return /^[0-9a-f]{7,40}\d+$/.test(
+    `${reviewedShaIn(body, shaMarker)}${round}`,
+  );
+}
+
 /** A comment's body when the reviewer wrote it as its sticky summary, else `null`. */
 export function reviewerStickyBody(
   raw: unknown,

@@ -82,6 +82,7 @@ import {
 import { reviewsBy } from "./lib/status/review-object.ts";
 import {
   parseReviewRound,
+  isReviewReplacement,
   reviewerStickyBody,
   reviewerStickyIn,
   reviewedShaIn,
@@ -1417,10 +1418,13 @@ export function reviewerSticky(
   return selected;
 }
 
-function cleanReplacementStamp(body: string, _round: number | null): boolean {
-  // A reviewed SHA is a replacement boundary even when the reviewer omits a
-  // round marker. The status evidence uses the same form for a clean new head.
-  return reviewedShaIn(body, reviewedShaMarker()) !== "";
+function cleanReplacementStamp(body: string, round: number | null): boolean {
+  // A stamp identifies a head, but it does not prove that the comment is a
+  // fresh review: an auxiliary acknowledgement can repeat the selected
+  // summary's SHA while carrying no findings. An explicit review round is the
+  // replacement boundary that keeps that acknowledgement from erasing the
+  // earlier findings.
+  return isReviewReplacement(body, round, reviewedShaMarker());
 }
 
 /** The PR number from `argv`, else the current branch's PR. */
