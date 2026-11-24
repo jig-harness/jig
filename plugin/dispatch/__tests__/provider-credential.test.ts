@@ -291,7 +291,7 @@ describe("resolving a credential reference", () => {
     const source = `
       import { resolveCredential } from ${JSON.stringify(credentialModule)};
       const result = await resolveCredential({
-        credentialCommand: [process.execPath, "-e", ${JSON.stringify(
+        credentialCommand: [process.execPath, "--no-env-file", "-e", ${JSON.stringify(
           `process.stderr.write(${JSON.stringify(stderrOnly)}); process.exit(1)`,
         )}],
         credentialTimeoutMs: 10_000,
@@ -301,9 +301,10 @@ describe("resolving a credential reference", () => {
       if (result.ok) throw new Error("expected credential command failure");
       console.log(result.failure.reason);
     `;
-    const child = Bun.spawn([process.execPath, "-e", source], {
+    const child = Bun.spawn([process.execPath, "--no-env-file", "-e", source], {
       stdout: "pipe",
       stderr: "pipe",
+      env: { PATH: process.env.PATH ?? "" },
     });
     const [exitCode, stdout, stderr] = await Promise.all([
       child.exited,
@@ -315,7 +316,9 @@ describe("resolving a credential reference", () => {
       0,
       "credential resolver child",
     );
-    expect(stdout).toContain("error output is not recorded");
+    expect(stdout).toBe(
+      "the credential command exited 1; its error output is not recorded\n",
+    );
     expect(stdout).not.toContain(stderrOnly);
     expect(stderr).not.toContain(stderrOnly);
   });
