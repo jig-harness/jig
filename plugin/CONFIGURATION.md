@@ -404,19 +404,22 @@ protection) still decide its lane:
      leading spaces, such as four-space indentation) withholds the
      exception, and so does unchanged hunk context outside the patch
      grammar the classifier reads (such as an inline array,
-     `"files": ["dist"],`).
+     `"files": ["dist"],`). In that case the card gives the same reason as
+     for a patch the forge did not return ("the forge gives no diff"), so
+     read the manifest's patch before concluding the forge withheld it.
    - It judges a moved or copied manifest by the patch alone, so review the
      effective install configuration at both locations, and the
      destination's whole contents: unchanged fields such as
      `packageManager` can change their effect at the new location (a
      manifest moved to the repository root can start to govern root
-     lockfile selection), moving a manifest away can remove the preference
-     from its former directory, and moving a recognized lockfile can change
-     the selected installer at either end.
+     lockfile selection) and moving a manifest away can remove the preference
+     from its former directory. A recognized lockfile qualifies without any
+     manifest, so for a moved or copied lockfile also review which
+     installer each affected directory selects, at both locations.
    - A withheld exception changes only the exception; a qualifying approval
      can still allow merge now, and the ordinary placement rules still
-     apply to a behind branch or another blocker (update next, Needs you,
-     Coming, or staying where it is while a required check runs).
+     apply to a behind branch or another blocker, and to forge facts that
+     are incomplete or a mergeability not yet known.
 
 For trusted automation the review of the head must
 still be witnessed by the reviewer app's check run, so where
