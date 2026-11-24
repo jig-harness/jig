@@ -223,7 +223,12 @@ describe("the host and the repository layers", () => {
 
   it("reads a repository's routing: null as a whole-section reset to the defaults", () => {
     const config = layered(HOST, "routing: null\n");
-    expect(parseRoutingModels(config, "steward").codex?.complex).toBe("sol");
+    expect(config.routing).toBeNull();
+    expect(parseRoutingModels(config, "steward").codex).toEqual({
+      simple: "terra",
+      standard: "terra",
+      complex: "sol",
+    });
   });
 
   it("lets a run's environment win over both files", () => {

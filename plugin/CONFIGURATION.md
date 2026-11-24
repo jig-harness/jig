@@ -836,9 +836,11 @@ model.
   otherwise the higher value replaces the lower whole, descendants included. So
   a leaf variable leaves the file layers' other cells in place, but a variable
   that sets a parent key to a non-mapping (`JIG__ROUTING__MODELS=null`) replaces
-  everything below it, and a refused `null` is refused only when it is the value
+  everything below it, and the loader refuses a `null` only when it is the value
   that survives the merge: a higher layer's mapping at the same path replaces
-  it and the lower layer's cells with it. A model key that ends in an underscore cannot be
+  it and the lower layer's cells with it (the audit's `null_refused` check reads
+  each file on its own, so it can still flag a file's `null` that the loader
+  accepts). A model key that ends in an underscore cannot be
   a leaf override (the split reads `___` as a separator and a child that starts
   with one); set the model's whole entry as a mapping instead.
 - **Precedence.** For a stage, a runtime and a tier, the first of: the stage's
@@ -846,7 +848,7 @@ model.
   (highest layer that sets it), the runtime's default. A stage's cell is
   more specific than the all-stages one whichever layer set each, so a host
   that sets the steward's model in its user file has it in every repository
-  unless a repository sets that stage's cell.
+  unless a higher layer overrides that cell or resets a section that contains it.
 - **`routing.family_tiers`** is kept: its entries are read as
   `routing.model_tiers` entries, and a configuration that sets only it routes
   exactly as before. The two keys are one table; a model declared under both
@@ -856,13 +858,13 @@ model.
   pass reads its row as it learns its stage.
 
 Loading `routing.models` and `routing.stages` refuses, for a runtime with a
-list, a model outside it whose tier `routing.model_tiers` does not declare. It
-also refuses, for every runtime: any tier mapped to a Scout model (`haiku`, `luna`), by default or by
-configuration, which no `routing.model_tiers` or `routing.family_tiers` entry
+list, a model outside it whose tier neither `routing.model_tiers` nor `routing.family_tiers` declares. It
+also refuses: any tier mapped to a Scout model (`haiku`, `luna`), by default or by
+configuration, where the runtime has a catalog that identifies it (a runtime without one can use the name `luna` undeclared, while an explicit `scout` declaration is refused on any runtime), which no `routing.model_tiers` or `routing.family_tiers` entry
 waives, since M0 keeps that tier read-only (an implementer may still hand it
 simple sub-steps); and a row in which a stricter complexity tier runs on a
 model of a lower M0 tier than a lighter one (a stage's cells are checked
-beside the row they replace). A Judgment model (`fable`, `astra`) is no
+beside the row they replace; the check skips a pair when either model has no classification). A Judgment model (`fable`, `astra`) is no
 tier's default and is accepted where a repository configures it; the audit
 reports each such mapping.
 
