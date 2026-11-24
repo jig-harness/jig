@@ -1211,11 +1211,12 @@ if [ -n "$rest_pr" ]; then
     esac
   done
   # Status evaluation begins with a REST snapshot, not gh pr view. Record
-  # that boundary so cadence tests observe the reads the implementation makes.
+  # that boundary in this process so cadence tests observe the reads the
+  # implementation makes without a separately scheduled runtime startup.
   if [ -n "\${DRIVE_PR_STUB_GH_TIMES:-}" ]; then
     for a in "$@"; do
       if [ "$a" = "X-Drive-Pr-Caller: snapshot" ]; then
-        bun -e 'console.log(BigInt(Date.now()) * 1000000n)' >> "$DRIVE_PR_STUB_GH_TIMES"
+        printf '%s000\n' "\${EPOCHREALTIME//./}" >> "$DRIVE_PR_STUB_GH_TIMES"
       fi
     done
   fi
