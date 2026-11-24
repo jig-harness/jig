@@ -28,12 +28,15 @@ release: minor
   the effective install configuration at both locations and of the
   destination's whole contents, since unchanged fields such as
   `packageManager` can change their effect. For every entry, a bare login
-  included, a lockfile added, removed, moved or copied can change the
-  lockfile a directory selects, its installer and the install
-  configuration, so the operator compares those before and after. An in-place
-  manifest edit such as `packageManager` can switch the installer alone, and a
-  newly selected lockfile can be unchanged in the pull request, so the
-  operator reads its contents. Two-space and one-tab layouts are
+  included, the operator compares, before and after, the lockfile each
+  affected directory selects, its installer and command and the install
+  configuration, for a lockfile added, removed, moved or copied and for a
+  manifest-only edit such as `packageManager`, which can switch the installer
+  or select a different existing lockfile the pull request leaves untouched;
+  the operator reads that lockfile's contents and compares the old
+  resolutions and command. An entry without `update_types` skips manifest
+  classification, so such an edit can still qualify; with `update_types` set,
+  a direct top-level `packageManager` edit withholds the exception. Two-space and one-tab layouts are
   supported; a layout whose root dependency section opener reads as nested
   (such as four-space indentation), or unchanged context outside the
   patch grammar (such as an inline array), withholds the exception, which

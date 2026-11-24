@@ -425,13 +425,18 @@ protection) still decide its lane:
      are incomplete or a mergeability not yet known.
 
 Whatever `update_types` says, a bare login included, the classifier does not
-see what a lockfile added, removed, moved or copied changes in a directory:
-compare, before and after, the lockfile each affected directory selects, the
-installer and command it implies, and the effective install configuration.
-An in-place manifest edit such as `packageManager` can switch the installer
-with no lockfile change, and a newly selected lockfile can be unchanged in the
-pull request: read its contents, since the diff omits the resolutions it
-activates.
+see what a lockfile added, removed, moved or copied, or a manifest edit,
+changes in a directory. Compare, before and after, the lockfile each affected
+directory selects, the installer and command it implies, and the effective
+install configuration. A manifest-only edit such as `packageManager` can
+switch the installer with no lockfile change, and can select a different
+existing lockfile that the pull request leaves untouched: read the newly
+selected lockfile's contents, since the diff omits the resolutions it
+activates, and compare the old resolutions and command with it. An entry
+without `update_types` skips manifest classification, so such an edit can
+still qualify for the exception and approval is not owed on that ground; an
+entry with `update_types` set withholds the exception for a direct edit to the
+top-level `packageManager` field, which fails classification.
 
 For trusted automation the review of the head must
 still be witnessed by the reviewer app's check run, so where
