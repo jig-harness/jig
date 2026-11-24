@@ -148,7 +148,7 @@ infrastructure. The table describes recovery in `drive.ts` after a verdict from 
 
 | Trigger | Pass | Budget (env, `0` disables) | Falls back to |
 |---|---|---|---|
-| Converged head, fresh exact-head verdict `failing: …` | `ci-repair` (repair the failing checks) | `drive.ci_repair_rounds` (`DRIVE_PR_CI_REPAIR_ROUNDS` for one run) per head and failing check, default 2 | A `ci-diagnose` session once per head after a positive budget is spent, then [`CI_REPAIR_SPENT`](../../../protocol/drive-exits.md) if diagnosis could not complete the repair. [`INDETERMINATE`](../../../protocol/drive-exits.md) when the budget is `0` |
+| Converged head, fresh exact-head verdict `failing: …` | `ci-repair` (repair the failing checks) | `drive.ci_repair_rounds` (`DRIVE_PR_CI_REPAIR_ROUNDS` for one run) per head and failing check, default 2 | A `ci-diagnose` session once per head after a positive budget is spent. A receipt naming an open park with no replacement push ends in [`HITL_PARKED`](../../../protocol/drive-exits.md). Other incomplete repairs end in [`CI_REPAIR_SPENT`](../../../protocol/drive-exits.md). [`INDETERMINATE`](../../../protocol/drive-exits.md) when the budget is `0` |
 | The same, every failing check a job of a workflow run that concluded `cancelled`, no commit status failing, and a cancelled job that no run has replaced (a failed job in a cancelled run with no cancelled job is repaired instead) | none: the driver's cancelled-run recovery re-runs that run, spending no CI-repair budget | one re-run per head, shared across re-arms, and one more per person's "Re-run safely" answer; a cancellation a label write caused gets one re-run per run attempt outside it | [`HITL_PARKED`](../../../protocol/drive-exits.md), parked `cancelled-ci`; a read of the recovery that keeps failing in a way waiting can clear ends in [`NOT_SETTLED`](../../../protocol/drive-exits.md), naming the read and its failure class |
 | Converged head, a workflow job the runner stopped at its time limit (concluded `cancelled`, its check run annotated "exceeded the maximum execution time"), alone or beside failing checks | `ci-repair`, its detail naming the job, its limit and its run time | the same `drive.ci_repair_rounds` per head and failing check | [`CI_REPAIR_SPENT`](../../../protocol/drive-exits.md); [`INDETERMINATE`](../../../protocol/drive-exits.md) when the budget is `0` |
 | The same, every failing check failed on the infrastructure | the driver re-runs failed jobs, or moves the head when a run cannot be re-run; a local base merge goes through a validated review round before pushing, spending no CI-repair budget | `DRIVE_PR_CI_INFRA_RERUNS` per head and `DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive, default 2 each | [`CI_INFRA_PERSISTED`](../../../protocol/drive-exits.md) |
@@ -266,7 +266,21 @@ reviewer, [below](#the-reviewer-is-identified-by-app-slug-not-by-check-name)):
 4. **Zero** unaddressed summary-only findings.
 
 If any parked item remains while 3 and 4 are otherwise satisfied, the state is
-`HITL_PARKED`, not `CONVERGED`.
+`HITL_PARKED`, not `CONVERGED`. That includes a standalone park, one that
+names no thread or summary finding, such as a CI repair's decision on a rule.
+A park whose thread has since been resolved still counts toward the hand-back.
+A re-arm the dispatcher launches for a validated request settles it without
+an answer when nobody left an answer, a condition note or an unreadable
+history on it; a direct re-arm does not, so that park waits for its answer
+like every other stored park, with one exception: at the `wide` autonomy
+level a re-arm unparks parks of the class `escalated` that nobody answered
+and hands them to the next round to decide provisionally. The exception is
+all or none: one unanswered park of any other class that still waits after
+the settlement above (a resolved thread's park a dispatcher re-arm settled
+does not), any place an answer could be that the re-arm could not read, a dispute or an answer that does not
+settle an item, or a condition note without an answer leaves every item
+parked, the `escalated` ones too. Once every item is answered, resolved or
+eligible for provisional handling, the re-arm unparks the whole set together.
 
 ### The final status re-read
 
@@ -630,7 +644,15 @@ plain `--max-rounds` bound rather than a guessed stop. Each pass's
 (`lib/state/round-finish.ts`); when every stalled pass ended on the same
 state other than `FINISHED`, the stop prints that state and the last reason,
 and the closing report names them and takes its cause from the state
-(`CI_HOLD_WAIT` reads `environment`) instead of `unknown`.
+(`CI_HOLD_WAIT` reads `environment`) instead of `unknown`. The drive's `stop`
+event records that state and reason as its `finish`, and the ledger's summary
+names them. A failed push's reason says why it failed (`lib/push-failure.ts`:
+a pre-push gate, a remote's rejection, a connection, the push's timeout, an
+unconfirmed head) and quotes the last lines `guarded-push.ts` wrote; a stall
+whose every pass ended `PUSH_FAILED` sends a person to fix what refuses the
+push before re-arming, and the dispatcher hands it to that person rather than
+re-driving it onto the same refusal, until a push moves the pull request's
+head.
 
 What that rule turns on, each clause measured as a stall stop
 firing over a pass that *had* worked:
@@ -2241,10 +2263,7 @@ withheld until a sweep has run and succeeded on this invocation**, degrading to
 set once, and a prose copy of its membership goes stale the moment a code
 joins or leaves it.
 Nothing else licenses one, which is deliberate — a guard built as "successful
-sweep, or any of these signals" has a hole per signal. [`UNSUPPORTED_CLI`](../../../protocol/drive-exits.md) is not one of
-those signals: "an unsupported `gh` binary is a property no retry clears" ignores that the sweep talks to GitHub over GraphQL, which an
-old `gh` unable to report `--json mergeable` can still serve, so the sweep
-runs, and can succeed, before [`UNSUPPORTED_CLI`](../../../protocol/drive-exits.md) is reached. [`PR_NOT_OPEN`](../../../protocol/drive-exits.md) has nothing to reconcile; [`NOT_SETTLED`](../../../protocol/drive-exits.md)
+sweep, or any of these signals" has a hole per signal. [`PR_NOT_OPEN`](../../../protocol/drive-exits.md) has nothing to reconcile; [`NOT_SETTLED`](../../../protocol/drive-exits.md)
 does not assert the drive is over, so every caller answers it by coming back
 and that next invocation's pass entry sweeps. (In polling mode a failing sweep
 is additionally re-attempted on every poll, so [`NOT_SETTLED`](../../../protocol/drive-exits.md) returned after the window
@@ -2260,8 +2279,8 @@ cleanup can leave stale (a superseding merit reply resolves the thread and
 then fails to release a stale prior hold for it) — and because the resolved
 thread has already left every future unresolved-thread listing, no later
 sweep ever revisits that cleanup.
-That gap is real, but folding [`CONVERGED`](../../../protocol/drive-exits.md) into `UNRECONCILED_STOPPERS` blanket — the same
-way [`UNSUPPORTED_CLI`](../../../protocol/drive-exits.md) joined it — is NOT the fix: `--no-count`/`--no-reconcile` suppress the
+That gap is real, but folding [`CONVERGED`](../../../protocol/drive-exits.md) into `UNRECONCILED_STOPPERS` blanket — the
+way [`HITL_PARKED`](../../../protocol/drive-exits.md) is in it — is NOT the fix: `--no-count`/`--no-reconcile` suppress the
 sweep unconditionally, so blanket membership would make `CONVERGED` unreachable
 through exactly the path built to reach it without a sweep — see the
 `announce-merge-ready.ts` paragraph just below. Nor is "the sweep was not
@@ -2354,7 +2373,7 @@ same-process timer removes that class outright.
 Measured: the base branch advanced mid-drive and
 produced one conflict in a CI workflow file:
 
-- `gh pr view` → `mergeable=CONFLICTING`, `mergeStateStatus=DIRTY`.
+- The pull request read → `mergeable=CONFLICTING`, `mergeStateStatus=DIRTY`.
 - **Zero** `pull_request`-triggered CI ran on the head. The only check-run on the
   commit was a dormant `github-actions / AI review` workflow, `completed/skipped`.
 - So the posting reviewer never posted a check-run, and mode 4's guard — correctly —
@@ -2367,8 +2386,8 @@ is exactly what a conflict does not do. `drive.ts` propagated it verbatim, so th
 operator was told a reviewer was slow about a PR that needed a `git merge`.
 
 **Guard**: `drive-status.ts` reads `mergeable`, `mergeStateStatus`,
-`baseRefName` and `baseRefOid` from the same `gh pr view` snapshot as `state`
-and `headRefOid`. A conflict makes it **skip every reviewer gate** — each of
+`baseRefName` and `baseRefOid` from the same pull-request snapshot (one REST
+pull document, `readPrSnapshot`) as `state` and `headRefOid`. A conflict makes it **skip every reviewer gate** — each of
 those returns `AWAITING_REVIEWER`, which is the wait being eliminated — but it
 still enumerates the work, and reports [`PR_CONFLICTING`](../../../protocol/drive-exits.md) only when
 that enumeration is empty. `drive.ts` stops on it with a message naming the fix
@@ -2418,8 +2437,8 @@ The following properties of that guard are deliberate:
 - **One snapshot, not one more call.** `mergeable` describes a *specific* head,
   so reading it separately from `headRefOid` would let the two name different
   commits — and since the verdict is terminal, that window is a false-terminal
-  window. Folding the mergeability fields in alongside `state` and `headRefOid`
-  is also one call fewer than before.
+  window. The mergeability fields ride the same read as `state` and
+  `headRefOid`.
 - **After head sync, before the reviewer gates.** Before them because they are
   what a conflict starves; leaving them armed reproduces the 30-minute wait this
   exists to prevent. After head sync because judging mergeability against a head
@@ -2439,43 +2458,29 @@ The following properties of that guard are deliberate:
   exists to close on the other side: letting `UNKNOWN` proceed unchecked can
   converge over a conflict GitHub had not finished detecting.
 
-**Every field in the snapshot is required of the CLI, not negotiated.**
-`mergeable`, `mergeStateStatus`, `baseRefName` and `baseRefOid` have been available
-as JSON fields from `gh pr view` for years, so a `gh` without them is an unmet
-**prerequisite**: the script reports [`UNSUPPORTED_CLI`](../../../protocol/drive-exits.md) naming the
-fix (upgrade the CLI), and never degrades into a weaker guard the caller
-believes is armed. That report goes through the normal JSON contract — a
-`--json` caller gets `state`, `exit` and the evidence here as everywhere else,
-because an `exit` from inside `evaluate()` would skip the reporter entirely and
-emit no object at all.
-
-Required **of the CLI** is a narrower rule than "validated after the read", and
-the next two paragraphs are the other half of it. They are separate rules on
-purpose, and conflating them makes this section read as self-contradictory.
-
-Requiring the fields is a deletion, and the deletion is the point. The
-alternative — a three-tier CLI-version fallback ladder plus a second REST
-parser speaking a different response dialect — was built once, and every tier
-then needed its own binding and validation guards, each of which produced the
-next defect: the REST fallback needed its verdict bound to REST's own
-`(head, base)` pair, which then needed both halves of that pair required
-rather than optional. That is the shape a rule against compatibility shims
-forbids — dual paths, accepts-both-shapes parsers — and the premise was thin
-to begin with. One path, one dialect, nothing to keep consistent.
-
-**A transient failure is still distinguished from a missing field**, and that
-distinction is load-bearing in the opposite direction. `gh` validates a
-`--json` field list client-side before any network call, so a missing field
-fails deterministically with `Unknown JSON field: "..."` and will not clear on
-a retry — that is the prerequisite exit. A timeout, a 5xx, a rate limit or an
-auth blip *will* clear, so it is `INDETERMINATE` and the existing
-`MAX_QUERY_ERRORS` retry handles it. Conflating them would treat noise as a
-capability gap and silently disable a real guard, and the evaluation that ran
-blind can be the one reporting `CONVERGED`.
+**The snapshot is one conditional REST read of the pull document, in one
+dialect.** The pull document carries every field the snapshot needs (state,
+draft, head and base commit and branch, `mergeable` and the merge state), and
+`stillOnHead`'s recheck reads that same document, so no guard compares a REST
+value with a GraphQL one. An unchanged pull request answers `304` and the kept
+reading is reused; the `304` is GitHub's word, at that instant, that nothing in
+it changed. A failed conditional read, or a kept reading that is not a whole
+pull document, is followed by one full read (a rate limit, an auth failure or
+a missing pull request is not: a second request cannot clear it, so it is
+reported at once), both requests share the invocation's `--timeout` in a later evaluation (the first keeps each call's own deadline, and an exhausted budget sends nothing), and a read that still fails is
+`INDETERMINATE` (a timeout, a 5xx or an auth blip clear, so the existing
+`MAX_QUERY_ERRORS` retry handles them; a spent forge rate limit never reaches
+that retry, because `stopOnForgeLimit` reports
+[`FORGE_RATE_LIMITED`](../../../protocol/drive-exits.md) at once). It is never taken for an
+unchanged pull request, so the evaluation that runs blind cannot be the one
+reporting `CONVERGED`. The REST spelling is mapped to the values compared:
+`mergeable` `true`, `false` and `null` read `MERGEABLE`, `CONFLICTING` and
+`UNKNOWN` (`null` is GitHub still computing it), and the merge state is
+upper-cased.
 
 **A nominally successful read is validated, not trusted — over the fields a
-state is decided from.** A partial or malformed response — `mergeable` null,
-absent, or an enum value this script does not handle; an empty `baseRefOid` —
+state is decided from.** A partial or malformed response — `mergeable`
+absent or not a mergeability; an empty `baseRefOid` —
 would otherwise collapse to `""` and fall through as though the PR were
 mergeable, or silently disarm the base-race guard. Both are `INDETERMINATE`.
 

@@ -21,6 +21,7 @@ import {
   snapshotFrom,
 } from "../scripts/lib/state/ledger.ts";
 import { type DriveState, freshState } from "../scripts/lib/state/schema.ts";
+import { type DriveEvent, stopFinish } from "../scripts/lib/state/events.ts";
 import type { ParkedDecision } from "../../../shared/decisions/park.ts";
 
 const ACTOR_A = "wt-aaaaaaaaaaaaaaaa";
@@ -110,6 +111,66 @@ describe("render and parse", () => {
     expect(parsed.ledger.narrative).toHaveLength(20);
     expect(parsed.ledger.narrative.at(-1)).toBe("narrative line 29");
     expect(parsed.ledger.decisions).toEqual([]);
+  });
+
+  it("names a stall's shared push failure in the summary and the data, redacted", () => {
+    const state = driveState();
+    const reason =
+      "guarded-push.ts exited 1 (pre-push-gate): the pre-push hook's gates refused the push — typecheck failed: Cannot find module '@types/node', mailed to someone@example.com";
+    state.events = [
+      {
+        at: "2026-10-01T11:00:00.000Z",
+        round: 3,
+        kind: "stop",
+        cause: "14",
+        finish: { state: "PUSH_FAILED", reason },
+      },
+    ];
+    const stopped = (exit: number) =>
+      ledgerFromState(state, {
+        generation: 4,
+        driver: {
+          actor: ACTOR_A,
+          clone: "clone-a",
+          heartbeat: "2026-10-01T11:00:00.000Z",
+          state: "stopped",
+          exit,
+        },
+        narrative: [],
+        claims: [],
+      });
+    const rendered = renderLedger(stopped(14));
+    if ("error" in rendered) throw new Error(rendered.error);
+    expect(rendered.body).toContain(
+      "Every stalled pass ended `PUSH_FAILED`: guarded-push.ts exited 1 (pre-push-gate): the pre-push hook's gates refused the push — typecheck failed",
+    );
+    expect(rendered.body).not.toContain("someone@example.com");
+    // A scope in the quoted output mentions nobody where the forge renders the summary.
+    expect(rendered.body).toContain("'@\u200Btypes/node'");
+    const parsed = parseLedger(rendered.body);
+    if (parsed?.kind !== "ledger") throw new Error("the ledger did not parse");
+    expect(stopFinish(parsed.ledger.events, 14)).toMatchObject({
+      state: "PUSH_FAILED",
+      reason: expect.stringContaining("typecheck failed"),
+    });
+    // A finish this reader cannot read is dropped, never the whole ledger.
+    state.events = [
+      { ...(state.events[0] as DriveEvent), finish: { state: 7 } },
+    ];
+    const odd = renderLedger(stopped(14));
+    if ("error" in odd) throw new Error(odd.error);
+    expect(parseLedger(odd.body)?.kind).toBe("ledger");
+    expect(odd.body).not.toContain("Every stalled pass ended");
+    state.events = [
+      {
+        ...(state.events[0] as DriveEvent),
+        finish: { state: "PUSH_FAILED", reason },
+      },
+    ];
+    // A later stop with another exit is not the stall's.
+    const later = renderLedger(stopped(1));
+    if ("error" in later) throw new Error(later.error);
+    expect(later.body).not.toContain("Every stalled pass ended");
   });
 
   it("renders copyable current answers for a framed parked decision", () => {
@@ -292,6 +353,30 @@ describe("the size cut", () => {
     expect(second.ledger.narrative).toEqual([]);
     expect(second.ledger.parked).toEqual(bulky().parked);
     expect(Buffer.byteLength(second.body)).toBeLessThanOrEqual(noOutcomes - 1);
+  });
+
+  it("compacts old finish details while preserving the newest stop evidence", () => {
+    const events: DriveEvent[] = Array.from({ length: 100 }, (_, i) => ({
+      at: `2026-10-01T10:${String(i % 60).padStart(2, "0")}:00.000Z`,
+      round: i,
+      kind: "stop",
+      cause: "14",
+      finish: {
+        state: "PUSH_FAILED",
+        reason: `${i === 99 ? "latest" : "historical"} ${"x".repeat(900)}`,
+      },
+    }));
+    const rendered = renderLedger(ledger({ events }));
+    if ("error" in rendered) throw new Error(rendered.error);
+    expect(rendered.ledger.cut).toContain("the older finish details");
+    expect(
+      rendered.ledger.events?.slice(0, -1).every((e) => e.finish === undefined),
+    ).toBe(true);
+    expect(rendered.ledger.events?.at(-1)?.finish).toMatchObject({
+      state: "PUSH_FAILED",
+      reason: expect.stringContaining("latest"),
+    });
+    expect(Buffer.byteLength(rendered.body)).toBeLessThanOrEqual(65_536);
   });
 
   it("names the telemetry cut only when telemetry was removed, and keeps it while trimming receipts", () => {

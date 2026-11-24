@@ -31,6 +31,14 @@ interface DriverRuntime {
    * the dispatcher re-drives it after. `null` for any other stop.
    */
   stopLimitedUntil: string | null;
+  /**
+   * The vendors whose usage-limit scan of the last failed pass was cut short
+   * before it found a wall (`DetectOpts.onScanTruncated`); empty when every
+   * scan finished, or before a pass failed. A stop on that failure says so
+   * in its closing report (`closing-report.ts`), since "no wall found" was
+   * then not a finding.
+   */
+  quotaScanTruncated: string[];
   /** The round loop's waits for the forge's limit to reset since a status probe last read the pull request (`forge-limit-stop.ts`). */
   forgeLimitWaits: number;
   /**
@@ -119,6 +127,7 @@ export const driverRuntime: DriverRuntime = {
   stallFinish: null,
   stopLimitedUntil: null,
   forgeLimitWaits: 0,
+  quotaScanTruncated: [],
   passRound: null,
   passStartedAt: null,
   compromised: "",

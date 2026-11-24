@@ -1,0 +1,192 @@
+/**
+ * The status evaluation's reads of the pull request itself: the opening
+ * snapshot and the terminal recheck (`stillOnHead`), as one conditional REST
+ * read of the pull document.
+ *
+ * One document carries every field the evaluation compares (state, draft,
+ * head and base commit, head and base branch, mergeability and the merge
+ * state), so a snapshot stays one observation of one (head, base) pair. The
+ * recheck reads the same document, so the comparison it makes never spans two
+ * sources. An unchanged pull request answers `304`: the kept reading is
+ * reused, and GitHub's confirmation that it is current is what makes that
+ * reading as fresh as a full one.
+ *
+ * The answer is mapped to the values the evaluation compares:
+ * `OPEN`/`CLOSED`/`MERGED`, `MERGEABLE`/`CONFLICTING`/`UNKNOWN` (REST's
+ * `null` is mergeability GitHub has not finished computing, so it reads
+ * `UNKNOWN`, never clean), and the merge state upper-cased (`clean` →
+ * `CLEAN`). A field the document lacks maps to empty or absent, and a
+ * mergeability that is none of those is kept, marked unrecognised, so the
+ * evaluation's own validation turns either into INDETERMINATE and names
+ * what came back.
+ *
+ * FALLBACK: a conditional read that failed, or a kept reading that does not
+ * read as a whole pull document, is followed by one full read (no validator
+ * sent). A failure a repeat cannot clear is not: a request the shared budget
+ * held, a refused credential, a pull request that is not there. Neither is
+ * ever taken for an unchanged pull request, and when the full read fails too,
+ * the reason names both failures.
+ */
+
+import { swallow } from "../../../../../shared/errors.ts";
+import { type ConditionalGet, ghConditionalGet } from "../gh-conditional.ts";
+
+/** The snapshot's fields, in the spelling `evaluate.ts` compares. */
+export interface PrSnapshot {
+  /** `OPEN`, `CLOSED`, `MERGED`, or `''` when the document carries no recognised state. */
+  state: string;
+  /** The document's `draft`, unvalidated: the evaluation refuses anything but a boolean. */
+  isDraft: unknown;
+  headRefOid: string;
+  headRefName: string;
+  baseRefOid: string;
+  baseRefName: string;
+  /** `MERGEABLE`, `CONFLICTING`, `UNKNOWN`; `''` when absent, `UNRECOGNISED <json>` when not a mergeability. */
+  mergeable: string;
+  mergeStateStatus: string;
+}
+
+export type PrSnapshotRead =
+  | { ok: true; snapshot: PrSnapshot }
+  | { ok: false; reason: string };
+
+interface PullDocument {
+  state?: unknown;
+  merged?: unknown;
+  draft?: unknown;
+  head?: { sha?: unknown; ref?: unknown } | null;
+  base?: { sha?: unknown; ref?: unknown } | null;
+  mergeable?: unknown;
+  mergeable_state?: unknown;
+}
+
+function text(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+function stateOf(doc: PullDocument): string {
+  if (doc.state !== "open" && doc.state !== "closed") return "";
+  if (doc.merged === true) return "MERGED";
+  return doc.state === "open" ? "OPEN" : "CLOSED";
+}
+
+function mergeableOf(doc: PullDocument): string {
+  if (!("mergeable" in doc)) return "";
+  if (doc.mergeable === true) return "MERGEABLE";
+  if (doc.mergeable === false) return "CONFLICTING";
+  if (doc.mergeable === null) return "UNKNOWN";
+  return `UNRECOGNISED ${JSON.stringify(doc.mergeable)}`;
+}
+
+/** The pull document, or null when the body is not a JSON object. */
+function parseDocument(body: string): PullDocument | null {
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed))
+      return null;
+    return parsed as PullDocument;
+  } catch (err) {
+    swallow(err, "the pull document's body is not JSON");
+    return null;
+  }
+}
+
+function snapshotOf(doc: PullDocument): PrSnapshot {
+  return {
+    state: stateOf(doc),
+    isDraft: doc.draft,
+    headRefOid: text(doc.head?.sha),
+    headRefName: text(doc.head?.ref),
+    baseRefOid: text(doc.base?.sha),
+    baseRefName: text(doc.base?.ref),
+    mergeable: mergeableOf(doc),
+    mergeStateStatus: text(doc.mergeable_state).toUpperCase(),
+  };
+}
+
+/** Whether a kept reading carries every field a verdict is decided from. */
+function whole(s: PrSnapshot): boolean {
+  return (
+    s.state !== "" &&
+    typeof s.isDraft === "boolean" &&
+    s.headRefOid !== "" &&
+    s.baseRefOid !== "" &&
+    s.mergeable !== ""
+  );
+}
+
+/** A failure a second request cannot clear. */
+const FINAL = new Set(["rate-limited", "unauthorized", "not-found"]);
+
+function final(r: ConditionalGet): boolean {
+  return !r.ok && r.failure !== undefined && FINAL.has(r.failure.code);
+}
+
+const NOT_A_DOCUMENT = "the answer is not a pull document";
+
+/** The failure of a full read that follows a first one that did not settle. */
+function afterFirst(first: ConditionalGet, reason: string): string {
+  return first.ok ? reason : `${first.reason}; then the full read: ${reason}`;
+}
+
+/**
+ * Read pull request `pr` of `owner/repo`. `caller` labels the request in the
+ * cost ledger and for the test double (`CallContext.caller`); `get` is the
+ * conditional read, replaced by a test that counts its requests. `budgetSec`
+ * answers the whole seconds the caller has left, asked as each request starts.
+ */
+export async function readPrSnapshot(
+  owner: string,
+  repo: string,
+  pr: string,
+  caller: string,
+  get: typeof ghConditionalGet = ghConditionalGet,
+  budgetSec?: () => number | undefined,
+): Promise<PrSnapshotRead> {
+  if (!/^\d+$/.test(pr))
+    return { ok: false, reason: `'${pr}' is not a pull request number` };
+  const path = `repos/${owner}/${repo}/pulls/${pr}`;
+  // One caller budget covers both requests: each reads what is left of it as
+  // it starts, so a stalled first read leaves the fallback only the remainder.
+  // An exhausted budget sends nothing: the transport's deadline is a whole
+  // positive number of seconds, so a request is only made with time to spend.
+  const spent = `${path}: the caller's time budget is spent`;
+  const exhausted = (): boolean => (budgetSec?.() ?? 1) <= 0;
+  const options = (extra: { unconditional?: boolean } = {}) => {
+    const left = budgetSec?.();
+    return left === undefined
+      ? { caller, ...extra }
+      : { caller, ...extra, timeoutSec: left };
+  };
+  if (exhausted()) return { ok: false, reason: spent };
+  const first = await get(path, options());
+  const settled = settleFirst(first, path);
+  if (settled !== null) return settled;
+  if (exhausted()) return { ok: false, reason: spent };
+  const full = await get(path, options({ unconditional: true }));
+  if (!full.ok) return { ok: false, reason: afterFirst(first, full.reason) };
+  const doc = parseDocument(full.body);
+  if (doc === null)
+    return {
+      ok: false,
+      reason: afterFirst(first, `${path}: ${NOT_A_DOCUMENT}`),
+    };
+  return { ok: true, snapshot: snapshotOf(doc) };
+}
+
+/** What the first, conditional read settles on its own, or null when a full read must follow. */
+function settleFirst(
+  first: ConditionalGet,
+  path: string,
+): PrSnapshotRead | null {
+  if (!first.ok)
+    return final(first) ? { ok: false, reason: first.reason } : null;
+  const doc = parseDocument(first.body);
+  // A full answer is the full read: what it lacks, the evaluation refuses.
+  if (first.changed)
+    return doc === null
+      ? { ok: false, reason: `${path}: ${NOT_A_DOCUMENT}` }
+      : { ok: true, snapshot: snapshotOf(doc) };
+  const kept = doc === null ? null : snapshotOf(doc);
+  return kept !== null && whole(kept) ? { ok: true, snapshot: kept } : null;
+}

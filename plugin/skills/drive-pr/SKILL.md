@@ -1813,8 +1813,9 @@ Then:
      recurring CI failure blocks the merge), and a matching open issue is
      updated with a comment on the new evidence rather than filed again, as
      the issue-filing row allows. At `attended`, or when the base branch's
-     policy cannot be read, file nothing: park the decision under
-     `human-decision` (§ 4) and still repair the cause.
+     policy cannot be read, file nothing. Use an open park that explains
+     what blocks the repair, or park the filing decision under
+     `human-decision` (§ 4). Carry on with any repair the park allows.
   3. Repair the cause as `ci-repair` does, base sync first: when
      `$DRIVE_PR_ROUND_REPAIR_SKILL` is set load it, else follow
      [`/jig:fix-ci`](../fix-ci/SKILL.md); then § 5 and § 6, pushing through
@@ -1822,12 +1823,13 @@ Then:
   4. Write the receipt to the path in `$DRIVE_PR_CI_DIAGNOSIS_REPORT`, at most
      4096 bytes of JSON, with the file editor:
      `{"diagnosis": "<why the earlier attempts failed and what this one changes>", "issue": "<tracker key>", "pushedHead": "<sha of the head you pushed>"}`.
-     When you parked the filing (attended, or policy unreadable), give
-     `"parked": "<the key you parked it under>"` in place of `issue`. The
-     driver accepts that receipt only when the drive state holds a
-     `human-decision` park of that key made during this diagnosis; it then
-     records "no issue filed" and still verifies the push. A receipt with
-     neither key, or both, is incomplete.
+     When you parked the filing, or an existing park explains why CI repair
+     still needs a person's decision, give `"parked": "<the open park's key>"`
+     in place of `issue`. The driver verifies that the key is still parked and
+     records the diagnosis. A verified push of a replacement head returns to
+     the gate on that head. With no replacement head reported, the driver
+     hands the open decision back as `HITL_PARKED`. A receipt must name
+     exactly one key.
      `diagnosis` is prose (400 characters are kept, secrets and addresses
      redacted); `issue`, when present, is a tracker key of at most 80 characters;
      `parked`, when present, at most 200 characters on one line;
@@ -1968,9 +1970,9 @@ verdicts, the ones the guard below withholds until a sweep succeeds. Not "every
 verdict that does not re-arm", which is wider:
 `PR_NOT_OPEN` ends without re-arming too, and it is not guarded — for the
 reason the next paragraph gives. `UNSUPPORTED_CLI`
-also ends without re-arming, and a sweep runs, and may well have succeeded,
-before that verdict is reached. That is exactly why it *is* guarded — a sweep having run is not
-the same claim as it having *succeeded*, and only the guard tells them apart.
+is not in it: it is `drive.ts`'s refusal to start, never a verdict of the
+status evaluation, and `drive-status.ts`'s own argument errors exit before any
+sweep runs.
 `CONVERGED` also ends without re-arming
 and is not in this set, but for a narrower reason than "excluded" — see the
 dedicated paragraph below. What `PR_NOT_OPEN`'s exclusion says about
@@ -2033,8 +2035,9 @@ that has not completed. The final-CI loop skips its full status and `ci-hold`
 reads only after a live evaluation says to keep waiting. Both expire reuse at
 `AWAIT_ROUND_CHECKS_MAX_AGE` (seconds, default 300; 0 disables reuse), refresh
 on changed or unreadable signals, and make every terminal decision live.
-Mergeability, `mergeStateStatus`, `baseRefOid`, and `stillOnHead` remain
-GraphQL. `--once` always evaluates afresh; `JIG_GH_CACHE=off` disables
+The evaluation's own reads of the pull request (the opening snapshot and
+`stillOnHead`) are conditional REST reads as well. `--once` always evaluates
+afresh; `JIG_GH_CACHE=off` disables
 both waiting gates. Detectors watch bounded first pages, so the age limit also
 bounds changes beyond those pages. Skipped final-CI ticks still count toward
 the witness-wait budget; the last poll at that bound gathers live evidence.
@@ -2075,8 +2078,7 @@ exhaustion, hands back a stop-and-look rather than a false terminal.
 [`PR_NOT_OPEN`](../../protocol/drive-exits.md) has nothing to reconcile, and
 the [not-settled states](../../protocol/drive-exits.md) do not assert the drive
 is over — every caller answers it by coming back, and that invocation's pass
-entry sweeps. [`UNSUPPORTED_CLI`](../../protocol/drive-exits.md) is not exempt: a sweep can run, and
-succeed, before that exit is reached, so only a successful sweep certifies it.
+entry sweeps.
 `--no-reconcile` and `--no-count` both suppress the sweep, so neither can
 certify an `UNRECONCILED_STOPPERS` verdict.
 
@@ -2914,8 +2916,9 @@ falls in.
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/park-decision.json -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" park [PR] --key <key> --kind <thread|finding> --class <class>
 ```
 
-`<key>` is the thread id (`PRRT_kwDO...`) for `--kind thread` and the
-summary finding's fingerprint for `--kind finding`.
+`<key>` is the thread id (`PRRT_kwDO...`) for `--kind thread`. For
+`--kind finding`, use the summary finding's fingerprint or a stable key
+for a decision that has no summary finding, such as a CI repair blocker.
 
 Pass `--path <repository-relative-path>` for a finding anchored to a file;
 the script reads a thread's anchor from the forge when no path is given.
@@ -3920,7 +3923,9 @@ There is no API for it, so this skill does not pace against it. It does
 **detect** the wall after the fact, because the wall announces itself with a
 reset time: a Claude Code pass's transcript records
 `{"error":"rate_limit","apiErrorStatus":429,…}` whose text reads
-`You've hit your session limit · resets 3:20am (UTC)`, and Codex
+`You've hit your session limit · resets 3:20am (UTC)` (a short window) or
+`You've hit your weekly limit · resets Nov 27, 11am (UTC)` (a weekly window,
+with the dated reset it states), and Codex
 writes `used_percent`, `window_minutes` and an absolute `resets_at` epoch on
 every turn. `lib/quota/` reads it, one adapter per vendor, and the driver acts
 on the answer:
@@ -3966,7 +3971,18 @@ evidence immediately before the spawn:
   Claude adapter's `candidateFiles()` walks through
   `<project>/<session-id>/subagents/agent-*.jsonl`, with a directory-depth
   bound and one aggregate entry and time budget for the whole tree. The
-  snapshot and detection share that walk. Subagent records carry the parent
+  snapshot and detection share that walk. When the pass carries a session id,
+  detection also reads `<project>/<session-id>.jsonl` and its `subagents/`
+  by name, so a tree too large to walk within those bounds usually cannot
+  hide the pass's own wall. The by-name lookup has its own bounds (20,000
+  entries and five seconds), so a projects tree large or slow enough to
+  exhaust them can still hide the transcript. A pass failure whose walk was
+  cut short before it found a wall says so in the drive's closing report
+  (cause `unknown`), since "no wall found" was then not a finding; that
+  Claude scan's part of that warning is withheld when the by-name lookup read
+  the pass's session whole, because the pass's own transcript was then
+  checked; another adapter's truncated scan (Codex) still raises its own.
+  Subagent records carry the parent
   session id and use the same exact-id correlation below. Both vendors
   create a session's file when the session starts, so anything
   appearing afterwards is a session started during the pass — and, absent the
@@ -4128,8 +4144,9 @@ vouches for a head such a reviewer has not looked at since.
 
 **exact** — Retain the documented deadline guarantees; tune a knob only for an evidenced slow operation.
 
-`--timeout` bounds the waiting **between** `drive-status.ts` polls and nothing
-else. A connection that is accepted but never completes is only ever noticed
+`--timeout` bounds the waiting **between** `drive-status.ts` polls and, from a
+poll's second evaluation on, its opening and terminal pull-request requests
+(every request of a poll's first evaluation keeps its own call deadline); nothing else. A connection that is accepted but never completes is only ever noticed
 *between* calls, so it outlives every deadline the driver advertises — and an
 unattended loop has nobody to notice it has stopped (mode 13 in
 `references/terminal-states.md`). Every outbound call therefore carries its own:
@@ -4161,11 +4178,21 @@ never sees) that fails closed to "cannot read" and, for a URL or branch argument
 with no REST path, falls back to `gh pr view`. The probe passes its remaining
 `--timeout` through, so the read is bounded by the poll budget: every stage
 (scope resolution, the API call, the `gh pr view` fallback) debits it and none
-starts once it is spent. The field-rich
-`gh pr view` reads (`mergeStateStatus`, `baseRefOid`, `isDraft`, …, and
-`stillOnHead`'s `state,headRefOid,baseRefOid`) deliberately stay on GraphQL:
-REST and GraphQL disagree on mergeability and `baseRefOid`, and this skill's
-replication-lag guards compare reads against each other. `await-round.ts`
+starts once it is spent. The evaluation's field-rich read of the pull
+request (state, draft, head and base commit and branch, `mergeable` and the
+merge state) and `stillOnHead`'s recheck of it are one conditional REST read
+of the pull document, `lib/status/pr-snapshot.ts`'s `readPrSnapshot`: an
+unchanged PR answers `304` and the kept reading is reused, and both reads
+take every compared value from that one document, so no guard compares a
+REST value with a GraphQL one. A failed conditional read, or a kept reading
+that is not a whole pull document, is followed by one full read (not after a
+rate limit, an auth failure or a missing pull request, which a second request
+cannot clear). From the second evaluation on, the opening read and the terminal recheck
+each run within what remains of the invocation's `--timeout`, and either is refused
+once it is spent; every request of the first evaluation keeps its own call deadline. A `null`
+`mergeable`, which GitHub sends while it computes mergeability, reads as
+`UNKNOWN`. `drive-status.ts` resolves a URL or branch argument to its number
+once, before the first evaluation. `await-round.ts`
 (the `resolve-review-comments` skill) documents the conditional-REST polling of
 PR state and checks; `JIG_GH_CACHE` / `JIG_GH_CACHE_DIR` control the
 cache, and it is off under `NODE_ENV=test` unless a directory is given.

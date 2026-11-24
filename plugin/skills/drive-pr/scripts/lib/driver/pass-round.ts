@@ -136,6 +136,7 @@ export async function runRoundPass(
       driverRuntime.activePass = handle;
       driverRuntime.passRound = round;
       driverRuntime.passStartedAt = startedAt;
+      driverRuntime.quotaScanTruncated = [];
       if (session !== null) keep(session);
       options.onSpawn?.(handle);
     },

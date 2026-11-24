@@ -404,6 +404,78 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.306.4] - 2026-11-24
+
+### Fixed
+
+- `drive-pr` stops for a human decision when a standalone park is the remaining blocker. CI diagnosis can also cite an existing open park and hand the decision back to a person.
+
+## [0.306.3] - 2026-11-24
+
+### Fixed
+
+- A drive whose every pass failed to push (a pre-push gate the base branch
+  breaks, a remote that rejects the push) no longer stops as a plain
+  `STALLED` that the dispatcher re-drives onto the same refusal. The pass's
+  `PUSH_FAILED` reason now says why the push failed, a pre-push gate, the
+  remote's rejection, the connection, a timeout or an unconfirmed head, and
+  quotes the last lines the push wrote. The drive's stop event, its ledger
+  and its closing report carry that reason, and the closing report's next
+  step sends a person to fix what refuses the push before re-arming. The
+  dispatcher reads the stop as a person's need, with that reason, instead of
+  re-driving it on the same head; a push to the pull request re-drives it
+  once for the new head. **Consumer action:** none.
+
+## [0.306.2] - 2026-11-24
+
+### Fixed
+
+- Make the pull request drive tests more reliable under load by observing the
+  cancellation sequence and giving multi-round fixtures time to finish.
+
+## [0.306.1] - 2026-11-24
+
+### Fixed
+
+- `drive-pr`: a pass that met Claude Code's weekly usage limit now stops the
+  drive `QUOTA_PARKED` with the reset the notice states
+  (`You've hit your weekly limit · resets Nov 27, 11am (<zone>)`), so the
+  dispatcher walls the account until that reset rather than for its
+  `wall_backoff`. The drive reads the pass's own transcript by its session
+  id, so an account whose transcript tree is too large to walk within the
+  scan bounds no longer hides the wall and leaves the pull request stopped
+  as an ordinary pass failure. A pass failure whose scan was cut short before
+  it found a wall now says so in the drive's closing report, with cause
+  `unknown` and a next step that looks for the notice first.
+- Merge readiness uses each failing check's own required status and ignores superseded pending reviewer attempts when their order is known.
+
+## [0.306.0] - 2026-11-23
+
+### Changed
+
+- `drive-pr`'s status evaluation reads the pull request (state, draft, head
+  and base, mergeability and merge state) with one conditional REST read of
+  the pull document instead of `gh pr view`, for its opening snapshot and for
+  the recheck before a terminal verdict. An unchanged pull request answers
+  `304`, which costs nothing from the account's rate limit. A failed read, or
+  a kept reading that is incomplete, is followed by one full read (except after a rate limit, an auth failure or a
+  missing pull request, which a second request cannot clear), and is
+  never taken for an unchanged pull request. Mergeability GitHub has not
+  finished computing still reads as unknown. `drive-status.ts` resolves a
+  pull request given as a URL or branch to its number once, before it
+  evaluates, and refuses a URL naming another repository.
+- **Breaking:** [`drive-exits.md`](plugin/protocol/drive-exits.md), now
+  version 2, lists `UNSUPPORTED_CLI` as a `driver-only` exit: `drive.ts`
+  exits `2` when it refuses to start, and `drive-status.ts` no longer reports
+  it as a state, since every `gh` serves the evaluation's REST read. Its
+  `driveStatusExit` in
+  [data/drive-exits.json](plugin/protocol/data/drive-exits.json) is now
+  `null`; `drive-status.ts` still exits `2`, with no
+  report, on argument errors and when startup cannot resolve the repository or
+  the pull request selector (which may be a network or authentication failure). **Consumer action:** advised at instructions. A program that runs
+  `drive-status.ts` itself reads its exit `2` as a startup refusal with no
+  report, never as a state. **Detect:** `text:UNSUPPORTED_CLI`.
+
 ## [0.305.0] - 2026-11-23
 
 ### Added
@@ -10848,7 +10920,12 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.305.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.306.4...HEAD
+[0.306.4]: https://github.com/jig-harness/jig/compare/v0.306.3...v0.306.4
+[0.306.3]: https://github.com/jig-harness/jig/compare/v0.306.2...v0.306.3
+[0.306.2]: https://github.com/jig-harness/jig/compare/v0.306.1...v0.306.2
+[0.306.1]: https://github.com/jig-harness/jig/compare/v0.306.0...v0.306.1
+[0.306.0]: https://github.com/jig-harness/jig/compare/v0.305.0...v0.306.0
 [0.305.0]: https://github.com/jig-harness/jig/compare/v0.304.5...v0.305.0
 [0.304.5]: https://github.com/jig-harness/jig/compare/v0.304.4...v0.304.5
 [0.304.4]: https://github.com/jig-harness/jig/compare/v0.304.3...v0.304.4
