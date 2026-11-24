@@ -380,6 +380,15 @@ protection) still decide its lane:
    `package.json`, a dependency added or removed, or a range that is not a
    version does not read.
 
+   A lockfile may accompany an allowed manifest update without `lockfile`
+   being listed; `lockfile` is needed only when lockfiles alone change. The
+   Ready predicate never validates a lockfile's contents, whether it
+   accompanies a manifest update or is the only change, and never checks it
+   against the manifest. A `package.json` that the forge reports as renamed
+   or copied must show at least one classifiable change to an existing
+   dependency's version or range; an unrelated edit, or a dependency added
+   or removed, disqualifies the whole manifest.
+
 For trusted automation the review of the head must
 still be witnessed by the reviewer app's check run, so where
 `review.reviewer_app` names none, a person's approval is still the witness
