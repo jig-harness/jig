@@ -1638,6 +1638,10 @@ describe("summary-findings marker overrides", () => {
              { id: 13, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 1 -->\\n- \`a.ts\` — finding' },
              { id: 14, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 1 -->\\nacknowledged' },
            ], false)?.id,
+           cleanReplacementSelected: m.reviewerSticky([
+             { id: 15, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 1 -->\\n- \`a.ts\` — finding' },
+             { id: 16, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: def5678 -->\\n<!-- ai-review-round: 1 -->\\nall clear' },
+           ], false)?.id,
            ignoresExamples: s.reviewerStickyBody(
              { user: { login: 'reviewer[bot]' }, body: '> <!-- other-review -->\\n\`\`\`\\n<!-- other-review -->\\n\`\`\`\\n    <!-- other-review -->' },
              (login) => login === 'reviewer[bot]',
@@ -1676,6 +1680,9 @@ describe("summary-findings marker overrides", () => {
     // A stamp-only acknowledgement is not evidence of a distinct review, even
     // when it repeats the summary's round, so it cannot erase that summary.
     expect(got.acknowledgementSelected).toBe(13);
+    // A clean stamp for a different reviewed head is a replacement, even when
+    // the reviewer reuses the previous round marker.
+    expect(got.cleanReplacementSelected).toBe(16);
     expect(got.ignoresExamples).toBeNull();
     // And the reviewed SHA is actually extracted under the custom name — it
     // scopes the unaccounted-slot keys, so failing to read it degrades every

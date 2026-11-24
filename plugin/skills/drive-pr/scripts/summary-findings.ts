@@ -1355,11 +1355,13 @@ export function reviewerSticky(
   // finding-bearing summary merely because it is newer.
   let selected: IssueComment | undefined;
   let selectedRound: number | null = null;
+  let selectedReviewedSha = "";
   let highestExplicitRound: number | null = null;
   for (const comment of comments) {
     const body = reviewerStickyBody(comment, isReviewerLogin, stickyMarker());
     if (body === null) continue;
     const round = parseReviewRound(body);
+    const reviewedSha = reviewedShaIn(body, reviewedShaMarker());
     // A stamp says which head was reviewed, not that this comment supersedes
     // a preceding account of its findings. In particular, a skip notice may
     // deliberately retain the last reviewed SHA.
@@ -1369,13 +1371,17 @@ export function reviewerSticky(
       decodeBacklog(body).length > 0 ||
       parseBodyFindings(body).length > 0 ||
       parseDeclaredUnanchored(body) > 0;
-    // A clean current-head review legitimately replaces the preceding
-    // finding-bearing summary even when the reviewer omits a round marker.
-    // A skip notice is deliberately excluded below: it retains an older stamp
-    // while saying that no review occurred for the pushed head.
     // A stamp identifies a reviewed head, not a replacement boundary. Without
     // an affirmative review round it may be an auxiliary acknowledgement on
     // that same head, which must not erase an earlier finding-bearing summary.
+    // A clean stamp for a different head is a fresh review, however, even when
+    // the reviewer reuses or omits its round marker.
+    const cleanReplacement = isCleanReplacement(
+      carriesFindingEvidence,
+      reviewedSha,
+      selectedReviewedSha,
+    );
+    const replacesSelection = carriesFindingEvidence || cleanReplacement;
     const skipOnly =
       !carriesFindingEvidence &&
       reviewerStickyIn(
@@ -1406,14 +1412,27 @@ export function reviewerSticky(
         round !== null &&
         (selectedRound === null || round > selectedRound)) ||
       (!skipOnly &&
-        carriesFindingEvidence &&
+        replacesSelection &&
         (round === null || selectedRound === null || round === selectedRound))
     ) {
       selected = comment;
       selectedRound = round;
+      selectedReviewedSha = reviewedSha;
     }
   }
   return selected;
+}
+
+function isCleanReplacement(
+  carriesFindingEvidence: boolean,
+  reviewedSha: string,
+  selectedReviewedSha: string,
+): boolean {
+  return (
+    !carriesFindingEvidence &&
+    reviewedSha !== "" &&
+    reviewedSha !== selectedReviewedSha
+  );
 }
 
 /** The PR number from `argv`, else the current branch's PR. */
