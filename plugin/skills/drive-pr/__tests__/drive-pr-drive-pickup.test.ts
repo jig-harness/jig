@@ -403,7 +403,8 @@ describe("drive.ts re-arms a HITL-parked drive once every item is answered", () 
         undefined,
         explicit ? { env: { DRIVE_PR_RESOLVED_PARKS_PR: "999" } } : {},
       );
-      expectSpawnExit({ ...r, stdout: null }, 0);
+      // Without the explicit re-arm the resolved thread's park still waits.
+      expectSpawnExit({ ...r, stdout: null }, explicit ? 0 : 8);
       if (explicit)
         expect(r.stderr).toContain("cleared 1 parked review thread(s)");
       else expect(r.stderr).not.toContain("cleared 1 parked review thread(s)");
