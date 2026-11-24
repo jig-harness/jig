@@ -28,6 +28,7 @@ import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { run } from "../../shared/proc.ts";
 import { currentMs, isoFromMs } from "../../shared/time.ts";
 import { stateRoot } from "../receipts.ts";
+import { OMITTED_LINE_TEXT } from "./provider-held.ts";
 import {
   recordAccountSignInSuccess,
   recordAccountStartupProblem,
@@ -40,9 +41,6 @@ import { writeWall } from "./walls.ts";
 export type CredentialCode = "unauthorized" | "unreachable";
 
 /** The longest value a credential command may print. */
-/** The line a transcript copy writes where lines were left out; a credential that is part of it could not be told apart from it. */
-export const OMITTED_LINE_TEXT = JSON.stringify({ type: "jig-omitted" });
-
 const LONGEST_VALUE = 4096;
 
 /**

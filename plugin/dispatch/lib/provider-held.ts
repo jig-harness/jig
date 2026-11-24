@@ -7,6 +7,9 @@
  */
 import { rememberSecret } from "../../shared/credentials.ts";
 
+/** The line a transcript copy writes where lines were left out; a credential that is part of it could not be told apart from it. Kept here, apart from the credential command, so reading a transcript does not load the process runner and its signal handlers. */
+export const OMITTED_LINE_TEXT = JSON.stringify({ type: "jig-omitted" });
+
 let held: { value: string; record: string } | null = null;
 
 /** Hold `value` as the credential of the launch `record`, remembered so every mask in this process replaces it. */

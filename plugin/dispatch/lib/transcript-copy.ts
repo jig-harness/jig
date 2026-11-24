@@ -40,8 +40,11 @@ import { claudeCode } from "../../shared/agent-harness/claude-code.ts";
 import { harnessOrDefault } from "../../shared/agent-harness/index.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { isCredentialKey, maskCredentials } from "../../shared/credentials.ts";
-import { heldCredential, holdsCredentialOf } from "./provider-held.ts";
-import { OMITTED_LINE_TEXT } from "./provider-credential.ts";
+import {
+  heldCredential,
+  holdsCredentialOf,
+  OMITTED_LINE_TEXT,
+} from "./provider-held.ts";
 import { swallow } from "../../shared/errors.ts";
 import { redactStrings } from "../../shared/redact.ts";
 import { LAUNCH_RECORD_ID } from "../../shared/records/launch-claims.ts";

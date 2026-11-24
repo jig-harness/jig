@@ -35,7 +35,8 @@ it.each(["overflow", "timeout"])(
     expectSpawnExit({ stdout, stderr, exitCode }, 0);
     expect(stderr).toContain("jig-forge-accounting-unavailable");
     expect(JSON.parse(stdout)).toEqual({
-      stderr: "before",
+      // The byte bound is enforced before appending: one byte of room keeps one byte.
+      stderr: stop === "overflow" ? "b" : "before",
       tail: "z".repeat(4096),
       overflow: stop === "overflow",
     });
