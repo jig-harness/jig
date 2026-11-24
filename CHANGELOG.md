@@ -404,6 +404,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.306.4] - 2026-11-24
+
+### Fixed
+
+- `drive-pr` stops for a human decision when a standalone park is the remaining blocker. CI diagnosis can also cite an existing open park and hand the decision back to a person.
+
 ## [0.306.3] - 2026-11-24
 
 ### Fixed
@@ -10914,7 +10920,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.306.3...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.306.4...HEAD
+[0.306.4]: https://github.com/jig-harness/jig/compare/v0.306.3...v0.306.4
 [0.306.3]: https://github.com/jig-harness/jig/compare/v0.306.2...v0.306.3
 [0.306.2]: https://github.com/jig-harness/jig/compare/v0.306.1...v0.306.2
 [0.306.1]: https://github.com/jig-harness/jig/compare/v0.306.0...v0.306.1
