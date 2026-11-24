@@ -35,7 +35,8 @@ function proseOnly(body: string): string {
         else break;
         indentEnd += 1;
       }
-      const token = /^\s*(`{3,}|~{3,})/.exec(bare)?.[1] ?? "";
+      const token =
+        columns <= 3 ? (/^\s*(`{3,}|~{3,})/.exec(bare)?.[1] ?? "") : "";
       if (
         fence !== null &&
         token !== "" &&

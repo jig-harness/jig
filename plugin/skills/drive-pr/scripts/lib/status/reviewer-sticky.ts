@@ -4,7 +4,8 @@ import { type SkipNotice, skipNoticeIn } from "./skip-notice.ts";
 /** `<!-- ai-review-round: N -->` from a sticky or inline reviewer comment. */
 export function parseReviewRound(body: string): number | null {
   const m = body.match(/<!--\s*ai-review-round:\s*(\d+)\s*-->/);
-  return m ? Number.parseInt(m[1] ?? "", 10) : null;
+  const round = m ? Number(m[1]) : Number.NaN;
+  return Number.isSafeInteger(round) ? round : null;
 }
 
 export interface ReviewerSticky {
@@ -198,7 +199,9 @@ function structuralSkipNotices(body: string, marker: string): string {
       fence = null;
     }
     if (fence !== null || indentation.columns >= 4 || /^ {0,3}>/.test(line)) {
-      if (open) kept.push(line);
+      // The skip notice intentionally retains its blockquoted prose, but a
+      // fenced or indented code example inside it is not payload evidence.
+      if (open && fence === null && indentation.columns < 4) kept.push(line);
       continue;
     }
     if (!open && opener.test(line)) {

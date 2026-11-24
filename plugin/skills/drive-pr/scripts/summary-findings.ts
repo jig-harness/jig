@@ -316,12 +316,13 @@ export function decodeBacklog(body: string): BacklogEntry[] {
   // An opener that is not a complete, valid marker is malformed protocol
   // evidence, not an absent backlog. Treating it as empty can erase a prior
   // summary when a newer round marker selects this comment.
+  const declared = [...body.matchAll(/<!--\s*ai-review-backlog\s*:/g)];
   if (!m) {
-    if (/<!--\s*ai-review-backlog\s*:/.test(body))
-      return fail("is not a complete base64 marker");
+    if (declared.length > 0) return fail("is not a complete base64 marker");
     return [];
   }
-  if (markers.length !== 1) return fail("appears more than once");
+  if (markers.length !== 1 || declared.length !== 1)
+    return fail("appears more than once or is malformed");
   let parsed: unknown;
   try {
     parsed = JSON.parse(Buffer.from(m[1] ?? "", "base64").toString("utf8"));
@@ -1416,8 +1417,10 @@ export function reviewerSticky(
   return selected;
 }
 
-function cleanReplacementStamp(body: string, round: number | null): boolean {
-  return reviewedShaIn(body, reviewedShaMarker()) !== "" && round !== null;
+function cleanReplacementStamp(body: string, _round: number | null): boolean {
+  // A reviewed SHA is a replacement boundary even when the reviewer omits a
+  // round marker. The status evidence uses the same form for a clean new head.
+  return reviewedShaIn(body, reviewedShaMarker()) !== "";
 }
 
 /** The PR number from `argv`, else the current branch's PR. */
@@ -1519,6 +1522,9 @@ export async function summaryReport(
 
     const issueComments =
       comments ?? (await issueCommentsFor(repo, prNumber, undefined));
+    const bodyFormat = reviewBodyFormat();
+    if (bodyFormat !== undefined)
+      return reviewBodyReportFor(prNumber, repo, issueComments, bodyFormat);
     const sticky = reviewerSticky(issueComments, configuredReviewerOnly);
     // Selection is deliberately based on the structural body. Keep using that
     // exact body below: parsing the raw comment after selection would let a
@@ -1530,9 +1536,6 @@ export async function summaryReport(
     const winddownDeferred = stickyBody
       ? winddownFingerprintsOf(stickyBody)
       : new Set<string>();
-    const bodyFormat = reviewBodyFormat();
-    if (bodyFormat !== undefined)
-      return reviewBodyReportFor(prNumber, repo, issueComments, bodyFormat);
     if (!sticky || stickyBody === null) return emptyReport(prNumber);
 
     const reviewComments: ReviewComment[] = JSON.parse(

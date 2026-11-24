@@ -323,8 +323,15 @@ function skipExcludedPathsAt(
 }
 
 function isExactRepositoryPath(path: string): boolean {
-  if (path === "" || path.includes("\0") || /[\r\n]/.test(path)) return false;
-  if (/^[A-Za-z]:\//.test(path)) return false;
+  if (
+    path === "" ||
+    path.trim() === "" ||
+    path.includes("\0") ||
+    /[\r\n]/.test(path)
+  )
+    return false;
+  if (/^[A-Za-z]:[\\/]/.test(path)) return false;
+  if (path.startsWith("\\")) return false;
   if (isAbsolute(path) || path.startsWith("/")) return false;
   return path
     .split("/")
