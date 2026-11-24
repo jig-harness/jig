@@ -206,7 +206,8 @@ work.
 ### 9. Hand an approved multi-pull-request plan to a plan keeper
 
 Only for approved work that spans more than one pull request, send the
-answers, issue numbers and demotions to one separate plan-keeper session.
+answers, issue numbers and demotions to one separate plan-keeper session
+under the keeper-update rules in step 10.
 This keeps plan mechanics out of the coordinating session. A one-deliverable
 handoff has no plan keeper.
 
@@ -248,7 +249,11 @@ can give neither, leave the start unresolved, say so, and ask the person.
 Verified evidence of a pickup underway now for this work (not an earlier
 launch that ended or failed) stops any resend while who caused it stays
 unknown: record it as "started, attribution unknown", and keep the send
-attempt's own attribution unresolved.
+attempt's own attribution unresolved. Positive evidence is a live holder
+matching the issue, or an equivalent current observation from the host that
+dispatched it. A launch entry from a historical record with no visible
+outcome is not evidence: its process may be dead, and an unknown process
+state may only mean the wrapper has not yet claimed the launch.
 Wait
 when pickup is pending (it happens on a later tick). When an accepted pickup
 claimed the item and then stalled, follow the recovery the status reports, or
@@ -259,11 +264,26 @@ When a held task's decision arrives, file and start only the
 newly eligible remainder, never a task already filed. Send the plan keeper
 (step 9, when the plan has one) each decision when it is recorded, including
 a rejection that leaves no task to hand off, and each issue key as soon as
-filing succeeds, whatever the launch outcome. Write each such update into the
-notebook as owed before sending it, and clear it only once the keeper confirms
-it applied it. On every return, reconcile the owed updates against the plan
-the keeper holds before repeating or clearing any (a keeper may have applied
-one whose acknowledgment was lost).
+filing succeeds, whatever the launch outcome, under the keeper-update rules
+below.
+
+**Keeper-update rules** (every update to the plan keeper follows them: the
+initial handoff in step 9, decisions and issue keys here, and a track
+removal in step 13):
+
+- Record the update in the notebook as owed before sending it, identified by
+  its decision and revision. Clear it only once the keeper confirms it
+  applied it.
+- Before delegating filing, record a pending filing entry for the task, with
+  a marker the issue body will carry. On return, recover the key from the
+  filing session's durable result or by searching the tracker for that
+  marker before filing the task again; a lost reply is then not a lost key.
+- On every return, reconcile the owed updates against the plan the keeper
+  holds before repeating or clearing any (a keeper may have applied one
+  whose acknowledgment was lost).
+- A later revision of a decision supersedes an earlier one. Once the
+  replacement is verified applied, clear the older owed update; never replay
+  it, since replay would undo the newer choice.
 
 ### 11. Pick up the state on every return
 
@@ -281,7 +301,11 @@ no saved outcome as unconfirmed: check it and record where it stands before
 resending that item or starting work that depends on it; independent approved
 work is not held by it. An unreadable source or inconclusive answer keeps the
 start unconfirmed, holds the work that depends on it, and is never a reason
-to retry; recording the result does not release dependents. Then read the
+to retry; recording the result does not release dependents. Track the
+observed pickup and the send's attribution separately. Work whose
+prerequisite is only that the pickup has started is released by verified
+evidence of a pickup underway (step 10); work that needs the send itself
+confirmed keeps waiting for the mechanism's terminal answer. Then read the
 state of started work through
 `/jig:operator` in a fresh session when the `jig` command is available.
 Otherwise, query the configured tracker or delivery mechanism read-only and
@@ -307,7 +331,7 @@ on return, and state that it has not been persisted.
 ### 13. Demote without losing what was learned
 
 When the person lowers a track's priority, send its removal to the plan
-keeper when there is one, and retain its facts in a note marked as an idea in
+keeper when there is one (under step 10's keeper-update rules), and retain its facts in a note marked as an idea in
 the durable record. A one-deliverable handoff updates that record directly.
 A demotion changes what is owed without discarding useful evidence.
 
