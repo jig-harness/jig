@@ -73,14 +73,17 @@ export function diagnosedParkKey(
  * head can converge without a counted round), so the park is read from the
  * receipt itself; a key no longer parked selects nothing.
  */
-export function latestDiagnosedParkKey(
+export function latestDiagnosedPark(
   actions: readonly CiAction[],
-): string | null {
+): { key: string | null; at: string } | null {
   const last = actions.findLast(
     (a) => a.action === "repair" && a.detail.startsWith("diagnosis: head "),
   );
   if (last === undefined) return null;
-  return splitParkTag(last.detail.replace(/^diagnosis: head \S+: /, "")).key;
+  return {
+    key: splitParkTag(last.detail.replace(/^diagnosis: head \S+: /, "")).key,
+    at: last.at,
+  };
 }
 
 /** The latest escalation at `head`: a started, recorded or skipped diagnosis. */

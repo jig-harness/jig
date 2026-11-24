@@ -1,5 +1,5 @@
 import {
-  latestDiagnosedParkKey,
+  latestDiagnosedPark,
   parkTag,
   splitParkTag,
 } from "../scripts/lib/state/ci-actions.ts";
@@ -20,6 +20,7 @@ import {
   judgeReceipt,
   readDiagnosis,
 } from "../scripts/lib/driver/ci-diagnosis.ts";
+import { leadPark } from "../scripts/lib/driver/stop-text.ts";
 import { diagnosisStartedPrefix } from "../scripts/lib/state/ci-actions.ts";
 import { HUMAN_DECISION_CLASS } from "../scripts/lib/state/rulings.ts";
 import { type DriveState, freshState } from "../scripts/lib/state/schema.ts";
@@ -276,10 +277,39 @@ describe("latest diagnosed park", () => {
       action("b".repeat(40), "untagged"),
       action(HEAD, `${parkTag(FILING)}parked`),
     ];
-    expect(latestDiagnosedParkKey(actions)).toBe(FILING);
+    expect(latestDiagnosedPark(actions)?.key).toBe(FILING);
   });
   it("names none when the latest diagnosis handed back no park", () => {
-    expect(latestDiagnosedParkKey([action(HEAD, "plain")])).toBeNull();
-    expect(latestDiagnosedParkKey([])).toBeNull();
+    expect(latestDiagnosedPark([action(HEAD, "plain")])?.key).toBeNull();
+    expect(latestDiagnosedPark([])).toBeNull();
+  });
+});
+
+describe("lead park of a stop", () => {
+  it("prefers a park made after the diagnosis over the diagnosed one", () => {
+    const state = {
+      ...freshState(1928),
+      ciActions: [
+        {
+          at: "2026-01-01T00:00:00.000Z",
+          round: 0,
+          action: "repair" as const,
+          detail: `diagnosis: head ${HEAD}: ${parkTag("old")}parked`,
+        },
+      ],
+      parked: [
+        { key: "old", kind: "thread", reason: "old?", round: 1 },
+        {
+          key: "new",
+          kind: "thread",
+          reason: "new?",
+          round: 2,
+          at: "2026-01-02T00:00:00.000Z",
+        },
+      ],
+    } as unknown as DriveState;
+    expect(leadPark(state)?.key).toBe("new");
+    const same = { ...state, parked: [state.parked[0]] } as DriveState;
+    expect(leadPark(same)?.key).toBe("old");
   });
 });

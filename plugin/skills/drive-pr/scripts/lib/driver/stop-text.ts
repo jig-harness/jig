@@ -9,10 +9,7 @@
  */
 import type { ParkedItem } from "../state/park-frame.ts";
 import type { DriveState } from "../state/schema.ts";
-import {
-  diagnosisDetail,
-  latestDiagnosedParkKey,
-} from "../state/ci-actions.ts";
+import { diagnosisDetail, latestDiagnosedPark } from "../state/ci-actions.ts";
 import { lastStopEvent, stopInstant } from "../state/events.ts";
 import {
   DRIVE_EXIT,
@@ -33,12 +30,22 @@ export function oneLine(text: string): string {
 
 /**
  * The parked item a park's stop prints: the one the latest CI diagnosis
- * handed to a person while it is still parked, else the first.
+ * handed to a person while it is still parked and no other item was parked
+ * after that diagnosis (a later park is what an ordinary gate stopped on),
+ * else the first.
  */
 export function leadPark(state: DriveState | null): ParkedItem | undefined {
   const parked = state?.parked ?? [];
-  const key = latestDiagnosedParkKey(state?.ciActions ?? []);
-  return parked.find((p) => p.key === key) ?? parked[0];
+  const diagnosed = latestDiagnosedPark(state?.ciActions ?? []);
+  const diagnosedItem = parked.find((p) => p.key === diagnosed?.key);
+  if (diagnosed === null || diagnosedItem === undefined) return parked[0];
+  const later = parked.find(
+    (p) =>
+      p.key !== diagnosedItem.key &&
+      p.at !== undefined &&
+      Date.parse(p.at) > Date.parse(diagnosed.at),
+  );
+  return later ?? diagnosedItem;
 }
 
 /** A park's line: the first parked item's question, and how many more wait. */
