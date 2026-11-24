@@ -427,9 +427,11 @@ protection) still decide its lane:
 **The drive can install dependencies before the Ready decision.** To review
 install inputs before a listed bot's drive starts, set
 `dispatch.adopt.trusted_automation: false` and start each drive after review.
-Pause dispatch and let its active ticks finish first (a tick that already
-passed its fresh read can still launch a first drive under a label removed
-afterwards), then stop any running drives, retire every outstanding `drive`
+Pause dispatch on every host that dispatches this repository, including
+ticks the change probe starts, and let each host's active ticks finish first
+(a tick that already passed its fresh read can still launch a first drive
+under a label removed afterwards, and a tick on a host left running keeps its
+old policy), then stop any running drives, retire every outstanding `drive`
 and `rearm` request (remove the labels) and resume dispatch once the policy is
 in effect: a request made before the switch can still start a drive without a
 new review. For a clean

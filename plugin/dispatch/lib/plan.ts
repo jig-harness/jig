@@ -725,6 +725,24 @@ function raiseStrandedDrive(input: PlanInput, pr: DrivenPr, want: Want): void {
   );
 }
 
+/** Who takes a drive over, and what could not be read, where the opt-out (`blocked`) does not withhold the takeover. */
+function takeoverReading(
+  input: PlanInput,
+  pr: DrivenPr,
+  hold: DriveHold,
+  blocked: string | null,
+  claimed: TakeoverClaim | null,
+) {
+  const takeover =
+    blocked === null && hold.kind === "takeover" ? hold.record.record.id : null;
+  const foreign = takeover === null && blocked === null ? claimed : null;
+  const read =
+    blocked === null
+      ? orphanReading(pr, input, takeover, foreign)
+      : { holder: null, gone: null, unread: `${pr.why}; ${blocked}` };
+  return { takeover, foreign, ...read };
+}
+
 /** One driven pull request: quiet, unplaced, held by a launch record or another host's claim, or wanted. */
 /** The drive, unless its rearm request moved on to a later one. */
 function unmoved(pr: DrivenPr | null): DrivenPr | null {
@@ -747,20 +765,19 @@ function planDrive(
     return;
   }
   const blocked = pr.class === "silent" ? automationStartBlock(pr) : null;
-  const takeover =
-    blocked === null && hold.kind === "takeover" ? hold.record.record.id : null;
   // Another host's open takeover on these ledger facts holds the drive even
   // where this host's own record would take it over.
   // The opt-out withholds only the takeover: the other host's claim is still
   // placed, and its diagnostics raised.
   const claimed = planForeign(input, pr, plan, want);
   if (claimed === true) return;
-  const placed = blocked === null ? claimed : null;
-  const foreign = takeover === null ? placed : null;
-  const { holder, gone, unread } =
-    blocked === null
-      ? orphanReading(pr, input, takeover, foreign)
-      : { holder: null, gone: null, unread: `${pr.why}; ${blocked}` };
+  const { takeover, foreign, holder, gone, unread } = takeoverReading(
+    input,
+    pr,
+    hold,
+    blocked,
+    claimed,
+  );
   const taken =
     takeover !== null || foreign !== null || holder !== null || gone !== null;
   if (QUIET.has(pr.class) && !taken) {

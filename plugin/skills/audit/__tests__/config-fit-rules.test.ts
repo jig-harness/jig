@@ -85,6 +85,12 @@ test("a trusted automation list with no reviewer app and no adoption is said to 
   );
 });
 
+const ON_MESSAGE =
+  "dispatch.adopt.trusted_automation is false: no automatic start is left for a listed bot's pull request. Its first drive, a restart after a head that moved and a conflict repair all wait for a person, and a pickup handoff cannot start it. Before switching, pause dispatch on every host that dispatches this repository (the change probe's ticks included) and let each host's active ticks finish: a tick that already passed its fresh read can still complete an automatic start under the old policy. Review the install inputs (manifests, installer configuration, lockfiles) against a trusted baseline, and the inputs of the merge of the base too, since the drive merges it and may install from the merged tree, before you start the drive directly from a verified checkout. Recheck whenever the head, the base or a conflict resolution changes the inputs, and stop the drive if they move. Retire every outstanding drive and rearm request while dispatch is paused: one made before the switch can still start a drive without a new review. A drive or rearm label is not a substitute: it pins neither the reviewed head nor the base the drive merges, and a rearm label needs a trusted request bound to an eligible stop, so the dispatcher may start from inputs nobody reviewed. A drive a person stopped stays stopped, and a converged drive needs no restart: restart any other stopped drive only by starting it directly after the same review.";
+
+const OFF_MESSAGE =
+  "dispatch.adopt.trusted_automation is false: no automatic start is left for a listed bot's pull request. Its first drive, a restart after a head that moved and a conflict repair all wait for a person, and a pickup handoff cannot start it. Before switching, pause dispatch on every host that dispatches this repository (the change probe's ticks included) and let each host's active ticks finish: a tick that already passed its fresh read can still complete an automatic start under the old policy. Review the install inputs (manifests, installer configuration, lockfiles) against a trusted baseline, and the inputs of the merge of the base too, since the drive merges it and may install from the merged tree, before you start the drive directly from a verified checkout. Recheck whenever the head, the base or a conflict resolution changes the inputs, and stop the drive if they move. Labels are off (dispatch.labels.enabled), so no label starts a drive; retire any request before turning them on again. A drive a person stopped stays stopped, and a converged drive needs no restart: restart any other stopped drive only by starting it directly after the same review.";
+
 test("the trusted automation adoption opt-out is accepted and reported", () => {
   const found = findings(
     'dispatch:\n  labels: { enabled: true }\n  adopt: { enabled: true, trusted_automation: false }\npull_requests:\n  trusted_automation: ["renovate[bot]"]\n',
@@ -95,43 +101,17 @@ test("the trusted automation adoption opt-out is accepted and reported", () => {
       finding.id === "derivation:pull_requests.trusted_automation:adopt",
   );
   expect(adopt?.severity).toBe("info");
-  expect(adopt?.message).toContain(
-    "dispatch.adopt.trusted_automation is false",
-  );
-  expect(adopt?.message).toContain("no automatic start is left");
-  expect(adopt?.message).toContain("a pickup handoff cannot start it");
-  expect(adopt?.message).toContain("conflict repair all wait for a person");
-  expect(adopt?.message).toContain("install inputs");
-  expect(adopt?.message).toContain("start the drive directly");
-  expect(adopt?.message).toContain("pins neither the reviewed head");
-  expect(adopt?.message).toContain("nor the base");
-  expect(adopt?.message).toContain("bound to an eligible stop");
-  expect(adopt?.message).not.toContain("use a label only");
-  expect(adopt?.message).toContain("inputs of the merge of the base too");
-  expect(adopt?.message).toContain(
-    "Retire every outstanding drive and rearm request",
-  );
-  expect(adopt?.message).not.toContain("go ahead and apply");
-  expect(adopt?.message).not.toMatch(
-    /\b(apply|add|use) (the |a )?(drive|rearm) label\b/,
-  );
-  expect(adopt?.message).not.toMatch(/jig send|queue the restart/);
-  // the guidance names no route that starts the drive other than directly
-  expect(adopt?.message).toMatch(
-    /start the drive directly from a verified checkout/,
-  );
+  // The whole message is pinned: a phrase-by-phrase check passes whatever
+  // is appended to the guidance, so a route the guidance must not offer
+  // would go unseen.
+  expect(adopt?.message).toBe(ON_MESSAGE);
 });
 
 test("the opt-out with labels off has no label route, and refusal hides the guidance", () => {
   const direct = findings(
     'dispatch:\n  adopt: { enabled: false, trusted_automation: false }\npull_requests:\n  trusted_automation: ["renovate[bot]"]\n',
   ).find((f) => f.id === "derivation:pull_requests.trusted_automation:adopt");
-  expect(direct?.message).toContain("start the drive directly");
-  expect(direct?.message).toContain("Labels are off");
-  expect(direct?.message).toContain("install inputs");
-  expect(direct?.message).not.toContain("Retire every outstanding");
-  expect(direct?.message).not.toContain("can still start a drive");
-  expect(direct?.message).not.toContain("pins neither");
+  expect(direct?.message).toBe(OFF_MESSAGE);
   const plain = findings(
     'dispatch:\n  adopt: { enabled: false }\npull_requests:\n  trusted_automation: ["renovate[bot]"]\n',
   ).find((f) => f.id === "derivation:pull_requests.trusted_automation:adopt");
