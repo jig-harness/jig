@@ -168,6 +168,7 @@ export async function handleFailedReviewPass(
   // decision below, rather than each reading the clock separately a few
   // lines apart for what is, in substance, one detect-then-decide step.
   const now = Temporal.Now.instant();
+  driverRuntime.quotaScanTruncated = [];
   const block = detectQuotaBlock(
     {
       cwd: process.cwd(),
@@ -175,10 +176,15 @@ export async function handleFailedReviewPass(
       now,
       preexistingSessions,
       ...(prepared !== null ? { correlation: prepared.correlation } : {}),
+      onScanTruncated: (vendor) => {
+        driverRuntime.quotaScanTruncated.push(vendor);
+      },
     },
     preexistingSnapshot.truncatedByVendor,
   );
   if (block !== null) {
+    // A wall was found, so no adapter's cut-short walk speaks for this stop.
+    driverRuntime.quotaScanTruncated = [];
     return await handleQuotaBlock(block, now, round, context);
   }
 
