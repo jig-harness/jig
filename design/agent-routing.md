@@ -89,8 +89,9 @@ such mapping
 tier is never a model id. Model identifiers used by the complexity-tier
 translation appear in routing configuration and its classification keys, both
 of which the loader checks. A direct model name in a one-run operator choice
-or skill pass model does not use that routing loader; a tier-valued choice
-still resolves through it.
+does not use that routing loader. A tier-valued one-run choice is available
+only to a drive pass, whose settings resolve it through that loader;
+implementer routing derives its tier from item facts instead.
 
 ### Complexity tiers
 

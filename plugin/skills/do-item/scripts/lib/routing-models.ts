@@ -322,7 +322,7 @@ function familyTier(
     throw new RoutingError(
       `${field}: ${name} is a Scout family, which M0 keeps read-only, so it is never a pickup's route and no routing.model_tiers or routing.family_tiers entry changes that (ADR-0009); an implementer may still hand it simple sub-steps`,
     );
-  if (family !== undefined && byAlias === undefined)
+  if (familiesOf(runtime)?.takesAlias === true && byAlias === undefined)
     refuseReleaseId(runtime, name, field, family);
   return own ?? family?.tier;
 }
@@ -346,11 +346,13 @@ function refuseReleaseId(
   runtime: string,
   name: string,
   field: string,
-  family: { alias: string },
+  family: { alias: string } | undefined,
 ): void {
-  if (familiesOf(runtime)?.takesAlias !== true) return;
+  const alias = family?.alias;
   throw new RoutingError(
-    `${field}: ${name} is a model id, and ${runtime} takes the family alias ${family.alias}; a release id would keep the pin on a superseded model`,
+    alias === undefined
+      ? `${field}: ${name} is not a model ${runtime} can launch; ${runtime} accepts its family aliases only`
+      : `${field}: ${name} is a model id, and ${runtime} takes the family alias ${alias}; a release id would keep the pin on a superseded model`,
   );
 }
 

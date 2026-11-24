@@ -350,8 +350,9 @@ runtime rows are isolated, but different complexity-tier cells in one row are
 still compared by the tier-ordering check. A stage override can isolate the
 change only when each affected launch reads that stage row; different stage
 names alone do not establish isolation. Split the affected layer into a
-separately configured selection only when consumers that must stay on different
-models resolve to the same cell. It
+separately configured selection when consumers that must stay on different
+models resolve to the same cell, or when shared-row tier ordering prevents
+their required selections from coexisting. It
 is an exact reversal only while the alias still
 resolves to the measured release. Once the family has moved on, or when the
 measured baseline itself can no longer be used and some other model stands in

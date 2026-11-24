@@ -14,4 +14,4 @@ Declare a model's tier with the new `routing.model_tiers` key. Choose a separate
 
 - For a runtime with a list of known families, an unrecognized model identifier that neither declaration key classifies is refused. The message names the key to set (`routing.model_tiers.<runtime>.<model>`) instead of `routing.family_tiers`.
 - `routing.family_tiers` is kept as the older spelling of `routing.model_tiers`: a configuration that sets only it routes exactly as before. One model declared under both with different tiers is refused.
-- A declared exact model identifier is forwarded to the runtime that selects it, including Claude Code and Codex.
+- A declared exact model identifier is forwarded only where the selected runtime accepts it. Claude Code continues to require its family aliases, while Codex may accept declared identifiers its interface supports.
