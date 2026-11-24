@@ -52,9 +52,20 @@ const LONGEST_VALUE = 4096;
  */
 function learnPrinted(stdout: string): void {
   for (const part of [stdout.trim(), ...stdout.split(/\r?\n/)]) {
-    const line = part.trim();
-    if (!collidesWithMarker(line)) rememberSecret(line);
+    // Keep the marker emitted by a sink recognizable, but remember every
+    // maskable opaque fragment around it. A failed command can print a real
+    // credential beside a replacement marker on the same line.
+    for (const fragment of part
+      .split(new RegExp(`(${MARKERS.map(escapeRegExp).join("|")})`))
+      .map((value) => value.trim())) {
+      if (fragment !== "" && !collidesWithMarker(fragment))
+        rememberSecret(fragment);
+    }
   }
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /** The replacement texts the sinks emit, in lowercase and matched exactly. */

@@ -153,13 +153,14 @@ describe("resolving a credential reference", () => {
     ).toMatchObject({ ok: false, failure: { code: "unauthorized" } });
   });
 
-  it("refuses a part of a redaction marker and keeps a nearby value", async () => {
+  it("refuses a part of a redaction marker, including a complete marker inside a longer value", async () => {
     for (const printed of [
       "redacted",
       "<redacted",
       "launch token",
       "oversized line",
       "[redacted: oversized line dropped]",
+      "opaque-value-<redacted>-inside",
     ]) {
       const value = await resolveCredential(
         command(`process.stdout.write(${JSON.stringify(printed)})`),
@@ -179,7 +180,7 @@ describe("resolving a credential reference", () => {
     expect(usable.ok).toBe(true);
   });
 
-  it("does not remember a refused marker, from a value or from failed output", async () => {
+  it("does not remember a refused marker, but remembers opaque failed output around it", async () => {
     await resolveCredential(
       command("process.stdout.write('redacted')"),
       "ref",
@@ -187,14 +188,17 @@ describe("resolving a credential reference", () => {
     );
     await resolveCredential(
       command(
-        "process.stdout.write('launch token\\n<redacted>'); process.exit(1)",
+        "process.stdout.write('launch token\\nopaque-failed-secret-1234 <redacted>'); process.exit(1)",
       ),
       "ref",
       process.env,
     );
     const masked = maskCredentials(
-      "a <redacted> b [launch token] c redacted [redacted: oversized line dropped]",
+      "a <redacted> b [launch token] c redacted [redacted: oversized line dropped] d opaque-failed-secret-1234",
       "<redacted>",
+    );
+    expect(masked).toBe(
+      "a <redacted> b [launch token] c redacted [redacted: oversized line dropped] d <redacted>",
     );
     expect(masked).toContain("[launch token]");
     expect(masked).toContain("[redacted: oversized line dropped]");
