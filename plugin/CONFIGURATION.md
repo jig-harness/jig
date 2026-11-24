@@ -427,9 +427,12 @@ protection) still decide its lane:
 **The drive can install dependencies before the Ready decision.** To review
 install inputs before a listed bot's drive starts, set
 `dispatch.adopt.trusted_automation: false` and start each drive after review.
-Stop any running drives while putting this procedure in place, and retire
-every outstanding `drive` and `rearm` request (remove the labels): a request
-made before the switch can still start a drive without a new review. For a clean
+Pause dispatch and let its active ticks finish first (a tick that already
+passed its fresh read can still launch a first drive under a label removed
+afterwards), then stop any running drives, retire every outstanding `drive`
+and `rearm` request (remove the labels) and resume dispatch once the policy is
+in effect: a request made before the switch can still start a drive without a
+new review. For a clean
 base merge, compare the merged tree with its first parent (the pre-merge branch).
 For a conflict resolution, compare the resolved index with that branch.
 Recheck when the head, base or resolution changes the inputs. Review the
@@ -1641,7 +1644,7 @@ repository. What a run may start is the machine's to say, in
 | `dispatch.labels.enabled` | `true` or `false` | `false`: no label is read or written. `true` turns the [pull request state labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on (below), for every writer (the drive, the follow-up through `jig dispatch marker` and the dispatcher's wrapper, and the dispatcher's tick): a repository with no dispatcher turns them on here too | dispatch, drive-pr |
 | `dispatch.labels.prefix` | string of at most 35 characters, with no comma and no space at either end | `jig:`: put before every label name (`jig:driving`, `jig:hold`). A repository whose label taxonomy has a convention of its own picks one that fits it | dispatch, drive-pr |
 | `dispatch.labels.only_labeled` | `true` or `false` | `false`: every open pull request is read for a drive ledger. `true` limits the dispatcher to the pull requests that carry a label of the set: one that carries none is never read, re-armed or followed up. A drive labels its own pull request (`driving` once it arms), so a drive a person arms by hand comes into the dispatcher's scope with its first label, and the dispatcher re-arms, re-drives and follows it up from then on; a person keeps one out with `hold`. Refused unless `enabled` is `true` | dispatch |
-| `dispatch.adopt.enabled` | `true` or `false` | `false`: a pull request with no drive ledger is driven only when a person labels it `drive`. `true` turns the adoption rule on (below). Refused beside `labels.only_labeled: true` | dispatch |
+| `dispatch.adopt.enabled` | `true` or `false` | `false`: a pull request with no drive ledger is not adopted by its author; its first drive starts when a person labels it `drive`, arms it by hand, or when a completed process pickup arms its own same-repository pull request (the pickup handoff is closed to a listed bot's pull request by `adopt.trusted_automation: false`). `true` turns the adoption rule on (below). Refused beside `labels.only_labeled: true` | dispatch |
 | `dispatch.adopt.authors` | nonempty list of forge logins (a GitHub App's as `<name>[bot]`) | The login the dispatcher reads the forge as, the one the host's sessions open pull requests under: the authors whose pull requests the rule adopts | dispatch |
 | `dispatch.adopt.within` | duration | `168h` (a week): how recently a pull request must have been updated for the rule to adopt it | dispatch |
 | `dispatch.adopt.trusted_automation` | `true` or `false` | `true`: the rule can adopt same-repository pull requests from bots listed in `pull_requests.trusted_automation`. Set `false` to require a manual drive or rearm for those bots, including bots also named in `adopt.authors` | dispatch |

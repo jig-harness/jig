@@ -115,6 +115,11 @@ test("the trusted automation adoption opt-out is accepted and reported", () => {
   expect(adopt?.message).not.toMatch(
     /\b(apply|add|use) (the |a )?(drive|rearm) label\b/,
   );
+  expect(adopt?.message).not.toMatch(/jig send|queue the restart/);
+  // the guidance names no route that starts the drive other than directly
+  expect(adopt?.message).toMatch(
+    /start the drive directly from a verified checkout/,
+  );
 });
 
 test("the opt-out with labels off has no label route, and refusal hides the guidance", () => {
@@ -122,11 +127,10 @@ test("the opt-out with labels off has no label route, and refusal hides the guid
     'dispatch:\n  adopt: { enabled: false, trusted_automation: false }\npull_requests:\n  trusted_automation: ["renovate[bot]"]\n',
   ).find((f) => f.id === "derivation:pull_requests.trusted_automation:adopt");
   expect(direct?.message).toContain("start the drive directly");
-  expect(direct?.message).toContain("there is no label route");
+  expect(direct?.message).toContain("Labels are off");
   expect(direct?.message).toContain("install inputs");
-  expect(direct?.message).toContain(
-    "Retire every outstanding drive and rearm request",
-  );
+  expect(direct?.message).not.toContain("Retire every outstanding");
+  expect(direct?.message).not.toContain("can still start a drive");
   expect(direct?.message).not.toContain("pins neither");
   const plain = findings(
     'dispatch:\n  adopt: { enabled: false }\npull_requests:\n  trusted_automation: ["renovate[bot]"]\n',

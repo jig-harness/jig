@@ -64,11 +64,11 @@ export async function policyFindings(
  * that does not read trusts nobody; with no `review.reviewer_app` a person's
  * approval is still the review witness, so the list changes no approval
  * requirement; and when adoption or its trusted-bot rule is off, a
- * listed bot's pull request with no ledger is not adopted by its author;
- * with only author-based adoption off, a person's label (where labels are
- * on), a hand-armed drive or an eligible pickup handoff can still start its
- * first drive; with the explicit opt-out, no automatic start is left: a
- * person starts every listed bot's drive, directly.
+ * listed bot's pull request with no ledger is not adopted by its author.
+ * With only author-based adoption off (no opt-out), a person's label (where
+ * labels are on), a hand-armed drive or an eligible pickup handoff can still
+ * start its first drive. With the explicit opt-out, none of those starts is
+ * left: a person starts every listed bot's drive, directly.
  */
 export function trustedFit(config: Config): Finding[] {
   if (at(config, "pull_requests.trusted_automation") === undefined) return [];
@@ -98,11 +98,11 @@ export function trustedFit(config: Config): Finding[] {
     findings.push({
       id: "derivation:pull_requests.trusted_automation:adopt",
       severity: "info",
-      message: `dispatch.adopt.trusted_automation is false: no automatic start is left for a listed bot's pull request. Its first drive, a restart after a head that moved and a conflict repair all wait for a person, and a pickup handoff cannot start it. Review the install inputs (manifests, installer configuration, lockfiles) against a trusted baseline, and the inputs of the merge of the base too, since the drive merges it and may install from the merged tree, before you start the drive directly from a verified checkout. Recheck whenever the head, the base or a conflict resolution changes the inputs, and stop the drive if they move. Retire every outstanding drive and rearm request first: one made before the switch can still start a drive without a new review${
+      message: `dispatch.adopt.trusted_automation is false: no automatic start is left for a listed bot's pull request. Its first drive, a restart after a head that moved and a conflict repair all wait for a person, and a pickup handoff cannot start it. Review the install inputs (manifests, installer configuration, lockfiles) against a trusted baseline, and the inputs of the merge of the base too, since the drive merges it and may install from the merged tree, before you start the drive directly from a verified checkout. Recheck whenever the head, the base or a conflict resolution changes the inputs, and stop the drive if they move. ${
         labels.enabled
-          ? ". A drive or rearm label is not a substitute: it pins neither the reviewed head nor the base the drive merges, and a rearm label needs a trusted request bound to an eligible stop, so the dispatcher may start from inputs nobody reviewed"
-          : " (dispatch.labels.enabled is off, so there is no label route)"
-      }. A drive a person stopped stays stopped.`,
+          ? "Retire every outstanding drive and rearm request first: one made before the switch can still start a drive without a new review. A drive or rearm label is not a substitute: it pins neither the reviewed head nor the base the drive merges, and a rearm label needs a trusted request bound to an eligible stop, so the dispatcher may start from inputs nobody reviewed. "
+          : "Labels are off (dispatch.labels.enabled), so no label starts a drive; retire any request before turning them on again. "
+      }A drive a person stopped stays stopped.`,
     });
   else if (!adopt.enabled)
     findings.push({

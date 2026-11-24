@@ -126,20 +126,31 @@ describe("the plan of an item whose read a failed call stopped", () => {
 });
 
 describe("a silent drive the trusted automation opt-out blocks", () => {
-  it("is still reported to a person, not left quiet", () => {
+  // A driver no launch started whose run this host shows ended: without the
+  // opt-out the planner takes it over.
+  const gone = (extra: DrivenPr["evidence"]) =>
+    drive({
+      class: "silent",
+      why: "its driver is silent",
+      evidence: {
+        started: "2026-11-15T06:00:00Z",
+        driverGone: true,
+        unlaunched: true,
+        driverCheck: "its process ended",
+        ...extra,
+      },
+    });
+
+  it("is taken over without the opt-out", () => {
+    const plan = planTick(input({ drives: [gone({})] }));
+    expect(plan.actions).toHaveLength(1);
+    expect(plan.actions[0]).toMatchObject({ stage: "rearm", target: "PR #7" });
+    expect(plan.actions[0]?.reason).toContain("take it over");
+  });
+
+  it("is still reported to a person, not taken over or left quiet, with the opt-out", () => {
     const plan = planTick(
-      input({
-        drives: [
-          drive({
-            class: "silent",
-            why: "its driver is silent",
-            evidence: {
-              started: "2026-11-15T06:00:00Z",
-              trustedDriveManual: true,
-            },
-          }),
-        ],
-      }),
+      input({ drives: [gone({ trustedDriveManual: true })] }),
     );
     expect(plan.quiet.map((q) => q.target)).not.toContain("PR #7");
     expect(plan.actions).toHaveLength(1);
@@ -150,6 +161,7 @@ describe("a silent drive the trusted automation opt-out blocks", () => {
     expect(plan.actions[0]?.reason).toContain(
       "dispatch.adopt.trusted_automation",
     );
+    expect(plan.actions[0]?.reason).not.toContain("take it over");
   });
 
   it("leaves a silent idle automation drive quiet, without the opt-out", () => {
