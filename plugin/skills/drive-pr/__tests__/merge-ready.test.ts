@@ -610,6 +610,32 @@ describe("the forge's facts", () => {
 });
 
 describe("required checks and reviewer attempts", () => {
+  it("uses the failing check's own required flag when the forge reports CLEAN", () => {
+    const f = facts();
+    const review = f.checks.find((check) => check.app === RULES.reviewerApp);
+    if (review === undefined) throw new Error("fixture has no reviewer check");
+    f.checks = [
+      { ...review, id: 10, required: true, state: "failure" },
+      { ...review, id: 11, required: true },
+      { ...review, app: "github-actions", state: "failure" },
+    ];
+    const result = readiness(f, RULES);
+    expect(result.failing).toEqual(["AI review"]);
+    expect(result.lane).toBe("merge-now");
+  });
+
+  it("keeps a required pending review attempt until a newer attempt is known", () => {
+    const f = facts();
+    const review = f.checks.find((check) => check.app === RULES.reviewerApp);
+    if (review === undefined) throw new Error("fixture has no reviewer check");
+    const pending = { ...review, required: true, state: "pending" } as const;
+    const passed = { ...review, id: 11, required: true };
+    f.checks = [passed, pending];
+    expect(readiness(f, RULES).says).toContain("attempt order");
+    f.checks = [passed, { ...pending, id: 10 }];
+    expect(readiness(f, RULES).lane).toBe("merge-now");
+  });
+
   it("waits on required queue checks, even when approval is owed", () => {
     for (const reviewDecision of [null, "REVIEW_REQUIRED"]) {
       const f = facts({
