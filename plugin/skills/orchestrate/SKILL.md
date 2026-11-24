@@ -159,9 +159,14 @@ bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/jig-config.ts" dispa
 
 `${CLAUDE_SKILL_DIR}` means the directory holding this file. Claude Code
 fills it in; another harness substitutes the installed absolute path before
-running the command from the consumer repository's root. If the identity or
-procedure cannot be determined, file verified work but ask the person how to
-start it; do not improvise.
+running the command from the consumer repository's root. That command reads
+layered local configuration, while a dispatcher send reads the tracker,
+identity and dispatch states from the forge's default branch. Record the
+values the send will use (read from the default branch where you can); where
+they cannot be verified, or differ from the local read, record them as
+unverified, and treat any start as one the pickup thread cannot settle. If the
+identity or procedure cannot be determined, file verified work but ask the
+person how to start it; do not improvise.
 
 ### 7. File the defects
 
@@ -173,8 +178,9 @@ out of the person's discussion.
 
 Start the important defects, with the person's approval, through the
 work-start mechanism and identity established in step 6, even when they sit
-outside the agreed topic's first wave. Record which defects were started and
-which remain filed.
+outside the agreed topic's first wave. Record each attempt before sending it
+and classify its result by the rules of step 10, then record which defects
+started and which remain filed.
 
 ### 8. Prepare the delivery and request approval
 
@@ -218,8 +224,10 @@ not started (the work-start procedure was unknown, or a launch failed), reuse
 its recorded issue key. Before sending a start, record
 the issue key, the time, and the settings the send resolves (the tracker
 target, the identity and the dispatch states). Classify each start's result three ways. A **confirmed success** is
-the send's own success (it read back the expected assignee and reported
-`sent`): record it and wait for pickup. A **verified rejection made before
+the mechanism's own terminal success for that attempt (the dispatcher send
+read back the expected assignee and reported `sent`, or a configured
+work-start procedure returned its own success receipt): record it and wait
+for pickup. A **verified rejection made before
 anything was written** is a failed start: record the reason. Anything else
 (a refused result whose confirmation read threw, a timeout, or a recorded
 attempt with no saved outcome, as after a crash) is **unconfirmed**: it may
@@ -237,6 +245,8 @@ assignment), but its absence or ambiguity is inconclusive, never a reason to
 retry. Resend only when the mechanism gives a terminal answer that the
 attempt did not land, or accepts a retry keyed to the same attempt; when it
 can give neither, leave the start unresolved, say so, and ask the person.
+Verified pickup activity on the issue stops any resend while who caused it
+stays unknown: record it as "started, attribution unknown".
 Wait
 when pickup is pending (it happens on a later tick). When an accepted pickup
 claimed the item and then stalled, follow the recovery the status reports, or
@@ -247,7 +257,8 @@ When a held task's decision arrives, file and start only the
 newly eligible remainder, never a task already filed. Send the plan keeper
 (step 9, when the plan has one) each decision when it is recorded, including
 a rejection that leaves no task to hand off, and each issue key as soon as
-filing succeeds, whatever the launch outcome.
+filing succeeds, whatever the launch outcome. Record each such update as owed
+until the keeper confirms it applied it.
 
 ### 11. Pick up the state on every return
 
@@ -261,10 +272,10 @@ later configuration's. The pickup thread read resolves the tracker from the
 current checkout, so when the adapter, team, identity or states may differ
 from the recorded ones and the match cannot be established, leave the result
 unresolved instead of trusting that read. Treat every recorded attempt with
-no saved outcome as unconfirmed and reconcile it before any other send.
-Apply the same rule: an unreadable source or
-inconclusive answer keeps the start unconfirmed and is never a reason to
-retry. Then read the
+no saved outcome as unconfirmed: check it and record where it stands before
+resending that item or starting work that depends on it; independent approved
+work is not held by it. An unreadable source or inconclusive answer keeps the
+start unconfirmed and is never a reason to retry. Then read the
 state of started work through
 `/jig:operator` in a fresh session when the `jig` command is available.
 Otherwise, query the configured tracker or delivery mechanism read-only and

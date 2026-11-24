@@ -140,6 +140,20 @@ describe("orchestrate's contract", () => {
     }
   });
 
+  test("classifies a start by what was confirmed, rejected or lost", () => {
+    const text = skill.replace(/\s+/g, " ");
+    expect(text).toContain(
+      "A **confirmed success** is the mechanism's own terminal success",
+    );
+    expect(text).toContain(
+      "A **verified rejection made before anything was written**",
+    );
+    expect(text).toContain("never resend it on a guess");
+    expect(text).toContain("started, attribution unknown");
+    expect(text).toContain("independent approved work is not held by it");
+    expect(text).toContain("record them as unverified");
+  });
+
   test("the configuration command printed by the skill parses with its real CLI", () => {
     const blocks = [...skill.matchAll(/```bash\n([\s\S]*?)```/g)];
     expect(blocks).toHaveLength(2);
