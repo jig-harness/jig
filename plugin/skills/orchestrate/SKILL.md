@@ -217,9 +217,13 @@ blocks it. Track filing and starting separately: when a task is filed but
 not started (the work-start procedure was unknown, or a launch failed), reuse
 its recorded issue key. Before retrying the start, check whether the start
 request was accepted: an assignment can land before its confirmation read
-fails, and a repeated assignment is refused. Wait when pickup is pending (it
-happens on a later tick), and retry only when a fresh read shows the request
-did not land. When a held task's decision arrives, file and start only the
+fails, and a repeated assignment is refused. Count it accepted only on
+trusted evidence (the pickup thread's assignment record, or an observed
+claim); an unreadable or rejected assignment is blocked, not accepted. Wait
+when pickup is pending (it happens on a later tick). When an accepted pickup
+claimed the item and then stalled, follow the recovery the status reports, or
+surface the blocker, keeping the issue key. Retry only when a fresh read shows
+the request did not land. When a held task's decision arrives, file and start only the
 newly eligible remainder, never a task already filed. Send the plan keeper
 (step 9, when the plan has one) each decision when it is recorded, including
 a rejection that leaves no task to hand off, and each issue key as soon as
