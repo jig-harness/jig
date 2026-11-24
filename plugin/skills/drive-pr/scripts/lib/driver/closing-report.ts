@@ -55,7 +55,7 @@ import { probeFailure } from "../status/probe-stop.ts";
 import { driveExitReport } from "../status/terminal-states.ts";
 import { readDriveState } from "./rearm.ts";
 import { driverRuntime } from "./runtime.ts";
-import { finishCause } from "../state/round-finish.ts";
+import { finishCause, finishNext } from "../state/round-finish.ts";
 import {
   exitOf,
   leadPark,
@@ -158,7 +158,13 @@ export function composeDriverReport(input: {
     stop,
     round === null ? null : redactReportText(round.concluded),
   );
-  const base = baseDriverReport(pr, concluded, named, cause);
+  const base = baseDriverReport(
+    pr,
+    concluded,
+    named,
+    cause,
+    stall === null ? null : finishNext(stall.state),
+  );
   if (unscanned !== null) base.suggested_next = unscanned.next;
   const ask = parkAsk(code, state);
   return checkedDriverReport(base, ask, state, stop);
@@ -189,18 +195,21 @@ function baseDriverReport(
   concluded: string,
   named: ReturnType<typeof driveExitReport>,
   cause: ReportCause | undefined,
+  stallNext: ClosingReport["suggested_next"] | null,
 ): ClosingReport {
   return {
     schema: CLOSING_REPORT_SCHEMA,
     concluded,
     suggested_next:
-      named === null
-        ? {
-            step: "Read the drive's log for how it ended, then re-arm the drive.",
-            owner: "person",
-            act: "Investigate",
-          }
-        : { ...named.report.next },
+      stallNext !== null
+        ? { ...stallNext }
+        : named === null
+          ? {
+              step: "Read the drive's log for how it ended, then re-arm the drive.",
+              owner: "person",
+              act: "Investigate",
+            }
+          : { ...named.report.next },
     ...(cause === undefined ? {} : { cause }),
     evidence: [`pr:#${pr}`],
   };

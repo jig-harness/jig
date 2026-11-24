@@ -117,6 +117,7 @@ import { standDownOnNewerClaim } from "./takeover-check.ts";
 import { currentIso, currentMs, parseMs } from "../../../../../shared/time.ts";
 import { DRIVE_EXIT } from "./../status/terminal-states.ts";
 import { probeStopOf } from "./../status/probe-stop.ts";
+import { stopFinishOf } from "./../state/events.ts";
 
 /** Who this driver is, as the ledger names it. */
 export interface LedgerIdentity {
@@ -911,6 +912,9 @@ export function ledgerSettlement(
       driverRuntime.stopLimitedUntil,
       driverRuntime.stopProbe?.code === code
         ? probeStopOf(driverRuntime.stopProbe)
+        : null,
+      code === DRIVE_EXIT.STALLED
+        ? (stopFinishOf(driverRuntime.stallFinish) ?? null)
         : null,
     );
 

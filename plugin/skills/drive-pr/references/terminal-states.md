@@ -644,7 +644,15 @@ plain `--max-rounds` bound rather than a guessed stop. Each pass's
 (`lib/state/round-finish.ts`); when every stalled pass ended on the same
 state other than `FINISHED`, the stop prints that state and the last reason,
 and the closing report names them and takes its cause from the state
-(`CI_HOLD_WAIT` reads `environment`) instead of `unknown`.
+(`CI_HOLD_WAIT` reads `environment`) instead of `unknown`. The drive's `stop`
+event records that state and reason as its `finish`, and the ledger's summary
+names them. A failed push's reason says why it failed (`lib/push-failure.ts`:
+a pre-push gate, a remote's rejection, a connection, the push's timeout, an
+unconfirmed head) and quotes the last lines `guarded-push.ts` wrote; a stall
+whose every pass ended `PUSH_FAILED` sends a person to fix what refuses the
+push before re-arming, and the dispatcher hands it to that person rather than
+re-driving it onto the same refusal, until a push moves the pull request's
+head.
 
 What that rule turns on, each clause measured as a stall stop
 firing over a pass that *had* worked:
