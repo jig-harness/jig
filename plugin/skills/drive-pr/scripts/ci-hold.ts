@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { parseCiHoldArgs } from "./lib/ci-hold-args.ts";
 import { waitOnUnobserved } from "./lib/ci-hold-unobserved.ts";
 import { refuseRace, releaseHeldLabel } from "./lib/ci-hold-release.ts";
 
@@ -60,16 +61,16 @@ import {
   writeCiState,
   checkRunsRead,
 } from "./lib/ci-hold-state.ts";
-import { listingStopExit, type ProofRead } from "./lib/ci-proof.ts";
+import {
+  anyCiOnHead,
+  BASE_MERGE_CI_PENDING,
+  requiredCiAggregateIsGreen,
+  listingStopExit,
+  type ProofRead,
+} from "./lib/ci-proof.ts";
 import type { ListingCutShort } from "./lib/paged-read.ts";
 import { type CiHoldState, LEGACY_CI_HOLD_LABEL } from "./lib/state/schema.ts";
-import {
-  attributeStatuses,
-  checkRunListing,
-  ciVerdictOf,
-  commitStatusesFor,
-  hasNonReviewerCi,
-} from "./lib/status/evidence.ts";
+import { attributeStatuses, commitStatusesFor } from "./lib/status/evidence.ts";
 import {
   rerunAwaitsResult,
   withoutRerunning,
@@ -105,7 +106,12 @@ const transitions = async (pr: string) =>
   valueOrNull(await readHoldTransitions(pr, holdLabel()));
 
 /** What final-ready answers for a proof that failed: wait, unless its listing was cut short. */
-function proofStop(proof: { cutShort?: ListingCutShort }): number {
+function proofStop(
+  proof: Extract<ProofRead, { ok: false }>,
+  baseMerge = false,
+): number {
+  if (baseMerge && proof.pending === true)
+    process.stdout.write(`${BASE_MERGE_CI_PENDING}\n`);
   return proof.cutShort === undefined ? 4 : listingStop(proof.cutShort);
 }
 
@@ -625,6 +631,21 @@ async function release(
   );
 }
 
+interface FinalProofOptions {
+  requireSuccess: boolean;
+  classifyPending: boolean;
+}
+
+async function incompleteRequiredChecks(
+  head: string,
+  completed: (requireSuccess: boolean) => boolean,
+  classifyPending: boolean,
+): Promise<Extract<ProofRead, { ok: false }>> {
+  if (!classifyPending) return { ok: false };
+  const evidence = await requiredCiAggregateIsGreen(head);
+  return evidence.ok ? { ok: false, pending: !completed(false) } : evidence;
+}
+
 /**
  * `requireSuccess` is opt-in, not the default, because this proof has two
  * callers with different needs for the same "not yet ready" exit code:
@@ -652,10 +673,9 @@ async function release(
 async function finalCiProofGreen(
   head: string,
   persisted: Extract<CiHoldState, { phase: "released" }> | null,
-  requireSuccess: boolean,
+  { requireSuccess, classifyPending }: FinalProofOptions,
 ): Promise<
-  | { ok: true; startedAt: string | null }
-  | { ok: false; cutShort?: ListingCutShort }
+  { ok: true; startedAt: string | null } | Extract<ProofRead, { ok: false }>
 > {
   const listing = await checkRunsRead(head);
   if (listing.cutShort !== null)
@@ -674,7 +694,8 @@ async function finalCiProofGreen(
   const settled = withoutSuperseded(allRuns, workflowRuns);
   // A newer skip looked at nothing, so it cannot stand in for the rerun that
   // is still outstanding.
-  if (rerunAwaitsResult(settled, workflowRuns)) return { ok: false };
+  if (rerunAwaitsResult(settled, workflowRuns))
+    return { ok: false, pending: true };
   const runs = withoutRerunning(settled, workflowRuns);
   const required = policy.requiredChecks;
   const apps = policy.requiredApps;
@@ -698,31 +719,20 @@ async function finalCiProofGreen(
     withoutRun.flatMap((r) => (r.appId === undefined ? [] : [r.context])),
   );
   if (statuses === null) return { ok: false };
-  const requiredFresh =
-    persisted === null
-      ? completedRequiredCi(
-          runs,
-          required,
-          head,
-          undefined,
-          requireSuccess,
-          0,
-          false,
-          noHold,
-          { apps, statuses },
-        )
-      : completedRequiredCi(
-          runs,
-          required,
-          head,
-          persisted.createdAt,
-          requireSuccess,
-          persisted.checkRunWatermark,
-          persisted.source === "external",
-          false,
-          { apps },
-        );
-  if (!requiredFresh) return { ok: false };
+  const complete = (success: boolean) =>
+    completedRequiredCi(
+      runs,
+      required,
+      head,
+      persisted?.createdAt,
+      success,
+      persisted?.checkRunWatermark ?? 0,
+      persisted?.source === "external",
+      persisted === null && noHold,
+      { apps, statuses },
+    );
+  if (!complete(requireSuccess))
+    return incompleteRequiredChecks(head, complete, classifyPending);
   const overall = await overallCiProof(head, requireSuccess);
   if (!overall.ok) return overall;
   return {
@@ -745,47 +755,6 @@ async function overallCiProof(
   return policy.requiredChecks.length === 0 && policy.derived
     ? anyCiOnHead(head)
     : { ok: true };
-}
-
-/** A head's check runs and commit statuses, or the refusal that read ended in. */
-async function readHeadCi(head: string): Promise<
-  | ProofRead
-  | {
-      allRuns: NonNullable<Awaited<ReturnType<typeof checkRunListing>>["runs"]>;
-      statuses: NonNullable<Awaited<ReturnType<typeof commitStatusesFor>>>;
-    }
-> {
-  const [{ runs: allRuns, cutShort }, statuses] = await Promise.all([
-    checkRunListing("{owner}", "{repo}", head),
-    commitStatusesFor("{owner}", "{repo}", head),
-  ]);
-  if (cutShort !== null) return { ok: false, cutShort };
-  if (allRuns === null || statuses === null) return { ok: false };
-  return { allRuns, statuses };
-}
-
-/** Strict success requires both check runs and attributed legacy statuses to be green. */
-async function requiredCiAggregateIsGreen(head: string): Promise<ProofRead> {
-  const read = await readHeadCi(head);
-  if ("ok" in read) return read;
-  const { allRuns, statuses } = read;
-  const workflowRuns = await workflowRunsBehind(
-    "{owner}",
-    "{repo}",
-    head,
-    allRuns,
-  );
-  return ciVerdictOf(allRuns, statuses, false, head, workflowRuns) === "green"
-    ? { ok: true }
-    : { ok: false };
-}
-
-/** Has any non-reviewer check run or commit status registered on `head`? */
-async function anyCiOnHead(head: string): Promise<ProofRead> {
-  const read = await readHeadCi(head);
-  if ("ok" in read) return read;
-  const { allRuns, statuses } = read;
-  return hasNonReviewerCi(allRuns, statuses) ? { ok: true } : { ok: false };
 }
 
 /**
@@ -815,10 +784,10 @@ async function stillCurrentForFinalReady(
   head: string,
   persisted: Extract<CiHoldState, { phase: "released" }> | null,
   expectation: { emptyTimeline: true } | { latestTransitionId: string } | null,
-  requireSuccess: boolean,
+  options: FinalProofOptions,
 ): Promise<ProofRead> {
-  if (requireSuccess) {
-    const proof = await finalCiProofGreen(head, persisted, true);
+  if (options.requireSuccess) {
+    const proof = await finalCiProofGreen(head, persisted, options);
     if (!proof.ok) return proof;
   }
   // Timeline BEFORE head/state/held — putting the CI proof first and this
@@ -850,65 +819,61 @@ async function stillCurrentForFinalReady(
     : { ok: false };
 }
 
+async function verifyFinalHead(
+  pr: string,
+  head: string,
+  persisted: Extract<CiHoldState, { phase: "released" }> | null,
+  expectation: Parameters<typeof stillCurrentForFinalReady>[3],
+  options: FinalProofOptions,
+): Promise<number> {
+  const proof = await finalCiProofGreen(head, persisted, options);
+  if (!proof.ok) return proofStop(proof, options.classifyPending);
+  const current = await stillCurrentForFinalReady(
+    pr,
+    head,
+    persisted,
+    expectation,
+    options,
+  );
+  if (!current.ok) return proofStop(current, options.classifyPending);
+  process.stdout.write(`${persisted?.createdAt ?? proof.startedAt ?? ""}\n`);
+  return 0;
+}
+
 async function finalReady(
   pr: string,
   head: string,
   requireSuccess = false,
+  mergedFrom?: string,
 ): Promise<number> {
   const live = await snapshot(pr);
   if (live === null) fail(1, "ci-hold: cannot read the PR state");
   if (live.state !== "OPEN") return 5;
   if (live.head !== head || live.held) return 4;
-  if (policy.holdLabel === null) {
-    // No hold exists: every push ran full CI, so the required checks on this
-    // exact head are the witness.
-    const proof = await finalCiProofGreen(head, null, requireSuccess);
-    if (!proof.ok) return proofStop(proof);
-    const current = await stillCurrentForFinalReady(
-      pr,
-      head,
-      null,
-      null,
-      requireSuccess,
-    );
-    if (!current.ok) return proofStop(current);
-    process.stdout.write(`${proof.startedAt ?? ""}\n`);
-    return 0;
-  }
+  const options = { requireSuccess, classifyPending: mergedFrom !== undefined };
+  if (policy.holdLabel === null)
+    return verifyFinalHead(pr, head, null, null, options);
+
   const persisted = await readCiState(pr);
   const timeline = await transitions(pr);
   if (timeline === null) fail(1, "ci-hold: cannot read the label timeline");
   if (persisted === null) {
     if (timeline.length !== 0) return 4;
-    // No intermediate hold was ever applied: the PR-open run of the required
-    // checks is the full-CI witness for this exact head.
-    const initialProof = await finalCiProofGreen(head, null, requireSuccess);
-    if (!initialProof.ok) return proofStop(initialProof);
-    const current = await stillCurrentForFinalReady(
-      pr,
-      head,
-      null,
-      { emptyTimeline: true },
-      requireSuccess,
-    );
-    if (!current.ok) return proofStop(current);
-    process.stdout.write(`${initialProof.startedAt ?? ""}\n`);
-    return 0;
+    return verifyFinalHead(pr, head, null, { emptyTimeline: true }, options);
   }
-  if (persisted.phase !== "released" || persisted.head !== head) return 4;
-  if (latestOf(timeline)?.id !== persisted.eventId) return 4;
-  const initialProof = await finalCiProofGreen(head, persisted, requireSuccess);
-  if (!initialProof.ok) return proofStop(initialProof);
-  const current = await stillCurrentForFinalReady(
+  if (
+    persisted.phase !== "released" ||
+    (persisted.head !== head && persisted.head !== mergedFrom) ||
+    latestOf(timeline)?.id !== persisted.eventId
+  )
+    return 4;
+  return verifyFinalHead(
     pr,
     head,
     persisted,
     { latestTransitionId: persisted.eventId },
-    requireSuccess,
+    options,
   );
-  if (!current.ok) return proofStop(current);
-  process.stdout.write(`${persisted.createdAt}\n`);
-  return 0;
 }
 
 async function rollback(pr: string, expectedPushHead: string): Promise<number> {
@@ -931,23 +896,6 @@ async function rollback(pr: string, expectedPushHead: string): Promise<number> {
   if (timeline === null) fail(1, "ci-hold: cannot read the label timeline");
   if (!ownsHeldTransition(persisted, latestOf(timeline))) return 4;
   return release(pr, live.head);
-}
-
-function takeExpectedTransition(
-  command: string,
-  argv: string[],
-): string | undefined {
-  const index = argv.indexOf("--expect-transition");
-  if (index < 0) return undefined;
-  const id = argv[index + 1];
-  if (
-    command !== "release" ||
-    id === undefined ||
-    !/^[A-Za-z0-9_+/=-]+$/.test(id)
-  )
-    usage();
-  argv.splice(index, 2);
-  return id;
 }
 
 function releaseProofPending(command: string, releasing: boolean): boolean {
@@ -1036,25 +984,15 @@ async function runMutationCommand(
 }
 
 async function main(): Promise<number> {
-  const argv = process.argv.slice(2);
-  const command = argv.shift() ?? "";
-  if (!["ensure", "release", "rollback", "final-ready"].includes(command))
-    usage();
-  let pr = "";
-  let head = "";
-  let requireSuccess = false;
-  const expectedTransition = takeExpectedTransition(command, argv);
-  for (let index = 0; index < argv.length; index++) {
-    const value = argv[index];
-    if (value === undefined) continue;
-    if (value === "--expect-head") head = argv[++index] ?? "";
-    else if (value === "--require-success" && command === "final-ready")
-      requireSuccess = true;
-    else if (value.startsWith("--")) usage();
-    else if (pr === "") pr = value;
-    else usage();
-  }
-  pr = await resolvePr(pr);
+  const {
+    command,
+    pr: requested,
+    head,
+    requireSuccess,
+    mergedFrom,
+    expectedTransition,
+  } = parseCiHoldArgs(process.argv.slice(2), usage);
+  const pr = await resolvePr(requested);
   if (!isDigits(pr) || !isGitSha(head)) usage();
   const configError = (error: unknown): never =>
     fail(
@@ -1093,7 +1031,7 @@ async function main(): Promise<number> {
     return runMutationCommand(command, pr, head, expectedTransition);
   const unreadable = await checkRecordedHold(pr, command);
   if (unreadable !== null) return unreadable;
-  return finalReady(pr, head, requireSuccess);
+  return finalReady(pr, head, requireSuccess, mergedFrom);
 }
 
 runMain("ci-hold.ts", main);

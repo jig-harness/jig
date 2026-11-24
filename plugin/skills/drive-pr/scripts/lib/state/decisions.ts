@@ -189,14 +189,15 @@ export function reversalParkedKeys(
  */
 export function printParkedKeys(
   state: {
-    parked: ReadonlyArray<{ key: string }>;
+    parked: ReadonlyArray<{ key: string; kind?: string }>;
     decisions?: readonly UnattendedDecision[];
   },
-  reversalsOnly: boolean,
+  only: "all" | "reversals",
 ): number {
-  const keys = reversalsOnly
-    ? reversalParkedKeys(state.parked, state.decisions ?? [])
-    : state.parked.map((p) => p.key);
+  const keys =
+    only === "reversals"
+      ? reversalParkedKeys(state.parked, state.decisions ?? [])
+      : state.parked.map((p) => p.key);
   for (const key of keys) process.stdout.write(`${key}\n`);
   return 0;
 }

@@ -37,7 +37,7 @@ Write the record from the person's stated goals. Never infer objectives from
 the order of a plan page or from the tracker's Priority fields. When the
 goal, the class (`core`, `tactical`, `peripheral`) or the epics are unclear,
 ask: with Claude Code's `AskUserQuestion` where the session can use it, as a
-plain-text numbered question in any other interactive runtime, and with
+plain-text numbered question in any other interactive runtime (one numbered line per option, the recommended one first and marked as the default where there is one, which the reply `default` takes), and with
 nobody to answer, stop and state the question rather than pick.
 
 ## Check what is there

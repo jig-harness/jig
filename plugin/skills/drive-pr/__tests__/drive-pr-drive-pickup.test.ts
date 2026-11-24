@@ -327,14 +327,16 @@ describe("drive.ts re-arms a HITL-parked drive once every item is answered", () 
     ].join("\n"),
   ];
 
-  async function parkedThread(answered: boolean) {
+  async function parkedThread(answered: boolean, isResolved = false) {
     const { dir, stateDir } = writeFixture(
       {
+        ...(isResolved ? { head: gitHead(scratchClean.dir) } : {}),
         threads: [
           {
             id: "PRRT_p",
             path: "a.ts",
             bot: true,
+            isResolved,
             comments: [
               { body: "a finding", bot: true },
               ...(answered
@@ -389,6 +391,37 @@ describe("drive.ts re-arms a HITL-parked drive once every item is answered", () 
     ).toEqual([["PRRT_p", "answered"]]);
     expect(after.resolvedParks[0].answers[0].author).toBe("maintainer");
   });
+
+  it.each([true, false])(
+    "clears a resolved review thread only with explicit re-arm (%s)",
+    async (explicit) => {
+      const { dir, stateDir } = await parkedThread(false, true);
+      const r = await runDriveIn(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--", ...PASS],
+        undefined,
+        explicit ? { env: { DRIVE_PR_RESOLVED_PARKS_PR: "999" } } : {},
+      );
+      // Without the explicit re-arm the resolved thread's park still waits.
+      expectSpawnExit({ ...r, stdout: null }, explicit ? 0 : 8);
+      if (explicit)
+        expect(r.stderr).toContain("cleared 1 parked review thread(s)");
+      else expect(r.stderr).not.toContain("cleared 1 parked review thread(s)");
+      expect(r.stderr).not.toContain("HUMAN_VERDICTS");
+      const after = JSON.parse((await state(stateDir, ["get", "999"])).stdout);
+      expect(after.parked.map((park: { key: string }) => park.key)).toEqual(
+        explicit ? [] : ["PRRT_p"],
+      );
+      // A cleared resolved thread keeps its receipt as evidence.
+      expect(
+        (after.resolvedParks ?? []).map(
+          (p: { key: string; outcome: string }) => [p.key, p.outcome],
+        ),
+      ).toEqual(explicit ? [["PRRT_p", "resolved-thread"]] : []);
+    },
+    120_000,
+  );
 
   it("keeps the answers for the next pass when the first one is killed at its deadline", async () => {
     const { dir, stateDir } = await parkedThread(true);

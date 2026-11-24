@@ -53,7 +53,12 @@ function place(runs: ReturnType<typeof run>[], mergeStateStatus = "CLEAN") {
           {
             commit: {
               oid: HEAD,
-              statusCheckRollup: { contexts: { nodes: runs } },
+              statusCheckRollup: {
+                contexts: {
+                  pageInfo: { hasNextPage: false },
+                  nodes: runs,
+                },
+              },
             },
           },
         ],

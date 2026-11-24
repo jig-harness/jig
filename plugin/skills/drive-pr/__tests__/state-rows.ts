@@ -34,6 +34,34 @@ export function writeState(stateDir: string, pr: string, state: unknown): void {
   );
 }
 
+/** Seed the durable state of PR 999 at `rounds` counted on `head`, to model a drive stopped at its bound. */
+export function seedRounds(
+  stateDir: string,
+  rounds: number,
+  head: string,
+): void {
+  writeState(stateDir, "999", {
+    pr: 999,
+    rounds,
+    lastCountedHead: head,
+    attempts: 0,
+    attemptsHead: "",
+    lastReflectedRound: 0,
+    lastReflectedAttempts: 0,
+    readyMarkedRound: 0,
+    ciHold: null,
+    verifiedSha: "",
+    phase: "",
+    parked: [],
+    held: [],
+    lastEscalatedRound: 0,
+    lastEscalatedInvariant: "",
+    roundPaths: [],
+    lastProgressAt: "",
+    quotaPark: null,
+  });
+}
+
 /** A PR's stored state text, or `null` when it has none. */
 export function stateText(stateDir: string, pr: string): string | null {
   return readStateRow(stateDir, pr)?.text ?? null;

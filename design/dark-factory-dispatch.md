@@ -711,8 +711,15 @@ stall while an open pull request of the
 repository's own branches that the line links to it (as the need's framed
 decision reads the links) has a drive, whatever its state: live, converged
 and waiting for its merge, parked on a person's question, stopped for a
-re-arm or a re-drive, or unplaced for the tick while the forge leaves its
-state undecided (a mergeability still being computed). The tick reports the
+re-arm or a re-drive, unplaced for the tick while the forge leaves its
+state undecided (a mergeability still being computed), or unarmed: no ledger
+yet, but a person's `drive` label, the completed pickup's first-drive
+handoff or the adoption rule asks for one, so the tick is about to arm it. A
+drive that stays unarmed is reported by whatever keeps it from arming
+(admission, slots, the arming rule), not as a stalled pickup; one a launch
+already armed at its head, which ended without leaving a ledger, is not
+armed again until the head moves, so it carries nothing and the stall need
+names that launch. The tick reports the
 item as carried by that pull request, with its link and the drive's state,
 and the line lists it as [carried](../GLOSSARY.md); what a person must do
 there is the pull request's own need, shown once. A pull request merged
@@ -893,7 +900,11 @@ re-armed drive reads its handoff and ledger to see what the earlier passes
 recorded. A stall that recorded work left in its tree is re-driven there.
 On another host the tick leaves it to that host's dispatcher. If the current
 host has no open workspace holding that tree, or the re-drive leaves the
-same stop on the same head, a person is told.
+same stop on the same head, a person is told. A stall whose stop recorded
+that every stalled pass's push failed is not re-driven on that head: what
+refused the push refuses a re-drive's push too, so a person is told why the
+push failed, and a push to the pull request (that person's fix) re-drives it
+once for its new head.
 
 The drive starts a diagnosing repair session when it spends its CI-repair
 budget. If that session cannot complete the repair, it records its outcome
@@ -1037,6 +1048,7 @@ ordinary budget.
 | stopped `0` (converged), the pull request open and now conflicting with its base, or its head past the head the drive verified                                                                                                                                                         | stale                                                    | re-arms on any admitted account: the drive's conflict-resolve round merges the base in, or its rounds review the new head                                                                                                                                                                                                                                                                                            |
 | stopped `9` (conflicting with its base, its conflict-repair budget spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head and its base branch's head                                                                    | stale                                                    | re-arms on any admitted account: the drive's conflict-resolve round tries again, or, where the forge now reports it mergeable, its rounds take it from there                                                                                                                                                                                                                                                         |
 | stopped `9`, this machine or another host already having re-driven that change, however that launch ended                                                                                                                                                                              | needs a person                                           | notifies per stop, with the exit and the drive's handoff                                                                                                                                                                                                                                                                                                                                                             |
+| stopped `14` (stalled), its last stop recording that every stalled pass ended `PUSH_FAILED`, the pull request's head still the one its rounds were counted on | needs a person | notifies with why the push failed (the pre-push gates, the remote, the connection); never re-driven onto the same refusal |
 | stopped `14` (stalled) or `21` without a diagnosis record for the current head, neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head with that exit                                                                           | stale                                                    | re-arms on any admitted account; a stall that left work in its tree, or whose stop never measured it, re-arms only in that tree: on another host it is left to that host, and with no open workspace holding it here, a person is told                                                                                                                                                                               |
 | stopped `14` or `21` without a diagnosis record for the current head, this machine or another host already having re-driven that head with that exit, however that launch ended                                                                                                                                                        | needs a person                                           | notifies per stop, with the exit, the drive's handoff and, when the pull request conflicts with its base, that it does                                                                                                                                                                                                                                                                                               |
 | stopped `21` with a diagnosis record on the current head | needs a person | notifies with the diagnosing session’s outcome and tracker issue when available |
@@ -1298,7 +1310,16 @@ and from the ledger's heartbeat. These answers are unknowns, never "no
 session": a host the runtime's answer marks as not covered, a page cut
 short by its row limit, and a workspace on a branch that matches the item
 or pull request but whose agents the runtime does not report. The tick
-plans nothing for an item or pull request it cannot place, and reports why.
+starts nothing for an item or pull request it cannot place, and reports
+why. An agent the runtime does report working still holds its target
+beside such a workspace. Where the listing read and only a joined
+workspace's terminals are unreported (an idle shell or an editor looks the
+same as an agent the runtime cannot see), a notification, being only a
+message, still goes out, as it does beside a running session, so a stopped
+or parked drive and a stopped pickup stay on the line's needs; and a
+drive's re-arm or takeover becomes a person's need that names the
+workspace: closing the terminals that run no agent lets the next tick act
+on it.
 
 ### The tick reports by default and acts only with `--apply`
 
@@ -2755,11 +2776,11 @@ when an agent waits, blocks or finishes or a workspace is removed
 ([Waking the dispatcher](orca-integration.md)); and `jig send`, once it
 has written a record the tick reads (`assign`, `drive`, `hold`, `release`,
 `answer`), where the machine file lists the repository with the stage the
-tick acts under ([`jig send`](addresses.md)). Both follow one rule: one
+tick acts under ([`jig send`](../plugin/protocol/addresses.md)). Both follow one rule: one
 tick at a time for a repository, no sooner than a minute after the last
 one started, a request made inside that minute taken by one trailing
 tick, and a tick refused for a held lock tried again after the minute. `send` keeps its pending requests on disk
-(`plugin/shared/wake.ts`), since it exits at once; its waiter runs the
+([the wake runtime](../plugin/shared/wake.ts)), since it exits at once; its waiter runs the
 tick with the installed timer's command and environment and exits after
 it. A systemd timer's are read as systemd runs them, its drop-ins applied
 (`plugin/runtime/systemd-dropins.ts`), so a drop-in that wraps the command
@@ -2989,18 +3010,16 @@ One pull request each, in this order; each is usable on its own.
    pickup and follow-up expectations on steps 4 and 5; the nudge on
    interactive launches (step 4, itself waiting on an agent launch that
    binds its account) and on a launch that carries the vendor session id.
-7. **Re-drive a stale converged pull request.** The forge read carries each
-   open pull request's mergeability and current head commit, compared with the ledger's `verifiedSha`; the
-   ledger classification the
-   `stale` class (converged, and conflicting or past the verified head),
-   and the plan re-arms it through step 3's launch, on any admitted
-   account. Tests: a converged ledger on a conflicting pull request is
-   re-armed once; one whose head moved is re-armed once; one still at the
-   verified head and mergeable is left alone; a mergeability still being
-   computed leaves it unplaced. Waits on step 3 only. Usable alone: a
-   pull request that converged and then conflicted no longer waits for a
-   person to notice. A drive that stopped `9` is re-driven through the same
-   launch, keyed on its head and its base branch's head.
+7. **Settle a converged pull request whose head moves.** A mergeable pull
+   request at the verified head waits for a person's merge. When the
+   dispatcher proves a clean merge of the base preserved the reviewed
+   change, it holds the re-drive while required checks run and refreshes
+   the verified head and merge-ready claim once they pass. A change to
+   the pull request's contribution or an unreadable proof re-arms it on
+   an admitted account. A conflict re-arms it once per pair of heads, as
+   for a drive that stopped `9`. A conflict that remains at that pair
+   goes to a person. Mergeability that the forge is still computing
+   leaves the pull request unplaced.
 8. **Admit Codex accounts.** The drive skill documents the Codex pass
    command beside Claude Code's, with the pass model read per vendor from
    `routing.models`; the dispatcher admits `vendor: codex` accounts, on a

@@ -1,3 +1,4 @@
+import { PULL_DOCUMENT_JQ } from "./drive-pr-pull-document.ts";
 import { RUN_FORGE_FIXTURE } from "./drive-pr-run-forge.ts";
 import { seedAcceptedLadder } from "./ladder-verdict-fixture.ts";
 import { parkArgs, parkRecord } from "./park-record-fixture.ts";
@@ -371,10 +372,9 @@ export interface Fixture {
    */
   isDraftMovesTo?: boolean;
   /**
-   * `gh pr view --json` rejects one of the fields the script requests, as a
-   * `gh` too old to know it does. That is an unmet PREREQUISITE, not a
-   * supported configuration — the script reports UNSUPPORTED_CLI and exits 2
-   * rather than degrading.
+   * `gh pr view --json` rejects the `mergeable` field, so a read that still
+   * goes through it (the CI hold's mergeability read) fails; the push must wait
+   * rather than proceed unheld.
    */
   mergeabilityUnreadable?: boolean;
   /** The PR's base branch tip SHA. Defaults to `BASE`. */
@@ -399,9 +399,9 @@ export interface Fixture {
    */
   mergeStateStatusMissing?: boolean;
   /**
-   * Every `gh pr view` call fails with a TRANSIENT error (not a missing-field
-   * one) — a network blip, a timeout, a rate limit. Must report INDETERMINATE
-   * (exit 1) and stay retryable, never be mistaken for a prerequisite failure.
+   * Every `gh pr view` call fails with a TRANSIENT error — a network blip, a
+   * timeout, a rate limit. Must report INDETERMINATE (exit 1) and stay
+   * retryable, never be mistaken for a prerequisite failure.
    */
   transientMergeabilityFailure?: boolean;
   /** Every `gh` call is refused for the spent rate limit: the pull request's reads (`reads`), or the repository's too (`all`). */
@@ -426,12 +426,20 @@ export interface Fixture {
    */
   liveProbeSaysClosedOnce?: boolean;
   /**
-   * `evaluate()`'s own fuller snapshot (the comma-joined `--json` field list)
-   * fails, while the sweep's single-field `state` probe still answers. Pairs
+   * `evaluate()`'s own fuller snapshot (its REST read of the pull document,
+   * and any comma-joined `--json` field list) fails with a 502, every time,
+   * while the sweep's single-field `state` probe still answers. Each snapshot
+   * request is logged to `snapshot-reads`. Pairs
    * with `liveProbeSaysClosedOnce` to model the two reads disagreeing in the
    * one way that has to terminate rather than loop.
    */
   snapshotUnreadable?: boolean;
+  /**
+   * The pull document the evaluation reads carries this ETag, and a read that
+   * sends it back is answered `304 Not Modified`. Each of those reads is
+   * logged to `pull-reads` as `<status> <caller>`.
+   */
+  pullEtag?: string;
   /**
    * The sweep's liveness probe answers `CLOSED` on EVERY call while
    * `evaluate()`'s snapshot keeps reporting the PR open — a persistent
@@ -920,9 +928,6 @@ set -euo pipefail
 if [ -n "\${DRIVE_PR_STUB_GH_LOG:-}" ] && [ -z "\${DRIVE_PR_STUB_GH_NESTED:-}" ]; then
   printf '%s\\n' "\${1:-} \${2:-}" >> "$DRIVE_PR_STUB_GH_LOG"
 fi
-if [ -n "\${DRIVE_PR_STUB_GH_TIMES:-}" ] && [ -z "\${DRIVE_PR_STUB_GH_NESTED:-}" ] && [ "\${1:-} \${2:-}" = "pr view" ]; then
-  date +%s%N >> "$DRIVE_PR_STUB_GH_TIMES"
-fi
 export DRIVE_PR_STUB_GH_NESTED=1
 (
   # Model gh's flag parser before any fixture response. A newly misspelled
@@ -1005,7 +1010,14 @@ export DRIVE_PR_STUB_GH_NESTED=1
   fi
   if [[ "\${is_api:-0}" -eq 0 ]]; then
     case "$command:$json_fields" in
-      'pr view:number'|'repo view:owner,name'|'repo view:owner,name,url')
+      'pr view:number')
+        # The selector each resolution was asked for, so a test can tell a
+        # resolution of the named pull request from one of the current branch.
+        [[ -z "\${DRIVE_PR_FIXTURES:-}" ]] || printf '%s\\n' "\${selector:-}" >> "$DRIVE_PR_FIXTURES/number-selectors"
+        # A selector is a pull request URL or a branch, which gh resolves to
+        # the number; only the fixture's pull request (999) resolves.
+        [[ "$has_positional" -eq 0 || "$selector" == 'feature-branch' || "$selector" =~ /pull/999$ ]] || { echo "gh: no pull request found for: $selector" >&2; exit 1; } ;;
+      'repo view:owner,name'|'repo view:owner,name,url')
         [[ "$has_positional" -eq 0 ]] || { echo "gh: unexpected selector: $selector" >&2; exit 2; } ;;
       'run view:'|'run view:headSha,status,attempt'|'run rerun:')
         [[ "$has_positional" -eq 1 && "$selector" =~ ^[0-9]+$ ]] || { echo "gh: expected a run id, got: $selector" >&2; exit 2; } ;;
@@ -1139,6 +1151,17 @@ if [ "\${1:-}" = "pr" ]; then
   done
 fi
 
+# A \`gh pr view\` in either field list the REST answer below asks for, made by
+# the code under test (not that answer's inner call), is logged.
+if [ "\${1:-} \${2:-}" = "pr view" ] && [ -z "\${DRIVE_PR_STUB_INNER:-}" ]; then
+  for a in "$@"; do
+    case "$a" in
+      state,isDraft,headRefOid,mergeable,mergeStateStatus,baseRefName,headRefName,baseRefOid|state,headRefOid,baseRefOid)
+        printf '%s\\n' "$*" >> "$F/graphql-pull-reads" ;;
+    esac
+  done
+fi
+
 # A REST pull read — \`gh api -i repos/{owner}/{repo}/pulls/<N>\`, which
 # lib/gh-conditional.ts's readPrLiveness issues in place of \`gh pr view --json
 # state\` for the state-ONLY liveness reads. Answered BY the
@@ -1157,6 +1180,10 @@ fi
 # before closedSinceOpen leaves nothing to say which read comes next. A read
 # with no label is answered as the sweep's, the narrower form.
 #
+# The status evaluation's own reads of the pull document ride the same
+# endpoint (callers \`snapshot\` and \`still-on-head\`): the \`gh pr view\` field
+# list each asks for is rewritten into the REST document's shape.
+#
 # No ETag header is emitted: nothing is cached, so a probe cannot be answered
 # from an entry a neighbour wrote.
 rest_pr=""
@@ -1171,14 +1198,71 @@ if [ "\${1:-}" = "api" ]; then
 fi
 if [ -n "$rest_pr" ]; then
   rest_read=(--json state -q .state)
+  rest_doc=0
   for a in "$@"; do
-    if [ "$a" = "X-Drive-Pr-Caller: recheck" ]; then rest_read=(--json state); fi
+    case "$a" in
+      "X-Drive-Pr-Caller: recheck") rest_read=(--json state) ;;
+      "X-Drive-Pr-Caller: snapshot")
+        rest_read=(--json state,isDraft,headRefOid,mergeable,mergeStateStatus,baseRefName,headRefName,baseRefOid)
+        rest_doc=1 ;;
+      "X-Drive-Pr-Caller: still-on-head")
+        rest_read=(--json state,headRefOid,baseRefOid)
+        rest_doc=1 ;;
+    esac
   done
+  # Status evaluation begins with a REST snapshot, not gh pr view. Record
+  # that boundary in this process so cadence tests observe the reads the
+  # implementation makes without a separately scheduled runtime startup.
+  if [ -n "\${DRIVE_PR_STUB_GH_TIMES:-}" ]; then
+    for a in "$@"; do
+      if [ "$a" = "X-Drive-Pr-Caller: snapshot" ]; then
+        perl -MTime::HiRes=time -e 'printf "%.0f\\n", time * 1_000_000_000' >> "$DRIVE_PR_STUB_GH_TIMES"
+      fi
+    done
+  fi
+  for a in "$@"; do
+    if [ "$a" = "X-Drive-Pr-Caller: snapshot" ] && [ -f "$F/snapshot-unreadable" ]; then
+      printf '%s\\n' "$*" >> "$F/snapshot-reads"
+      printf 'HTTP/2.0 502 Bad Gateway\\r\\n\\r\\n'
+      exit 1
+    fi
+  done
+  # A \`pull-etag\` fixture: a read sending that ETag is answered \`304\`; each
+  # is logged to \`pull-reads\` as its status and caller.
+  rest_etag=""
+  rest_caller=""
+  if [ "$rest_doc" -eq 1 ] && [ -f "$F/pull-etag" ]; then
+    rest_etag=$(< "$F/pull-etag")
+    for a in "$@"; do
+      case "$a" in "X-Drive-Pr-Caller: "*) rest_caller="\${a#X-Drive-Pr-Caller: }" ;; esac
+    done
+    for a in "$@"; do
+      if [ "$a" = "If-None-Match: $rest_etag" ]; then
+        printf '304 %s\\n' "$rest_caller" >> "$F/pull-reads"
+        printf 'HTTP/2.0 304 Not Modified\\r\\nEtag: %s\\r\\n\\r\\n' "$rest_etag"
+        echo 'gh: HTTP 304' >&2
+        exit 1
+      fi
+    done
+  fi
   rest_rc=0
-  rest_out=$("$0" pr view "$rest_pr" "\${rest_read[@]}") || rest_rc=$?
+  rest_out=$(DRIVE_PR_STUB_INNER=1 "$0" pr view "$rest_pr" "\${rest_read[@]}") || rest_rc=$?
   if [ "$rest_rc" -ne 0 ]; then
     printf 'HTTP/2.0 502 Bad Gateway\\r\\n\\r\\n'
     exit 1
+  fi
+  if [ "$rest_doc" -eq 1 ]; then
+    rest_body=$(printf '%s' "$rest_out" | jq -c '${PULL_DOCUMENT_JQ}') || {
+      printf 'HTTP/2.0 502 Bad Gateway\\r\\n\\r\\n'
+      exit 1
+    }
+    if [ -n "$rest_etag" ]; then
+      printf '200 %s\\n' "$rest_caller" >> "$F/pull-reads"
+      printf 'HTTP/2.0 200 OK\\r\\nContent-Type: application/json\\r\\nEtag: %s\\r\\n\\r\\n%s' "$rest_etag" "$rest_body"
+      exit 0
+    fi
+    printf 'HTTP/2.0 200 OK\\r\\nContent-Type: application/json\\r\\n\\r\\n%s' "$rest_body"
+    exit 0
   fi
   rest_view=$(< "$F/pr-view.json") 2>/dev/null || rest_view=''
   rest_body=$(jq -nc --arg st "$rest_out" --arg view "$rest_view" \\
@@ -1414,10 +1498,9 @@ if [ -f "$F/no-mergeability" ]; then
   done
 fi
 
-# A TRANSIENT failure — a network blip, a rate limit, a timeout — as opposed
-# to the two fixtures above, which model a permanently unsupported field. The
-# distinguishing property under test: this must NOT degrade the merge-conflict
-# guard, only report INDETERMINATE (exit 1) for the caller to retry. Fails
+# A TRANSIENT failure — a network blip, a rate limit, a timeout. The property
+# under test: this must NOT degrade the merge-conflict guard, only report
+# INDETERMINATE (exit 1) for the caller to retry. Fails
 # every \`gh pr view\` call while present, so a probe that expects retry-then-
 # succeed removes the file between polls itself (see the test).
 if [ -f "$F/transient-failure" ]; then
@@ -2254,7 +2337,6 @@ export function writeFixture(
   if (f.dirtyOnFinalVerify) {
     writeFileSync(join(dir, "dirty-on-final-verify"), "");
   }
-  if (f.mergeabilityUnreadable) writeFileSync(join(dir, "no-mergeability"), "");
   if (f.checkRunsHang) writeFileSync(join(dir, "check-runs-hang"), "");
   if (f.checkRunsSecondPageHangs)
     writeFileSync(join(dir, "check-runs-second-page-hangs"), "");
@@ -2263,6 +2345,7 @@ export function writeFixture(
       join(dir, "check-runs-hang-after"),
       String(f.checkRunsHangAfter),
     );
+  if (f.mergeabilityUnreadable) writeFileSync(join(dir, "no-mergeability"), "");
   if (f.transientMergeabilityFailure) {
     writeFileSync(join(dir, "transient-failure"), "");
   }
@@ -2302,6 +2385,8 @@ export function writeFixture(
     writeFileSync(join(dir, "live-probe-closed-once"), "");
   }
   if (f.snapshotUnreadable) writeFileSync(join(dir, "snapshot-unreadable"), "");
+  if (f.pullEtag !== undefined)
+    writeFileSync(join(dir, "pull-etag"), f.pullEtag);
   if (f.liveProbeSaysClosedAlways) {
     writeFileSync(join(dir, "live-probe-closed-always"), "");
   }
@@ -2384,6 +2469,7 @@ export function writeFixture(
     owner: { login: "example-org" },
     name: "example-repo",
     nameWithOwner: "example-org/example-repo",
+    url: "https://github.com/example-org/example-repo",
   });
   if (!f.checkRunsUnreadable)
     w("check-runs.json", {
@@ -2592,12 +2678,14 @@ export async function probeIn(
     once?: boolean;
     reconcile?: boolean;
     env?: Record<string, string>;
+    /** The pull request argument: a number, a URL or a branch. */
+    pr?: string;
   } = {},
 ): Promise<ProbeResult> {
   const proc = Bun.spawn(
     scriptArgv(
       join(SCRIPTS, "drive-status.ts"),
-      "999",
+      opts.pr ?? "999",
       "--json",
       ...(opts.once === false ? [] : ["--once"]),
       // The sweep is on in production, so it is on HERE, and a probe
@@ -2662,24 +2750,21 @@ export async function park(
   stateDir: string,
   key: string,
   kind: "thread" | "finding",
+  parkClass?: string,
 ) {
-  const proc = Bun.spawn(
-    scriptArgv(join(SCRIPTS, "drive-state.ts"), ...parkArgs(key, kind)),
-    {
-      cwd: fixtureStateTree(stateDir),
-      env: {
-        ...gitCleanEnv(),
-        DRIVE_PR_STATE_DIR: stateDir,
-        DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
-        JIG__dispatch__person: "maintainer",
-      },
-      stdin: new TextEncoder().encode(
-        parkRecord("Did the arbiter escalate it"),
-      ),
-      stdout: "pipe",
-      stderr: "pipe",
+  const args = parkArgs(key, kind, parkClass);
+  const proc = Bun.spawn(scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args), {
+    cwd: fixtureStateTree(stateDir),
+    env: {
+      ...gitCleanEnv(),
+      DRIVE_PR_STATE_DIR: stateDir,
+      DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
+      JIG__dispatch__person: "maintainer",
     },
-  );
+    stdin: Buffer.from(parkRecord("Did the arbiter escalate it", parkClass)),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   await expectSpawnExited(proc, 0);
 }
 

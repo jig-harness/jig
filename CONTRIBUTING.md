@@ -600,7 +600,7 @@ line and the sections between its `protocol:generated` markers come from
 `tools/protocol/generate.ts`, and its data file carries no header, so the
 `protocol` entry is that file's marker. The chapters' check also compares
 each stable chapter with the integration branch's copy at the merge base
-([design/protocol.md](design/protocol.md)), so it needs that history.
+([the Protocol maintainer reference](tools/protocol/README.md#what-stable-promises-and-how-the-gate-holds-it)), so it needs that history.
 
 A new derived file gets its entry in the pull request that adds it; the
 runner refuses an entry without a check.
@@ -721,6 +721,12 @@ work as part of the plugin:
   does. Reference files are not substituted; write `<skill-dir>/…` there.
   Never write a path into the consumer repository such as
   `.claude/skills/<name>/…` for your own files.
+  `scripts/check-skill-runtime-forms.ts` fails a page that uses the variable
+  without that explanation, a path under it that does not exist once the
+  directory is filled in by hand, a mention of `AskUserQuestion` with no
+  plain-text numbered fallback and default beside it, and a hand-over to the
+  review arbiter that does not say the calling session rules where there are
+  no subagents ([plugin/AGENTS.md](plugin/AGENTS.md#rules)).
 - **Working directory:** scripts run with the consumer repository as the
   working directory and must not depend on being run from the skill directory.
 - **Commands:** skill instructions use single-line `bun` invocations with

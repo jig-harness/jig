@@ -3,7 +3,8 @@
  * that names no `pr_open` state, an item with no running session past
  * `dispatch.stalled_after` whose open pull request links it raises no stall
  * need while that pull request's drive is live, converged, parked on a
- * question, stopped or undecided this tick, and is reported as carried by
+ * question, stopped, undecided this tick or asked for and waiting to be
+ * armed, and is reported as carried by
  * it with the drive's state, on the tick's report and on the line; the
  * drive's own need stays. A merged pull request that links it settles it.
  * No linking pull request, a pull request with no drive, a fork's pull
@@ -17,6 +18,7 @@ import { join } from "node:path";
 import { bodyLinker } from "../../skills/do-item/scripts/lib/linked-pr.ts";
 import { numberKeys } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
+import { factsOf } from "../lib/actions/drive-hold.ts";
 import { carrierInput } from "../lib/carried-pr.ts";
 import type { LineCarried } from "../lib/dashboard-contract.ts";
 import { buildLine } from "../lib/line.ts";
@@ -25,6 +27,7 @@ import { readLine, writeLine } from "../lib/line-store.ts";
 import { closeStateDb } from "../lib/state.ts";
 import { type PickupInput, planPickups } from "../lib/plan-pickups.ts";
 import { planTick } from "../lib/plan.ts";
+import type { LaunchRecord, ReadRecord } from "../lib/launches.ts";
 import type { StalledPrInput } from "../lib/stalled-pr.ts";
 import type {
   ClaimedItem,
@@ -178,6 +181,70 @@ describe("a claimed item an open pull request carries", () => {
   it("is still a stalled pickup naming the pull request when the pull request has no drive", () => {
     const reason = expectStalled(planPickups(input(stalled([pr()], []))));
     expect(reason).toContain("pull request #31: it has no drive");
+  });
+
+  it("raises no stall need while the drive is asked for and waits to be armed, and is reported as carried with the drive's why", () => {
+    const asked = drive("unarmed", {
+      ledger: "none",
+      headSha: "abc123",
+      pickupArm: true,
+    });
+    asked.why =
+      "no drive ledger, and its completed process pickup handed off the first drive: arm a drive on any account";
+    const plan = planPickups(input(stalled([pr()], [asked])));
+    expect(plan.actions).toEqual([]);
+    const [quiet] = plan.quiet.filter((q) => q.class === "claimed-carried");
+    expect(quiet?.carried).toEqual({ pr: 31, url: URL, drive: "unarmed" });
+    expect(quiet?.why).toContain(
+      "its drive waits to be armed (unarmed: no drive ledger, and its completed process pickup handed off the first drive",
+    );
+  });
+
+  it("is still a stalled pickup when a launch already armed the waiting drive at its head and ended without a ledger", () => {
+    const asked = drive("unarmed", { ledger: "none", headSha: "abc123" });
+    asked.why =
+      "no drive ledger, and a person's drive label asks for one: arm a drive on any account";
+    const arm: ReadRecord = {
+      record: {
+        id: "20261114T160000Z-0123abcd",
+        action: "rearm",
+        repo: SLUG,
+        item: null,
+        pr: 31,
+        released: false,
+        createdAt: "2026-11-14T16:00:00.000Z",
+        facts: factsOf(asked),
+      } as unknown as LaunchRecord,
+      state: {
+        kind: "ended",
+        exit: { at: "2026-11-14T16:05:00Z", code: 1, signal: null },
+        process: null,
+      },
+      result: null,
+    };
+    const pickups = input(stalled([pr()], [asked]));
+    const plan = planTick(
+      planInput(NOW, {
+        ...pickups,
+        drives: [asked],
+        launches: [...pickups.launches, arm],
+      }),
+    );
+    const stall = plan.actions.find((a) => a.cause === "stalled");
+    expect(stall?.target).toBe("#12");
+    expect(stall?.reason).toContain(
+      "launch record 20261114T160000Z-0123abcd armed it at this head and ended 1 without a drive ledger",
+    );
+    expect(plan.quiet).not.toContainEqual(
+      expect.objectContaining({ class: "claimed-carried" }),
+    );
+
+    // Before any arm ran, the same drive carries the item.
+    const waiting = planTick(planInput(NOW, { ...pickups, drives: [asked] }));
+    expect(waiting.actions.filter((a) => a.cause === "stalled")).toEqual([]);
+    expect(waiting.quiet).toContainEqual(
+      expect.objectContaining({ target: "#12", class: "claimed-carried" }),
+    );
   });
 
   it("raises no stall need while the drive is parked on a question, stopped, or undecided this tick, and is reported with the drive's state", () => {
@@ -406,6 +473,29 @@ describe("the line", () => {
         url: URL,
         drive: "driving",
         why,
+      },
+    ]);
+  });
+
+  it("lines a waiting drive as undecided, a state every reader of the line knows", () => {
+    const r = report({
+      quiet: [
+        {
+          target: "#12",
+          class: "claimed-carried",
+          why: "waits to be armed",
+          carried: { pr: 31, url: URL, drive: "unarmed" },
+        },
+      ],
+    });
+    expect(buildLine(lineInput({ reports: [r] })).carried).toEqual([
+      {
+        repo: REPO,
+        target: "#12",
+        pr: 31,
+        url: URL,
+        drive: "unplaced",
+        why: "waits to be armed",
       },
     ]);
   });

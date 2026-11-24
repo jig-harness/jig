@@ -78,14 +78,14 @@ with the rest.
 
 | Chapter | What it covers | Version | Status | Data file |
 | --- | --- | --- | --- | --- |
-| [Drive end states and exit codes](drive-exits.md) | How a drive, or one round of it, ended: each state and the exit code `drive-status.ts` and `drive.ts` report it with. | 1 | stable | [data/drive-exits.json](data/drive-exits.json) |
+| [Drive end states and exit codes](drive-exits.md) | How a drive, or one round of it, ended: each state and the exit code `drive-status.ts` and `drive.ts` report it with. | 2 | stable | [data/drive-exits.json](data/drive-exits.json) |
 | [The drive mailbox](mailbox.md) | What a person or a tool may tell a running drive, and how the drive answers: the messages, directives and acknowledgements in a working tree's mailbox files. | 1 | stable | [data/mailbox.json](data/mailbox.json) |
 | [Pull-request labels Jig writes and reads](pr-labels.md) | The labels that show where a pull request's drive or follow-up stands, and the labels a person adds to tell the dispatcher what to do with it. | 1 | stable | [data/pr-labels.json](data/pr-labels.json) |
 | [Hidden comment markers on the forge and the tracker](comment-markers.md) | The hidden markers Jig writes and reads in comments and bodies on the forge and the tracker: what record each marks, who writes it, its version and what it means. | 1 | stable | [data/comment-markers.json](data/comment-markers.json) |
 | [Commands a repository supplies](repo-commands.md) | The settings whose value is a command Jig runs: what each command is given, what it answers with, its deadline and the exits its caller reads. | 1 | stable | [data/repo-commands.json](data/repo-commands.json) |
 | [The follow-up claim and its result](followup-claim.md) | The marker that claims a merged pull request's follow-up: who took it, a dispatcher's tick or a person's run, and how it ended. | 1 | stable | [data/followup-claim.json](data/followup-claim.json) |
 | [Rule matchers in configuration](rule-matchers.md) | The configuration fields that select by an item's or a change's facts: the facts a rule may test, how each is compared, how a rule combines its values, and how a field's rules resolve. | 1 | stable | [data/rule-matchers.json](data/rule-matchers.json) |
-| [Addresses and the verbs of `jig send`](addresses.md) | The stations an address names on a piece of work, what each one's key is, and the verbs `jig send` tells a station. | 1 | provisional, moved by [plan item 39](https://github.com/jig-harness/jig/issues/485), [plan item 42](https://github.com/jig-harness/jig/issues/541) | [data/addresses.json](data/addresses.json) |
+| [Addresses and the verbs of `jig send`](addresses.md) | The stations an address names on a piece of work, what each one's key is, and the verbs `jig send` tells a station. | 1 | provisional, moved by [plan item 36](https://github.com/jig-harness/jig/issues/539), [plan item 42](https://github.com/jig-harness/jig/issues/541) | [data/addresses.json](data/addresses.json) |
 | [Forge claims: takeover, launch and merge-ready](forge-claims.md) | The claims a driver and a dispatcher post on a pull request: a driver's takeover of another clone's drive, a dispatching host's launch of a drive, and a driver's announcement that a head is safe to merge. | 1 | provisional, moved by [plan item 40](https://github.com/jig-harness/jig/issues/517), [plan item 49](https://github.com/jig-harness/jig/issues/865) | [data/forge-claims.json](data/forge-claims.json) |
 | [Tracker facets: type, priority and size](tracker-facets.md) | The facts every issue carries beside its labels, the numbers of the priorities, the stores a facet may be kept in and which each tracker adapter holds, and why a facet's store is the one in force. | 1 | provisional, moved by [plan item 41](https://github.com/jig-harness/jig/issues/518) | [data/tracker-facets.json](data/tracker-facets.json) |
 | [Needs and structured answers](needs-and-answers.md) | A decision waiting for a person and the answers to it: the decision record's fields, the forms and lines of a structured answer and how it is normalized, the acts a need asks for, and the dispatcher's own framings with the options it carries out. | 1 | provisional, moved by [plan item 50](https://github.com/jig-harness/jig/issues/940) | [data/needs-and-answers.json](data/needs-and-answers.json) |
@@ -94,6 +94,6 @@ with the rest.
 <!-- /protocol:generated -->
 
 How the chapters are generated and checked:
-[design/protocol.md](https://github.com/jig-harness/jig/blob/main/design/protocol.md),
+[Protocol maintainer reference](https://github.com/jig-harness/jig/blob/main/tools/protocol/README.md),
 and the decision behind it:
 [ADR-0020](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0020-protocol-chapters-are-generated-and-gated.md).

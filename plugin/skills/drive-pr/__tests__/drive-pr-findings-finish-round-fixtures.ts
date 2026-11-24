@@ -40,7 +40,9 @@ export function createFindingsFinishRoundFixtures() {
    * real scratch repository, because "did it refuse before pushing" is a claim
    * about those answers. Intercepting only `push` keeps every one of them real
    * while leaving the one irreversible act observable as a file. A
-   * `push-fails` file in `dir` turns the push into a bare remote rejection;
+   * `push-fails` file in `dir` turns the push into a bare remote rejection,
+   * or, when the file holds text, into a failure that writes that text, as a
+   * refusing pre-push hook does;
    * a `push-resolves-conflict` file makes a push that lands clear the PR's
    * conflict with its base, as a conflict resolution does.
    */
@@ -56,6 +58,7 @@ export function createFindingsFinishRoundFixtures() {
         "#!/usr/bin/env bash",
         'if [ "${1:-}" = "push" ]; then',
         `  ${GIT_PUSH_FLAG_GUARD}`,
+        `  if [ -s ${JSON.stringify(join(dir, "push-fails"))} ]; then cat ${JSON.stringify(join(dir, "push-fails"))} >&2; exit 1; fi`,
         `  [ ! -e ${JSON.stringify(join(dir, "push-fails"))} ] || { echo ' ! [remote rejected] HEAD -> feature (failed)' >&2; exit 1; }`,
         `  printf '%s\\n' "$*" >> ${JSON.stringify(pushLog)}`,
         `  if [ -e ${JSON.stringify(join(dir, "push-resolves-conflict"))} ]; then`,

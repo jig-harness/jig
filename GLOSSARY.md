@@ -9,6 +9,41 @@ make, use the entry's term instead.
 
 ## Core ideas
 
+<a id="occurrence-identity"></a>
+
+- **Occurrence identity** — the stable identifier for one specific need for
+  attention or action. It lets a later report settle that need without also
+  settling a newer need that has the same display key.
+
+<a id="coverage-revision"></a>
+
+- **Coverage revision** — the version of a source's declared authority scope
+  that covered an observation. It is checked with the observation and the
+  hub's acceptance fence so an earlier owner cannot relabel a later report as
+  historical evidence.
+
+<a id="authority-epoch"></a>
+
+- **Authority epoch** — one uninterrupted interval in which a source is
+  authorized to report for a repository. A handoff starts a new epoch; evidence
+  from an earlier epoch remains usable only when its observation and recorded
+  acceptance both fall within that epoch.
+
+<a id="grant-revision"></a>
+
+- **Grant revision** — the monotonically increasing version of a viewer's
+  access grant. A protected response names the revision and expiry that
+  authorized it, allowing the browser to reject a late response from an older
+  or broader grant. Its policy authority assigns revisions in policy-update
+  order and persists that sequence across restart; a changed authority instance
+  requires a fresh authorization handshake.
+
+<a id="scope-invalidation"></a>
+
+- **Scope invalidation** — a feed event that tells a consumer to remove a row
+  because its current access no longer permits it. It is not settlement
+  evidence, so the consumer keeps the underlying occurrence unresolved.
+
 - **Preflight** — a small check that runs before a stage starts, to prove a
   condition the stage needs. For example, the dispatcher checks whether an
   account can reach a tracker before launching work that must use it.
@@ -917,7 +952,7 @@ make, use the entry's term instead.
   issue; where the tracker keeps the value is its *facet store*. The skills
   read the value, never the label or field behind it, and every filing
   through the interface is checked for all three
-  ([design](design/tracker-facets.md)).
+  ([Tracker facets chapter](plugin/protocol/tracker-facets.md)).
 - **Facet store** (store) — where a tracker keeps one *issue facet*: the
   tracker's own field for it (`native`, such as GitHub's or Jira's issue
   type), a custom field the repository names (`field`), or a label per
@@ -926,7 +961,7 @@ make, use the entry's term instead.
   the repository's issues carry them, else the organization's matching
   field, read by detection. A repository names its own in
   `issue_tracker.facets`, and no repository's store moves unless its
-  configuration says so ([design](design/tracker-facets.md)).
+  configuration says so ([Tracker facets chapter](plugin/protocol/tracker-facets.md)).
 - **Sensitivity flag** — a *flag label* marking a change that carries extra
   obligations, such as a database migration, a published contract, personal
   data or a manual operational step. `decide` reads them under fixed names:
@@ -1500,6 +1535,9 @@ make, use the entry's term instead.
   other decision the agent takes itself and records where a person can
   reverse it
   ([ADR-0010](docs/adr/ADR-0010-parking-is-reserved-for-registry-classes.md)).
+  A **standalone park** names no review thread or summary finding, such as a
+  CI repair's decision on whether to loosen a rule; it holds the drive for a
+  person like any other park.
 - **Session-framed decision, dispatcher-framed decision** — the *framed
   decision* a need on the dispatcher's line carries when it is not a
   *park*. A **session-framed decision** is the one a dispatched follow-up's
@@ -1510,6 +1548,13 @@ make, use the entry's term instead.
   facts that identify it, with a fixed set of options that are steps the
   tick carries out once a person chooses one
   ([design](design/structured-answers.md#every-need-framed)).
+- **Question group** — needs on one host's line whose *framed decisions*
+  are identical apart from the target each is about: the same act, class,
+  question, options and recommended option once the need's own item
+  or pull request is replaced. The dashboard's Needs you shows a question
+  group as one card, and one answer on it is sent to each target as that
+  target's own answer; `jig ask --waiting` names each need's group
+  ([design](design/need-classes.md#identical-questions-fold)).
 - **Decision class** — one row of the *HITL* registry, named by a short
   slug (`merge`, `scope`, `human-thread`, …): a kind of decision that must
   stay a person's. A repository lists its classes in
@@ -2076,7 +2121,7 @@ make, use the entry's term instead.
   values are generated from the code and a gate fails the build when a
   chapter and the code disagree; only the meaning of each value and the
   chapter's prose are written by hand
-  ([design/protocol.md](design/protocol.md)). *Avoid*: spec, specification
+  ([Protocol chapters](plugin/protocol/README.md)). *Avoid*: spec, specification
   (a spec is what a work item links).
 - **Rule matcher** — the one piece of the plugin that decides whether a rule
   in a repository's configuration matches a tracker item or a change, for
@@ -2439,8 +2484,10 @@ make, use the entry's term instead.
   pass, the name a model has there, what a launch carries, what a run cost
   and how a stop is classified
   ([ADR-0026](docs/adr/ADR-0026-the-agent-harness-is-an-interface.md)).
-  Not the *session runtime*, which says where a session runs and not which
-  program runs in it. Planned.
+  Claude Code and Codex are behind that interface today; a third harness
+  and the skills' harness-neutral wording are planned. Not the *session
+  runtime*, which says where a session runs and not which program runs in
+  it.
 - **Spend cap** — the amount of money per day against which the
   *dispatcher* admits a *provider account*'s launches, with an optional
   ceiling for one run. A launch the day's remaining amount does not cover
@@ -2983,7 +3030,21 @@ make, use the entry's term instead.
   (a bot the *adoption rule* names is the host's own identity, not
   automation). The dispatcher drives one, adopted or re-driven, only while
   it needs work (a failed check, a conflict with its base, an unresolved
-  review thread) and leaves a healthy one for a person to merge.
+  review thread) and leaves a healthy one for a person to merge, unless its
+  bot is *trusted automation*.
+- **Trusted automation** — a bot a repository names in
+  `pull_requests.trusted_automation` (a dependency bot such as Renovate or
+  Dependabot) whose converged pull requests count as the repository's own
+  for the *Ready predicate*, so they reach merge now instead of approve
+  first, but only while the change stays within what the bot is trusted to
+  change: its head in the repository, every commit by an allowed author (the
+  bot or a listed committer), each signed unless the entry says
+  `signed: false`, every file within the entry's paths, and, where
+  set, an allowed update type; the exception also needs the repository to name
+  a reviewer app. With `dispatch.adopt` on, the dispatcher also adopts its
+  same-repository pull requests while healthy, recently updated and not held
+  (the [configuration guide](plugin/CONFIGURATION.md) has the complete rules). The bot's identity
+  is trusted; the third-party text it carries is not.
 - **Owed-steps label** — the repository's manual-operations label
   (`issue_tracker.labels.manual_ops`, `manual-ops` by default) on a pull
   request: its description's `## Out-of-tree follow-ups` section lists a
@@ -3305,6 +3366,11 @@ make, use the entry's term instead.
   three-dimensional models on the web: one file holding a model's parts,
   their placement, their materials and its animations, which a browser can
   load and draw ([design/website.md](design/website.md)).
+- **SVG (scalable vector graphics)** — an image format made of shapes and
+  lines described in text, which a browser draws at any size without losing
+  sharpness and which a program can write. The line figure's candidates are
+  SVG files written by a script from one description
+  ([intro figure pass 2](design/prototypes/intro-figure-pass-2/README.md)).
 - **UV map** — the flat layout a three-dimensional model's surface is
   unfolded onto, giving every point on it two coordinates (called U and V)
   so that a pattern or an image can be drawn across the surface; the website

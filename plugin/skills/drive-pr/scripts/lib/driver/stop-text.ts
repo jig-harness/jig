@@ -7,8 +7,9 @@
  * read; every other exit says what the terminal-state registry's
  * `report.stop` says for it.
  */
+import type { ParkedItem } from "../state/park-frame.ts";
 import type { DriveState } from "../state/schema.ts";
-import { diagnosisDetail } from "../state/ci-actions.ts";
+import { diagnosisDetail, latestDiagnosedPark } from "../state/ci-actions.ts";
 import { lastStopEvent, stopInstant } from "../state/events.ts";
 import {
   DRIVE_EXIT,
@@ -27,10 +28,26 @@ export function oneLine(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+/**
+ * The parked item a park's stop prints: among the parks the stop waits on
+ * (the gate's own list, when the stop carries one), the one the latest CI
+ * diagnosis handed to a person, else the first.
+ */
+export function leadPark(state: DriveState | null): ParkedItem | undefined {
+  const all = state?.parked ?? [];
+  const probe = driverRuntime.stopProbe;
+  const keys = probe?.parkKeys;
+  const waiting =
+    keys === undefined ? all : all.filter((p) => keys.includes(p.key));
+  const parked = waiting.length > 0 ? waiting : all;
+  const diagnosed = latestDiagnosedPark(state?.ciActions ?? []);
+  return parked.find((p) => p.key === diagnosed?.key) ?? parked[0];
+}
+
 /** A park's line: the first parked item's question, and how many more wait. */
 function parkStop(pr: string, code: number, state: DriveState | null): string {
   const parked = state?.parked ?? [];
-  const first = parked[0];
+  const first = leadPark(state);
   const probe = driverRuntime.stopProbe;
   const prefix =
     probe?.code === code

@@ -14,9 +14,9 @@
  * directory override for exactly this reason, and the wordings and record
  * shapes below are transcribed verbatim from measured samples on one developer
  * machine — 371 Claude `rate_limit` records and 1342 Codex rollouts. Where the
- * corpus had no sample (a Claude WEEKLY wall; any Codex wall at all, since none
- * was ever reached), the test says so and pins the fail-closed behaviour
- * instead of inventing the vendor's wording.
+ * corpus had no sample (any Codex wall at all, since none was ever reached),
+ * the test says so and pins the fail-closed behaviour instead of inventing the
+ * vendor's wording; the Claude weekly notice is in quota-weekly.test.ts.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
@@ -550,11 +550,11 @@ describe("claude adapter", () => {
   });
 
   it("classifies an UNRECOGNISED rate_limit wording as unknown and withholds the reset", () => {
-    // No weekly wall exists in the measured corpus, so this pins the fail-closed
-    // branch rather than a guess at the vendor's weekly wording. Note the text
-    // carries a perfectly parseable reset clause and the adapter still refuses
-    // it: an instant is useless without knowing the window's LENGTH, and length
-    // is what decides sleepability.
+    // The weekly notice states a DATED reset; this undated variant is not that
+    // notice, so it pins the fail-closed branch. Note the text carries a
+    // perfectly parseable reset clause and the adapter still refuses it: an
+    // instant is useless without knowing the window's LENGTH, and length is
+    // what decides sleepability.
     writeClaude("s.jsonl", [
       claudeWall({
         cwd: CWD,

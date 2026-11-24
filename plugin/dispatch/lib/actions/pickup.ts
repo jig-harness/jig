@@ -473,8 +473,16 @@ async function competing(
   } catch (error) {
     return `the runtime cannot be read again: ${failureText(error)}`;
   }
-  const held = holding(sessions, joinedTo(state, repo, item));
+  const joined = joinedTo(state, repo, item);
+  const held = holding(sessions, joined);
   if (held.kind === "unknown") return held.reason;
+  // An agent the runtime reports holds the item, but a terminal it cannot
+  // report beside it may be a rival's: the replay waits for that too.
+  const unread = sessions.ok
+    ? sessions.workspaces.find((w) => joined(w) && w.unverifiableTerminals > 0)
+    : undefined;
+  if (unread !== undefined)
+    return `workspace ${unread.path} has ${unread.unverifiableTerminals} terminal(s) whose agents the runtime cannot report`;
   const own = record.workspace?.id;
   const rivals =
     held.kind === "running" ? held.workspaces.filter((w) => w.id !== own) : [];

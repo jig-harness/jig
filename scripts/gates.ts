@@ -46,6 +46,7 @@ import { checkRoadmap } from "./check-roadmap.ts";
 import { checkContextBudget } from "./check-context-budget.ts";
 import { checkSupplyChainLockstep } from "./check-supply-chain-lockstep.ts";
 import { checkPlugin } from "./check-plugin.ts";
+import { checkSkillRuntimeForms } from "./check-skill-runtime-forms.ts";
 import { checkSkillShellNeutrality } from "./check-skill-shell-neutrality.ts";
 import { checkSkillFallbacks } from "./check-skill-fallbacks.ts";
 import { checkVoice } from "./check-voice.ts";
@@ -241,6 +242,7 @@ export const CHECKS: Stage[] = [
   check("review-risk.ts --check", checkReviewRisk),
   check("check-roadmap.ts", checkRoadmap),
   check("check-plugin.ts", checkPlugin),
+  check("check-skill-runtime-forms.ts", checkSkillRuntimeForms),
   check("check-skill-shell-neutrality.ts", checkSkillShellNeutrality),
   check("check-voice.ts", checkVoice),
 ];

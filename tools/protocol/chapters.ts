@@ -1,5 +1,5 @@
 /**
- * The chapter list of the Jig Protocol (design/protocol.md § The chapters):
+ * The chapter list of the Jig Protocol (tools/protocol/README.md § The chapter template):
  * for each chapter its file, version, status, the plan items that still move
  * it with their epic issues, and its generated sections. The generator
  * (`generate.ts`) writes each chapter's status line, its generated sections,

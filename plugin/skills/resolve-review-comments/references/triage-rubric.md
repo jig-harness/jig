@@ -518,8 +518,13 @@ adds round cost, so:
 
 ## The Review Arbiter
 
-For threads the rubric does not decide, spawn the **Review Arbiter** agent
-(`jig:review-arbiter`) — one invocation can take a batch of
+Where the harness has no subagents, the calling session is the arbiter: it
+reads [`agents/review-arbiter.md`](../../../agents/review-arbiter.md) and rules
+each contested thread with the inputs and verdicts below, before it replies to
+any thread.
+
+For threads the rubric does not decide, where subagents are available, delegate to
+the **Review Arbiter** agent (`jig:review-arbiter` in Claude Code; in Codex, give the agent file to a subagent as its instructions, per the plugin README's Codex notes) — one invocation can take a batch of
 contested threads. Give it, per thread: the thread body, `path`/`line`, the
 finding's diff hunk — or an explicit note that it anchors to pre-existing code
 the PR did not touch (the arbiter has no `git`/`gh` access, so this is how it

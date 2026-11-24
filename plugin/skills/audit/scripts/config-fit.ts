@@ -91,7 +91,7 @@ import {
   behindIntegrationBranch,
   titlePatternFindings,
 } from "./lib/trunk-fit.ts";
-import { policyFindings } from "./lib/pr-policy-fit.ts";
+import { policyFindings, trustedFit } from "./lib/pr-policy-fit.ts";
 import { pathFindings } from "./lib/path-fit.ts";
 import { ciPolicyFindings } from "./lib/ci-policy-fit.ts";
 import { reviewerEvidenceRule, reviewerFindings } from "./lib/reviewer-fit.ts";
@@ -565,7 +565,7 @@ function crossFieldRules(config: Config): Finding[] {
     });
   findings.push(...reviewerEvidenceRule(config));
   findings.push(...sizePointsFindings(config));
-  findings.push(...workBatchSizesFindings(config));
+  findings.push(...workBatchSizesFindings(config), ...trustedFit(config));
   return findings;
 }
 

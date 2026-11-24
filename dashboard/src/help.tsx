@@ -110,10 +110,13 @@ export function HelpView({ Fold }: { Fold: FoldComponent }) {
             you, a parked drive's card on github.com also has <b>Send</b>: once
             you pick an option, it posts each decision's answer from this
             browser straight to GitHub, as you, one comment per decision with
-            the record <code>jig send</code> writes. The token stays in this
-            browser and never reaches the host. A guarded pick sends on the
-            second step, as it copies. Send is offered only over HTTPS, from
-            this machine's loopback.
+            the record <code>jig send</code> writes. Keep one token per GitHub
+            account, each naming the repository owners it answers for: a card
+            sends with the token for its repository's owner, and one token may
+            answer for every owner no other names. The tokens stay in this
+            browser and never reach the host. A guarded pick sends on the second
+            step, as it copies. Send is offered only over HTTPS, from this
+            machine's loopback.
           </p>
         </div>
       </section>

@@ -51,10 +51,11 @@ import {
 } from "./thread-evidence.ts";
 export { isLeftOpenThread } from "./thread-evidence.ts";
 import { readPrState } from "../pr-state.ts";
+import { readPrSnapshot } from "./pr-snapshot.ts";
 import {
   readParkedSets,
   standingProvisionalKeys,
-  unlistedReversals,
+  unlistedParkDetails,
 } from "../provisional.ts";
 import {
   reviewerApp,
@@ -62,7 +63,6 @@ import {
   reviewerExpected,
   reviewerLabel,
 } from "../overlay.ts";
-import { ghCall } from "../proc.ts";
 import { withObservedEvaluation } from "../gh-conditional.ts";
 import { summaryReport } from "../../summary-findings.ts";
 import {
@@ -161,6 +161,8 @@ export interface StatusReport extends CiReport {
   /** Unaddressed finding holds whose promised fix has no recorded push stamp. */
   summaryHeldUndispatchedKeys: string[] | null;
   parkedItemKeys: string[] | null;
+  /** The parked keys a `HITL_PARKED` stop waits on; `null` when not measured. */
+  actionableParkKeys: string[] | null;
   /**
    * WHICH FILES this round's open findings anchor to — threads AND
    * summary-only findings both, sorted, de-duplicated, `null` when nothing
@@ -203,6 +205,8 @@ export interface EvaluateContext {
   listThreadsScript: string;
   summaryScript: string;
   helperTimeoutSec: number;
+  /** Whole seconds left of `--timeout` for a later evaluation; undefined: the first, bounded by per-call deadlines only. */
+  budgetLeftSec?: () => number | undefined;
   /** Only polling invocations opt in; --once gathers all evidence directly. */
   waitingCache?: WaitingEvaluationCache;
 }
@@ -234,6 +238,7 @@ export function emptyReport(): StatusReport {
     summaryUnaddressedKeys: null,
     summaryHeldUndispatchedKeys: null,
     parkedItemKeys: null,
+    actionableParkKeys: null,
     openThreadPaths: null,
     ci: "",
     failingCheckNames: null,
@@ -241,54 +246,6 @@ export function emptyReport(): StatusReport {
     failingStatusNames: null,
     failingRuns: null,
   };
-}
-
-/**
- * One `gh pr view --json <fields>` read. On failure, distinguishes WHY,
- * because the two failures need opposite handling and conflating them was a
- * measured bug:
- *
- *   'missing-field' — `gh` validates a `--json` field list against its own
- *          baked-in schema before making any network call, so this fails
- *          deterministically and client-side with `Unknown JSON field: "..."`
- *          (verified against gh 2.97.0). It is a property of the BINARY, so
- *          it will not clear on a retry: it is an unmet prerequisite, and the
- *          caller exits 2 telling the operator to upgrade.
- *   'transient' — anything else: a timeout, a 5xx, a rate limit, an auth
- *          blip. These DO clear, so they are INDETERMINATE and the caller's
- *          MAX_QUERY_ERRORS retry handles them. Treating one of these as a
- *          missing field would silently disable a real guard on ordinary
- *          network noise — and the evaluation that ran blind can be the one
- *          reporting CONVERGED.
- */
-async function tryPrViewFields(
-  pr: string,
-  fields: string,
-): Promise<
-  | { ok: true; json: Record<string, unknown> }
-  | { ok: false; why: "missing-field" | "transient" }
-> {
-  const r = await ghCall(["pr", "view", pr, "--json", fields]);
-  if (r.code === 0) {
-    try {
-      return {
-        ok: true,
-        json: JSON.parse(r.stdout) as Record<string, unknown>,
-      };
-    } catch {
-      return { ok: false, why: "transient" };
-    }
-  }
-  const combined = `${r.stdout}${r.stderr}`;
-  if (combined.includes("Unknown JSON field")) {
-    return { ok: false, why: "missing-field" };
-  }
-  return { ok: false, why: "transient" };
-}
-
-function str(obj: Record<string, unknown>, field: string): string {
-  const v = obj[field];
-  return v == null ? "" : String(v);
 }
 
 export {
@@ -437,6 +394,9 @@ async function evaluateFresh(
   // ALL THREE — state, head and base — are read TOGETHER, in one call, for the
   // same reason the opening snapshot reads them together: two calls are two
   // instants, and every one of these is part of what the verdict depends on.
+  // It is the same conditional read of the same pull document as the opening
+  // snapshot, so the comparison never spans two sources, and a `304` is
+  // GitHub's confirmation, at this instant, that nothing in it changed.
   // The first version of this recheck read `headRefOid` alone, which makes the
   // guard blind to the terminal transition it most needs to catch: a PR that
   // MERGES between the liveness check at the top and a terminal return keeps
@@ -447,26 +407,22 @@ async function evaluateFresh(
   // stop it that way. Liveness, head and base are one observation, so they are
   // read in one call and asserted together, liveness first.
   async function stillOnHead(): Promise<number> {
-    const now = await ghCall(
-      ["pr", "view", ctx.pr, "--json", "state,headRefOid,baseRefOid"],
-      { stderr: "ignore" },
+    const now = await readPrSnapshot(
+      ctx.owner,
+      ctx.repo,
+      ctx.pr,
+      "still-on-head",
+      undefined,
+      ctx.budgetLeftSec,
     );
-    let parsed: Record<string, unknown> | null = null;
-    if (now.code === 0) {
-      try {
-        parsed = JSON.parse(now.stdout) as Record<string, unknown>;
-      } catch {
-        parsed = null;
-      }
-    }
-    if (parsed === null) {
+    if (!now.ok) {
       return readFailure(
         report,
-        `cannot re-read #${ctx.pr}'s state, head and base to confirm they did not change while the witnesses were gathered`,
+        `cannot re-read #${ctx.pr}'s state, head and base to confirm they did not change while the witnesses were gathered (${now.reason})`,
       );
     }
-    const stateNow = str(parsed, "state");
-    const headNow = str(parsed, "headRefOid");
+    const stateNow = now.snapshot.state;
+    const headNow = now.snapshot.headRefOid;
     if (stateNow === "" || headNow === "") {
       return readFailure(
         report,
@@ -480,8 +436,8 @@ async function evaluateFresh(
         `#${ctx.pr} became ${stateNow} while this evaluation ran — stop the loop; a push now would be orphaned, and no terminal claim about the review holds on a PR that is no longer open`,
       );
     }
-    // Draftness is deliberately NOT re-read here, and its absence from the
-    // `--json` list above is the point rather than an omission. This recheck
+    // Draftness is deliberately NOT judged here, though the document carries
+    // it: ignoring it is the point rather than an omission. This recheck
     // used to trip `PR_IS_DRAFT` on a mid-evaluation flip back to draft,
     // because a terminal claim was only sound while a reviewer was scheduled to
     // look. The posting reviewer reviews drafts (measured — see the module
@@ -502,7 +458,7 @@ async function evaluateFresh(
     // treats as INDETERMINATE rather than "unchanged". Falling through here
     // would let a snapshot whose base half could not be re-verified reach
     // CONVERGED or PR_CONFLICTING anyway.
-    const baseNow = str(parsed, "baseRefOid");
+    const baseNow = now.snapshot.baseRefOid;
     if (baseNow === "") {
       return readFailure(
         report,
@@ -548,9 +504,7 @@ async function evaluateFresh(
   async function closedSinceOpen(): Promise<number> {
     // A conditional REST read, for the same reason the sweep's
     // liveness probe is: state is ALL this asks for, so an unchanged PR answers
-    // `304` and spends nothing from the GraphQL bucket. Nothing here is compared
-    // against another field of the same response, which is what keeps
-    // `stillOnHead` and the opening snapshot on GraphQL.
+    // `304` and spends nothing from the rate limit.
     const now = await readPrState(ctx.pr, { caller: "recheck" });
     if (!now.ok) {
       return readFailure(
@@ -576,64 +530,28 @@ async function evaluateFresh(
   // window. `isDraft` rides the same read for the cheaper reason that it costs
   // nothing there and a second call would be a second instant for no gain.
   //
-  // Every field in it is REQUIRED OF THE CLI — which is a narrower claim than
-  // "every field is validated after the read", and the two are deliberately not
-  // the same rule (see the validation block below for which fields are checked
-  // and why the rest are not). `mergeable`, `mergeStateStatus`, `baseRefName`,
-  // `headRefName` and `baseRefOid` have been in `gh pr view --json` for years,
-  // so a `gh` without them is an unmet prerequisite, not a configuration to
-  // support: compat shims, dual paths and accepts-both-shapes parsers are ruled
-  // out, and an earlier cut of this guard built exactly that — a three-tier
-  // CLI-version ladder plus a second REST parser speaking a different response
-  // dialect. Each tier then needed its own binding and validation guards, and
-  // each of those produced fresh defects. Requiring the fields deletes that
-  // whole surface: one path, one dialect, nothing to keep consistent.
-  const snapshot = await tryPrViewFields(
+  // It is one conditional REST read of the pull document (`pr-snapshot.ts`),
+  // the same read `stillOnHead` makes again before a terminal return: one
+  // path, one dialect. An unchanged pull request answers `304` and the kept
+  // reading is reused; a failed or unusable answer falls back to one full
+  // read, and a read that still fails is INDETERMINATE, retried by the caller.
+  const snapshot = await readPrSnapshot(
+    ctx.owner,
+    ctx.repo,
     ctx.pr,
-    "state,isDraft,headRefOid,mergeable,mergeStateStatus,baseRefName,headRefName,baseRefOid",
+    "snapshot",
+    undefined,
+    ctx.budgetLeftSec,
   );
-  if (!snapshot.ok && snapshot.why === "missing-field") {
-    // Liveness FIRST, even here. The contract is "a merged or closed PR stops
-    // the loop before anything else", and folding liveness into the combined
-    // required-field read broke it: on an unsupported `gh` a finished PR
-    // reported a configuration error, so a caller could not tell a PR that is
-    // simply done from a CLI it cannot use. `state` alone is supported by every
-    // `gh` that has the subcommand, and this costs one call on a path that is
-    // otherwise a hard stop anyway.
-    const live = await ghCall(
-      ["pr", "view", ctx.pr, "--json", "state", "-q", ".state"],
-      {
-        stderr: "ignore",
-      },
-    );
-    const liveState = live.code === 0 ? live.stdout.trim() : "";
-    if (liveState !== "" && liveState !== "OPEN") {
-      return terminal(
-        report,
-        "PR_NOT_OPEN",
-        `PR #${ctx.pr} is ${liveState} — stop the loop; a push now would be orphaned (note: this 'gh' also cannot report mergeability, but the PR is finished, so that is moot)`,
-      );
-    }
-    // A property of the BINARY, so it will not clear on a retry. Fail as the
-    // configuration error it is, naming the fix, rather than degrading into a
-    // weaker guard the caller believes is armed. Reported through the report,
-    // never a bare throw: the loop's catch-all branch reports and exits with
-    // this code, so the JSON contract holds on every path out of here.
-    return terminal(
-      report,
-      "UNSUPPORTED_CLI",
-      "this 'gh' cannot report mergeability or draft state — 'gh pr view --json' rejected one of state,isDraft,headRefOid,mergeable,mergeStateStatus,baseRefName,headRefName,baseRefOid. Every field in that list is required; upgrade the GitHub CLI (gh 2.x supports them all)",
-    );
-  }
   if (!snapshot.ok) {
     return readFailure(
       report,
-      `cannot read PR #${ctx.pr} (a transient failure, not a missing-field error) — retrying rather than treating ordinary network noise as an unmet prerequisite`,
+      `cannot read PR #${ctx.pr} (${snapshot.reason}) — retrying rather than drawing a verdict from no reading`,
     );
   }
-  const prJson = snapshot.json;
+  const prJson = snapshot.snapshot;
 
-  const prState = str(prJson, "state");
+  const prState = prJson.state;
   if (prState === "") {
     return terminal(
       report,
@@ -649,7 +567,7 @@ async function evaluateFresh(
     );
   }
 
-  report.apiHead = str(prJson, "headRefOid");
+  report.apiHead = prJson.headRefOid;
   if (report.apiHead === "") {
     return terminal(
       report,
@@ -679,7 +597,7 @@ async function evaluateFresh(
     report.apiHead,
     ctx.localHead,
     ctx.inheritedHead ?? "",
-    str(prJson, "headRefName"),
+    prJson.headRefName,
   );
   if (sync === "lagging") {
     return terminal(
@@ -688,15 +606,16 @@ async function evaluateFresh(
       await headMismatchReason(
         report.apiHead,
         ctx.localHead,
-        str(prJson, "headRefName"),
+        prJson.headRefName,
       ),
     );
   }
 
   // A nominally SUCCESSFUL read is validated, not trusted. A partial or
-  // malformed response (`mergeable` null, absent or unhandled, or an empty
+  // malformed response (`mergeable` absent or not a mergeability, or an empty
   // `baseRefOid`) otherwise collapses to `''` and reads as mergeable, or
-  // silently disarms the base-race guard.
+  // silently disarms the base-race guard. A `null` mergeable is GitHub still
+  // computing it, which `pr-snapshot.ts` reads as `UNKNOWN`.
   //
   // Validation is scoped to the fields a STATE IS DECIDED FROM, deliberately.
   // `mergeable` picks the branch and `baseRefOid` arms the base-race guard, so
@@ -707,10 +626,9 @@ async function evaluateFresh(
   // where used, and `drive-status.ts`'s best-effort drift measurement already
   // degrades to "no drift published" on an empty `headRefName`. Hard-failing
   // on any of the three would block PR_CONFLICTING over evidence that path
-  // does not use. Requiring the fields OF THE CLI (above) and validating the
-  // decision evidence (here) are two different rules.
-  report.mergeable = str(prJson, "mergeable").toUpperCase();
-  report.mergeStateStatus = str(prJson, "mergeStateStatus").toUpperCase();
+  // does not use.
+  report.mergeable = prJson.mergeable;
+  report.mergeStateStatus = prJson.mergeStateStatus;
   if (!["MERGEABLE", "CONFLICTING", "UNKNOWN"].includes(report.mergeable)) {
     return terminal(
       report,
@@ -718,9 +636,9 @@ async function evaluateFresh(
       `PR #${ctx.pr}'s snapshot succeeded but carried no handled 'mergeable' value (got '${report.mergeable === "" ? "<empty>" : report.mergeable}') — refusing to read that as mergeable`,
     );
   }
-  report.baseRefName = str(prJson, "baseRefName");
-  report.headRefName = str(prJson, "headRefName");
-  report.baseHead = str(prJson, "baseRefOid");
+  report.baseRefName = prJson.baseRefName;
+  report.headRefName = prJson.headRefName;
+  report.baseHead = prJson.baseRefOid;
   if (report.baseHead === "") {
     return terminal(
       report,
@@ -1083,16 +1001,15 @@ async function evaluateFresh(
     parkedKeys.has(String(t.threadId)),
   ).length;
   const provisionalKeys = standingProvisionalKeys(threads, parkedKeys);
-  // Computed AFTER parkedKeys: a parked thread is a human decision, not a
-  // finding that LANDED on its file again (structuralEscalationDue's premise),
-  // so one old parked thread on `a.ts` must not arm every consecutive round
-  // pair while it stays parked.
+  // After parkedKeys: a parked thread is a human decision, not a finding
+  // that LANDED again (structuralEscalationDue's premise).
   const summaryLive = summary.unaddressed.filter(
     (f) => !parkedKeys.has(f.fingerprint),
   );
   const summaryParked = summary.unaddressed.length - summaryLive.length;
   report.summaryParked = summaryParked;
-  const reversalParked = unlistedReversals(parked.reversals, threads, summary);
+  const { reversalParked, standaloneParked, standaloneNote } =
+    unlistedParkDetails(parked, report);
 
   // A thread/finding held for `resolve-held-thread.ts` /
   // `answer-summary-finding.ts` to dispatch (an `accepted` or `moot`
@@ -1207,25 +1124,24 @@ async function evaluateFresh(
   // Over unpushed inherited commits only a conflict stops; else push them.
   const liveWork = Math.max(liveThreads, 0) + Math.max(liveSummary, 0);
   if (mayEndWithoutWork(liveWork, sync, conflicting)) {
-    // A conflict with NOTHING left to work is unconvergeable: no round can be
-    // reviewed, and no amount of waiting changes that. Checked before
-    // HITL_PARKED because a merge is a concrete command and a parked item is a
-    // question — an operator handed both should be told the mechanical one, and
-    // the parked items are named in the reason so nothing is hidden by the
-    // precedence.
+    // Resolve a conflict before handing back the parked decisions.
+    // The conflict reason also names any parked review findings.
     if (conflicting) {
       const rc = await stillOnHead();
       if (rc !== 0) return rc;
       return terminal(
         report,
         "PR_CONFLICTING",
-        `PR #${ctx.pr} conflicts with its base (mergeable=${report.mergeable}${report.mergeStateStatus !== "" ? `, mergeStateStatus=${report.mergeStateStatus}` : ""}) and has no workable findings on ${report.apiHead} (${report.threadsParked} parked thread(s), ${summaryParked} parked summary finding(s)). Merge ${report.baseRefName !== "" ? report.baseRefName : "the base branch"} into this one, push, and re-run; nothing here becomes judgeable with time`,
+        `PR #${ctx.pr} conflicts with its base (mergeable=${report.mergeable}${report.mergeStateStatus !== "" ? `, mergeStateStatus=${report.mergeStateStatus}` : ""}) and has no workable findings on ${report.apiHead} (${report.threadsParked} parked thread(s), ${summaryParked} parked summary finding(s)${standaloneNote}). Merge ${report.baseRefName !== "" ? report.baseRefName : "the base branch"} into this one, push, and re-run; nothing here becomes judgeable with time`,
       );
     }
-    if (report.threadsParked + summaryParked + reversalParked > 0) {
+    if (
+      report.threadsParked + summaryParked + reversalParked + standaloneParked >
+      0
+    ) {
       const rc = await stillOnHead();
       if (rc !== 0) return rc;
-      let hitlReason = `every remaining item awaits a human decision (${report.threadsParked} thread(s), ${summaryParked} summary finding(s), ${reversalParked} other reversed provisional decision(s)) — handing back rather than re-arming`;
+      let hitlReason = `every remaining item awaits a human decision (${report.threadsParked} thread(s), ${summaryParked} summary finding(s), ${reversalParked} other reversed provisional decision(s)${standaloneNote}) — handing back rather than re-arming`;
       if (stalledCheckRunNote !== "") hitlReason += ` — ${stalledCheckRunNote}`;
       return terminal(report, "HITL_PARKED", hitlReason);
     }

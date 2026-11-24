@@ -10,6 +10,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import type { ParkedItem } from "../../skills/drive-pr/scripts/lib/state/schema.ts";
+import { hostLabel } from "../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
@@ -20,8 +21,11 @@ import {
   type World,
   world,
 } from "./fixtures.ts";
-import { dispatchState } from "./launch-fixtures.ts";
+import { account, dispatchState, machineFile } from "./launch-fixtures.ts";
 import { statePath } from "../lib/state.ts";
+import { claimBody } from "../../shared/records/forge-claims.ts";
+import { localWriter } from "../../shared/records/writer.ts";
+import { REARM_REQUEST } from "../lib/rearm-binding.ts";
 
 const CONFIG = `issue_tracker:
   adapter: github
@@ -29,6 +33,9 @@ const CONFIG = `issue_tracker:
     repository: ${SLUG}
 dispatch:
   identity: factory-bot
+`;
+
+const LABELS_CONFIG = `${CONFIG}  labels: { enabled: true }
 `;
 
 const THREAD = "PRRT_t1";
@@ -99,6 +106,48 @@ function setReviewComments(w: World, comments: unknown[]): void {
     join(w.dir, "review-comments-7.json"),
     JSON.stringify(comments),
   );
+}
+
+/** The fixture forge reads this file as a review thread's current resolution state. */
+function resolveThread(w: World): void {
+  writeFileSync(join(w.dir, "resolved-threads"), `${THREAD}\n`);
+}
+
+/** A trusted explicit re-arm binding for the parked ledger comment. */
+function rearmBinding(): ReturnType<typeof ledgerComment> {
+  return {
+    id: 702,
+    user: { login: "drive-bot" },
+    author_association: "MEMBER",
+    created_at: "2026-10-30T23:00:00Z",
+    updated_at: "2026-10-30T23:00:00Z",
+    html_url: `https://github.com/${SLUG}/issues/702`,
+    body: claimBody(REARM_REQUEST, {
+      key: "rearm",
+      generation: 3,
+      writer: localWriter("forge", "drive-bot"),
+      at: "2026-10-30T23:00:00Z",
+      payload: { label: "jig:rearm", stopComment: 701 },
+      text: "Requested a re-arm.",
+    }),
+  } as ReturnType<typeof ledgerComment>;
+}
+
+function requestRearm(w: World): void {
+  w.setConfig(LABELS_CONFIG);
+  machineFile(w, [account(w, "a", "a@example.invalid")], {}, [
+    "rearm",
+    "notify",
+  ]);
+  w.setPrs("open", [
+    { ...openPr(7, "feature/7-open"), labels: [{ name: "jig:rearm" }] },
+  ]);
+  const ledger = stoppedLedger(7, DRIVE_EXIT.HITL_PARKED, {
+    parked: [PARK],
+    lastCountedHead: "b".repeat(40),
+  });
+  ledger.driver.clone = `clone-a@${hostLabel()}`;
+  w.setComments(7, [ledgerComment(701, ledger), rearmBinding()]);
 }
 
 /** One tick with the forge's answers kept, exiting `exit`; its receipt. Calls logged before it are forgotten. */
@@ -174,6 +223,43 @@ describe("a parked drive's review threads over ticks", () => {
     const answered = await tick(w);
     expect(threadReads(w)).toBe(1);
     expect(reasonsOn7(answered)).toContainEqual(ANSWERED);
+  }, 60_000);
+
+  it("honors a valid explicit re-arm after freshly reading its resolved parked thread", async () => {
+    const w = parked();
+    await tick(w);
+    settle(w);
+    requestRearm(w);
+    resolveThread(w);
+
+    const receipt = await tick(w);
+    expect(threadReads(w)).toBe(1);
+    expect(receipt.repos[0]?.actions).toContainEqual(
+      expect.objectContaining({
+        target: "PR #7",
+        stage: "rearm",
+        reason: expect.stringContaining(
+          "a person's rearm request asks to restart",
+        ),
+      }),
+    );
+  }, 60_000);
+
+  it("reports why a valid explicit re-arm remains parked when its thread is unresolved", async () => {
+    const w = parked();
+    requestRearm(w);
+
+    const receipt = await tick(w);
+    expect(threadReads(w)).toBe(1);
+    expect(receipt.repos[0]?.actions).toContainEqual(
+      expect.objectContaining({
+        target: "PR #7",
+        stage: "notify",
+        reason: expect.stringContaining(
+          "explicit re-arm request 702 cannot proceed",
+        ),
+      }),
+    );
   }, 60_000);
 
   it("reads a thread again when one of its comments is edited", async () => {

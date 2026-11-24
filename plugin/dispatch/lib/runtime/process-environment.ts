@@ -1,5 +1,12 @@
 /** Environment shared by the process runtime's identity probe and wrapper. */
 import { delimiter, isAbsolute, join, resolve } from "node:path";
+import {
+  credentialVariables,
+  directoryVariables,
+  type HarnessName,
+  harnessOrDefault,
+  isSessionMarker,
+} from "../../../shared/agent-harness/index.ts";
 import { isMapping } from "../../../shared/config-layers.ts";
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
 
@@ -33,7 +40,14 @@ const BLOCKED = new Set([
 
 function blocked(name: string): boolean {
   const upper = name.toUpperCase();
-  return BLOCKED.has(upper) || /^(CODEX_|LD_|DYLD_)/.test(upper);
+  return (
+    BLOCKED.has(upper) ||
+    directoryVariables().some((v) => v.toUpperCase() === upper) ||
+    credentialVariables().some((v) => v.toUpperCase() === upper) ||
+    isSessionMarker(name) ||
+    isSessionMarker(upper) ||
+    /^(CODEX_|LD_|DYLD_)/.test(upper)
+  );
 }
 
 export function processSettings(
@@ -103,7 +117,7 @@ function nativeEnvironment(
 export function processEnvironment(
   source: Environment,
   settings: ProcessSettings,
-  account: { vendor: "claude" | "codex"; configDir: string },
+  account: { vendor: HarnessName; configDir: string },
   launch?: string,
 ): Record<string, string> {
   const env: Record<string, string> = Object.create(null);
@@ -117,7 +131,7 @@ export function processEnvironment(
     )
       env[name] = PLACES.has(name) && value !== "" ? resolve(value) : value;
   Object.assign(env, nativeEnvironment(source, settings.path));
-  env[account.vendor === "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME"] =
+  env[harnessOrDefault(account.vendor).environment.directoryVariable] =
     account.configDir;
   if (launch !== undefined) env.JIG_LAUNCH = launch;
   return env;

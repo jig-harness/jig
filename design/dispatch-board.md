@@ -125,9 +125,11 @@ One predicate decides it, a pure function in
 `plugin/skills/drive-pr/scripts/lib/merge-ready.ts`. The tick calls it to
 place a card, `announce-merge-ready.ts` calls it before it posts, and
 `jig ask` calls it for what a converged drive waits on and for the `merge`
-station ([addresses](addresses.md#an-address-names-a-station-on-a-piece-of-work)),
+station ([addresses](../plugin/protocol/addresses.md#stations)),
 so the board, the drive's announcement and the answer a person gets about
-one pull request cannot disagree. It takes the facts
+one pull request cannot disagree. The existing `drive` answer uses this
+predicate; the planned `merge` station will use it when that station is built.
+It takes the facts
 of one pull request and returns its lane and, for each condition not met,
 whether waiting settles it or which person's act does. A pull request is in
 Ready to merge, lane **merge now**, when all of these hold at the tick:
@@ -152,7 +154,24 @@ Ready to merge, lane **merge now**, when all of these hold at the tick:
    (`mergeStateStatus` is `CLEAN` or `HAS_HOOKS`), or its base requires a
    merge queue (`isMergeQueueEnabled`), whose own rules then decide.
 8. Its author is the repository's own (association `OWNER`, `MEMBER` or
-   `COLLABORATOR`), or a person approved it.
+   `COLLABORATOR`), or a person approved it, or its author is
+   [trusted automation](../GLOSSARY.md): a bot the default branch's
+   `pull_requests.trusted_automation` lists, whose head is in the
+   repository, whose commits are all the bot's own or a listed
+   committer's (each signed for its account unless the entry says
+   `signed: false`), whose changed files are all within the entry's paths (the original path of a file the forge reports as renamed or
+   copied counts too),
+   and, where the entry names update types, whose whole change is
+   classified: every changed file is a manifest or a recognized lockfile
+   whose edit is of a listed type (a lockfile-only change can qualify
+   without a manifest; a grouped minor-plus-patch change needs both
+   listed; a recognized lockfile may accompany a manifest update and needs
+   `lockfile` only where lockfiles alone changed; a rename or copy the forge reports into a
+   recognized lockfile name passes only from another recognized lockfile name; a copy the forge lists as a plain addition is judged on its destination alone), and an unsupported file or an unclassifiable manifest edit
+   withholds the exception even where the path policy allows it. The
+   exception applies only where the repository names a reviewer app: with
+   none, a person's approval is the review witness and the commits and
+   files are not read.
 9. It carries neither the `hold` label nor the
    [CI hold](../GLOSSARY.md) label (`ci.hold_label`), under which its
    required checks fail on purpose.
@@ -177,6 +196,21 @@ recorded by the forge against the head it approved. So merge now never
 rests on the ledger alone. Condition 8 keeps a pull request from outside
 the repository from reaching merge now on an agent's review alone, so text
 written to steer the reviewer never becomes a "merge now" for a person.
+Trusted automation narrows that only for a bot the repository names, and
+only where the change stays within what the bot is trusted to change: a
+dependency bot's identity is trusted, while the third-party text it
+carries (release notes, upstream code) is not, so the rules bound what the
+change may touch rather than what it says. A commit by anyone else, a path
+outside the entry, a fork, or a fact that does not read leaves the pull
+request without the exception, and the card's fact names the rule; an
+own association or a person's approval can still satisfy condition 8, and
+the other rows decide the lane. The list is
+read from the default branch by every caller, the drive's announcement
+included, never from the pull request's own configuration, which could
+otherwise list its own author. The commits and files are read from the
+pull request's own listings, pinned to the head, only for a pull request
+by a listed bot that nothing else already satisfies, and kept between ticks
+by head and base commit.
 
 `announce-merge-ready.ts` posts only when the predicate says merge now or
 approve first, and words the second as "an approval is still required".
@@ -369,13 +403,19 @@ budget with them:
 - **The detail**, one query naming each pull request of the detail set by
   number: the converged pull requests, the ones in Needs you, and any whose
   rollup is failing. Per pull request: its head commit's id, its head's
-  check contexts (up to 100, each with whether it is required, its app and
+  check contexts (100 per page, each with whether it is required, its app and
   its link), its labels (for the `hold` and CI hold labels), its review
   requests and its reviewers' latest reviews (up to 20 each). The same
   query reads, by the ids the listing found, the first comment's author
   (`login` and `__typename`) of each unresolved thread the board has not
   seen before, for the split of the thread mark, within the author cap
   below.
+
+When the first page of check contexts has a continuation, the detail read
+follows it against the same commit. It reads at most four pages per pull
+request, including the first, under the same deadline as the rest of the
+board read. If the connection is still incomplete, the card gives the
+partial-read reason and stays out of Ready to merge.
 
 A held pull request the marks must tell from a broken build is in the
 detail set already: it is converged, or its required checks fail and its
@@ -418,19 +458,12 @@ measured, not assumed. When the budget left is below a fifth of the
 hour's, the tick skips the board read, and the cards say "not read: the
 forge budget is kept for the drives".
 
-A connection that reports another page (`hasNextPage`) on one pull request,
-whether checks, threads, review requests or latest reviews, gets follow-up
-queries for that pull request alone, by cursor, up to the
-[size this is built for](#the-size-it-is-built-for): 300 entries per
-connection, counted in entries, not pages. The first page holds 100 checks
-or threads and 20 review requests or latest reviews; each follow-up asks
-for at most 100 and never more than the entries left of the 300, so no
-connection is read past it. A connection still reporting another page once 300 entries are
-read is marked partial on its card ("more than 300 checks: open the pull
-request"), and a partial pull request is never in
-merge now or approve first, since an unread failing check, an unread
-thread, an unread approval or an unread reviewer cannot be ruled out. It
-never fails the read of its repository.
+Only check contexts receive follow-up queries: the reader follows up to four
+pages of 100 entries, including the first, for each pull request. Every other
+connection is limited to the first page and a continuation marks the pull
+request partial. A partial pull request is never in merge now or approve
+first, since an unread failing check, thread, approval or reviewer cannot be
+ruled out. It never fails the read of its repository.
 
 A pull request whose mergeability reads `UNKNOWN` (the forge recomputes it
 for every open pull request after its base moves, so after every merge) is
@@ -442,7 +475,7 @@ interval.
 
 Per machine, 10 repositories; per repository, 100 open pull requests, 50 on
 the board, 20 in the detail set and 10 ready at once; on one pull request,
-300 check contexts and 300 review threads. One machine dispatches a
+400 check contexts and 100 review threads. One machine dispatches a
 repository, by the dispatcher's own rule, so a repository's board read,
 notifications and history rows are written once. The fixtures of the
 board's tests are built at that size, and a test fails a tick whose board

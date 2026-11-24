@@ -299,6 +299,65 @@ describe("the line a tick leaves", () => {
     );
   });
 
+  it("records a need that appears and leaves while the notify stage is off, and lists it as settled", async () => {
+    const w = fixture();
+    const ledger = stoppedLedger(7, undefined);
+    const leaf = scopedStateDir(w.env.DRIVE_PR_STATE_DIR as string, w.repo);
+    const started = "2026-10-30T20:00:00.000Z";
+    ledger.driver = {
+      ...ledger.driver,
+      actor: `wt-${worktreePathKey(w.repo)}`,
+      clone: cloneId(leaf),
+      started,
+      state: "running",
+    };
+    const child = Bun.spawn([process.execPath, "-e", ""], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expectSpawnExit(
+      {
+        exitCode: await child.exited,
+        stdout: await new Response(child.stdout).text(),
+        stderr: await new Response(child.stderr).text(),
+      },
+      0,
+    );
+    writeDriverRecord(leaf, "7", {
+      worktree: w.repo,
+      started,
+      pid: child.pid,
+      host: hostname(),
+    });
+    w.setComments(7, [ledgerComment(701, ledger)]);
+    machineFile(w, [account(w, "a", "a@example.com")], {}, ["rearm"]);
+    await tick(w);
+    expect(storedLine(w)?.line.needs).toContainEqual(
+      expect.objectContaining({ target: "PR #7", cause: "needs-person" }),
+    );
+    // The pull request is merged: the need leaves the line.
+    w.setPrs("open", []);
+    await tick(w);
+    const line = storedLine(w)?.line;
+    expect(line?.needs.map((n) => n.target)).not.toContain("PR #7");
+    expect(line?.settled).toContainEqual(
+      expect.objectContaining({
+        targets: ["PR #7"],
+        cause: "needs-person",
+        outcome: "left",
+        by: "facts",
+      }),
+    );
+    const asked = await w.dispatch(
+      ["ask", "--settled", "--json"],
+      resolve(import.meta.dir, "../../jig.ts"),
+    );
+    expectSpawnExit(asked, 0);
+    expect(JSON.parse(asked.stdout).settled).toContainEqual(
+      expect.objectContaining({ targets: ["PR #7"], by: "facts" }),
+    );
+  });
+
   it("names the parked drive's workspace without a running session in the JSON line", async () => {
     const w = fixture();
     w.setComments(7, [

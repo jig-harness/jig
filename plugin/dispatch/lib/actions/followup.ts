@@ -547,8 +547,18 @@ async function sessionsFree(
   } catch (error) {
     return { wait: `the runtime cannot be read again: ${failureText(error)}` };
   }
-  const held = holding(sessions, (w) => w.prs.includes(pr));
+  const joined = (w: { prs: number[] }): boolean => w.prs.includes(pr);
+  const held = holding(sessions, joined);
   if (held.kind === "unknown") return { wait: held.reason };
+  // An agent the runtime reports holds the pull request, but a terminal it
+  // cannot report beside it is an uncertainty, not a verdict: wait.
+  const unread = sessions.ok
+    ? sessions.workspaces.find((w) => joined(w) && w.unverifiableTerminals > 0)
+    : undefined;
+  if (unread !== undefined)
+    return {
+      wait: `workspace ${unread.path} has ${unread.unverifiableTerminals} terminal(s) whose agents the runtime cannot report`,
+    };
   return held.kind === "running"
     ? {
         never: `a session is joined to its pull request: ${held.workspaces.map((w) => w.path).join(", ")}`,

@@ -1,6 +1,6 @@
 # Drive end states and exit codes
 
-Version 1 · stable
+Version 2 · stable
 
 A [drive](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (the
 loop that works a pull request's review rounds until it is ready to merge)
@@ -36,6 +36,22 @@ How a drive reaches each state, and the evidence behind it:
 The same values, for a program in any language:
 [data/drive-exits.json](data/drive-exits.json).
 
+## When a converged pull request moves
+
+A converged pull request waits for a person to merge it. A clean merge of
+the base can carry forward the review of its unchanged contribution.
+The dispatcher holds the re-drive while required checks on the new head
+are pending. Once those checks pass, it refreshes the ledger and merge-ready
+claim for the new head, and the board pins the merge command to that head.
+The refresh runs without review rounds or commits.
+
+A changed contribution or an unreadable proof takes the ordinary stale
+re-drive path. A conflict re-drives once for the pull request head and
+base head, then goes to a person if it remains at that pair. An explicit
+rearm also starts a drive. Whenever a drive spends its round budget
+(`MAX_ROUNDS`, exit `6`), the ended row hands it to a person to investigate
+using the closing-report instruction below.
+
 ## The states and exits of `drive-status.ts` and `drive.ts`
 
 <!-- protocol:generated source=plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts#TERMINAL_STATES,DRIVE_EXIT -->
@@ -44,7 +60,7 @@ The same values, for a program in any language:
 | --- | --- | --- | --- | --- | --- |
 | `ROUND_READY` | state | 0 | — | no | Work is left for this round: open review threads or unanswered summary findings. The caller runs a pass; `drive.ts` runs it itself and never ends with this state. |
 | `INDETERMINATE` | state | 1 | 1 | yes | The state could not be read, or a step failed: `drive.ts` also ends with it when a pass fails. Never a settled state; read what the drive printed before re-arming. |
-| `UNSUPPORTED_CLI` | state | 2 | 2 | yes | A prerequisite is missing: the installed `gh` cannot report a field the round needs. `drive.ts` also exits `2`, with no report, when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which. |
+| `UNSUPPORTED_CLI` | driver-only | — | 2 | yes | A prerequisite is missing. `drive.ts` exits `2`, with no state report (a dispatcher closing report may still be written), when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which. `drive-status.ts` also exits `2`, before there is a pull request to report on and naming no state, on arguments it cannot use and when its startup cannot resolve the repository or the pull request selector, which can be a network or authentication failure rather than an argument error. The same exit can end a drive already running: when a later round's `drive-status.ts` fails that way, the driver passes the `2` on, after earlier rounds' passes may have changed the tree or the pull request, so read the handoff file before assuming no work occurred. |
 | `CONVERGED` | state | 3 | 0 | yes | The pull request is ready to merge: the reviewer reviewed this exact head and nothing is left open. `drive.ts` exits `0` for it, once its own working tree is clean. |
 | `HEAD_LAG` | state | 4 | 4 | no | The pull request's head on the forge and the local head disagree, and the reason says how: a local head ahead with no record of a push (push it through `guarded-push.ts`), a push the forge does not show yet (wait), a tree behind (update it), or diverged history (reconcile it). Then read again. |
 | `AWAITING_REVIEWER` | state | 4 | 4 | no | The reviewer has not reviewed this head yet. Wait, then read again. |
@@ -53,7 +69,7 @@ The same values, for a program in any language:
 | `MERGEABILITY_UNKNOWN` | state | 4 | 4 | no | The forge has not yet worked out whether the pull request merges cleanly. Read again. |
 | `NOT_SETTLED` | class-label | 4 | 4 | no | The name of every state that shares exit `4`: the pull request is not ready to judge yet. Never itself a `state`; the caller waits and runs the drive again. `drive.ts` also exits `4` after the review converged when another driver holds the mark-Ready lease, when the head moved, the CI hold label changed or the forge could not be read as the hold was released, when a read of the cancelled-run recovery kept failing in a way waiting can clear, when no fresh result of a required check came in time (where a skipped or cancelled check means waiting cannot help: re-run the check, then re-arm), and when the drive keeps a draft that the reviewer skips (mark it Ready, then re-arm). |
 | `PR_NOT_OPEN` | state | 5 | 5 | yes | The pull request was merged or closed. Stop, and push nothing to it. |
-| `MAX_ROUNDS` | driver-only | — | 6 | yes | The drive spent its round budget (`--max-rounds`) without converging. Read the handoff file before re-arming. |
+| `MAX_ROUNDS` | driver-only | — | 6 | yes | The drive spent its round budget (`--max-rounds`, with any rounds a re-arm granted) without converging. Read the handoff file before re-arming: a re-arm a person asks for grants one more round budget. |
 | `REVIEWER_FAILED` | state | 7 | 7 | yes | The reviewer's check failed or says the review did not complete. The drive stops. The dispatcher can retry a neutral check that reports an incomplete review and escalate repeated stops on that head. |
 | `HITL_PARKED` | state | 8 | 8 | yes | Everything left waits on a person's decision, each framed on its thread. The drive does not wake itself: once every one is answered, re-arm it. |
 | `PR_CONFLICTING` | state | 9 | 9 | yes | The pull request conflicts with its base and has nothing else to work on; `drive.ts` ends with it once its conflict-repair passes are spent. Merge the base in, then re-arm. |
@@ -102,8 +118,11 @@ exit, followed by what the last
 the same launch concluded; its `cause` and `suggested_next` are the ones this
 table gives the exit. A park's text names the first parked decision's
 question and how many more wait, and a usage-limit stop's names the limit and
-when it resets. An exit this table does not list has cause `unknown` and a
-next step a person investigates. A `cause` is absent where the drive did not
+when it resets. A pass failure (exit `1`) whose usage-limit scan was cut
+short before it found a wall says so in its text, and has cause `unknown`
+and a next step that looks for a usage-limit notice first: a limit the scan
+did not reach is not a tool failure. An exit this table does not list has
+cause `unknown` and a next step a person investigates. A `cause` is absent where the drive did not
 fall short of its goal.
 
 <!-- protocol:generated source=plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts#TERMINAL_STATES.report -->
@@ -115,7 +134,7 @@ fall short of its goal.
 | `CONVERGED` | 0 | converged: the reviewer reviewed its head and nothing is left open | — | `person` | `Merge` | Merge the pull request once its required checks pass. |
 | `NOT_SETTLED` | 4 | stopped before the pull request could be judged: it has not settled yet | — | `line` | — | The line drives it again once the pull request settles. |
 | `PR_NOT_OPEN` | 5 | ended: the pull request was merged or closed | — | `none` | — | Nothing is left for the drive; a merge's follow-up settles what the merge owes. |
-| `MAX_ROUNDS` | 6 | used its round budget without converging | `deadline` | `person` | `Investigate` | Read the handoff file for what keeps the review open, then re-arm the drive or take the work over. |
+| `MAX_ROUNDS` | 6 | used its round budget without converging | `deadline` | `person` | `Investigate` | Read the handoff file for what keeps the review open, then re-arm the drive, which grants it one more round budget (`jig send drive@<repo> <PR> rearm`, or `--rearm-budget` on the arm command), or take the work over. |
 | `REVIEWER_FAILED` | 7 | stopped: the posting reviewer's check reported a failure | `tool-failed` | `person` | `Investigate` | Look at the reviewer's failed check, then re-arm the drive. |
 | `HITL_PARKED` | 8 | parked: a decision waits for a person | `needs-person` | `person` | `Decide` | Answer each parked decision on its thread, then re-arm the drive. |
 | `PR_CONFLICTING` | 9 | stopped: it conflicts with its base and has nothing left to work | `needs-person` | `person` | `Do` | Merge the base in and resolve the conflicts, then re-arm the drive. |

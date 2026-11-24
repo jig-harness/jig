@@ -61,7 +61,11 @@ export function armCommandDeadline(
     start();
     return;
   }
-  const readyBy = currentMs() + 20000;
+  const testGateBudgetMs = Number.parseInt(
+    process.env.DRIVE_PR_FOREGROUND_WAIT_DEADLINE_GATE_TIMEOUT_MS ?? "20000",
+    10,
+  );
+  const readyBy = currentMs() + testGateBudgetMs;
   const readiness = setInterval(() => {
     if (!existsSync(gate) && currentMs() < readyBy) return;
     clearInterval(readiness);

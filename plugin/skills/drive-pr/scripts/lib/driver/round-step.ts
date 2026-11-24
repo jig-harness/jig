@@ -11,7 +11,7 @@ import { run, tsArgv } from "./../proc.ts";
 
 import { driveState, driveTs } from "./paths.ts";
 
-import { armCommand, passBotsOnly } from "./rearm.ts";
+import { armCommand, passBotsOnly, readDriveState } from "./rearm.ts";
 
 import { runConvergencePhase } from "./convergence.ts";
 
@@ -368,6 +368,15 @@ export async function runRoundIteration(
   return null;
 }
 
+const CANCELLED_CI_KEY = "cancelled-ci";
+
+/** Whether the gate's parked set holds the cancelled-CI recovery's park. */
+function parkedCancelled(status: Record<string, unknown>): boolean {
+  const work = status.work as { parkedKeys?: unknown } | undefined;
+  const keys = work?.parkedKeys;
+  return Array.isArray(keys) && keys.includes(CANCELLED_CI_KEY);
+}
+
 /**
  * Recover initial cancellation before spending a pass that cannot push; clear
  * resolved parks before convergence. A timed-out job is left to the final
@@ -380,6 +389,12 @@ export async function recoverBeforePass(
   status: Record<string, unknown>,
   recover: (pr: string, head: string) => Promise<LiveRecovery> = (pr, head) =>
     recoverCancelledOnHead(pr, head),
+  parkCleared: (pr: string) => Promise<boolean> = async (pr) => {
+    const state = await readDriveState(pr, true);
+    return (
+      state !== null && !state.parked.some((p) => p.key === CANCELLED_CI_KEY)
+    );
+  },
 ): Promise<number | "continue" | null> {
   if (
     context.dryRun ||
@@ -392,6 +407,16 @@ export async function recoverBeforePass(
   const recovery = await recover(context.pr, head);
   const stop = recoveryExit(recovery);
   if (stop !== null) return stop;
+  // A gate that stopped with the cancelled-CI park among its parks is read
+  // again once the recovery has cleared that park: the next gate says whether
+  // an actionable park remains, rather than handing back a stale set.
+  if (
+    recovery === "none" &&
+    code === 8 &&
+    parkedCancelled(status) &&
+    (await parkCleared(context.pr))
+  )
+    return "continue";
   if (!recoveryWaits(recovery)) return null;
   await sleep(FINAL_CI_POLL_SECONDS);
   return "continue";

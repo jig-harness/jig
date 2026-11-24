@@ -589,6 +589,7 @@ export async function observeRepo(
         : boardHeldTo(context.bound, drives, () =>
             observeBoard({
               slug: repo.slug,
+              checkout: repo.path,
               values,
               drives,
               open: forge.open,

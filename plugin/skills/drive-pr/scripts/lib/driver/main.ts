@@ -6,6 +6,7 @@ import {
   resolveMaxRounds,
   resolveHandoffAt,
   resolvePassDeadlineRetries,
+  UNSUPPORTED_CLI_EXIT,
 } from "./settings.ts";
 
 import { type MarkReady, prPolicy } from "./../pr-policy.ts";
@@ -65,6 +66,7 @@ import { mailboxCheckpointOrExit } from "./mailbox.ts";
 import { ignoreDriveContext } from "./../context-ignore.ts";
 
 import { clearDeadlineRetries } from "./restart.ts";
+import { roundBudget } from "./rearm-budget.ts";
 
 import {
   decideTakeover,
@@ -134,11 +136,12 @@ function releaseHeld(
 }
 
 function requireCanonicalPr(pr: string): void {
-  if (!isDigits(pr)) fail(2, `drive.ts: PR must be a number (got '${pr}')`);
+  if (!isDigits(pr))
+    fail(UNSUPPORTED_CLI_EXIT, `drive.ts: PR must be a number (got '${pr}')`);
   const canonicalPr = BigInt(pr).toString();
   if (canonicalPr !== pr)
     fail(
-      2,
+      UNSUPPORTED_CLI_EXIT,
       `drive.ts: write PR #${canonicalPr} as ${canonicalPr} (got '${pr}')`,
     );
 }
@@ -244,7 +247,7 @@ async function drive(ctx: DriveContext): Promise<number> {
 
   if (!dryRun && agent.length === 0) {
     fail(
-      2,
+      UNSUPPORTED_CLI_EXIT,
       "usage: drive.ts [PR] [flags] -- <command to run one pass> [args...]",
     );
   }
@@ -595,7 +598,10 @@ async function drive(ctx: DriveContext): Promise<number> {
   // long, silent wait.
   const probeFlags = dryRun ? ["--no-count", "--once"] : [];
 
-  await announceRoundBudget(pr, maxRoundsN, handoffAt);
+  // The budget the rounds enforce: the base plus what a re-arm granted, and
+  // under `--rearm-budget` another grant when the counters spent it.
+  const budget = await roundBudget(pr, maxRoundsN, options.rearmBudget, dryRun);
+  await announceRoundBudget(pr, budget.rounds, handoffAt);
 
   await capturePickup(pr, dryRun, diag);
 
@@ -607,7 +613,8 @@ async function drive(ctx: DriveContext): Promise<number> {
     dryRun,
     agent,
     held,
-    maxRoundsN,
+    maxRoundsN: budget.rounds,
+    maxAttemptsN: budget.attempts,
     forward,
     probeFlags,
     markReadyPolicy,
@@ -672,7 +679,7 @@ function validatePassCommand(
       console.error(
         `  drive.ts ${explicitPr} -- claude -p "/jig:drive-pr ${explicitPr}"`,
       );
-      return 2;
+      return UNSUPPORTED_CLI_EXIT;
     }
   }
 
@@ -683,7 +690,7 @@ function validatePassCommand(
     const found = agent.some((word) => word.includes("--bots-only"));
     if (!found) {
       fail(
-        2,
+        UNSUPPORTED_CLI_EXIT,
         "refusing to run: --bots-only was given, but the pass command does not pass it.",
         "The pass would act on human threads the convergence count excludes.",
       );
@@ -808,7 +815,7 @@ async function ensureContinuousHandoff(
     });
     if (probe.code !== 0) {
       fail(
-        2,
+        UNSUPPORTED_CLI_EXIT,
         `refusing --handoff-at never: the durable held batch is unavailable for PR #${pr}.`,
         "That setting runs THROUGH compaction, and a compaction between replying",
         "'**accepted**' and resolving the thread drops the held batch — leaving a",

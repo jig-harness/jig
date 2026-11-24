@@ -17,6 +17,10 @@
  *   stop's text alone is cut to the limit when it exceeds it, so the field
  *   always passes the check. Both parts are redacted before they are
  *   measured.
+ * - A pass failure (`INDETERMINATE`) whose usage-limit scan was cut short
+ *   before it found a wall (`driverRuntime.quotaScanTruncated`) says so in
+ *   `concluded`, with cause `unknown` and a next step that looks for the
+ *   notice first: a wall the scan did not reach is not a tool failure.
  * - `question` and `decision` come from the drive's own state, never from a
  *   round report: at a park (`HITL_PARKED`), the question and framed
  *   decision (`parked-decision/v1`) of the first parked item, the one the
@@ -51,8 +55,14 @@ import { probeFailure } from "../status/probe-stop.ts";
 import { driveExitReport } from "../status/terminal-states.ts";
 import { readDriveState } from "./rearm.ts";
 import { driverRuntime } from "./runtime.ts";
-import { finishCause } from "../state/round-finish.ts";
-import { exitOf, oneLine, type StallFinish, stopText } from "./stop-text.ts";
+import { finishCause, finishNext } from "../state/round-finish.ts";
+import {
+  exitOf,
+  leadPark,
+  oneLine,
+  type StallFinish,
+  stopText,
+} from "./stop-text.ts";
 
 /** What marks a text cut short. */
 const ELLIPSIS = "…";
@@ -93,13 +103,13 @@ function asQuestion(item: ParkedItem): string {
   return `${cutTo(body, QUESTION_MAX - 1)}?`;
 }
 
-/** The question and framed decision of the parked item a park's stop prints: the first. */
+/** The question and framed decision of the parked item a park's stop prints. */
 export function parkAsk(
   code: number,
   state: DriveState | null,
 ): { question: string; decision?: ParkedDecision } | null {
   if (code !== exitOf("HITL_PARKED")) return null;
-  const first = state?.parked[0];
+  const first = leadPark(state);
   if (first === undefined) return null;
   const decision = first.decision;
   return decision === undefined
@@ -130,13 +140,16 @@ export function composeDriverReport(input: {
   const { pr, code, state, round } = input;
   const stall = code === exitOf("STALLED") ? (input.stall ?? null) : null;
   const named = driveExitReport(code);
-  const stop = redactReportText(stopText(pr, code, state, stall));
   const probe = driverRuntime.stopProbe;
   const failure = probe?.code === code ? probeFailure(probe) : null;
+  const unscanned = failure === null ? unscannedWall(code) : null;
+  const stop = redactReportText(
+    `${stopText(pr, code, state, stall)}${unscanned === null ? "" : unscanned.note}`,
+  );
   const cause =
     failure !== null
       ? "environment"
-      : named === null
+      : named === null || unscanned !== null
         ? "unknown"
         : stall !== null
           ? finishCause(stall.state)
@@ -145,9 +158,36 @@ export function composeDriverReport(input: {
     stop,
     round === null ? null : redactReportText(round.concluded),
   );
-  const base = baseDriverReport(pr, concluded, named, cause);
+  const base = baseDriverReport(
+    pr,
+    concluded,
+    named,
+    cause,
+    stall === null ? null : finishNext(stall.state),
+  );
+  if (unscanned !== null) base.suggested_next = unscanned.next;
   const ask = parkAsk(code, state);
   return checkedDriverReport(base, ask, state, stop);
+}
+
+/**
+ * What a pass failure adds when its usage-limit scan was cut short
+ * (`driverRuntime.quotaScanTruncated`): a note for the stop's line and a next
+ * step that looks for the notice first. `null` for any other stop.
+ */
+function unscannedWall(
+  code: number,
+): { note: string; next: ClosingReport["suggested_next"] } | null {
+  const vendors = driverRuntime.quotaScanTruncated;
+  if (code !== exitOf("INDETERMINATE") || vendors.length === 0) return null;
+  return {
+    note: `; the usage-limit scan of the pass's ${[...new Set(vendors)].join(" and ")} transcripts was cut short before it found a wall, so a usage limit may have stopped the pass`,
+    next: {
+      step: "Look for a usage-limit notice in the failed pass's transcript before re-arming: if there is one, re-arm after its reset or on another account.",
+      owner: "person",
+      act: "Investigate",
+    },
+  };
 }
 
 function baseDriverReport(
@@ -155,18 +195,21 @@ function baseDriverReport(
   concluded: string,
   named: ReturnType<typeof driveExitReport>,
   cause: ReportCause | undefined,
+  stallNext: ClosingReport["suggested_next"] | null,
 ): ClosingReport {
   return {
     schema: CLOSING_REPORT_SCHEMA,
     concluded,
     suggested_next:
-      named === null
-        ? {
-            step: "Read the drive's log for how it ended, then re-arm the drive.",
-            owner: "person",
-            act: "Investigate",
-          }
-        : { ...named.report.next },
+      stallNext !== null
+        ? { ...stallNext }
+        : named === null
+          ? {
+              step: "Read the drive's log for how it ended, then re-arm the drive.",
+              owner: "person",
+              act: "Investigate",
+            }
+          : { ...named.report.next },
     ...(cause === undefined ? {} : { cause }),
     evidence: [`pr:#${pr}`],
   };
@@ -183,7 +226,7 @@ function checkedDriverReport(
       ? [base]
       : [
           { ...base, ...ask },
-          { ...base, question: asQuestion(state?.parked[0] as ParkedItem) },
+          { ...base, question: asQuestion(leadPark(state) as ParkedItem) },
           base,
         ];
   for (const report of tries) {

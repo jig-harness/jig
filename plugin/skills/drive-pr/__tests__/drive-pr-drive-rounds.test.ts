@@ -51,7 +51,11 @@ import {
 } from "./drive-loop-harness.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
-import { lockRow, writeState } from "./state-rows.ts";
+import {
+  lockRow,
+  seedRounds as seedRoundsAt,
+  writeState,
+} from "./state-rows.ts";
 
 const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
   rawFixture(f, scratchClean.dir);
@@ -59,6 +63,8 @@ const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
 // Complete driver rounds spawn several helpers; allow their startup under
 // parallel test execution without changing the driver's own deadlines.
 const MULTI_ROUND_TIMEOUT_MS = 60_000;
+const roundBudgetTimeoutMs = (rounds: number) =>
+  Math.max(MULTI_ROUND_TIMEOUT_MS, rounds * 12_000);
 
 useDrivePrSuite();
 
@@ -774,62 +780,68 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain("names no PR");
   });
 
-  it("carries the round budget across process restarts", async () => {
-    // The durable count exists so the bound survives restarts. A per-process
-    // counter hands every resumed drive a fresh full budget, so a "bounded"
-    // unattended loop runs forever across resumptions.
-    //
-    // Asserting only that each invocation eventually exits 6 does NOT pin this:
-    // on an unchanged head the round count stays flat, so a restart that ran
-    // another full `--max-rounds` of passes would still exit 6 at the end and
-    // satisfy that assertion while doing exactly what the bound forbids. What
-    // is asserted instead is that the restart runs NO pass at all — which is
-    // only true if prior attempts on an unchanged head consumed durable budget.
-    const { dir, stateDir } = writeFixture({
-      threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
-    });
-    const env = {
-      ...gitCleanEnv(),
-      PATH: `${binDir}${delimiter}${process.env.PATH}`,
-      DRIVE_PR_FIXTURES: dir,
-      DRIVE_PR_STATE_DIR: stateDir,
-      DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-      // Durable-budget accounting across restarts is the subject, and it needs
-      // the first invocation to genuinely exhaust --max-rounds on no-op
-      // passes — which the stall stop would (correctly) end one gate early.
-      // The stall behaviour has its own probes above.
-      DRIVE_PR_STALL_ROUNDS: "0",
-    };
-    const once = async () => {
-      const p = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--max-rounds",
-          "2",
-          "--",
-          ...PASS_LOUD,
-        ),
-        { cwd: scratchClean.dir, env, stdout: "pipe", stderr: "pipe" },
-      );
-      const [stderr, exitCode] = await Promise.all([
-        new Response(p.stderr).text(),
-        p.exited,
-      ]);
-      return { stderr, exitCode };
-    };
-    // First invocation burns the budget (the stub pass never changes the head,
-    // so drive-state counts one round and the loop re-reads the same state).
-    const first = await once();
-    expect(first.exitCode).toBe(6);
-    expect(first.stderr.match(/RAN_THE_PASS/g)?.length).toBe(2);
-    // A restart must NOT get a fresh budget — and must not run even one pass.
-    const second = await once();
-    expect(second.exitCode).toBe(6);
-    expect(second.stderr).not.toContain("RAN_THE_PASS");
-    expect(second.stderr).toContain("resuming PR #999 at round");
-  });
+  it(
+    "carries the round budget across process restarts",
+    async () => {
+      // The durable count exists so the bound survives restarts. A per-process
+      // counter hands every resumed drive a fresh full budget, so a "bounded"
+      // unattended loop runs forever across resumptions.
+      //
+      // Asserting only that each invocation eventually exits 6 does NOT pin this:
+      // on an unchanged head the round count stays flat, so a restart that ran
+      // another full `--max-rounds` of passes would still exit 6 at the end and
+      // satisfy that assertion while doing exactly what the bound forbids. What
+      // is asserted instead is that the restart runs NO pass at all — which is
+      // only true if prior attempts on an unchanged head consumed durable budget.
+      const { dir, stateDir } = writeFixture({
+        threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
+      });
+      const env = {
+        ...gitCleanEnv(),
+        PATH: `${binDir}${delimiter}${process.env.PATH}`,
+        DRIVE_PR_FIXTURES: dir,
+        DRIVE_PR_STATE_DIR: stateDir,
+        DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
+        ...DRIVE_PACING_ENV,
+        // Durable-budget accounting across restarts is the subject, and it needs
+        // the first invocation to genuinely exhaust --max-rounds on no-op
+        // passes — which the stall stop would (correctly) end one gate early.
+        // The stall behaviour has its own probes above.
+        DRIVE_PR_STALL_ROUNDS: "0",
+      };
+      const once = async () => {
+        const p = Bun.spawn(
+          scriptArgv(
+            join(SCRIPTS, "drive.ts"),
+            "999",
+            "--no-head-sync",
+            "--max-rounds",
+            "2",
+            "--",
+            ...PASS_LOUD,
+          ),
+          { cwd: scratchClean.dir, env, stdout: "pipe", stderr: "pipe" },
+        );
+        const [stdout, stderr, exitCode] = await Promise.all([
+          new Response(p.stdout).text(),
+          new Response(p.stderr).text(),
+          p.exited,
+        ]);
+        return { stdout, stderr, exitCode };
+      };
+      // First invocation burns the budget (the stub pass never changes the head,
+      // so drive-state counts one round and the loop re-reads the same state).
+      const first = await once();
+      expectSpawnExit(first, 6);
+      expect(first.stderr.match(/RAN_THE_PASS/g)?.length).toBe(2);
+      // A restart must NOT get a fresh budget — and must not run even one pass.
+      const second = await once();
+      expectSpawnExit(second, 6);
+      expect(second.stderr).not.toContain("RAN_THE_PASS");
+      expect(second.stderr).toContain("resuming PR #999 at round");
+    },
+    MULTI_ROUND_TIMEOUT_MS,
+  );
 
   describe("drive.max_rounds, the repository's default round budget", () => {
     const work = { threads: [{ id: "PRRT_a", path: "a.ts", bot: true }] };
@@ -861,21 +873,30 @@ describe("drive.ts loop control", () => {
       );
     };
 
-    // Ten real rounds: where a round costs seconds, the suite's default
-    // timeout ends the drive before it reaches its budget.
-    it("is 10 when neither the flag nor the setting names one", async () => {
-      const r = await drive([]);
-      expect(r.exitCode).toBe(6);
-      expect(r.stderr).toContain("--- round 10/10 on PR #999 ---");
-    }, 120_000);
+    // Each real round starts the driver's helper chain. Scale the test's
+    // deadline with its requested work so a loaded runner does not turn a
+    // valid round budget into the test's unrelated per-case limit.
+    it(
+      "is 10 when neither the flag nor the setting names one",
+      async () => {
+        const r = await drive([]);
+        expectSpawnExit({ ...r, stdout: null }, 6);
+        expect(r.stderr).toContain("--- round 10/10 on PR #999 ---");
+      },
+      roundBudgetTimeoutMs(10),
+    );
 
-    it("sets the budget when the flag is absent", async () => {
-      const r = await drive([], 2);
-      expect(r.exitCode).toBe(6);
-      expect(r.stderr).toContain("--- round 2/2 on PR #999 ---");
-      expect(r.stderr).toContain("hit --max-rounds (2)");
-      expect(r.stderr).not.toContain("round 3/2");
-    });
+    it(
+      "sets the budget when the flag is absent",
+      async () => {
+        const r = await drive([], 2);
+        expectSpawnExit({ ...r, stdout: null }, 6);
+        expect(r.stderr).toContain("--- round 2/2 on PR #999 ---");
+        expect(r.stderr).toContain("hit --max-rounds (2)");
+        expect(r.stderr).not.toContain("round 3/2");
+      },
+      roundBudgetTimeoutMs(2),
+    );
 
     it("yields to --max-rounds", async () => {
       const r = await drive(["--max-rounds", "1"], 3);
@@ -910,29 +931,8 @@ describe("drive.ts loop control", () => {
     });
   });
 
-  /** Seed the durable state directly, to model a drive resumed at its bound. */
-  function seedRounds(stateDir: string, rounds: number, head = HEAD) {
-    writeState(stateDir, "999", {
-      pr: 999,
-      rounds,
-      lastCountedHead: head,
-      attempts: 0,
-      attemptsHead: "",
-      lastReflectedRound: 0,
-      lastReflectedAttempts: 0,
-      readyMarkedRound: 0,
-      ciHold: null,
-      verifiedSha: "",
-      phase: "",
-      parked: [],
-      held: [],
-      lastEscalatedRound: 0,
-      lastEscalatedInvariant: "",
-      roundPaths: [],
-      lastProgressAt: "",
-      quotaPark: null,
-    });
-  }
+  const seedRounds = (stateDir: string, rounds: number, head = HEAD) =>
+    seedRoundsAt(stateDir, rounds, head);
 
   it.skipIf(skipLongDriveFixture)(
     "RAISING --max-rounds admits the round the previous bound rejected",
