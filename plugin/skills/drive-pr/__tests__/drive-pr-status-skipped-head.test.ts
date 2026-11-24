@@ -92,13 +92,16 @@ const withNewAfter = (n: number) =>
  * of its own (`base`); `merged` merges that base in, which leaves the pull
  * request's own diff unchanged; `changed` edits the feature on top of it.
  */
-function pullRequestRepo(name: string) {
+function pullRequestRepo(name: string, baseConfig?: string) {
   const repo = makeScratchRepo(name);
   commitFile(repo.dir, "feature.txt", "one\ntwo\nthree\n");
   git(repo.dir, "checkout", "-q", "-b", "feature");
   const reviewed = commitFile(repo.dir, "feature.txt", "one\nTWO\nthree\n");
   git(repo.dir, "checkout", "-q", "main");
-  const base = commitFile(repo.dir, "base.txt", "from the base\n");
+  commitFile(repo.dir, "base.txt", "from the base\n");
+  if (baseConfig !== undefined)
+    commitFile(repo.dir, ".config/jig.yaml", baseConfig);
+  const base = git(repo.dir, "rev-parse", "HEAD");
   git(repo.dir, "checkout", "-q", "feature");
   git(repo.dir, "merge", "-q", "--no-ff", "--no-edit", "main");
   const merged = git(repo.dir, "rev-parse", "HEAD");
@@ -155,6 +158,14 @@ function addComment(dir: string, login: string, body: string): void {
   writeFileSync(path, JSON.stringify(comments));
 }
 
+function addUnstampedSkip(dir: string, head: string): void {
+  addComment(
+    dir,
+    "example-review[bot]",
+    `<!-- ai-code-review -->\n${skipNotice(head)}`,
+  );
+}
+
 async function gate(
   tree: string,
   fixture: Fixture,
@@ -207,6 +218,158 @@ function at(
 }
 
 describe("drive-status.ts over a head the reviewer skipped", () => {
+  it.each([
+    ["all changed paths excluded", ["feature.txt"], "neutral", 3, "CONVERGED"],
+    [
+      "all changed paths excluded despite a skipped check",
+      ["feature.txt"],
+      "skipped",
+      3,
+      "CONVERGED",
+    ],
+    ["no configured exclusions", null, "neutral", 22, "REVIEW_SKIPPED"],
+    [
+      "a remaining changed path",
+      ["unrelated.txt"],
+      "neutral",
+      22,
+      "REVIEW_SKIPPED",
+    ],
+  ] as const)(
+    "judges an unstamped current-head skip with %s",
+    async (caseName, exclusions, conclusion, exit, state) => {
+      const baseConfig =
+        exclusions === null
+          ? undefined
+          : `review:\n  skip_excluded_paths: ${JSON.stringify(exclusions)}\n`;
+      const repo = pullRequestRepo(caseName.replaceAll(" ", "-"), baseConfig);
+      const fixture = {
+        ...at(repo, repo.merged),
+        reviewedSha: null,
+        checkRuns: [{ ...REVIEWER_RUN, conclusion }],
+      };
+      const result = await gate(repo.dir, fixture, null, {}, (dir) =>
+        addUnstampedSkip(dir, repo.merged),
+      );
+      expectSpawnExit(result, exit);
+      expect(result.state).toBe(state);
+      expect(result.reason).toContain(repo.merged);
+      if (state === "CONVERGED") {
+        expect(result.reviewer.reviewedSha).toBe(repo.merged);
+        expect(result.reviewer.reviewedShaSource).toBe("skip-notice");
+        expect(result.reason).toContain("nothing to review");
+      } else {
+        expect(result.reason).toContain("skip notice");
+      }
+    },
+  );
+
+  it("keeps the skip evidence when the reviewer posts an auxiliary reply", async () => {
+    const repo = pullRequestRepo(
+      "unstamped-auxiliary-reply",
+      "review:\n  skip_excluded_paths: [feature.txt]\n",
+    );
+    const fixture = { ...at(repo, repo.merged), reviewedSha: null };
+    const result = await gate(repo.dir, fixture, null, {}, (dir) => {
+      addUnstampedSkip(dir, repo.merged);
+      addComment(
+        dir,
+        "example-review[bot]",
+        "<!-- ai-code-review -->\nAcknowledged.",
+      );
+    });
+    expectSpawnExit(result, 3);
+    expect(result.reviewer.reviewedShaSource).toBe("skip-notice");
+  });
+
+  it("stops when equally good merge bases give different diffs", async () => {
+    const repo = makeScratchRepo("unstamped-ambiguous-merge-base");
+    const common = commitFile(
+      repo.dir,
+      ".config/jig.yaml",
+      "review:\n  skip_excluded_paths: []\n",
+    );
+    const left = commitFile(repo.dir, "feature.txt", "left\n");
+    git(repo.dir, "checkout", "-q", "--detach", common);
+    const right = commitFile(repo.dir, "feature.txt", "right\n");
+    const base = git(
+      repo.dir,
+      "commit-tree",
+      `${right}^{tree}`,
+      "-p",
+      left,
+      "-p",
+      right,
+      "-m",
+      "base merge",
+    );
+    const head = git(
+      repo.dir,
+      "commit-tree",
+      `${left}^{tree}`,
+      "-p",
+      right,
+      "-p",
+      left,
+      "-m",
+      "head merge",
+    );
+    const fixture = {
+      ...at({ dir: repo.dir, base, reviewed: left }, head),
+      reviewedSha: null,
+    };
+    const result = await gate(repo.dir, fixture, null, {}, (dir) =>
+      addUnstampedSkip(dir, head),
+    );
+    expectSpawnExit(result, 22);
+    expect(result.state).toBe("REVIEW_SKIPPED");
+    expect(result.reason).toContain("multiple merge bases");
+  });
+
+  it("does not trust exclusions introduced by the skipped head", async () => {
+    const repo = pullRequestRepo("unstamped-head-policy");
+    const head = commitFile(
+      repo.dir,
+      ".config/jig.yaml",
+      "review:\n  skip_excluded_paths: [feature.txt, .config/jig.yaml]\n",
+    );
+    const fixture = { ...at(repo, head), reviewedSha: null };
+    const result = await gate(repo.dir, fixture, null, {}, (dir) =>
+      addUnstampedSkip(dir, head),
+    );
+    expectSpawnExit(result, 22);
+    expect(result.state).toBe("REVIEW_SKIPPED");
+    expect(result.reason).toContain(head);
+  });
+
+  it("stops when the skipped head's diff cannot be read", async () => {
+    const repo = pullRequestRepo(
+      "unstamped-unreadable-base",
+      "review:\n  skip_excluded_paths: [feature.txt]\n",
+    );
+    const fixture = {
+      ...at(repo, repo.merged, "de7e10ba5e222222222222222222222222222222"),
+      reviewedSha: null,
+    };
+    const result = await gate(repo.dir, fixture, null, {}, (dir) =>
+      addUnstampedSkip(dir, repo.merged),
+    );
+    expectSpawnExit(result, 22);
+    expect(result.state).toBe("REVIEW_SKIPPED");
+    expect(result.reason).toContain("skip notice");
+    expect(result.reason).toContain(repo.merged);
+  });
+
+  it("awaits a review when an unstamped skip notice names an older head", async () => {
+    const repo = pullRequestRepo("unstamped-stale-notice");
+    const fixture = { ...at(repo, repo.merged), reviewedSha: null };
+    const result = await gate(repo.dir, fixture, null, {}, (dir) =>
+      addUnstampedSkip(dir, repo.reviewed),
+    );
+    expectSpawnExit(result, 4);
+    expect(result.state).toBe("AWAITING_REVIEWER");
+  });
+
   it("judges a base merge the reviewer skipped on the head it reviewed", async () => {
     const repo = pullRequestRepo("skipped-base-merge");
     const r = await gate(

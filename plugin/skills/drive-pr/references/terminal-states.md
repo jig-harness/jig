@@ -1965,9 +1965,8 @@ long as the head stands, and a re-arm meets the same state on the same head.
 The reviewer can say so in its sticky comment: a **skip notice**, a block
 between `<!-- ai-review-skip-notice -->` and `<!-- /ai-review-skip-notice -->`
 (the marker is `review.skip_notice_marker`) naming the skipped head, its
-first commit id in backticks, else its first bare one. It is read from the
-same comment as the reviewed-SHA marker, and only where the marker names a
-head other than the PR head:
+first commit id in backticks, else its first bare one. When that comment
+carries a stamp for an earlier head, Jig compares the two diffs:
 
 | The skip notice | The gate |
 |---|---|
@@ -1975,6 +1974,17 @@ head other than the PR head:
 | names the PR head, and the diff changed | [`REVIEW_SKIPPED`](../../../protocol/drive-exits.md), terminal, quoting the notice |
 | names the PR head, and a commit the comparison needs cannot be read here, even after fetching it | [`INDETERMINATE`](../../../protocol/drive-exits.md): re-run |
 | names another head, or is absent | `STALE_REVIEW`, as before |
+
+When the comment carries no stamp and its skip notice names the current head,
+Jig checks the changed paths against `review.skip_excluded_paths`. If an
+explicit list covers every changed path, the head becomes
+`reviewer.reviewedSha` with source `skip-notice`, and the drive may converge
+when threads and summary findings are clear. A later auxiliary reply with
+neither a stamp nor a notice leaves that evidence in place. If the list is
+absent, the diff is unreadable or has multiple merge bases, or any path
+remains, the drive stops with
+`REVIEW_SKIPPED` and names the notice and head. A notice for an older head
+leaves the drive awaiting the reviewer.
 
 The pull request's diff at a head is the diff from that head's merge base with
 the base branch (`baseRefOid`) to the head, the change the forge shows, read

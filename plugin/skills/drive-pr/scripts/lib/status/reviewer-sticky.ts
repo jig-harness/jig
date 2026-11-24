@@ -68,7 +68,10 @@ export function reviewerStickyIn(
     const body = stickyBody(raw, reviewerLogin, summaryMarker);
     if (body === null) continue;
     const bodySha = lastStamp(body, markerRe);
-    if (bodySha === "") continue;
+    const skip = skipNoticeIn(body, skipNoticeMarker);
+    // Only a stamp can replace a stamped sticky. An unstamped comment
+    // qualifies as evidence only when it carries a skip notice.
+    if (bodySha === "" && (sticky.sha !== "" || skip === null)) continue;
     sticky = {
       sha: bodySha,
       round: parseReviewRound(body),
@@ -76,7 +79,7 @@ export function reviewerStickyIn(
       // on this must fail closed on an undatable sticky rather than treat it
       // as freshly written.
       updatedAt: String((raw as Record<string, unknown>).updated_at ?? ""),
-      skip: skipNoticeIn(body, skipNoticeMarker),
+      skip,
     };
   }
   return sticky;

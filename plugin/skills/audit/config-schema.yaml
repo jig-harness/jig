@@ -516,6 +516,11 @@ fields:
     type: string
     read_by: [drive-pr, dispatch]
     since: 0.169.0
+  review.skip_excluded_paths:
+    type: list
+    items: string
+    read_by: [drive-pr]
+    since: next
   review.code_scanning_severities:
     type: map
     nullable: true

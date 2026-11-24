@@ -27,10 +27,13 @@
  * down a file does not make it look different, and a merge that moved or
  * edited the change's lines does. Any doubt leaves the head unreviewed.
  */
+import { isAbsolute } from "node:path";
+import { readSnapshotAt } from "../../../../../shared/autonomy.ts";
 import {
   consumerRoot,
   readRemoteName,
 } from "../../../../../shared/consumer.ts";
+import { isRecord } from "../../../../../shared/guards.ts";
 import { fetchTimeoutSeconds } from "../base-drift.ts";
 import { reviewerLabel } from "../overlay.ts";
 import {
@@ -116,11 +119,7 @@ export async function reviewedShaGate(
   markerFull: string,
   skip: SkipNotice | null,
 ): Promise<ReviewedShaStop | null> {
-  if (marker === "") {
-    report.reviewedSha = report.apiHead;
-    report.reviewedShaSource = "check-run";
-    return null;
-  }
+  if (marker === "") return unstampedSkipGate(report, skip);
   report.reviewedSha = marker;
   report.reviewedShaSource = "comment-marker";
   if (marker.length !== 40) {
@@ -164,6 +163,161 @@ export async function reviewedShaGate(
   };
 }
 
+async function unstampedSkipGate(
+  report: StatusReport,
+  skip: SkipNotice | null,
+): Promise<ReviewedShaStop | null> {
+  if (skip === null || (await resolveMarkerSha(skip.head)) !== report.apiHead) {
+    report.reviewedSha = report.apiHead;
+    report.reviewedShaSource = "check-run";
+    return null;
+  }
+  const notice = `its skip notice for this head reads "${skip.text}"`;
+  const excluded = skipExcludedPathsAt(report.baseHead);
+  if ("reason" in excluded) return skippedStop(report, notice, excluded.reason);
+  const remaining = await changedPathsOutsideExcluded(
+    report.baseHead,
+    report.apiHead,
+    new Set(excluded.paths),
+  );
+  if (typeof remaining === "string")
+    return skippedStop(
+      report,
+      notice,
+      `Jig cannot read the pull request diff after applying review.skip_excluded_paths (${remaining})`,
+    );
+  if (remaining !== 0)
+    return skippedStop(
+      report,
+      notice,
+      `the pull request still changes ${remaining} path${remaining === 1 ? "" : "s"} outside review.skip_excluded_paths`,
+    );
+  report.reviewedSha = report.apiHead;
+  report.reviewedShaSource = "skip-notice";
+  return null;
+}
+
+function skippedStop(
+  report: StatusReport,
+  notice: string,
+  why: string,
+): ReviewedShaStop {
+  return {
+    state: "REVIEW_SKIPPED",
+    reason: `${reviewerLabel()} skipped the PR head ${report.apiHead}; ${notice}, but ${why}. Have this head reviewed, then re-arm`,
+  };
+}
+
+/**
+ * Count paths in the PR diff that the reviewer's configured exact excludes do not
+ * cover. Rename detection is disabled, so a rename is a deletion and an
+ * addition and both exact paths must be excluded. Submodules stay visible.
+ */
+async function changedPathsOutsideExcluded(
+  base: string,
+  head: string,
+  excluded: ReadonlySet<string>,
+): Promise<number | string> {
+  const mergeBase = await localGit([
+    "--no-replace-objects",
+    "merge-base",
+    "--all",
+    base,
+    head,
+  ]);
+  const from = mergeBase.stdout.trim();
+  if (mergeBase.bufferExceeded || mergeBase.code !== 0 || from === "")
+    return gitFailure(`merge-base ${base} ${head}`, mergeBase.stderrTail)
+      .failed;
+  if (from.includes("\n")) return "the pull request has multiple merge bases";
+  const changed = await localGit([
+    "--no-replace-objects",
+    "diff",
+    "--name-only",
+    "-z",
+    "--no-renames",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--ignore-submodules=none",
+    "--no-relative",
+    from,
+    head,
+    "--",
+  ]);
+  if (changed.bufferExceeded || changed.code !== 0)
+    return gitFailure(`diff --name-only ${from} ${head}`, changed.stderrTail)
+      .failed;
+  const paths = changed.stdout.split("\0");
+  if (paths.pop() !== "")
+    return "git returned a malformed NUL-delimited path list";
+  let remaining = 0;
+  for (const path of paths) {
+    if (path === "" || path.includes("\uFFFD"))
+      return "git did not return a valid UTF-8 path";
+    if (!excluded.has(path)) remaining += 1;
+  }
+  return remaining;
+}
+
+/** Review exclusions are policy, so only the PR base branch may supply them. */
+function skipExcludedPathsAt(
+  baseHead: string,
+): { paths: string[] } | { reason: string } {
+  const snapshot = readSnapshotAt(
+    baseHead,
+    "pull request base",
+    "base",
+    process.env,
+    process.env.DRIVE_PR_WORKTREE || process.cwd(),
+  );
+  if (snapshot.from === "unreadable")
+    return {
+      reason: `the pull request base configuration cannot be read (${snapshot.reason})`,
+    };
+  if (snapshot.from !== "base")
+    return { reason: "the pull request base configuration cannot be read" };
+  const review = snapshot.values.review;
+  if (review != null && !isRecord(review))
+    return {
+      reason: "the pull request base's review section is not a mapping",
+    };
+  const value = review?.skip_excluded_paths;
+  if (value === undefined || value === null)
+    return {
+      reason:
+        "the pull request base configures no review.skip_excluded_paths policy",
+    };
+  if (!Array.isArray(value))
+    return {
+      reason:
+        "review.skip_excluded_paths on the pull request base is not a list of exact repository-relative UTF-8 paths",
+    };
+  const paths: string[] = [];
+  for (const path of value) {
+    if (typeof path !== "string" || !isExactRepositoryPath(path))
+      return {
+        reason:
+          "review.skip_excluded_paths on the pull request base contains a path that is not an exact repository-relative UTF-8 path",
+      };
+    paths.push(path);
+  }
+  if (new Set(paths).size !== paths.length)
+    return {
+      reason:
+        "review.skip_excluded_paths on the pull request base names a path more than once",
+    };
+  return { paths };
+}
+
+function isExactRepositoryPath(path: string): boolean {
+  if (path === "" || path.includes("\0") || path.includes("\uFFFD"))
+    return false;
+  if (isAbsolute(path) || path.startsWith("/")) return false;
+  return path
+    .split("/")
+    .every((part) => part !== "" && part !== "." && part !== "..");
+}
+
 /**
  * Fetch whichever of `commits` this clone does not hold from the drive's
  * remote (`repository.remote`), under the fetch deadline. A commit id names
@@ -199,7 +353,9 @@ async function fetchMissing(commits: string[]): Promise<string | null> {
  */
 export function skipNote(report: StatusReport): string {
   return report.reviewedShaSource === "skip-notice"
-    ? ` — ${reviewerLabel()} last reviewed ${report.reviewedSha} and skipped ${report.apiHead} (its skip notice names this head); the pull request's diff is the same at both, so that review stands for this head`
+    ? report.reviewedSha === report.apiHead
+      ? ` — ${reviewerLabel()} skipped ${report.apiHead} as having nothing to review after its configured excludes (its skip notice names this head)`
+      : ` — ${reviewerLabel()} last reviewed ${report.reviewedSha} and skipped ${report.apiHead} (its skip notice names this head); the pull request's diff is the same at both, so that review stands for this head`
     : "";
 }
 
@@ -207,11 +363,17 @@ export function skipNote(report: StatusReport): string {
  * What the merge-ready announcement says the reviewer did, for the
  * `reviewedShaSource` and `reviewedSha` of a converged report.
  */
-export function reviewedClaim(source: string, reviewedSha: string): string {
+export function reviewedClaim(
+  source: string,
+  reviewedSha: string,
+  head?: string,
+): string {
   if (source === "review-check-run")
     return "completed its check run on this exact head, with no new review to post";
   return source === "skip-notice"
-    ? `reviewed \`${reviewedSha.slice(0, 12)}\` and skipped this head, whose pull-request diff is the same`
+    ? reviewedSha === head
+      ? "skipped this head because nothing remained to review after its configured excludes"
+      : `reviewed \`${reviewedSha.slice(0, 12)}\` and skipped this head, whose pull-request diff is the same`
     : "completed its review of this exact head";
 }
 

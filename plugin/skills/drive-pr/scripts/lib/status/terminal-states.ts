@@ -341,7 +341,7 @@ export const TERMINAL_STATES: Readonly<
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
     meaning:
-      "The reviewer skipped this head and its review of an earlier head does not cover it, so no review will come. A person has this head reviewed, then re-arms.",
+      "The reviewer skipped this head. An earlier review does not cover it, or the notice has no stamp and Jig cannot verify that the diff is empty after the configured exclusions. A person has this head reviewed, then re-arms.",
     report: {
       stop: "stopped: the reviewer skipped its head and will not review it",
       cause: "environment",

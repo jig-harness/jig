@@ -450,10 +450,10 @@ async function main(): Promise<number> {
   const source = String(
     (status.reviewer as Record<string, unknown>)?.reviewedShaSource ?? "",
   );
-  // A head the reviewer skipped is certified by its review of an earlier one.
   const reviewedWhat = reviewedClaim(
     source,
     String((status.reviewer as Record<string, unknown>)?.reviewedSha ?? ""),
+    head,
   );
 
   // A green aggregate can still be the skipped-success residue from a held
