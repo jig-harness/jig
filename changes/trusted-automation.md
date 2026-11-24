@@ -34,7 +34,11 @@ release: minor
   manifest-only edit such as `packageManager`, which can switch the installer
   or select a different existing lockfile the pull request leaves untouched;
   the operator reads that lockfile's contents and compares the old
-  resolutions and command. An entry without `update_types` skips manifest
+  resolutions and command. The operator compares the file the actual install
+  consumes (npm prefers `npm-shrinkwrap.json`, Jig `package-lock.json`), the
+  installer's full version and source, installer configuration files an
+  entry's `paths` allow (such as `.yarnrc.yml`), and a lockfile or frozen
+  install that disappears, verifying what CI or the release then does. An entry without `update_types` skips manifest
   classification, so such an edit can still qualify; with `update_types` set,
   a direct top-level `packageManager` edit withholds the exception. Two-space and one-tab layouts are
   supported; a layout whose root dependency section opener reads as nested

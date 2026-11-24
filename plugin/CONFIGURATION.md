@@ -432,7 +432,14 @@ install configuration. A manifest-only edit such as `packageManager` can
 switch the installer with no lockfile change, and can select a different
 existing lockfile that the pull request leaves untouched: read the newly
 selected lockfile's contents, since the diff omits the resolutions it
-activates, and compare the old resolutions and command with it. An entry
+activates, and compare the old resolutions and command with it. Treat the
+file the actual install consumes as the one to compare (npm documents
+`npm-shrinkwrap.json` ahead of `package-lock.json`, the reverse of Jig's
+choice), the installer's full version and source (the whole `packageManager`
+declaration, not the name before `@`), installer configuration files an
+entry's `paths` allow (an added `.yarnrc.yml` switches Yarn's frozen
+flag), and a lockfile or frozen install that disappears: record it and
+verify what CI or the release does then. An entry
 without `update_types` skips manifest classification, so such an edit can
 still qualify for the exception and approval is not owed on that ground; an
 entry with `update_types` set withholds the exception for a direct edit to the
