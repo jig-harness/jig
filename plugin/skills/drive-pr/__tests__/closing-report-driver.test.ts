@@ -113,6 +113,44 @@ describe("the driver's closing report", () => {
     }
   });
 
+  test("says a pass failure's usage-limit scan was cut short, and does not read it as a tool failure", () => {
+    driverRuntime.quotaScanTruncated = ["claude"];
+    try {
+      const report = composeDriverReport({
+        pr: "42",
+        code: DRIVE_EXIT.INDETERMINATE,
+        state: null,
+        round: null,
+      });
+      expect(checkClosingReport(report)).toEqual([]);
+      expect(report.concluded).toContain(
+        "usage-limit scan of the pass's claude transcripts was cut short",
+      );
+      expect(report.cause).toBe("unknown");
+      expect(report.suggested_next?.step).toContain("usage-limit notice");
+      expect(report.suggested_next?.act).toBe("Investigate");
+
+      // Another stop is not that failure, whatever the last scan said.
+      const converged = composeDriverReport({
+        pr: "42",
+        code: DRIVE_EXIT.CONVERGED,
+        state: null,
+        round: null,
+      });
+      expect(converged.concluded).not.toContain("usage-limit scan");
+    } finally {
+      driverRuntime.quotaScanTruncated = [];
+    }
+    const plain = composeDriverReport({
+      pr: "42",
+      code: DRIVE_EXIT.INDETERMINATE,
+      state: null,
+      round: null,
+    });
+    expect(plain.cause).toBe("tool-failed");
+    expect(plain.concluded).not.toContain("usage-limit scan");
+  });
+
   test("takes the cause and the next step from the registry's entry for the exit", () => {
     const report = composeDriverReport({
       pr: "42",

@@ -404,6 +404,29 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.306.2] - 2026-11-24
+
+### Fixed
+
+- Make the pull request drive tests more reliable under load by observing the
+  cancellation sequence and giving multi-round fixtures time to finish.
+
+## [0.306.1] - 2026-11-24
+
+### Fixed
+
+- `drive-pr`: a pass that met Claude Code's weekly usage limit now stops the
+  drive `QUOTA_PARKED` with the reset the notice states
+  (`You've hit your weekly limit · resets Nov 27, 11am (<zone>)`), so the
+  dispatcher walls the account until that reset rather than for its
+  `wall_backoff`. The drive reads the pass's own transcript by its session
+  id, so an account whose transcript tree is too large to walk within the
+  scan bounds no longer hides the wall and leaves the pull request stopped
+  as an ordinary pass failure. A pass failure whose scan was cut short before
+  it found a wall now says so in the drive's closing report, with cause
+  `unknown` and a next step that looks for the notice first.
+- Merge readiness uses each failing check's own required status and ignores superseded pending reviewer attempts when their order is known.
+
 ## [0.306.0] - 2026-11-23
 
 ### Changed
@@ -10875,7 +10898,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.306.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.306.2...HEAD
+[0.306.2]: https://github.com/jig-harness/jig/compare/v0.306.1...v0.306.2
+[0.306.1]: https://github.com/jig-harness/jig/compare/v0.306.0...v0.306.1
 [0.306.0]: https://github.com/jig-harness/jig/compare/v0.305.0...v0.306.0
 [0.305.0]: https://github.com/jig-harness/jig/compare/v0.304.5...v0.305.0
 [0.304.5]: https://github.com/jig-harness/jig/compare/v0.304.4...v0.304.5

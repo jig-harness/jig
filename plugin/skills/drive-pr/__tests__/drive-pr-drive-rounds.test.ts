@@ -63,6 +63,8 @@ const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
 // Complete driver rounds spawn several helpers; allow their startup under
 // parallel test execution without changing the driver's own deadlines.
 const MULTI_ROUND_TIMEOUT_MS = 60_000;
+const roundBudgetTimeoutMs = (rounds: number) =>
+  Math.max(MULTI_ROUND_TIMEOUT_MS, rounds * 12_000);
 
 useDrivePrSuite();
 
@@ -800,6 +802,7 @@ describe("drive.ts loop control", () => {
         DRIVE_PR_FIXTURES: dir,
         DRIVE_PR_STATE_DIR: stateDir,
         DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
+        ...DRIVE_PACING_ENV,
         // Durable-budget accounting across restarts is the subject, and it needs
         // the first invocation to genuinely exhaust --max-rounds on no-op
         // passes — which the stall stop would (correctly) end one gate early.
@@ -819,20 +822,21 @@ describe("drive.ts loop control", () => {
           ),
           { cwd: scratchClean.dir, env, stdout: "pipe", stderr: "pipe" },
         );
-        const [stderr, exitCode] = await Promise.all([
+        const [stdout, stderr, exitCode] = await Promise.all([
+          new Response(p.stdout).text(),
           new Response(p.stderr).text(),
           p.exited,
         ]);
-        return { stderr, exitCode };
+        return { stdout, stderr, exitCode };
       };
       // First invocation burns the budget (the stub pass never changes the head,
       // so drive-state counts one round and the loop re-reads the same state).
       const first = await once();
-      expect(first.exitCode).toBe(6);
+      expectSpawnExit(first, 6);
       expect(first.stderr.match(/RAN_THE_PASS/g)?.length).toBe(2);
       // A restart must NOT get a fresh budget — and must not run even one pass.
       const second = await once();
-      expect(second.exitCode).toBe(6);
+      expectSpawnExit(second, 6);
       expect(second.stderr).not.toContain("RAN_THE_PASS");
       expect(second.stderr).toContain("resuming PR #999 at round");
     },
@@ -869,21 +873,30 @@ describe("drive.ts loop control", () => {
       );
     };
 
-    // Ten real rounds: where a round costs seconds, the suite's default
-    // timeout ends the drive before it reaches its budget.
-    it("is 10 when neither the flag nor the setting names one", async () => {
-      const r = await drive([]);
-      expect(r.exitCode).toBe(6);
-      expect(r.stderr).toContain("--- round 10/10 on PR #999 ---");
-    }, 120_000);
+    // Each real round starts the driver's helper chain. Scale the test's
+    // deadline with its requested work so a loaded runner does not turn a
+    // valid round budget into the test's unrelated per-case limit.
+    it(
+      "is 10 when neither the flag nor the setting names one",
+      async () => {
+        const r = await drive([]);
+        expectSpawnExit({ ...r, stdout: null }, 6);
+        expect(r.stderr).toContain("--- round 10/10 on PR #999 ---");
+      },
+      roundBudgetTimeoutMs(10),
+    );
 
-    it("sets the budget when the flag is absent", async () => {
-      const r = await drive([], 2);
-      expect(r.exitCode).toBe(6);
-      expect(r.stderr).toContain("--- round 2/2 on PR #999 ---");
-      expect(r.stderr).toContain("hit --max-rounds (2)");
-      expect(r.stderr).not.toContain("round 3/2");
-    });
+    it(
+      "sets the budget when the flag is absent",
+      async () => {
+        const r = await drive([], 2);
+        expectSpawnExit({ ...r, stdout: null }, 6);
+        expect(r.stderr).toContain("--- round 2/2 on PR #999 ---");
+        expect(r.stderr).toContain("hit --max-rounds (2)");
+        expect(r.stderr).not.toContain("round 3/2");
+      },
+      roundBudgetTimeoutMs(2),
+    );
 
     it("yields to --max-rounds", async () => {
       const r = await drive(["--max-rounds", "1"], 3);

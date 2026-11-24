@@ -562,18 +562,16 @@ describe("drive-status.ts terminal states", () => {
       reviewedSha: null,
       checkRuns: [{ ...REVIEWER_RUN, status: "in_progress", conclusion: null }],
     });
-    const calls = join(dir, "polls.log");
     const times = join(dir, "poll-times.log");
     const r = await probeIn(
       dir,
       stateDir,
       HEAD,
-      ["--timeout", "11", "--interval", "1", "--no-count"],
+      ["--timeout", "16", "--interval", "1", "--no-count"],
       {
         once: false,
         env: {
           JIG_GH_CACHE: "off",
-          DRIVE_PR_STUB_GH_LOG: calls,
           DRIVE_PR_STUB_GH_TIMES: times,
           DRIVE_PR_STATUS_MIN_INTERVAL: "1",
           JIG__REVIEW__REVIEWER_POLL_MAX_SECONDS: "3",
@@ -583,34 +581,35 @@ describe("drive-status.ts terminal states", () => {
     expectSpawnExit({ ...r, stdout: JSON.stringify(r.json) }, 4);
     expect(r.state).toBe("AWAITING_REVIEWER");
     expect(r.stderr).toContain("; waiting");
-    const polls = readFileSync(calls, "utf8").match(/^pr view$/gm) ?? [];
-    // This fixture performs two top-level PR reads for every evaluation. The
-    // 1s → 2s → 3s capped cadence makes at most six evaluations; a loaded
-    // runner may fit fewer, so the count has a loose lower bound. Fixed
-    // one-second polling would make about eleven evaluations. The deadline can
-    // end the run between the two reads of its last evaluation, so the count
-    // may be odd.
-    expect(polls.length).toBeGreaterThanOrEqual(4);
-    expect(polls.length).toBeLessThanOrEqual(12);
-    // Read when each evaluation started (two reads each). A timer never fires
-    // early, so each observed gap is at least its wait whatever the runner's
-    // load; only lower bounds are asserted, and only for the gaps a loaded
-    // runner fitted. This smoke test checks the wiring; StatusPollPacing's own
-    // tests, with an injected clock, pin the cadence itself.
+    // An AWAITING_REVIEWER evaluation returns after its opening PR snapshot.
+    // Only a terminal result takes the second, still-on-head snapshot, so each
+    // observed read marks one complete evaluation and an odd count is ordinary.
+    // This is an integration smoke test, so it only needs two observed
+    // evaluations to prove the command waits before polling again. The exact
+    // backoff sequence belongs to StatusPollPacing's injected-clock tests;
+    // requiring several subprocess snapshots here would make this assertion
+    // depend on how much of the wall-clock budget process scheduling consumes.
+    // Each observed read starts one evaluation. A timer never fires early, so
+    // each observed gap is at least its wait whatever the runner's load; only
+    // lower bounds are asserted, and only for the gaps a loaded runner fitted.
+    // This smoke test checks the wiring; StatusPollPacing's own tests, with an
+    // injected clock, pin the cadence itself.
     const stamps = readFileSync(times, "utf8")
       .trim()
       .split("\n")
       .map((l) => Number(BigInt(l) / 1_000_000n));
-    const starts = stamps.filter((_, i) => i % 2 === 0);
-    const gaps = starts.slice(1).map((t, i) => t - (starts[i] ?? t));
-    expect(gaps.length).toBeGreaterThanOrEqual(1);
-    // The last gap is exempt: the final wait is shortened to leave the
-    // deadline margin for the closing evaluation, so it can be under its wait.
-    const slackMs = 50;
+    expect(stamps.length).toBeGreaterThanOrEqual(2);
+    expect(stamps.length).toBeLessThanOrEqual(17);
+    const gaps = stamps.slice(1).map((t, i) => t - (stamps[i] ?? t));
+    // The final gap is exempt: the final sleep is clamped to the wall-clock
+    // deadline, while the closing evaluation keeps its own call deadlines.
+    // The portable timestamp helper starts separately from the stubbed
+    // transport, so allow scheduling delay without accepting fixed-rate polls.
+    const slackMs = 250;
     gaps.slice(0, Math.min(3, gaps.length - 1)).forEach((gap, i) => {
       expect(gap).toBeGreaterThanOrEqual((i + 1) * 1000 - slackMs);
     });
-  }, 20_000);
+  }, 25_000);
 });
 
 // The single pass-start entry point: on ROUND_READY, `--bump-attempt`
