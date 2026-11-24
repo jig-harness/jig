@@ -217,6 +217,7 @@ After approval, send the eligible tasks of the first wave (those step 8
 did not hold back) to a fresh filing session using `/jig:file-issue`. Each issue carries the decisions in its body: its pickup
 session sees nothing else. Start the issues through the dispatcher, using
 the configured mechanism and identity established in step 6.
+Before starting a filed issue, recheck that its task is still approved and its track still has the generation the filing began under; when either changed, start nothing and keep the issue key for reconciliation under the keeper-update rules below.
 Where the host has no dispatcher, use its configured work-start procedure
 (a single issue's pickup belongs to `/jig:do-item`); if none is configured,
 ask the person how to start the filed issues. Record what actually started, and each held task with the decision that

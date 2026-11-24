@@ -653,6 +653,7 @@ make, use the entry's term instead.
   during *topic coordination*. It receives answers, issue numbers and
   demotions from the coordinating session, keeping plan-tool mechanics out
   of the person's discussion.
+- **Track generation** — the number an *orchestration notebook*'s track carries, advanced by each removal and each authorised recreation of the track. A *plan keeper* applies an update only when it carries the generation it expects, so a late update for a removed track is never applied to a recreated one.
 - **Orchestration notebook** — the host-local record of one *topic
   coordination*: a folder outside every repository, never committed, holding
   the topic's current state, rewritten whole at every change, and a dated
