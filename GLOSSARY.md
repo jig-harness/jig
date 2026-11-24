@@ -1926,9 +1926,7 @@ make, use the entry's term instead.
   implementation to gather facts; part of tiered model routing (expensive
   models decide, cheap models explore).
 
-<a id="model-tier"></a>
-
-- **Model tier** — the cost class of model an agent or
+- <a id="model-tier"></a>**Model tier** — the cost class of model an agent or
   skill runs on, named by role: *Judgment*, Strategic, Execution or *Scout*;
   it is not chosen from how important the job sounds.
   In agent and skill metadata the tier follows from the model pin, as the
@@ -1940,8 +1938,8 @@ make, use the entry's term instead.
   exact model identifier. For one runtime, every surviving declaration of the
   same family or exact identifier — from `routing.model_tiers` or its older
   spelling `routing.family_tiers` — must agree on its tier; conflicting
-  declarations are refused. When neither key declares a listed family or
-  identifier, the plugin's known-family classification applies. When both
+  declarations are refused. A listed family alias or release identifier uses
+  the plugin's known-family classification without a declaration. When both
   declaration keys name the same model with the same tier, the modern key's
   reason wins. The catalog's Scout restriction still applies. *Avoid*: model
   level (a *maturity level*
