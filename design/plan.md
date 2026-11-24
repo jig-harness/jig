@@ -763,9 +763,8 @@ sets the agent-harness interface, an amendment brings model providers under
 the credential reference, the spend cap, the open model vocabulary and the
 per-stage profile rule. What it will build, one pull request per step: the
 open model vocabulary; the provider account kind; the spend cap, cost
-ledger and provider failure classes; harness-neutral skill forms on the
-harness interface, which has Claude Code and Codex behind it
-(`plugin/shared/agent-harness/`), with the call sites that still name a
+ledger and provider failure classes; the harness interface, which has Claude Code and Codex
+behind it (`plugin/shared/agent-harness/`), with the call sites that still name a
 harness moving behind it as the `harness-type` ratchet counter falls; an offline
 measurement of a fast model against the steward's recorded decisions; then
 pi as an opt-in third harness on one stage, per-stage profiles, and the
@@ -774,7 +773,7 @@ default-harness ruling from the trial.
 Done when, on a dispatch host over a week: drive-pr passes run on a
 provider account with the day's spend inside its cap and every pass's cost
 in the ledger; a 429 from the provider is retried without a person and a
-402 parks the account as *too costly* with one need; a model ID outside the
+402 parks the account as _too costly_ with one need; a model ID outside the
 family list is routed by configuration alone; the two-value agent type
 appears only inside the harness implementations; the steward measurement's
 report states its verdict; and the default-harness ruling is recorded.
@@ -1016,11 +1015,11 @@ What its [design](audit-experience.md) still holds:
 - **Greenfield**: an audit run at the end of the kickoff's repository
   bootstrap leads with the profile check and leaves out modules outside the
   profile; the kickoff family (item 3) calls it.
-- **Calibration into the reflection store**: each *this is wrong* decision
+- **Calibration into the reflection store**: each _this is wrong_ decision
   becomes a finding about the `audit` skill in the
   [reflection store](../plugin/skills/reflect/README.md).
 
-Done when a kickoff run ends with the greenfield check and a *wrong*
+Done when a kickoff run ends with the greenfield check and a _wrong_
 decision reaches the reflection store.
 
 ### 18. The jig-harness.dev website

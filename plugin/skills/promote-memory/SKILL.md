@@ -77,6 +77,11 @@ read as the repository values below are, when set).
 
 ## Repository values
 
+`${CLAUDE_SKILL_DIR}` in the commands below stands for the absolute path of the
+directory containing this `SKILL.md`. Claude Code fills it in. In any other
+harness, replace it with that path yourself before running a command: a shell
+would expand the unset variable to an empty string.
+
 Read these from the repository's Jig configuration (every layer,
 `.config/jig.yaml` among them) with
 `bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/jig-config.ts" promote_memory --json`;

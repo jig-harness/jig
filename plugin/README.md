@@ -2601,7 +2601,10 @@ them together.
 
 - **Skills** work in Codex as in Claude Code. Codex does not fill in
   `${CLAUDE_SKILL_DIR}`; each `SKILL.md` tells the agent to substitute the
-  skill's own directory.
+  skill's own directory, and `bun run gates` (`scripts/check-skill-runtime-forms.ts`)
+  fails a skill that does not. The same check fails a skill that names
+  `AskUserQuestion` without the plain-text numbered fallback, or hands a
+  finding to the arbiter without the no-subagent fallback.
 - **The turn-budget hook is registered in Codex's own `hooks.json`.** Codex
   skips a plugin's hooks until their current definition and the plugin's
   contents are trusted (`/hooks`), and asks again whenever a release changes
@@ -2636,7 +2639,8 @@ them together.
   finding to a subagent that is given
   [`agents/review-arbiter.md`](agents/review-arbiter.md) as its
   instructions, or define the arbiter once as a Codex custom agent from that
-  file.
+  file. A harness with no subagents at all has the calling session rule
+  contested findings itself, with the same rubric and the same file.
 - **A drive pass waits on a long step through Codex's own command session.**
   Codex's default Linux sandbox ends the processes a tool call started when
   the call returns, so drive-pr's foreground wait, which starts a step in one
