@@ -102,8 +102,10 @@ describe("foreground-wait snapshot recovery", () => {
         );
         const command = pidOf("cmd.pid") as number;
         runner = pidOf("runner.pid") as number;
+        runnerIdentity = (await processTable())?.find(
+          (target) => target.pid === runner,
+        );
         cleanupTargets = await capturedRunner(runner, [command]);
-        runnerIdentity = cleanupTargets.find((target) => target.pid === runner);
         await awaitObserved("the descendant announced itself", () =>
           existsSync(join(cwd, "descendant.pid")),
         );
