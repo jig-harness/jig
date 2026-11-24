@@ -11,7 +11,7 @@ release: minor
   repository, every commit is the bot's own or a listed committer's, each signed for
   the account it names unless the entry says `signed: false`, every changed file, and the original path of a reported rename or copy, is within the entry's paths (by default
   `package.json` and the JavaScript lockfiles), and, where the entry sets
-  `update_types`, a reported rename or copy needs a recognized lockfile name at its original path as well as its new one, and every edit is covered by the allowed types (a recognized lockfile may accompany a classified `package.json` update without `lockfile` being listed, and its contents are not checked against that manifest; `lockfile` is needed only when lockfiles alone change). Any fact
+  `update_types`, a reported rename or copy whose new path is a recognized lockfile needs a recognized lockfile name at its original path too, and every edit is covered by the allowed types (a recognized lockfile may accompany a classified `package.json` update without `lockfile` being listed, and its contents are not checked against that manifest; `lockfile` is needed only when lockfiles alone change). Any fact
   that does not read withholds the exception, and the card's fact names
   the rule. The list is read from the default branch by the board, `jig
 ask` and the drive's merge-ready announcement, never from the pull
