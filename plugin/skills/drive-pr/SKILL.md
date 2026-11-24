@@ -3970,10 +3970,14 @@ evidence immediately before the spawn:
   bound and one aggregate entry and time budget for the whole tree. The
   snapshot and detection share that walk. When the pass carries a session id,
   detection also reads `<project>/<session-id>.jsonl` and its `subagents/`
-  by name, so a tree too large to walk within those bounds cannot hide the
-  pass's own wall; a pass failure whose walk was cut short before it found a
-  wall says so in the drive's closing report (cause `unknown`), since "no
-  wall found" was then not a finding. Subagent records carry the parent
+  by name, so a tree too large to walk within those bounds usually cannot
+  hide the pass's own wall. The by-name lookup has its own bounds (20,000
+  entries and five seconds), so a projects tree large or slow enough to
+  exhaust them can still hide the transcript. A pass failure whose walk was
+  cut short before it found a wall says so in the drive's closing report
+  (cause `unknown`), since "no wall found" was then not a finding; that
+  warning is withheld when the by-name lookup read the pass's session whole,
+  because the pass's own transcript was then checked. Subagent records carry the parent
   session id and use the same exact-id correlation below. Both vendors
   create a session's file when the session starts, so anything
   appearing afterwards is a session started during the pass — and, absent the
