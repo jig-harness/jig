@@ -74,6 +74,7 @@ describe("foreground-wait snapshot recovery", () => {
       } = installSnapshotFailureFixture(cwd);
       let descendant: number | null = null;
       let runner: number | null = null;
+      let runnerIdentity: { pid: number; start: string } | undefined;
       let cleanupTargets: { pid: number; start: string }[] = [];
       try {
         expectSpawnExit(
@@ -102,6 +103,7 @@ describe("foreground-wait snapshot recovery", () => {
         const command = pidOf("cmd.pid") as number;
         runner = pidOf("runner.pid") as number;
         cleanupTargets = await capturedRunner(runner, [command]);
+        runnerIdentity = cleanupTargets.find((target) => target.pid === runner);
         await awaitObserved("the descendant announced itself", () =>
           existsSync(join(cwd, "descendant.pid")),
         );
@@ -153,7 +155,22 @@ describe("foreground-wait snapshot recovery", () => {
         rmSync(nativeFailure, { force: true });
         if (runner !== null) {
           const liveTargets = await captureProcessTree(runner);
-          if (liveTargets !== null) cleanupTargets = liveTargets;
+          if (
+            liveTargets?.some(
+              (target) =>
+                target.pid === runnerIdentity?.pid &&
+                target.start === runnerIdentity.start,
+            )
+          ) {
+            cleanupTargets = [...cleanupTargets, ...liveTargets].filter(
+              (target, index, targets) =>
+                targets.findIndex(
+                  (candidate) =>
+                    candidate.pid === target.pid &&
+                    candidate.start === target.start,
+                ) === index,
+            );
+          }
         }
         await signalIdentityTargets(cleanupTargets, "SIGKILL");
       }
