@@ -27,18 +27,11 @@ release: minor
   value cannot be determined, and a moved or copied manifest needs review of
   the effective install configuration at both locations and of the
   destination's whole contents, since unchanged fields such as
-  `packageManager` can change their effect. For every entry, a bare login
-  included, the operator reviews what the install consumes before the
-  pull request reaches the drive host, which installs during a base merge or
-  conflict resolution, before the Ready decision: for each affected
-  directory, the lockfile consumed (npm 11 prefers `npm-shrinkwrap.json`,
-  npm 12 ignores it, Jig prefers `package-lock.json`) and, for a
-  manifest-only edit such as `packageManager`, the contents of a newly
-  selected lockfile; the installer's full version and source; the command
-  (`drive.dependency_install` is chosen by Jig's detected lockfile name);
-  installer configuration files such as `.yarnrc.yml`, which schedule no
-  install on their own; and a lockfile or frozen install that disappears.
-  [The configuration guide](../plugin/CONFIGURATION.md) lists each check.
+  `packageManager` can change their effect. The classifier does not see what the
+  install consumes, and the drive host installs during a base merge or
+  conflict resolution, before the Ready decision; the
+  [configuration guide](../plugin/CONFIGURATION.md#trusted-automation)
+  says what that leaves to the operator.
   An entry without `update_types` skips manifest
   classification, so such an edit can still qualify; with `update_types` set,
   a direct top-level `packageManager` edit withholds the exception. Two-space and one-tab layouts are
@@ -63,9 +56,8 @@ ask` and the drive's merge-ready announcement, never from the pull
   request's own configuration, and the announcement takes the reviewer app,
   its check pattern and both hold labels from there too for a listed bot. Where no reviewer app is named, a
   person's approval is the witness and the exception grants nothing. A person still merges.
-  **Consumer action:** advised at instructions. Review a trusted-automation
-  pull request's install inputs as the configuration guide says, before the
-  drive host installs. **Detect:** `config:pull_requests.trusted_automation`.
+  **Consumer action:** advised at instructions. Read the install warning in
+  the configuration guide before listing a bot. **Detect:** `config:pull_requests.trusted_automation`.
 - With `dispatch.adopt` on, a listed bot's pull request whose head is
   known to be in the repository and that was updated within the adoption
   window, with no hold, is adopted and driven to convergence while healthy,

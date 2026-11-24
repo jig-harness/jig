@@ -424,31 +424,15 @@ protection) still decide its lane:
      apply to a behind branch or another blocker, and to forge facts that
      are incomplete or a mergeability not yet known.
 
-Whatever `update_types` says, a bare login included, the classifier does not
-see what a lockfile added, removed, moved or copied, or a manifest edit,
-changes in a directory. The drive host runs the install itself, during a
-base merge and a conflict resolution and before the Ready decision, so a
-review at merge time cannot prevent it: make this comparison before the
-pull request reaches the host's drive, and include the host's install in it.
-Compare, before and after, for each affected directory:
-
-- the lockfile the install consumes, which can differ from Jig's choice (npm 11
-  prefers `npm-shrinkwrap.json` over `package-lock.json`; npm 12 ignores it),
-  and, when a manifest-only edit such as `packageManager` selects a different
-  existing lockfile the pull request leaves untouched, that lockfile's
-  contents, since the diff omits the resolutions it activates;
-- the installer's full version and source (the whole `packageManager`
-  declaration, not the name before `@`);
-- the command the drive runs: `drive.dependency_install` is selected by the
-  lockfile name Jig detects, so a changed name can select another override
-  even when the installer consumes the same file, and without an override
-  Jig's built-in command applies;
-- installer configuration files an entry's `paths` allow: an added
-  `.yarnrc.yml` is outside what schedules an install, so check whether an
-  install runs and which Yarn executable it uses, since the frozen flag
-  depends on it;
-- a lockfile or frozen install that disappears: record it and verify what CI
-  or the release does then.
+**Warning: the drive host installs what the pull request selects.** The
+classifier reads the textual patch, not its effect on the install: which
+lockfile is consumed, which installer runs, and which command applies. Jig
+picks the command from the lockfile it detects; for `yarn.lock`, an existing
+`.yarnrc.yml` alone selects `--immutable` over `--frozen-lockfile`. The drive
+host runs that install during a base merge or a conflict resolution, before
+the Ready decision, so a review at merge time comes too late. With
+`dispatch.adopt` on, a listed bot's pull request can be adopted and installed
+before anyone has looked at it.
 
 An entry
 without `update_types` skips manifest classification, so such an edit can
