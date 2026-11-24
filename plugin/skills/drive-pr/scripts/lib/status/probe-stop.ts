@@ -18,9 +18,13 @@ export const PROBE_STOP_SHAPE = s.object({
     pattern: "^[^\\r\\n]+$",
   }),
   failure: s.optional(s.enum(FAILURE_KINDS)),
-  /** The parked keys the stop waits on, when it is a park. */
+  /**
+   * The parked keys the stop waits on, when it is a park. Bounded by what the
+   * drive state accepts for a parked key (nonempty, one line), no tighter: a
+   * tighter bound would drop the whole probe for a valid parked set.
+   */
   parkKeys: s.optional(
-    s.array(s.string({ minLength: 1, maxLength: 128 }), { maxItems: 64 }),
+    s.array(s.string({ minLength: 1, pattern: "^[^\\r\\n]+$" })),
   ),
 });
 

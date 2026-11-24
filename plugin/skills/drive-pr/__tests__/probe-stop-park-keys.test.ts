@@ -23,3 +23,21 @@ test("a park stop carries the actionable keys the status JSON publishes under wo
     log.mockRestore();
   }
 });
+
+test("a park stop keeps every valid parked key, however long or many", () => {
+  const log = spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const keys = [
+      "k".repeat(300),
+      ...Array.from({ length: 80 }, (_, i) => `park-${i}`),
+    ];
+    const probe = recordProbeStop(8, {
+      state: "HITL_PARKED",
+      reason: "decisions wait",
+      work: { actionableParkKeys: keys },
+    });
+    expect(probe?.parkKeys).toEqual(keys);
+  } finally {
+    log.mockRestore();
+  }
+});
