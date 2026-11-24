@@ -253,7 +253,7 @@ describe("resolving a credential reference", () => {
       ok: false,
       failure: {
         code: "unauthorized",
-        reason: expect.stringContaining("credential command exited 1"),
+        reason: expect.stringMatching(/credential command exited 1; /),
       },
     });
     expect(maskCredentials(`value ${trimmed}`, "[masked]")).toBe(

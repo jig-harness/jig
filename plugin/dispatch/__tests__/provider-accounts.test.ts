@@ -243,6 +243,14 @@ describe("a provider account", () => {
       expect(refusal([router({ base_url })])).toContain(
         "no user name or password",
       );
+    const pathAt = load([
+      router({ base_url: "https://openrouter.ai/api/@stable" }),
+    ]);
+    expect(pathAt.ok).toBe(true);
+    if (pathAt.ok)
+      expect(pathAt.value.accounts[0]?.provider?.baseUrl).toBe(
+        "https://openrouter.ai/api/@stable",
+      );
     expect(
       refusal([router({ base_url: "https://openrouter.ai/api?key=x" })]),
     ).toContain("no query or fragment");
