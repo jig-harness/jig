@@ -1353,15 +1353,6 @@ export function reviewerSticky(
     const body = reviewerStickyBody(comment, isReviewerLogin, stickyMarker());
     if (body === null) continue;
     const round = parseReviewRound(body);
-    // An older explicit round can never replace the selected summary. Reject
-    // it before decoding its payload, since malformed evidence there is not
-    // evidence about the current summary at all.
-    if (
-      round !== null &&
-      highestExplicitRound !== null &&
-      round < highestExplicitRound
-    )
-      continue;
     const carriesEvidence =
       reviewedShaFrom(body) !== undefined ||
       // Decode rather than merely spotting an opener: malformed protocol
@@ -1378,6 +1369,16 @@ export function reviewerSticky(
         reviewedShaMarker(),
         skipNoticeMarker(),
       ).skip !== null;
+    // An older explicit round can never replace the selected summary. Reject
+    // it before decoding its payload, since malformed evidence there is not
+    // evidence about the current summary at all.
+    if (
+      !skipOnly &&
+      round !== null &&
+      highestExplicitRound !== null &&
+      round < highestExplicitRound
+    )
+      continue;
     // An auxiliary response never supersedes a finding-bearing summary just
     // because it happens to mention a protocol marker. A newer declared round
     // is also evidence: it is the reviewer's explicit replacement boundary.

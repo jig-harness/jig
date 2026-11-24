@@ -70,14 +70,28 @@ async function refreshTrackingRef(
   const prefix = `refs/remotes/${remote.remote}/`;
   if (!ref.startsWith(prefix)) return { error: `${ref} is not a tracking ref` };
   const branch = ref.slice(prefix.length);
+  const observed = await git(
+    ["-C", root, "ls-remote", "--refs", remote.remote, `refs/heads/${branch}`],
+    {
+      stderr: "pipe",
+      timeoutSec: gitCallTimeoutSeconds(),
+      env: gitIdentityEnv(),
+    },
+  );
+  const commit = observed.stdout.trim().split(/\s+/)[0] ?? "";
+  if (observed.code !== 0 || !/^[0-9a-f]{40}$/.test(commit))
+    return {
+      error: `cannot fetch ${remote.remote}/${branch}, so its current commit is unknown${observed.stderrTail ? ` (${observed.stderrTail.trim()})` : ""}`,
+    };
   const r = await git(
     [
       "-C",
       root,
       "fetch",
       "--quiet",
+      "--no-write-fetch-head",
       remote.remote,
-      `+refs/heads/${branch}:${ref}`,
+      commit,
     ],
     {
       stderr: "pipe",
@@ -89,9 +103,10 @@ async function refreshTrackingRef(
     return {
       error: `cannot fetch ${remote.remote}/${branch}, so its current commit is unknown${r.stderrTail ? ` (${r.stderrTail.trim()})` : ""}`,
     };
-  // Pin the observed tip immediately after this fetch.  A later refresh in
-  // this process must not turn this policy read into a different observation.
-  return commitOf(root, ref);
+  // The immutable object named above belongs to this observation. Do not read
+  // the shared tracking ref: another worktree may advance it between fetch and
+  // policy parsing.
+  return commitOf(root, commit);
 }
 
 /**

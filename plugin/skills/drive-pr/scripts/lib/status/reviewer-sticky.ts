@@ -37,6 +37,20 @@ function lastStamp(body: string, markerRe: RegExp): string {
   return sha;
 }
 
+/** Markdown indentation, with tabs advancing to their next four-column stop. */
+function markdownIndentation(line: string): { columns: number; end: number } {
+  let columns = 0;
+  let end = 0;
+  while (end < line.length) {
+    const character = line[end];
+    if (character === " ") columns += 1;
+    else if (character === "\t") columns += 4 - (columns % 4);
+    else break;
+    end += 1;
+  }
+  return { columns, end };
+}
+
 /** The last reviewed-SHA stamp in one sticky body under the configured marker. */
 export function reviewedShaIn(body: string, shaMarker: string): string {
   const markerRe = new RegExp(
@@ -63,17 +77,20 @@ export function reviewerStickyBody(
   let fence: { character: "`" | "~"; length: number } | null = null;
   const structural: string[] = [];
   let structuralMarker = false;
-  let skipDepth = 0;
   for (const line of body.split(/\r?\n/)) {
     // Fenced blocks are structural only at Markdown's permitted indentation.
     // Remember their delimiter length: three backticks inside a four-backtick
     // block are content, not its closing fence.
-    const token = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1] ?? "";
+    const indentation = markdownIndentation(line);
+    const token =
+      indentation.columns <= 3
+        ? (/^\s*(`{3,}|~{3,})/.exec(line)?.[1] ?? "")
+        : "";
     if (fence === null && token !== "") {
       // An opening fence may have an info string immediately after it.  A
       // closing fence, on the other hand, admits whitespace only.
       const rest = line.slice(line.indexOf(token) + token.length);
-      if (!rest.includes(token[0] ?? ""))
+      if (token[0] === "~" || !rest.includes("`"))
         fence = { character: token[0] as "`" | "~", length: token.length };
       continue;
     }
@@ -88,16 +105,8 @@ export function reviewerStickyBody(
       continue;
     }
     const trimmed = line.trimStart();
-    if (fence !== null || /^(?: {4}|\t)/.test(line)) continue;
-    // Skip notices intentionally use blockquoted payload. Keep that payload
-    // for skipNoticeIn, but never let an arbitrary quoted example qualify as
-    // a sticky marker or contribute ordinary protocol evidence.
-    if (/<!--\s*\/?.*skip-notice\s*-->/.test(line)) {
-      skipDepth += /<!--\s*\//.test(line) ? -1 : 1;
-      structural.push(line);
-      continue;
-    }
-    if (/^ {0,3}>/.test(line) && skipDepth <= 0) continue;
+    if (fence !== null || indentation.columns >= 4) continue;
+    if (/^ {0,3}>/.test(line)) continue;
     structural.push(line);
     if (trimmed.startsWith(summaryMarker)) structuralMarker = true;
   }
@@ -107,6 +116,51 @@ export function reviewerStickyBody(
   return reviewerLogin(login) && structuralMarker
     ? structural.join("\n")
     : null;
+}
+
+/**
+ * Complete skip-notice blocks whose delimiters are structural Markdown, while
+ * retaining their deliberately blockquoted payload for the skip decoder.
+ */
+function structuralSkipNotices(body: string, marker: string): string {
+  const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const opener = new RegExp(`^ {0,3}<!--\\s*${escaped}\\s*-->\\s*$`);
+  const closer = new RegExp(`^ {0,3}<!--\\s*/\\s*${escaped}\\s*-->\\s*$`);
+  let fence: { character: "`" | "~"; length: number } | null = null;
+  let open = false;
+  const kept: string[] = [];
+  for (const line of body.split(/\r?\n/)) {
+    const indentation = markdownIndentation(line);
+    const token =
+      indentation.columns <= 3
+        ? (/^\s*(`{3,}|~{3,})/.exec(line)?.[1] ?? "")
+        : "";
+    if (fence === null && token !== "") {
+      const rest = line.slice(line.indexOf(token) + token.length);
+      if (token[0] === "~" || !rest.includes("`"))
+        fence = { character: token[0] as "`" | "~", length: token.length };
+    } else if (
+      fence !== null &&
+      token !== "" &&
+      token[0] === fence.character &&
+      token.length >= fence.length &&
+      /^[ \t]*$/.test(line.slice(line.indexOf(token) + token.length))
+    ) {
+      fence = null;
+    }
+    if (fence !== null || indentation.columns >= 4 || /^ {0,3}>/.test(line)) {
+      if (open) kept.push(line);
+      continue;
+    }
+    if (!open && opener.test(line)) {
+      open = true;
+      kept.push(line);
+    } else if (open) {
+      kept.push(line);
+      if (closer.test(line)) open = false;
+    }
+  }
+  return kept.join("\n");
 }
 
 /** The review stamp and its companion markers from the newest qualifying sticky. */
@@ -127,7 +181,11 @@ export function reviewerStickyIn(
     const body = reviewerStickyBody(raw, reviewerLogin, summaryMarker);
     if (body === null) continue;
     const bodySha = reviewedShaIn(body, shaMarker);
-    const skip = skipNoticeIn(body, skipNoticeMarker);
+    const rawBody = String((raw as Record<string, unknown>).body ?? "");
+    const skip = skipNoticeIn(
+      structuralSkipNotices(rawBody, skipNoticeMarker),
+      skipNoticeMarker,
+    );
     // Only a stamp can replace a stamped sticky. An unstamped comment
     // qualifies as evidence only when it carries a skip notice.
     if (bodySha === "" && (sticky.sha !== "" || skip === null)) continue;
