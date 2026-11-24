@@ -128,8 +128,7 @@ import {
 } from "../reviewer-failure.ts";
 import { forgeLimitStopClass } from "../forge-limit-redrive.ts";
 import { type DriverPresence, driverPresence } from "./silent-driver.ts";
-import { type Adoption, type Author, ownAuthors } from "../adopt.ts";
-import { idleAutomation } from "../automation.ts";
+import { type Adoption, type Author, idleForAdoption } from "../adopt.ts";
 import type { PickupArms } from "../pickup-arms.ts";
 import { unarmed } from "./ledger-arming.ts";
 import { type Admit, type BaseHead, baseHeads, classed } from "./base-heads.ts";
@@ -906,7 +905,7 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
       ...reviewer?.evidence,
       ...request,
       ...(await presenceEvidence(pr.number, ledger, classified, r)),
-      ...idleAutomation(pr, ownAuthors(r.adoption, r.login)),
+      ...idleForAdoption(pr, r.adoption, r.login),
     },
     ...waitingOf(classified, park, pr.author?.login),
     parks: ledgerParks(ledger),

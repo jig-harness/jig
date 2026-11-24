@@ -17,7 +17,9 @@
  * review thread left unresolved. That holds for its adoption and for every
  * re-drive, takeover and re-arm the dispatcher would start of itself; a
  * person's `drive` or `rearm` label still starts one. A healthy one is left
- * for a person to merge. A check cancelled (a run on a superseded head) or
+ * for a person to merge, unless `pull_requests.trusted_automation` lists the
+ * bot that opened it: that one is driven to convergence, so the Ready
+ * predicate can place it. A check cancelled (a run on a superseded head) or
  * waiting for approval is not a failure. A check that failed on the CI
  * service's infrastructure is not told apart here: the drive it starts
  * re-runs such a check rather than repairing code.
@@ -127,11 +129,18 @@ export function checksFail(checks: unknown): boolean | undefined {
   );
 }
 
-/** A pull request a drive's ledger reads: whether it is an automation pull request with no trouble observed, which the dispatcher then starts no drive on of itself; a fact the forge did not give is no trouble observed. */
+/** A pull request a drive's ledger reads: whether it is an automation pull request with no trouble observed, which the dispatcher then starts no drive on of itself; a fact the forge did not give is no trouble observed. A bot `trusted` lists is never idle. */
 export function idleAutomation(
   pr: TroubleFacts & { author?: Author; labels?: readonly string[] },
   own: readonly string[],
+  trusted: readonly string[] = [],
 ): { automationIdle?: true } {
+  if (
+    pr.author !== undefined &&
+    isBot(pr.author) &&
+    trusted.includes(normalLogin(pr.author.login))
+  )
+    return {};
   return isAutomation(pr, own) && troubleOf(pr) === null
     ? { automationIdle: true }
     : {};

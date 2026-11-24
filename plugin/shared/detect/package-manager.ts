@@ -5,6 +5,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { JigError } from "../errors.ts";
+import { LOCKFILE_NAMES, type LockfileName } from "./lockfiles.ts";
 
 export interface PackageManager {
   name: string;
@@ -15,56 +16,52 @@ export interface PackageManager {
   relock: string;
 }
 
+/** Package manager commands for each lockfile in `LOCKFILE_NAMES`. */
+const MANAGER_FOR: Record<
+  LockfileName,
+  (root: string) => Omit<PackageManager, "lockfile">
+> = {
+  "bun.lock": () => ({
+    name: "bun",
+    install: "bun install --frozen-lockfile",
+    relock: "bun install",
+  }),
+  "bun.lockb": () => ({
+    name: "bun",
+    install: "bun install --frozen-lockfile",
+    relock: "bun install",
+  }),
+  "pnpm-lock.yaml": () => ({
+    name: "pnpm",
+    install: "pnpm install --frozen-lockfile",
+    relock: "pnpm install",
+  }),
+  // Yarn 2 and later keep their settings in .yarnrc.yml and renamed the
+  // frozen-install flag.
+  "yarn.lock": (root) => ({
+    name: "yarn",
+    install: existsSync(join(root, ".yarnrc.yml"))
+      ? "yarn install --immutable"
+      : "yarn install --frozen-lockfile",
+    relock: "yarn install",
+  }),
+  "package-lock.json": () => ({
+    name: "npm",
+    install: "npm ci",
+    relock: "npm install",
+  }),
+  "npm-shrinkwrap.json": () => ({
+    name: "npm",
+    install: "npm ci",
+    relock: "npm install",
+  }),
+};
+
 /** Lockfiles in the order they are checked; the first present one wins. */
 const LOCKFILES: [
-  string,
+  LockfileName,
   (root: string) => Omit<PackageManager, "lockfile">,
-][] = [
-  [
-    "bun.lock",
-    () => ({
-      name: "bun",
-      install: "bun install --frozen-lockfile",
-      relock: "bun install",
-    }),
-  ],
-  [
-    "bun.lockb",
-    () => ({
-      name: "bun",
-      install: "bun install --frozen-lockfile",
-      relock: "bun install",
-    }),
-  ],
-  [
-    "pnpm-lock.yaml",
-    () => ({
-      name: "pnpm",
-      install: "pnpm install --frozen-lockfile",
-      relock: "pnpm install",
-    }),
-  ],
-  [
-    "yarn.lock",
-    // Yarn 2 and later keep their settings in .yarnrc.yml and renamed the
-    // frozen-install flag.
-    (root) => ({
-      name: "yarn",
-      install: existsSync(join(root, ".yarnrc.yml"))
-        ? "yarn install --immutable"
-        : "yarn install --frozen-lockfile",
-      relock: "yarn install",
-    }),
-  ],
-  [
-    "package-lock.json",
-    () => ({ name: "npm", install: "npm ci", relock: "npm install" }),
-  ],
-  [
-    "npm-shrinkwrap.json",
-    () => ({ name: "npm", install: "npm ci", relock: "npm install" }),
-  ],
-];
+][] = LOCKFILE_NAMES.map((name) => [name, MANAGER_FOR[name]]);
 
 /**
  * The package manager `package.json` declares in its `packageManager` field

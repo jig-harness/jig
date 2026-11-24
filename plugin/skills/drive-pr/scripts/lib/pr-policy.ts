@@ -96,6 +96,8 @@ export const KNOWN_KEYS = [
   "title_pattern",
   "base_rules",
   "commit_prefix",
+  // Read by the Ready predicate's callers (`trusted-automation.ts`), not here.
+  "trusted_automation",
 ] as const;
 
 function oneOf<T extends string>(

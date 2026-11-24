@@ -6,27 +6,47 @@
  * is still required"; anywhere else it refuses with the predicate's words.
  *
  * The repository's rules are the drive's own (`overlay.ts`), so the review
- * witness is the reviewer app and check the drive's convergence matched.
+ * witness is the reviewer app and check the drive's convergence matched;
+ * except the trusted automation list, which is read from the default
+ * branch's configuration in the same query as the facts, never from the
+ * pull request's own copy, which could otherwise list its own author.
  */
 import { isRecord } from "../../../../shared/guards.ts";
 import { reconcileWording } from "./announce-wording.ts";
 import { withdrawAnnouncement } from "./announce.ts";
 import { readMergeFacts } from "./merge-facts.ts";
 import {
+  checkPattern,
   type ForgeFacts,
   type Lane,
   type Readiness,
   type ReadyRules,
   readiness,
 } from "./merge-ready.ts";
-import { failed, ok, type Outcome } from "../../../../shared/outcome.ts";
+import { parseConfigText } from "../../../../shared/config-layers.ts";
+import {
+  attempt,
+  failed,
+  ok,
+  type Outcome,
+} from "../../../../shared/outcome.ts";
 import {
   ciHoldLabelSetting,
+  defaultReviewerCheckFor,
   readOptionalOverlay,
   reviewerApp,
 } from "./overlay.ts";
 import { ghCallTimeoutSeconds } from "./proc.ts";
 import { REVIEWER_CHECK } from "./status/evidence.ts";
+import {
+  type TrustedList,
+  trustedAutomationOf,
+  trustedEntryFor,
+} from "./trusted-automation.ts";
+import {
+  type AutomationCache,
+  automationFor,
+} from "./trusted-automation-read.ts";
 
 /** What the predicate says of the announced head: `rc` `0` with its lane, `4` placed elsewhere, `1` unread. */
 export interface AnnounceReady {
@@ -45,16 +65,96 @@ export function driveRules(): ReadyRules {
   };
 }
 
-/** PR `pr`'s facts, read live, or why they did not read. */
+/** The default branch's configuration as values; `null` when it is absent or does not read. */
+function defaultBranchValues(
+  config: string | null | undefined,
+): Record<string, unknown> | null {
+  if (typeof config !== "string") return null;
+  const values = attempt("invalid", "unparsed", () =>
+    parseConfigText(config, ".config/jig.yaml"),
+  );
+  return values.ok ? values.value : null;
+}
+
+/** A nested non-empty string of the default branch's configuration, `null` when absent. */
+function stringAt(
+  values: Record<string, unknown> | null,
+  section: string,
+  key: string,
+): string | null {
+  const nested = values !== null ? values[section] : undefined;
+  const v = isRecord(nested) ? nested[key] : undefined;
+  // The value is kept as written, as the board keeps it, so a quoted
+  // pattern with a deliberate space reads the same in both.
+  return typeof v === "string" && v.trim() !== "" ? v : null;
+}
+
+/** The reviewer app the default branch's configuration names; `null` when it names none or does not read. */
+export function reviewerAppFromDefaultBranch(
+  config: string | null | undefined,
+): string | null {
+  return stringAt(defaultBranchValues(config), "review", "reviewer_app");
+}
+
+/**
+ * The rules a listed bot's pull request is placed under, all from the default
+ * branch's configuration as the board reads them: the reviewer app with its
+ * check pattern (or that app's default), the CI hold label, and the dispatch
+ * hold label.
+ */
+function defaultBranchRules(config: string | null | undefined): {
+  rules: ReadyRules;
+  hold: string;
+} {
+  const values = defaultBranchValues(config);
+  const app = stringAt(values, "review", "reviewer_app");
+  const labels = labelsSection(values?.dispatch);
+  return {
+    rules: {
+      reviewerApp: app,
+      reviewerCheck: checkPattern(
+        stringAt(values, "review", "reviewer_check_pattern") ??
+          defaultReviewerCheckFor(app),
+      ),
+      ciHoldLabel: stringAt(values, "ci", "hold_label"),
+    },
+    hold: labels?.enabled === true ? `${prefixOf(labels)}hold` : "",
+  };
+}
+
+/** The trusted automation list of the default branch's configuration text; one that does not read trusts nobody, with why. */
+export function trustedFromDefaultBranch(
+  config: string | null | undefined,
+): TrustedList {
+  if (config === undefined)
+    return failed(
+      "invalid",
+      "the default branch's configuration did not read whole, so pull_requests.trusted_automation is not known",
+    );
+  if (config === null) return ok([]);
+  const values = attempt(
+    "invalid",
+    "the default branch's configuration does not parse, so pull_requests.trusted_automation is not known",
+    () => parseConfigText(config, ".config/jig.yaml"),
+  );
+  return values.ok ? trustedAutomationOf(values.value) : values;
+}
+
+/** PR `pr`'s facts, read live, with the default branch's configuration text, or why they did not read. */
 async function liveFacts(
   pr: number,
-): Promise<Outcome<ForgeFacts, "unreadable">> {
+): Promise<
+  Outcome<
+    { facts: ForgeFacts; config: string | null | undefined },
+    "unreadable"
+  >
+> {
   const read = await readMergeFacts(null, [pr], ghCallTimeoutSeconds());
   if (!read.ok) return read;
   const facts = read.value.pulls.get(pr);
   return facts === undefined
     ? failed("unreadable", "the forge did not give this pull request")
-    : ok(facts);
+    : ok({ facts, config: read.value.config });
 }
 
 /** The predicate's placement as the announcement's exit: `0` in merge now or approve first, `1` where it was, `4` elsewhere. */
@@ -63,30 +163,73 @@ function rcOf(answer: Readiness): AnnounceReady["rc"] {
   return answer.place === "stay" ? 1 : 4;
 }
 
+/** The run's kept commit and file reads: a recheck of the same head and base commit reuses them. */
+const runReads = new Map<string, unknown>();
+const runCache: AutomationCache = {
+  get: <T>(key: string) => (runReads.get(key) ?? null) as T | null,
+  set: (key, value) => void runReads.set(key, value),
+};
+
 /** Ask the predicate about PR `pr` at `head`, read live from the forge. */
 export async function announceReady(
   pr: string,
   head: string,
   reviewCarriedFrom?: string,
 ): Promise<AnnounceReady> {
-  const facts = await liveFacts(Number(pr));
-  if (!facts.ok)
+  const live = await liveFacts(Number(pr));
+  if (!live.ok)
     return {
       rc: 1,
       lane: null,
-      says: `the forge's merge facts did not read: ${facts.failure.reason}`,
+      says: `the forge's merge facts did not read: ${live.failure.reason}`,
     };
-  const hold = holdLabel();
+  const { facts, config } = live.value;
+  const trusted = trustedFromDefaultBranch(config);
+  // What authorizes the exception for a listed bot comes from the default
+  // branch alone, so a pull request's own configuration cannot name the
+  // reviewer app, its check, or the hold labels that stand in for a person's
+  // approval or its absence.
+  const listed =
+    trusted.ok && trustedEntryFor(facts.author, trusted.value) !== null;
+  // A malformed pattern is an unread rule, as it is on the board.
+  const baseRead = listed
+    ? attempt("unreadable", "the default branch's rules are invalid", () =>
+        defaultBranchRules(config),
+      )
+    : null;
+  // The default branch's configuration was read, so an invalid pattern is
+  // confirmed policy loss, not a transient failure: it moves the lane off
+  // merge now (exit 4) so a standing announcement is withdrawn.
+  if (baseRead !== null && !baseRead.ok)
+    return {
+      rc: 4,
+      lane: null,
+      says: `the default branch's review rules do not read: ${baseRead.failure.reason}`,
+    };
+  const base = baseRead?.value ?? null;
+  const hold = base?.hold ?? holdLabel();
+  const rules: ReadyRules = {
+    ...(base?.rules ?? driveRules()),
+    trustedAutomation: trusted,
+  };
+  const automation = await automationFor(
+    null,
+    facts,
+    rules,
+    ghCallTimeoutSeconds(),
+    runCache,
+  );
   const answer = readiness(
     {
-      ...facts.value,
+      ...facts,
       slug: "",
       converged: true,
       verifiedSha: head,
       ...(reviewCarriedFrom === undefined ? {} : { reviewCarriedFrom }),
-      held: facts.value.labels.includes(hold),
+      held: facts.labels.includes(hold),
+      ...(automation === undefined ? {} : { automation }),
     },
-    driveRules(),
+    rules,
   );
   return { rc: rcOf(answer), lane: answer.lane, says: answer.says };
 }
