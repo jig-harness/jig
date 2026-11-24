@@ -234,7 +234,7 @@ export function actionableParkKeys(
         parked.reversals.has(key) ||
         !parked.threads.has(key),
     )
-    .sort();
+    .sort((a, b) => a.localeCompare(b));
 }
 
 /** The first comment a person wrote after a thread's last provisional reply. */
