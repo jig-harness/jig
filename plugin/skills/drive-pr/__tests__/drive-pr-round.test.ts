@@ -1635,8 +1635,8 @@ describe("summary-findings marker overrides", () => {
              { id: 10, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- ai-review-round: 2 -->' },
            ], false)?.id,
            acknowledgementSelected: m.reviewerSticky([
-             { id: 13, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n- \`a.ts\` — finding' },
-             { id: 14, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\nacknowledged' },
+             { id: 13, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 1 -->\\n- \`a.ts\` — finding' },
+             { id: 14, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 1 -->\\nacknowledged' },
            ], false)?.id,
            ignoresExamples: s.reviewerStickyBody(
              { user: { login: 'reviewer[bot]' }, body: '> <!-- other-review -->\\n\`\`\`\\n<!-- other-review -->\\n\`\`\`\\n    <!-- other-review -->' },
@@ -1673,8 +1673,8 @@ describe("summary-findings marker overrides", () => {
     expect(got.skipSelected).toBe(11);
     expect(got.declaredSelected).toBe(8);
     expect(got.newerRoundSelected).toBe(10);
-    // A stamp-only acknowledgement is not evidence of a distinct review, so
-    // it cannot erase the preceding finding-bearing summary.
+    // A stamp-only acknowledgement is not evidence of a distinct review, even
+    // when it repeats the summary's round, so it cannot erase that summary.
     expect(got.acknowledgementSelected).toBe(13);
     expect(got.ignoresExamples).toBeNull();
     // And the reviewed SHA is actually extracted under the custom name — it
