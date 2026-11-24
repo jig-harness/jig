@@ -205,9 +205,28 @@ describe("resolving a credential reference", () => {
     expect(masked).toContain("<redacted>");
   });
 
+  it("remembers a complete failed-output value even when its marker-separated fragments are short", async () => {
+    const opaque = "prefix<redacted>suffix";
+    await resolveCredential(
+      command(
+        `process.stdout.write(${JSON.stringify(opaque)}); process.exit(1)`,
+      ),
+      "ref",
+      process.env,
+    );
+    expect(maskCredentials(`value ${opaque}`, "[masked]")).toBe(
+      "value [masked]",
+    );
+    expect(maskCredentials("<redacted>", "[masked]")).toBe("<redacted>");
+  });
+
   it("is unreachable when the command does not answer in time", async () => {
+    const printed = "timed-out-secret-1234";
     const value = await resolveCredential(
-      command("await Bun.sleep(10_000)", 1000),
+      command(
+        `process.stdout.write(${JSON.stringify(printed)}); await Bun.sleep(10_000)`,
+        1000,
+      ),
       "op://a/b/c",
       process.env,
     );
@@ -215,6 +234,9 @@ describe("resolving a credential reference", () => {
       ok: false,
       failure: { code: "unreachable" },
     });
+    expect(maskCredentials(`value ${printed}`, "[masked]")).toBe(
+      "value [masked]",
+    );
   });
 });
 

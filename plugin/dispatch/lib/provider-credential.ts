@@ -52,6 +52,10 @@ const LONGEST_VALUE = 4096;
  */
 function learnPrinted(stdout: string): void {
   for (const part of [stdout.trim(), ...stdout.split(/\r?\n/)]) {
+    // Keep the full failed line as an exact mask too. Splitting alone loses a
+    // credential whose pieces either side of a replacement marker are too
+    // short to be maskable on their own.
+    if (part !== "" && canRememberWholeFailedLine(part)) rememberSecret(part);
     // Keep the marker emitted by a sink recognizable, but remember every
     // maskable opaque fragment around it. A failed command can print a real
     // credential beside a replacement marker on the same line.
@@ -69,7 +73,27 @@ function escapeRegExp(value: string): string {
 }
 
 /** The replacement texts the sinks emit, in lowercase and matched exactly. */
-const MARKERS = ["<redacted>", "[redacted]", "[launch token]", TRUNCATED_LINE];
+const MARKERS = [
+  "<redacted>",
+  "[redacted]",
+  "[launch token]",
+  TRUNCATED_LINE,
+  OMITTED_LINE_TEXT,
+];
+
+/** Whether a value is itself a sink replacement rather than opaque output. */
+function isReplacementMarker(value: string): boolean {
+  return MARKERS.includes(value);
+}
+
+/** Whether a failed-output line can be remembered as one exact opaque value. */
+function canRememberWholeFailedLine(value: string): boolean {
+  return (
+    !isReplacementMarker(value) &&
+    (!collidesWithMarker(value) ||
+      MARKERS.some((marker) => value.includes(marker)))
+  );
+}
 
 /**
  * Whether `value` is part of a sink's replacement text, or contains one:
@@ -77,10 +101,8 @@ const MARKERS = ["<redacted>", "[redacted]", "[launch token]", TRUNCATED_LINE];
  * Both directions are compared case-sensitively, as the sinks match.
  */
 function collidesWithMarker(value: string): boolean {
-  return (
-    OMITTED_LINE_TEXT.includes(value) ||
-    value.includes(OMITTED_LINE_TEXT) ||
-    MARKERS.some((marker) => marker.includes(value) || value.includes(marker))
+  return MARKERS.some(
+    (marker) => marker.includes(value) || value.includes(marker),
   );
 }
 
@@ -120,11 +142,13 @@ export async function resolveCredential(
       "the credential command printed a value over 4 KiB",
     );
   }
-  if (done.timedOut)
+  if (done.timedOut) {
+    learnPrinted(done.stdout);
     return failed(
       "unreachable",
       `the credential command did not answer within ${timeoutSec}s; a later tick tries again`,
     );
+  }
   if (done.code !== 0) {
     learnPrinted(done.stdout);
     return failed(
@@ -132,11 +156,13 @@ export async function resolveCredential(
       `the credential command ${done.spawnFailed === true ? "could not start" : `exited ${done.code}`}; its error output is not recorded`,
     );
   }
-  if (done.groupSurvived === true)
+  if (done.groupSurvived === true) {
+    learnPrinted(done.stdout);
     return failed(
       "unauthorized",
       "the credential command left a background process running; it was stopped, and its value is not used",
     );
+  }
   const value = done.stdout.replace(/\r?\n$/, "");
   if (value === "")
     return failed("unauthorized", "the credential command printed no value");
