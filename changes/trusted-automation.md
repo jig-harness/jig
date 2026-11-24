@@ -24,12 +24,15 @@ release: minor
   pull request. Only the textual patch is read, so the operator reviews
   what it cannot see: file modes are not compared, top-level dependency
   section names and keys must be unique because a duplicate's effective
-  value cannot be determined, and a moved or copied manifest's whole
-  destination needs its own review since unchanged fields such as
-  `packageManager` can change their effect at the new location. Two-space
-  and one-tab layouts are supported; a layout whose root dependency section
-  opener reads as nested (such as four-space indentation) withholds the
-  exception, which does not by itself decide the pull request's placement.
+  value cannot be determined, and a moved or copied manifest needs review of
+  the effective install configuration at both locations and of the
+  destination's whole contents, since unchanged fields such as
+  `packageManager` can change their effect and a moved manifest or lockfile
+  can change the installer at either end. Two-space and one-tab layouts are
+  supported; a layout whose root dependency section opener reads as nested
+  (such as four-space indentation), or unchanged context outside the
+  patch grammar (such as an inline array), withholds the exception, which
+  does not by itself decide the pull request's placement.
   A rename or copy the forge reports to a
   recognized lockfile needs a recognized lockfile name at its original
   path; a copy the forge reports as a plain addition has no original name

@@ -402,15 +402,21 @@ protection) still decide its lane:
      at the manifest's own indentation. Two-space and one-tab layouts are
      supported; a layout whose opener reads as nested (three or more
      leading spaces, such as four-space indentation) withholds the
-     exception.
+     exception, and so does unchanged hunk context outside the patch
+     grammar the classifier reads (such as an inline array,
+     `"files": ["dist"],`).
    - It judges a moved or copied manifest by the patch alone, so review the
-     destination's whole contents separately: unchanged fields such as
+     effective install configuration at both locations, and the
+     destination's whole contents: unchanged fields such as
      `packageManager` can change their effect at the new location (a
      manifest moved to the repository root can start to govern root
-     lockfile selection).
+     lockfile selection), moving a manifest away can remove the preference
+     from its former directory, and moving a recognized lockfile can change
+     the selected installer at either end.
    - A withheld exception changes only the exception; a qualifying approval
-     can still allow merge now, and a behind branch or another blocker
-     still places the pull request as update next or Needs you.
+     can still allow merge now, and the ordinary placement rules still
+     apply to a behind branch or another blocker (update next, Needs you,
+     Coming, or staying where it is while a required check runs).
 
 For trusted automation the review of the head must
 still be witnessed by the reviewer app's check run, so where
