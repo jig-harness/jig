@@ -189,6 +189,15 @@ describe("jig dispatch --apply re-drives a stall and a spent CI-repair budget", 
     const ledger = (generation: number) =>
       stop(exit, generation, {
         driver: { ...stoppedLedger(7, exit).driver, probe },
+        events: [
+          {
+            at: new Date().toISOString(),
+            round: generation,
+            kind: "stop",
+            cause: String(exit),
+            leftWork: false,
+          },
+        ],
       });
     const { w } = fixture({ mergeable: "CONFLICTING" }, () => ledger(3));
     writeFileSync(

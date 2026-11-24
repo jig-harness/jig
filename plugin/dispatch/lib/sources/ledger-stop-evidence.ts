@@ -51,8 +51,8 @@ export function stopEvidence(
 
 /**
  * Whether a mechanical stop's re-drive must run in the tree it stopped in: a
- * stall or listing stop that left work there or never measured it, and a pass
- * deadline or a status probe read failure whose stop measured work left.
+ * stall, listing or status probe read stop that left work there or never
+ * measured it, and a pass deadline whose stop measured work left.
  */
 export function boundToTree(
   kind: NonNullable<StaleCause["mechanicalStop"]>,
@@ -60,11 +60,7 @@ export function boundToTree(
   last: ReturnType<typeof lastStopEvent>,
 ): boolean {
   const own = last === undefined || last.cause === String(exit);
-  if (kind === "stall" || kind === "check-runs")
+  if (kind === "stall" || kind === "check-runs" || kind === "probe-read")
     return own && last?.leftWork !== false;
-  return (
-    (kind === "deadline" || kind === "probe-read") &&
-    own &&
-    last?.leftWork === true
-  );
+  return kind === "deadline" && own && last?.leftWork === true;
 }

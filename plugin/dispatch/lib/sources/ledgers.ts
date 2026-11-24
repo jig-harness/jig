@@ -546,7 +546,8 @@ function ledgerEvidence(
     ...stopEvidence(
       ledger,
       forge,
-      MECHANICAL_STOPS.has(ledger.driver.exit ?? Number.NaN),
+      MECHANICAL_STOPS.has(ledger.driver.exit ?? Number.NaN) ||
+        stoppedOnProbeRead(ledger),
     ),
     driverActor: ledger.driver.actor,
     driverClone: ledger.driver.clone,

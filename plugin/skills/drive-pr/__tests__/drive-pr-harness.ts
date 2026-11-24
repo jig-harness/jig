@@ -2684,8 +2684,7 @@ export async function probeIn(
     pr?: string;
   } = {},
 ): Promise<ProbeResult> {
-  const argv = scriptArgv(
-    join(SCRIPTS, "drive-status.ts"),
+  const args = [
     opts.pr ?? "999",
     "--json",
     ...(opts.once === false ? [] : ["--once"]),
@@ -2710,15 +2709,12 @@ export async function probeIn(
     "--head",
     head,
     ...extraArgs,
-  );
-  if (opts.preload !== undefined)
-    argv.splice(
-      0,
-      process.platform === "win32" ? 1 : 0,
-      process.execPath,
-      "--preload",
-      opts.preload,
-    );
+  ];
+  const script = join(SCRIPTS, "drive-status.ts");
+  const argv =
+    opts.preload === undefined
+      ? scriptArgv(script, ...args)
+      : [process.execPath, "--preload", opts.preload, script, ...args];
   const proc = Bun.spawn(argv, {
     env: {
       ...gitCleanEnv(),
