@@ -37,6 +37,15 @@ function lastStamp(body: string, markerRe: RegExp): string {
   return sha;
 }
 
+/** The last reviewed-SHA stamp in one sticky body under the configured marker. */
+export function reviewedShaIn(body: string, shaMarker: string): string {
+  const markerRe = new RegExp(
+    `<!--\\s*${shaMarker.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}:\\s*([0-9a-f]{7,40})\\s*-->`,
+    "g",
+  );
+  return lastStamp(body, markerRe);
+}
+
 /** A comment's body when the reviewer wrote it as its sticky summary, else `null`. */
 export function reviewerStickyBody(
   raw: unknown,

@@ -1612,6 +1612,11 @@ describe("summary-findings marker overrides", () => {
              { id: 1, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n- custom-marker finding' },
              { id: 2, user: { login: 'reviewer[bot]' }, body: '<!-- ai-code-review -->\\n- default-marker finding' },
            ], false)?.id,
+           unstampedSelected: m.reviewerSticky([
+             { id: 3, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom-sha: abc1234 -->' },
+             { id: 4, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n- unanchored finding' },
+           ], false)?.id,
+           latestStamp: m.reviewedShaFrom('<!-- custom-sha: abc1234 -->\\n<!-- custom-sha: def5678 -->'),
          }));`,
       ],
       {
@@ -1635,11 +1640,13 @@ describe("summary-findings marker overrides", () => {
     expect(got.defaultSha).toBe("ai-reviewed-sha");
     expect(got.sticky).toBe("<!-- other-review -->");
     expect(got.selected).toBe(1);
+    expect(got.unstampedSelected).toBe(4);
     // And the reviewed SHA is actually extracted under the custom name — it
     // scopes the unaccounted-slot keys, so failing to read it degrades every
     // slot to the shared `nohead` scope, where an answer given on one head
     // marks a different finding addressed on the next.
     expect(got.parsed).toBe("abc1234");
+    expect(got.latestStamp).toBe("def5678");
   });
 });
 

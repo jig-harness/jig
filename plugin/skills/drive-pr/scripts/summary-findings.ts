@@ -82,8 +82,8 @@ import { reviewsBy } from "./lib/status/review-object.ts";
 import {
   parseReviewRound,
   reviewerStickyBody,
+  reviewedShaIn,
 } from "./lib/status/reviewer-sticky.ts";
-import { skipNoticeIn } from "./lib/status/skip-notice.ts";
 import {
   headerOf,
   SEVERITY_FIELD,
@@ -156,10 +156,7 @@ export const SHA_MARKER = DEFAULT_REVIEWED_SHA_MARKER;
 
 /** Extract the reviewed SHA the reviewer stamped, under whatever marker name. */
 export function reviewedShaFrom(body: string): string | undefined {
-  const re = new RegExp(
-    `<!--\\s*${reviewedShaMarker().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:\\s*([0-9a-f]{7,40})\\s*-->`,
-  );
-  return body.match(re)?.[1];
+  return reviewedShaIn(body, reviewedShaMarker()) || undefined;
 }
 
 /**
@@ -1332,23 +1329,14 @@ export function reviewerSticky(
   configuredOnly: boolean,
 ): IssueComment | undefined {
   if (configuredOnly && !reviewerExpected()) return undefined;
-  // Keep the summary source aligned with status evidence.  In particular, a
-  // later auxiliary comment with only the visible sticky marker must not hide
-  // the stamped sticky and its unaddressed summary findings.
+  // Summary discovery deliberately differs from status evidence: a genuine
+  // unstamped sticky can carry findings while status uses its check-run
+  // fallback. Select the newest structural sticky, never an auxiliary reply.
   let selected: IssueComment | undefined;
-  let selectedHasStamp = false;
-  const stamp = new RegExp(
-    `<!--\\s*${reviewedShaMarker().replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}:\\s*[0-9a-f]{7,40}\\s*-->`,
-    "i",
-  );
   for (const comment of comments) {
     const body = reviewerStickyBody(comment, isReviewerLogin, stickyMarker());
     if (body === null) continue;
-    const hasStamp = stamp.test(body);
-    const hasSkip = skipNoticeIn(body) !== null;
-    if (!hasStamp && (selectedHasStamp || !hasSkip)) continue;
     selected = comment;
-    selectedHasStamp = hasStamp;
   }
   return selected;
 }
