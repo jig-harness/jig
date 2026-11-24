@@ -18,6 +18,7 @@ const ENV_KEYS = [
   "DRIVE_PR_CLAUDE_PROJECTS_DIR",
   "DRIVE_PR_CODEX_SESSIONS_DIR",
   "DRIVE_PR_QUOTA_MAX_SCAN_MS",
+  "DRIVE_PR_WORKTREE",
 ] as const;
 
 let root: string;
@@ -34,6 +35,10 @@ beforeEach(() => {
   process.env.DRIVE_PR_CLAUDE_PROJECTS_DIR = join(root, "claude");
   process.env.DRIVE_PR_CODEX_SESSIONS_DIR = join(root, "codex");
   process.env.DRIVE_PR_QUOTA_MAX_SCAN_MS = "0";
+  // The failure report probes the tree the pass left; point it at an empty
+  // scratch directory so the host's checkout never decides the outcome.
+  mkdirSync(join(root, "tree"), { recursive: true });
+  process.env.DRIVE_PR_WORKTREE = join(root, "tree");
   driverRuntime.quotaScanTruncated = [];
 });
 
