@@ -17,6 +17,7 @@ const CWD = "/Users/dev/workspaces/proj/alpha";
 const ENV_KEYS = [
   "DRIVE_PR_CLAUDE_PROJECTS_DIR",
   "DRIVE_PR_QUOTA_MAX_SCAN_MS",
+  "DRIVE_PR_QUOTA_MAX_LOOKUP_MS",
 ] as const;
 
 let root: string;
@@ -27,6 +28,7 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "drive-pr-quota-weekly-"));
   process.env.DRIVE_PR_CLAUDE_PROJECTS_DIR = join(root, "claude");
   delete process.env.DRIVE_PR_QUOTA_MAX_SCAN_MS;
+  delete process.env.DRIVE_PR_QUOTA_MAX_LOOKUP_MS;
 });
 
 afterEach(() => {
@@ -241,6 +243,81 @@ describe("claude adapter: the weekly notice", () => {
           onScanTruncated: (vendor) => truncated.push(vendor),
         }),
       ).toBeNull();
+    } finally {
+      console.error = realError;
+    }
+    expect(truncated).toEqual(["claude"]);
+  });
+
+  it("prefers the weekly notice over a session-limit notice in the same record", () => {
+    const SHORT = "You've hit your session limit · resets 3:20am (UTC)";
+    for (const order of [
+      [SHORT, WEEKLY],
+      [WEEKLY, SHORT],
+    ]) {
+      writeClaude("s.jsonl", [
+        JSON.stringify({
+          type: "assistant",
+          cwd: CWD,
+          timestamp: AT,
+          error: "rate_limit",
+          isApiErrorMessage: true,
+          apiErrorStatus: 429,
+          message: {
+            content: order.map((text) => ({ type: "text", text })),
+          },
+        }),
+      ]);
+      const b = claudeAdapter.detect({ cwd: CWD, since: W_SINCE, now: W_NOW });
+      expect(b?.window).toBe("weekly");
+    }
+  });
+
+  it("reports the cut-short walk when the by-name lookup reaches its own bound", () => {
+    const sid = "5d9b3a21-0c5e-4f7b-9d2a-1e3f5c7b9d21";
+    writeClaude(`${sid}.jsonl`, [
+      JSON.stringify({ type: "user", sessionId: sid, timestamp: AT }),
+    ]);
+    process.env.DRIVE_PR_QUOTA_MAX_SCAN_MS = "0";
+    process.env.DRIVE_PR_QUOTA_MAX_LOOKUP_MS = "0";
+    const truncated: string[] = [];
+    const realError = console.error;
+    console.error = () => {
+      // The truncation line is expected here; keep the output quiet.
+    };
+    try {
+      claudeAdapter.detect({
+        cwd: CWD,
+        since: W_SINCE,
+        now: W_NOW,
+        correlation: { vendor: "claude", sessionId: sid },
+        onScanTruncated: (vendor) => truncated.push(vendor),
+      });
+    } finally {
+      console.error = realError;
+    }
+    expect(truncated).toEqual(["claude"]);
+  });
+
+  it("reports the cut-short walk when the session's transcript is larger than the tail read", () => {
+    const sid = "6e0c4b32-1d6f-4a8c-8e3b-2f4a6d8c0e32";
+    const dir = join(root, "claude", "-Users-dev-workspaces-proj-alpha");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `${sid}.jsonl`), "x".repeat(9 * 1024 * 1024));
+    process.env.DRIVE_PR_QUOTA_MAX_SCAN_MS = "0";
+    const truncated: string[] = [];
+    const realError = console.error;
+    console.error = () => {
+      // The truncation line is expected here; keep the output quiet.
+    };
+    try {
+      claudeAdapter.detect({
+        cwd: CWD,
+        since: W_SINCE,
+        now: new Temporal.Instant(BigInt(Date.now() + 120_000) * 1_000_000n),
+        correlation: { vendor: "claude", sessionId: sid },
+        onScanTruncated: (vendor) => truncated.push(vendor),
+      });
     } finally {
       console.error = realError;
     }

@@ -34,7 +34,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { existsSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import {
@@ -44,6 +44,7 @@ import {
   forEachDirEntry,
   isConfirmedAbsence,
   MAX_CANDIDATE_FILES_SCANNED,
+  MAX_TRANSCRIPT_READ_BYTES,
   detectionTimeBounds,
   maxCandidateScanMs,
   type PreparedSpawn,
@@ -102,86 +103,148 @@ interface Notice {
 }
 
 /**
- * The first block of `blocks` that is a whole recognised notice, read at the
- * record's instant `at`; `null` when none is. Only that block's own reset
- * clause is ever trusted.
+ * The most restrictive whole recognised notice among `blocks`, read at the
+ * record's instant `at`; `null` when none is. A weekly notice outranks one
+ * whose reset cannot be trusted (`unknown`), which outranks a session limit,
+ * so a short notice never hides a longer wall in the same record. Only the
+ * chosen block's own reset clause is ever trusted.
  */
 function recognisedNotice(
   blocks: readonly string[],
   at: Temporal.Instant,
 ): Notice | null {
+  const rank = { short: 0, unknown: 1, weekly: 2 } as const;
+  let best: Notice | null = null;
   for (const block of blocks) {
+    let notice: Notice | null = null;
     if (SESSION_LIMIT_NOTICE_RE.test(block)) {
-      return {
+      notice = {
         window: "short",
         label: "session limit",
         reset: parseResetClause(block, at)?.at ?? null,
         clause: matchResetClauseText(block),
       };
-    }
-    if (WEEKLY_LIMIT_NOTICE_RE.test(block)) {
+    } else if (WEEKLY_LIMIT_NOTICE_RE.test(block)) {
       const reset = parseDatedResetClause(block, at)?.at ?? null;
       const plausible =
         reset !== null &&
         reset.epochMilliseconds - at.epochMilliseconds <= WEEKLY_RESET_MAX_MS;
-      return {
+      notice = {
         window: plausible ? "weekly" : "unknown",
         label: "weekly limit",
         reset: plausible ? reset : null,
         clause: matchDatedResetClauseText(block),
       };
     }
+    if (
+      notice !== null &&
+      (best === null || rank[notice.window] > rank[best.window])
+    )
+      best = notice;
   }
-  return null;
+  return best;
 }
 
 /** What reading one session's transcripts by name found. */
 interface SessionLookup {
   /** Its transcripts changed since the pass started. */
   files: string[];
+  /** The subset of `files` the lookup found by name. */
+  own: ReadonlySet<string>;
   /**
    * Whether the session's own transcript was found and every listing and
-   * file read in the lookup completed: then the walk's truncation hides
-   * nothing of this pass.
+   * file stat in the lookup completed within its bounds, and no file is
+   * larger than the tail the detection reads: then the walk's truncation
+   * hides nothing of this pass. The detection loop still clears it when a
+   * file it reads from `own` fails to read.
    */
   read: boolean;
+}
+
+/**
+ * The wall-clock bound of the by-name lookup, in milliseconds: its own
+ * dial (`DRIVE_PR_QUOTA_MAX_LOOKUP_MS`), apart from the walk's, since the
+ * lookup is the cheaper read that must still finish when the walk does not.
+ */
+function maxLookupMs(): number {
+  const raw = Number(process.env.DRIVE_PR_QUOTA_MAX_LOOKUP_MS);
+  return Number.isFinite(raw) &&
+    raw >= 0 &&
+    process.env.DRIVE_PR_QUOTA_MAX_LOOKUP_MS !== ""
+    ? raw
+    : 5000;
 }
 
 /**
  * The transcripts of session `sessionId` changed since `sinceMs`, read
  * without walking the tree: `<project>/<sessionId>.jsonl` and the subagent
  * transcripts under `<project>/<sessionId>/subagents/`, for every project
- * directory. Only the top level is listed, so the size of the rest of the
- * tree costs nothing and no walk bound applies. The file name only narrows
- * where to look: every record read is still matched on its own `sessionId`.
- * A file that vanished is absent; any other failure to read one leaves the
- * lookup incomplete, as it leaves the walk truncated.
+ * directory. Only the top level is listed and the entry and time budgets
+ * of the walk bound it. The file name only narrows where to look: every
+ * record read is still matched on its own `sessionId`. A file that vanished
+ * is absent; any other failure to read one, a bound reached or a file
+ * larger than the detection's tail leaves the lookup incomplete.
  */
 function sessionFiles(sessionId: string, sinceMs: number): SessionLookup {
   // A session id names a file; one that could name a path is not read.
-  if (!/^[A-Za-z0-9_-]+$/.test(sessionId)) return { files: [], read: false };
+  if (!/^[A-Za-z0-9_-]+$/.test(sessionId))
+    return { files: [], own: new Set(), read: false };
   const root = projectsRoot();
   const files: string[] = [];
   let found = false;
   let complete = true;
+  let scanned = 0;
+  const deadlineAt = currentMs() + maxLookupMs();
+  const exceeded = (): boolean => {
+    if (
+      scanBudgetExceeded(
+        scanned,
+        MAX_CANDIDATE_FILES_SCANNED,
+        deadlineAt,
+        currentMs(),
+      )
+    ) {
+      complete = false;
+      return true;
+    }
+    scanned++;
+    return false;
+  };
+  // Whether `path` exists, with any failure but a confirmed absence
+  // leaving the lookup incomplete.
+  const present = (path: string): boolean => {
+    try {
+      statSync(path);
+      return true;
+    } catch (err) {
+      if (!isConfirmedAbsence(err)) complete = false;
+      return false;
+    }
+  };
   const keep = (path: string): void => {
     try {
-      if (statSync(path).mtimeMs >= sinceMs) files.push(path);
+      const st = statSync(path);
+      if (st.mtimeMs >= sinceMs) {
+        files.push(path);
+        if (st.size > MAX_TRANSCRIPT_READ_BYTES) complete = false;
+      }
     } catch (err) {
       if (!isConfirmedAbsence(err)) complete = false;
     }
   };
   const listed = forEachDirEntry(root, (project) => {
+    if (exceeded()) return false;
     if (!project.isDirectory()) return true;
     const dir = join(root, project.name);
     const transcript = join(dir, `${sessionId}.jsonl`);
-    if (existsSync(transcript)) {
+    if (present(transcript)) {
       found = true;
       keep(transcript);
     }
     const subagents = join(dir, sessionId, "subagents");
-    if (!existsSync(subagents)) return true;
+    if (!present(subagents)) return true;
     const all = forEachDirEntry(subagents, (entry) => {
+      if (exceeded()) return false;
       if (!entry.isDirectory() && entry.name.endsWith(".jsonl"))
         keep(join(subagents, entry.name));
       return true;
@@ -189,7 +252,7 @@ function sessionFiles(sessionId: string, sinceMs: number): SessionLookup {
     if (!all) complete = false;
     return true;
   });
-  return { files, read: found && listed && complete };
+  return { files, own: new Set(files), read: found && listed && complete };
 }
 
 /**
@@ -429,9 +492,14 @@ function withSessionFiles(
   sessionId: string | null,
   sinceMs: number,
 ): SessionLookup {
-  if (sessionId === null) return { files: [...walked], read: false };
+  if (sessionId === null)
+    return { files: [...walked], own: new Set(), read: false };
   const own = sessionFiles(sessionId, sinceMs);
-  return { files: [...new Set([...own.files, ...walked])], read: own.read };
+  return {
+    files: [...new Set([...own.files, ...walked])],
+    own: own.own,
+    read: own.read,
+  };
 }
 
 /**
@@ -729,6 +797,8 @@ export const claudeAdapter: QuotaAdapter = {
     // a layout the lookup does not know is found there, and matched on the
     // same record id.
     const lookup = withSessionFiles(scan.files, ourSessionId, sinceFloorMs);
+    // Cleared when a transcript the lookup counted as read fails to read.
+    let ownReadFailed = false;
     for (const path of lookup.files) {
       const isPreexisting = opts.preexistingSessions?.has(path) ?? false;
       // A file that already existed when the pass was spawned ORDINARILY
@@ -782,6 +852,7 @@ export const claudeAdapter: QuotaAdapter = {
       try {
         body = readBoundedTail(path);
       } catch {
+        if (lookup.own.has(path)) ownReadFailed = true;
         continue;
       }
       // Cheap reject before parsing tens of thousands of JSON lines: a
@@ -894,7 +965,7 @@ export const claudeAdapter: QuotaAdapter = {
         "  If this recurs, the ~/.claude/projects tree may be too large to scan within budget; DRIVE_PR_QUOTA_MAX_SCAN_MS raises the wall-clock allowance.",
       );
     }
-    if (best === null && scan.truncated && !lookup.read) {
+    if (best === null && scan.truncated && (!lookup.read || ownReadFailed)) {
       // A DIFFERENT walk from the two above: this is the detection-time scan
       // itself giving up before reaching every transcript touched since the
       // pass started, not the pre-spawn snapshot. "No wall found" here is not
