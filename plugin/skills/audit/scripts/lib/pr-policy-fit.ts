@@ -60,7 +60,7 @@ export async function policyFindings(
 }
 
 const TRUSTED_AUTOMATION_PROCEDURE =
-  "the Trusted automation section of plugin/CONFIGURATION.md in the installed plugin";
+  "the Trusted automation section of CONFIGURATION.md at the installed plugin's root";
 
 /**
  * What `pull_requests.trusted_automation` does in this configuration: a list
