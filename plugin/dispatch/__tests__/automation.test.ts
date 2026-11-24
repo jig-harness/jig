@@ -217,32 +217,43 @@ describe("jig dispatch drives an automation pull request only while it needs wor
     expect(why(24)).toContain("2 review threads unresolved");
   }, 60_000);
 
-  it("requires a manual rearm when a listed bot's head moves under the opt-out", async () => {
-    const w = fixture(MANUAL_TRUSTED);
-    w.setPrs("open", [
-      by(40, "app/renovate", FAILING),
-      labeled(by(41, "app/renovate", FAILING), "jig:rearm"),
-      by(42, "drive-bot", FAILING),
-    ]);
-    for (const n of [40, 41, 42])
-      w.setComments(n, [
-        ledgerComment(
-          n * 100 + 1,
-          stoppedLedger(n, 0, {
-            verifiedSha: "b".repeat(40),
-          }),
-        ),
+  it.each([
+    ["adoption on", MANUAL_TRUSTED],
+    [
+      "adoption off",
+      `${config(
+        "  labels: { enabled: true }\n  adopt: { enabled: false, trusted_automation: false }",
+      )}pull_requests:\n  trusted_automation: ["renovate[bot]"]\n`,
+    ],
+  ])(
+    "requires a manual rearm when a listed bot's head moves under the opt-out (%s)",
+    async (_name, text) => {
+      const w = fixture(text);
+      w.setPrs("open", [
+        by(40, "app/renovate", FAILING),
+        labeled(by(41, "app/renovate", FAILING), "jig:rearm"),
+        by(42, "drive-bot", FAILING),
       ]);
+      for (const n of [40, 41, 42])
+        w.setComments(n, [
+          ledgerComment(
+            n * 100 + 1,
+            stoppedLedger(n, 0, {
+              verifiedSha: "b".repeat(40),
+            }),
+          ),
+        ]);
 
-    const r = await tick(w);
-    expect(rearms(r)).toEqual(["PR #42"]);
-    expect(r.repos[0]?.quiet).toContainEqual(
-      expect.objectContaining({
-        target: "PR #40",
-        why: expect.stringContaining("dispatch.adopt.trusted_automation"),
-      }),
-    );
-  });
+      const r = await tick(w);
+      expect(rearms(r)).toEqual(["PR #42"]);
+      expect(r.repos[0]?.quiet).toContainEqual(
+        expect.objectContaining({
+          target: "PR #40",
+          why: expect.stringContaining("dispatch.adopt.trusted_automation"),
+        }),
+      );
+    },
+  );
 
   it("re-drives a converged automation pull request whose head moved only while it needs work, or on a person's rearm", async () => {
     const w = fixture(LABELS);

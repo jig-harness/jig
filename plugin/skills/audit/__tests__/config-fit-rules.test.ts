@@ -90,7 +90,13 @@ test("the trusted automation adoption opt-out is accepted and reported", () => {
     'dispatch:\n  labels: { enabled: true }\n  adopt: { enabled: true, trusted_automation: false }\npull_requests:\n  trusted_automation: ["renovate[bot]"]\n',
   );
   expect(found.filter((finding) => finding.severity === "error")).toEqual([]);
-  expect(found.map((finding) => finding.id)).toContain(
-    "derivation:pull_requests.trusted_automation:adopt",
+  const adopt = found.find(
+    (finding) =>
+      finding.id === "derivation:pull_requests.trusted_automation:adopt",
   );
+  expect(adopt?.severity).toBe("info");
+  expect(adopt?.message).toContain(
+    "dispatch.adopt.trusted_automation is false",
+  );
+  expect(adopt?.message).toContain("install inputs");
 });

@@ -87,15 +87,19 @@ export function trustedFit(config: Config): Finding[] {
       message:
         "pull_requests.trusted_automation does not change the approval requirement for merge now without review.reviewer_app: a person's approval is then the witness of every review and also satisfies the author condition",
     });
-  if (
-    at(config, "dispatch.adopt.enabled") !== true ||
-    at(config, "dispatch.adopt.trusted_automation") === false
-  )
+  if (at(config, "dispatch.adopt.trusted_automation") === false)
     findings.push({
       id: "derivation:pull_requests.trusted_automation:adopt",
       severity: "info",
       message:
-        "Automatic adoption is off for listed bots. Review the install inputs before starting a listed bot's drive by hand.",
+        "dispatch.adopt.trusted_automation is false: a listed bot's drive starts only when a person labels it drive or rearm, or arms it by hand. Review the install inputs (manifests, installer configuration, lockfiles) against a trusted baseline before starting each drive.",
+    });
+  else if (at(config, "dispatch.adopt.enabled") !== true)
+    findings.push({
+      id: "derivation:pull_requests.trusted_automation:adopt",
+      severity: "info",
+      message:
+        "Initial adoption is off, so a listed bot's pull request with no ledger is driven only when a person labels it drive or arms a drive by hand; ledger-backed recovery and a completed pickup handoff still start drives. Set dispatch.adopt.trusted_automation: false to require a person to start every listed bot's drive, and review its install inputs first.",
     });
   return findings;
 }

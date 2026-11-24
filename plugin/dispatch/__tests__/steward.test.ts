@@ -164,6 +164,15 @@ describe("steward boundaries", () => {
       ),
     ).toBe(false);
     expect(rearmableBySteward(pr, true)).toBe(false);
+    expect(
+      rearmableBySteward(
+        {
+          ...(pr as object),
+          evidence: { exit: 1, trustedDriveManual: true },
+        } as never,
+        false,
+      ),
+    ).toBe(false);
   });
   test("recurrence counts executed recoveries only, within a rolling week", () => {
     const root = mkdtempSync(join(tmpdir(), "steward-recurrence-"));

@@ -197,8 +197,8 @@ export function adopts(
   const author = pr.author;
   if (author === undefined || author.login === "") return null;
   if (labels !== null && hasCommand(labels, pr.labels, "hold")) return null;
-  const listed = trustedBot(author, adoption);
   if (requiresManualTrustedDrive(author, adoption)) return null;
+  const listed = trustedBot(author, adoption);
   const trusted = pr.isCrossRepository === false && listed;
   if (!eligibleAuthor(author, adoption, trusted)) return null;
   const updated = parseMs(pr.updatedAt ?? "");
