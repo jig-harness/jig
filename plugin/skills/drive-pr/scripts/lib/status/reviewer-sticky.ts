@@ -296,9 +296,10 @@ export function reviewerStickyIn(
       // both pieces of evidence must remain from the same comment.
       if (
         skip !== null &&
-        bodySha !== "" &&
-        sameReviewedHead(bodySha, sticky.sha) &&
-        !lowerRound
+        ((bodySha === "" && sticky.sha === "") ||
+          (bodySha !== "" &&
+            sameReviewedHead(bodySha, sticky.sha) &&
+            !lowerRound))
       )
         sticky = { ...sticky, skip };
       continue;

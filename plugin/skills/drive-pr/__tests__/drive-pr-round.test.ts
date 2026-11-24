@@ -1674,6 +1674,9 @@ describe("summary-findings marker overrides", () => {
              { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 2 -->', updated_at: '2026-11-24T10:00:00Z' },
              { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- ai-review-round: 999999999999999999999 -->\\n<!-- ai-review-skip-notice -->\\ndef5678 skipped\\n<!-- /ai-review-skip-notice -->', updated_at: '2026-11-24T11:00:00Z' },
            ], (login) => login === 'reviewer[bot]', '<!-- other-review -->', 'custom+sha'),
+           firstUnstampedSkipStandsAlone: s.reviewerStickyIn([
+             { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- ai-review-skip-notice -->\\n\`def5678\` skipped\\n<!-- /ai-review-skip-notice -->', updated_at: '2026-11-24T11:00:00Z' },
+           ], (login) => login === 'reviewer[bot]', '<!-- other-review -->', 'custom+sha'),
            initialSkipDoesNotHideFindings: m.reviewerSticky([
              { id: 21, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- ai-review-round: 3 -->\\n<!-- ai-review-skip-notice -->\\n\`abc1234\` skipped\\n<!-- /ai-review-skip-notice -->' },
              { id: 22, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: def5678 -->\\n<!-- ai-review-round: 2 -->\\n- \`a.ts\` — finding' },
@@ -1750,6 +1753,11 @@ describe("summary-findings marker overrides", () => {
       sha: "abc1234",
       round: 2,
       skip: null,
+    });
+    expect(got.firstUnstampedSkipStandsAlone).toMatchObject({
+      sha: "",
+      round: null,
+      skip: { head: "def5678" },
     });
     expect(got.initialSkipDoesNotHideFindings).toBe(22);
     expect(got.ignoresExamples).toBeNull();
