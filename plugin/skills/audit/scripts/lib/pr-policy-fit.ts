@@ -102,7 +102,7 @@ export function trustedFit(config: Config): Finding[] {
         labels.enabled
           ? "Retire every outstanding drive and rearm request while dispatch is paused: one made before the switch can still start a drive without a new review. A drive or rearm label is not a substitute: it pins neither the reviewed head nor the base the drive merges, and a rearm label needs a trusted request bound to an eligible stop, so the dispatcher may start from inputs nobody reviewed. "
           : "Labels are off (dispatch.labels.enabled), so no label starts a drive; retire any request before turning them on again. "
-      }Stop every drive already running on a listed bot's pull request once the ticks have finished, because a started driver keeps the old policy. A drive a person stopped stays stopped, and a drive converged on the current head needs no restart; after a head that moved, or for any other stopped drive, start it directly after the same review.`,
+      }Stop every drive already running on a listed bot's pull request once the ticks have finished, because a started driver keeps the old policy. A drive a person stopped stays stopped, and a drive converged on the current head needs no restart; after a head that moved, or for any other stopped drive, start it directly after the same review, by the restart procedure for its stop (answer every parked decision, wait out a quota reset, grant a spent round budget) and with its prerequisites met.`,
     });
   else if (!adopt.enabled)
     findings.push({
