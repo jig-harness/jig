@@ -159,14 +159,9 @@ bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/jig-config.ts" dispa
 
 `${CLAUDE_SKILL_DIR}` means the directory holding this file. Claude Code
 fills it in; another harness substitutes the installed absolute path before
-running the command from the consumer repository's root. That command reads
-layered local configuration, while a dispatcher send reads the tracker,
-identity and dispatch states from the forge's default branch. Record the
-values the send will use (read from the default branch where you can); where
-they cannot be verified, or differ from the local read, record them as
-unverified, and treat any start as one the pickup thread cannot settle. If the
-identity or procedure cannot be determined, file verified work but ask the
-person how to start it; do not improvise.
+running the command from the consumer repository's root. If the identity or
+procedure cannot be determined, file verified work but ask the person how to
+start it; do not improvise.
 
 ### 7. File the defects
 
@@ -178,9 +173,8 @@ out of the person's discussion.
 
 Start the important defects, with the person's approval, through the
 work-start mechanism and identity established in step 6, even when they sit
-outside the agreed topic's first wave. Record each attempt before sending it
-and classify its result by the rules of step 10, then record which defects
-started and which remain filed.
+outside the agreed topic's first wave. Record which defects were started and
+which remain filed.
 
 ### 8. Prepare the delivery and request approval
 
@@ -189,11 +183,8 @@ write the plan on the repository and host's review surface. Only the first
 wave becomes tasks; give later waves one line each, so unstarted detail does
 not become stale. State a default for each choice the person left out in the plan;
 when the person approves it with such a choice unanswered, say that its stated
-default settles that choice, except a choice the person explicitly deferred,
-their replies conflict on, or answered in a way step 4 needed clarified (an
-invalid reply stays its own state, never an omission), which waits for their
-explicit resolution. Hold back each task that depends on such a choice and
-hand off only the independently approved work. Request review on that surface, tell the person,
+default settles that choice, except a choice the person explicitly deferred or
+their replies conflict on, which waits for their explicit resolution. Request review on that surface, tell the person,
 and end the turn; never poll for review. Without a configured review
 surface, present the plan in chat for explicit review and end the turn.
 
@@ -206,174 +197,23 @@ work.
 ### 9. Hand an approved multi-pull-request plan to a plan keeper
 
 Only for approved work that spans more than one pull request, send the
-answers, issue numbers and demotions to one separate plan-keeper session
-under the keeper-update rules in step 10.
+answers, issue numbers and demotions to one separate plan-keeper session.
 This keeps plan mechanics out of the coordinating session. A one-deliverable
 handoff has no plan keeper.
 
 ### 10. File and start approved tasks
 
-After approval, send the eligible tasks of the first wave (those step 8
-did not hold back) to a fresh filing session using `/jig:file-issue`. Each issue carries the decisions in its body: its pickup
+After approval, send the first wave to a fresh filing session using
+`/jig:file-issue`. Each issue carries the decisions in its body: its pickup
 session sees nothing else. Start the issues through the dispatcher, using
 the configured mechanism and identity established in step 6.
-**Start prerequisite** (every start of a filed issue, including a defect step 7 files and any start a filing session would make: a filing session returns the issue key and never hands the issue off). Record with each pending filing the approved revision of its decision and the track generation it began under; where no keeper holds generations, the notebook's track entry records and advances them, and a resumed filing whose original generation is unknown is reconciled with the person before it starts. Immediately before the start, and again inside the start operation that writes when it can check, confirm that the task is still approved at that revision and the track still has that generation, that the issue body matches the current approved revision (otherwise update it first), and that the start targets the recorded tracker and issue identity; wait out any known delay before the confirmation. When the start mechanism cannot verify these within the operation that writes, park the start for a person. When any check fails, start nothing and keep the issue key for reconciliation under the keeper-update rules below.
 Where the host has no dispatcher, use its configured work-start procedure
 (a single issue's pickup belongs to `/jig:do-item`); if none is configured,
-ask the person how to start the filed issues. Record what actually started, and each held task with the decision that
-blocks it. Track filing and starting separately: when a task is filed but
-not started (the work-start procedure was unknown, or a launch failed), reuse
-its recorded issue key. Before sending a start, record
-the issue key, the time, and the settings the send resolves (the tracker
-target, the identity and the dispatch states). Classify each start's result three ways. A **confirmed success** is
-the mechanism's own terminal success for that attempt (the dispatcher send
-read back the expected assignee and reported `sent`, or a configured
-work-start procedure returned its own success receipt): record it and wait
-for pickup. A **verified rejection made before
-anything was written** is a failed start: record the reason. Anything else
-(a refused result whose confirmation read threw, a timeout, or a recorded
-attempt with no saved outcome, as after a crash) is **unconfirmed**: it may
-still be in flight, so never resend it on a guess. Settle it only by the
-mechanism's own terminal answer for that attempt: a launch record or receipt
-tied to that attempt, or the work-start procedure's status read. An
-issue-level assignment record does not identify an attempt (it carries no
-time, and another trusted writer's assignment looks the same), so it is not
-confirmation; a current pickup shows only that work is already underway. A
-state someone set by hand, an earlier launch of the same issue, or a missing
-entry in a thread is not evidence either way. A direct read of the item's
-assignee, state and assignment history is allowed to diagnose partial effects
-(an assignment outside the dispatch states, a state change without its
-assignment), but its absence or ambiguity is inconclusive, never a reason to
-retry. Resend only when the mechanism gives a terminal answer that the
-attempt did not land, or accepts a retry keyed to the same attempt; when it
-can give neither, leave the start unresolved, say so, and ask the person.
-Verified evidence of a pickup underway now for this work (not an earlier
-launch that ended or failed) stops any resend while who caused it stays
-unknown: record it as "started, attribution unknown", and keep the send
-attempt's own attribution unresolved. Positive evidence is a live holder
-matching the issue, or an equivalent current observation from the host that
-dispatched it. A live holder shows that the launch wrapper was admitted and
-is running, not that the agent session has begun: where a prerequisite needs
-the session itself, require evidence of it, and otherwise treat "pickup
-started" as exactly that wrapper admission. A launch entry from a historical record with no visible
-outcome is not evidence: its process may be dead, and an unknown process
-state may only mean the wrapper has not yet claimed the launch.
-Wait
-when pickup is pending (it happens on a later tick). When an accepted pickup
-claimed the item and then stalled, follow the recovery the status reports, or
-surface the blocker, keeping the issue key. When the assignment landed but the issue is still outside the
-configured dispatch states, do not repeat the send (it is refused): name the
-state transition needed and ask for it through the authorized recovery path.
-When a held task's decision arrives, file and start only the
-newly eligible remainder, never a task already filed. Send the plan keeper
-(step 9, when the plan has one) each decision when it is recorded, including
-a rejection that leaves no task to hand off, and each issue key as soon as
-filing succeeds, whatever the launch outcome, under the keeper-update rules
-below.
-
-**Keeper-update rules** (every update to the plan keeper follows them: the
-initial handoff in step 9, decisions and issue keys here, and a track
-removal in step 13):
-
-- Record the update in the notebook as owed before sending it, identified by
-  its kind (decision, issue key, track removal), its target (the one plan
-  entry or track the update changes, never the decision as a whole), the
-  originating decision and its revision, so one decision revision that
-  yields several updates yields several owed entries, each with its own
-  target. Clear each only once
-  the keeper confirms that exact update applied, never on the strength of
-  a sibling update or the revision alone.
-- Before delegating filing, record a pending filing entry for the task, with
-  a unique marker the issue body will carry and the tracker the filing
-  targets, both persisted with the entry. Every write and every
-  recovery read compares the effective destination with the recorded one
-  inside the same invocation, on the adapter that then performs the
-  operation, and refuses on a mismatch; an earlier check does not stand in
-  for it. Where the tracker commands in use accept no expected destination,
-  the invocation cannot make that check: delegate no filing or recovery read
-  through it, and park the filing for a person. Every retry reuses the recorded
-  tracker and marker; changing the tracker needs an explicit decision from
-  the person before anything is written. On return, recover the key from the
-  filing session's durable result or by searching that tracker for the marker
-  (search semantics differ between trackers and may match words), then read
-  each candidate's body, across open and closed issues, and accept the key
-  only when exactly one body carries the exact marker, before filing the
-  task again; a lost reply is then not a lost key. When the result is lost and
-  the search is empty, unreadable or ambiguous, keep the filing pending and
-  ask the person, unless reliable evidence shows it did not land or a retry is
-  idempotent.
-- On every return, reconcile the owed updates against the plan the keeper
-  holds before repeating or clearing any (a keeper may have applied one
-  whose acknowledgment was lost). Only the keeper's durable applied record for the full update identity
-  (kind, target, originating decision, revision), or the plan state that
-  record names, confirms it: finding the decision and revision in the plan
-  clears nothing for a sibling update of the same revision.
-- A later revision of a decision supersedes an earlier one. Once the
-  replacement is verified applied, clear the older owed update; never replay
-  it, since replay would undo the newer choice. Stop retrying the older update
-  as soon as it is superseded, and tell the keeper to reject any delivery
-  older than the revision it has applied. The keeper retains an applied record
-  (kind, target, originating decision, revision) with the plan itself,
-  removals included. Revision order is judged per originating decision and
-  target, and only among updates that set decision state; an issue key is a
-  filing fact, never rejected as stale, and is reconciled onto the entry
-  whether or not the task is still approved; a pending filing records the
-  generation it started under and its key update carries that generation,
-  so the key reaches the entry it was filed for and never one recreated
-  under the same target; when the track was removed
-  while the filing was in flight, the key is recorded against the removed
-  entry's durable record and the update acknowledged without recreating the
-  track. A track's recorded removal
-  names its originating decision and the revision it followed, and the
-  track carries a generation that each removal and each authorised
-  recreation advances; every update that changes track state carries the
-  generation it expects, and the keeper applies a delivery only on an exact
-  generation match: it rejects a superseded generation and holds one ahead
-  of its own until it confirms the lifecycle transition that reaches it. After a removal the keeper rejects every delivery
-  that would recreate the track, from any decision, up to and including the
-  recorded revision for that decision, and recreates it only on the
-  person's explicit authorisation; an unrelated owed update for another
-  target is unaffected. It acknowledges a repeat of an already applied
-  update without applying it again.
+ask the person how to start the filed issues. Record what actually started.
 
 ### 11. Pick up the state on every return
 
-Each time the person returns, recheck any start still unconfirmed against
-the source of the mechanism that sent the request: a dispatcher start through
-the operator's pickup thread read for that issue (the ordinary status can
-report a claim from tracker membership alone), any other work-start
-procedure through its own receipt or status read. Read it with the settings
-recorded for the attempt in step 10, never the current checkout's or a
-later configuration's. The pickup thread read resolves the tracker from the
-current checkout, so when the adapter, team, identity or states may differ
-from the recorded ones and the match cannot be established, leave the result
-unresolved instead of trusting that read. Treat every recorded attempt with
-no saved outcome as unconfirmed: check it and record where it stands before
-resending that item or starting work that depends on it; independent approved
-work is not held by it. An unreadable source or inconclusive answer keeps the
-start unconfirmed, holds the work that depends on it, and is never a reason
-to retry; recording the result does not release dependents. Track the
-observed pickup and the send's attribution separately. Work whose
-prerequisite is only that the pickup has started is released by verified
-evidence of a pickup underway (step 10), or by a verified outcome for the
-matching work showing it ran, where the outcome identifies this pickup
-(not a superseded one for the same issue) and establishes the milestone the
-dependent needs. The thread read does not expose a launch ID or session
-evidence, so it alone cannot do this, even when it lists one launch (that
-entry may be an earlier pickup or only wrapper admission), and never when several launches exist for the
-issue: read the dispatcher's per-launch record (its `launches` table, with
-process and session evidence) read-only on the host that runs the
-dispatcher, taking liveness from the dispatcher's own launch-state
-derivation, never from a claim row alone (a wrapper can die leaving its
-claim), and requiring a recorded milestone for an ended launch; when the
-dispatcher is on another host, ask a maintainer, or a read-only diagnostic
-session authorized to inspect that host's launch evidence, for the matching
-launch and its milestone evidence (an operator session cannot: it has only
-`jig ask` and `jig send`). Where it is unreadable leave the milestone
-unconfirmed. A milestone is wrapper admission or session start; an earlier
-failure before admission does not release it; work that needs the send itself
-confirmed keeps waiting for the mechanism's terminal answer. Then read the
-state of started work through
+Each time the person returns, read the state of started work through
 `/jig:operator` in a fresh session when the `jig` command is available.
 Otherwise, query the configured tracker or delivery mechanism read-only and
 mark unavailable evidence explicitly. Bring any parked question back with a
@@ -398,7 +238,7 @@ on return, and state that it has not been persisted.
 ### 13. Demote without losing what was learned
 
 When the person lowers a track's priority, send its removal to the plan
-keeper when there is one (under step 10's keeper-update rules), and retain its facts in a note marked as an idea in
+keeper when there is one, and retain its facts in a note marked as an idea in
 the durable record. A one-deliverable handoff updates that record directly.
 A demotion changes what is owed without discarding useful evidence.
 
