@@ -363,11 +363,6 @@ function unreadAdvisory<Drift>(drift: Drift | null) {
   };
 }
 
-/** Refresh the reviewed base and any stacked integration bound for this PR. */
-async function refreshPolicyContext(pr: string): Promise<void> {
-  await exportPolicyBase(pr);
-}
-
 async function main(): Promise<number> {
   let pr = "";
   let json = false;
@@ -494,11 +489,7 @@ async function main(): Promise<number> {
     );
   }
 
-  // Standalone probes need the same reviewed policy context as a driver.
-  // A failed refresh leaves the policy base empty, so skip exclusions fail
-  // closed instead of inheriting an unreviewed stacked layer.
-  await refreshPolicyContext(pr);
-
+  await exportPolicyBase(pr);
   // WHY the local head reads as it does, published alongside it. An empty
   // `local` has two unrelated causes — the caller switched the measurement off,
   // or it was attempted and failed — and a consumer that cannot tell them apart

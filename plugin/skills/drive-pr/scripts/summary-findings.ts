@@ -65,7 +65,6 @@ import {
   reviewerApp,
   reviewerEvidence,
   reviewerExpected,
-  skipNoticeMarker,
   stickyMarker,
 } from "./lib/overlay.ts";
 import { ghCall } from "./lib/proc.ts";
@@ -85,7 +84,6 @@ import {
   reviewerStickyBody,
   reviewedShaIn,
 } from "./lib/status/reviewer-sticky.ts";
-import { skipNoticeIn } from "./lib/status/skip-notice.ts";
 import {
   headerOf,
   SEVERITY_FIELD,
@@ -611,7 +609,6 @@ export function categoryOf(text: string): string {
   return m ? (m[1] ?? "").toLowerCase() : "unknown";
 }
 
-/** `<!-- ai-review-round: N -->` from a sticky or inline reviewer comment. */
 export interface ClassifyInput {
   pr: number;
   stickyCommentId: number | null;
@@ -1336,17 +1333,27 @@ export function reviewerSticky(
   // fallback. A marker-prefixed acknowledgement must not erase a preceding
   // finding-bearing summary merely because it is newer.
   let selected: IssueComment | undefined;
+  let selectedRound: number | null = null;
   for (const comment of comments) {
     const body = reviewerStickyBody(comment, isReviewerLogin, stickyMarker());
     if (body === null) continue;
+    const round = parseReviewRound(body);
     const carriesEvidence =
       reviewedShaFrom(body) !== undefined ||
-      skipNoticeIn(body, skipNoticeMarker()) !== null ||
-      body.includes("ai-review-backlog") ||
-      parseBodyFindings(body).length > 0;
+      /<!--\s*ai-review-backlog\s*:/.test(body) ||
+      parseBodyFindings(body).length > 0 ||
+      parseDeclaredUnanchored(body) > 0;
     // An auxiliary response never supersedes a finding-bearing summary just
-    // because it happens not to use a particular acknowledgement word.
-    if (selected === undefined || carriesEvidence) selected = comment;
+    // because it happens to mention a protocol marker. A newer declared round
+    // is also evidence: it is the reviewer's explicit replacement boundary.
+    if (
+      selected === undefined ||
+      carriesEvidence ||
+      (round !== null && (selectedRound === null || round > selectedRound))
+    ) {
+      selected = comment;
+      selectedRound = round;
+    }
   }
   return selected;
 }

@@ -57,12 +57,22 @@ export function reviewerStickyBody(
     ((raw.user as Record<string, unknown> | null)?.login ?? "") || "",
   );
   const body = String(raw.body ?? "");
-  // A structural marker may follow a heading, but a quoted example is never
-  // reviewer evidence.  Requiring it at byte zero rejected valid configured
-  // summaries while accepting neither more evidence nor a safer protocol.
-  const structuralMarker = body
-    .split(/\r?\n/)
-    .some((line) => line.trimStart().startsWith(summaryMarker));
+  // A structural marker may follow a heading, but quoted and code examples
+  // are not reviewer evidence. Requiring byte zero rejected valid configured
+  // summaries; accepting every trimmed line lets an example replace one.
+  let fence: "`" | "~" | null = null;
+  const structuralMarker = body.split(/\r?\n/).some((line) => {
+    const trimmed = line.trimStart();
+    const openingFence = trimmed.match(/^(`{3,}|~{3,})/);
+    if (openingFence) {
+      const character = openingFence[1]?.[0] as "`" | "~";
+      fence = fence === character ? null : (fence ?? character);
+      return false;
+    }
+    if (fence !== null || /^\s{0,3}>/.test(line) || /^(?: {4}|\t)/.test(line))
+      return false;
+    return trimmed.startsWith(summaryMarker);
+  });
   return reviewerLogin(login) && structuralMarker ? body : null;
 }
 
@@ -74,10 +84,6 @@ export function reviewerStickyIn(
   shaMarker: string,
   skipNoticeMarker = "ai-review-skip-notice",
 ): ReviewerSticky {
-  const markerRe = new RegExp(
-    `<!--\\s*${shaMarker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:\\s*([0-9a-f]{7,40})\\s*-->`,
-    "g",
-  );
   let sticky: ReviewerSticky = {
     sha: "",
     round: null,
@@ -87,7 +93,7 @@ export function reviewerStickyIn(
   for (const raw of comments) {
     const body = reviewerStickyBody(raw, reviewerLogin, summaryMarker);
     if (body === null) continue;
-    const bodySha = lastStamp(body, markerRe);
+    const bodySha = reviewedShaIn(body, shaMarker);
     const skip = skipNoticeIn(body, skipNoticeMarker);
     // Only a stamp can replace a stamped sticky. An unstamped comment
     // qualifies as evidence only when it carries a skip notice.

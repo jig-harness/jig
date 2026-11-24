@@ -1597,12 +1597,14 @@ describe("summary-findings marker overrides", () => {
     // lazily. Run in a subprocess so the environment belongs to the import.
     const src = join(SCRIPTS, "summary-findings.ts");
     const overlay = join(SCRIPTS, "lib", "overlay.ts");
+    const sticky = join(SCRIPTS, "lib", "status", "reviewer-sticky.ts");
     const proc = Bun.spawn(
       [
         "bun",
         "-e",
         `const m = await import(${JSON.stringify(src)});
          const o = await import(${JSON.stringify(overlay)});
+         const s = await import(${JSON.stringify(sticky)});
          console.log(JSON.stringify({
            defaultSticky: m.STICKY_MARKER,
            defaultSha: m.SHA_MARKER,
@@ -1616,6 +1618,27 @@ describe("summary-findings marker overrides", () => {
              { id: 3, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->' },
              { id: 4, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n- unanchored finding' },
            ], false)?.id,
+           proseBacklogSelected: m.reviewerSticky([
+             { id: 5, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n- \`a.ts\` — finding' },
+             { id: 6, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\nai-review-backlog is mentioned here' },
+           ], false)?.id,
+           skipSelected: m.reviewerSticky([
+             { id: 11, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n- \`a.ts\` — finding' },
+             { id: 12, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- ai-review-skip-notice -->\\n\`abc1234\` skipped\\n<!-- /ai-review-skip-notice -->' },
+           ], false)?.id,
+           declaredSelected: m.reviewerSticky([
+             { id: 7, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->' },
+             { id: 8, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n1 finding(s) without a diff-anchorable line' },
+           ], false)?.id,
+           newerRoundSelected: m.reviewerSticky([
+             { id: 9, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- ai-review-round: 1 -->\\n- \`a.ts\` — finding' },
+             { id: 10, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- ai-review-round: 2 -->' },
+           ], false)?.id,
+           ignoresExamples: s.reviewerStickyBody(
+             { user: { login: 'reviewer[bot]' }, body: '> <!-- other-review -->\\n\`\`\`\\n<!-- other-review -->\\n\`\`\`\\n    <!-- other-review -->' },
+             (login) => login === 'reviewer[bot]',
+             '<!-- other-review -->',
+           ),
            latestStamp: m.reviewedShaFrom('<!-- custom+sha: abc1234 -->\\n<!-- custom+sha: def5678 -->'),
          }));`,
       ],
@@ -1642,6 +1665,11 @@ describe("summary-findings marker overrides", () => {
     expect(got.selected).toBe(1);
     // A later auxiliary comment cannot erase a finding-bearing sticky.
     expect(got.unstampedSelected).toBe(3);
+    expect(got.proseBacklogSelected).toBe(5);
+    expect(got.skipSelected).toBe(11);
+    expect(got.declaredSelected).toBe(8);
+    expect(got.newerRoundSelected).toBe(10);
+    expect(got.ignoresExamples).toBeNull();
     // And the reviewed SHA is actually extracted under the custom name — it
     // scopes the unaccounted-slot keys, so failing to read it degrades every
     // slot to the shared `nohead` scope, where an answer given on one head
