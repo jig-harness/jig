@@ -78,7 +78,14 @@ async function refreshTrackingRef(
       env: gitIdentityEnv(),
     },
   );
-  const commit = observed.stdout.trim().split(/\s+/)[0] ?? "";
+  // `ls-remote` treats its patterns as globs.  A branch that disappeared can
+  // therefore still leave a similarly named ref (or tag) in the response; a
+  // policy proof may use only the exact branch it asked to observe.
+  const exact = observed.stdout
+    .split("\n")
+    .map((line) => line.split("\t", 2))
+    .find((fields) => fields[1] === `refs/heads/${branch}`);
+  const commit = exact?.[0] ?? "";
   if (observed.code !== 0 || !/^[0-9a-f]{40}$/.test(commit))
     return {
       error: `cannot fetch ${remote.remote}/${branch}, so its current commit is unknown${observed.stderrTail ? ` (${observed.stderrTail.trim()})` : ""}`,

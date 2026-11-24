@@ -306,7 +306,10 @@ export const MARKER_SAFE_FINGERPRINT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
  * behind it.
  */
 export function decodeBacklog(body: string): BacklogEntry[] {
-  const m = body.match(/<!--\s*ai-review-backlog:\s*([A-Za-z0-9+/=]+)\s*-->/);
+  const markers = [
+    ...body.matchAll(/<!--\s*ai-review-backlog:\s*([A-Za-z0-9+/=]+)\s*-->/g),
+  ];
+  const m = markers[0];
   const fail = (why: string): never => {
     throw new Error(`ai-review-backlog present but ${why}`);
   };
@@ -318,6 +321,7 @@ export function decodeBacklog(body: string): BacklogEntry[] {
       return fail("is not a complete base64 marker");
     return [];
   }
+  if (markers.length !== 1) return fail("appears more than once");
   let parsed: unknown;
   try {
     parsed = JSON.parse(Buffer.from(m[1] ?? "", "base64").toString("utf8"));
@@ -466,7 +470,9 @@ export function parseDeclaredUnanchored(body: string): number {
   // A reviewer comment is untrusted input.  This count controls a loop which
   // creates synthetic findings, so refuse an implausible declaration rather
   // than allocating until the process is exhausted.
-  return Number.isSafeInteger(value) && value >= 0 && value <= 1000 ? value : 0;
+  if (!Number.isSafeInteger(value) || value < 0 || value > 1000)
+    throw new Error("declared unanchored finding count is invalid");
+  return value;
 }
 
 export interface BodyFinding {
@@ -1353,15 +1359,17 @@ export function reviewerSticky(
     const body = reviewerStickyBody(comment, isReviewerLogin, stickyMarker());
     if (body === null) continue;
     const round = parseReviewRound(body);
-    const carriesEvidence =
-      reviewedShaFrom(body) !== undefined ||
+    // A stamp says which head was reviewed, not that this comment supersedes
+    // a preceding account of its findings. In particular, a skip notice may
+    // deliberately retain the last reviewed SHA.
+    const carriesFindingEvidence =
       // Decode rather than merely spotting an opener: malformed protocol
       // evidence is unreadable, never a clean replacement summary.
       decodeBacklog(body).length > 0 ||
       parseBodyFindings(body).length > 0 ||
       parseDeclaredUnanchored(body) > 0;
     const skipOnly =
-      !carriesEvidence &&
+      !carriesFindingEvidence &&
       reviewerStickyIn(
         [comment],
         isReviewerLogin,
@@ -1382,19 +1390,19 @@ export function reviewerSticky(
     // An auxiliary response never supersedes a finding-bearing summary just
     // because it happens to mention a protocol marker. A newer declared round
     // is also evidence: it is the reviewer's explicit replacement boundary.
+    if (!skipOnly && round !== null)
+      highestExplicitRound = Math.max(highestExplicitRound ?? round, round);
     if (
       selected === undefined ||
       (!skipOnly &&
         round !== null &&
         (selectedRound === null || round > selectedRound)) ||
       (!skipOnly &&
-        carriesEvidence &&
+        carriesFindingEvidence &&
         (round === null || selectedRound === null || round === selectedRound))
     ) {
       selected = comment;
       selectedRound = round;
-      if (round !== null)
-        highestExplicitRound = Math.max(highestExplicitRound ?? round, round);
     }
   }
   return selected;
@@ -1647,15 +1655,18 @@ async function main(): Promise<number> {
   // same comment. A second source for "which round is this" is a second thing
   // to drift, and a marker stamped with a round the consumer never compares
   // against is a suppression nobody can bound.
-  const stickyRound = sticky ? parseReviewRound(sticky.body) : null;
+  const stickyBody = sticky
+    ? reviewerStickyBody(sticky, isReviewerLogin, stickyMarker())
+    : null;
+  const stickyRound = stickyBody ? parseReviewRound(stickyBody) : null;
   // Read here — above the `--check-addressed` branch — so that mode's
   // stale-vs-duplicate distinction (`findExactMarkers`) and the main report's
   // exemption (`collectAddressed`, below) key off the exact same backlog
   // snapshot. `decodeBacklog` throws on a malformed blob, which now surfaces
   // as an INDETERMINATE exit for `--check-addressed` too — the same
   // fail-closed direction the main report already took this from.
-  const winddownDeferred = sticky
-    ? winddownFingerprintsOf(sticky.body)
+  const winddownDeferred = stickyBody
+    ? winddownFingerprintsOf(stickyBody)
     : new Set<string>();
 
   if (checkFingerprintsArg !== undefined) {

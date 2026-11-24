@@ -341,7 +341,7 @@ export const TERMINAL_STATES: Readonly<
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
     meaning:
-      "The reviewer reported a skip or pause for this head. An earlier review does not cover it, a skip notice has no stamp and Jig cannot verify that the diff is empty after the configured exclusions, or a review-object check reports `Review paused…` or `Review skipped…`. A person resumes the reviewer or has this head reviewed, then re-arms.",
+      "The reviewer reported a skip or pause for this Ready PR head. An earlier review does not cover it, a skip notice has no stamp and Jig cannot verify that the diff is empty after the configured exclusions, or a review-object check reports `Review paused…` or `Review skipped…`; a draft-only skip instead remains provisional while the drive marks the PR Ready and waits for review. A person resumes the reviewer or has this head reviewed, then re-arms.",
     report: {
       stop: "stopped: the reviewer skipped its head and will not review it",
       cause: "environment",
