@@ -402,20 +402,23 @@ protection) still decide its lane:
      at the manifest's own indentation. Two-space and one-tab layouts are
      supported; a layout whose opener reads as nested (three or more
      leading spaces, such as four-space indentation) withholds the
-     exception, and so does unchanged hunk context outside the patch
-     grammar the classifier reads (such as an inline array,
-     `"files": ["dist"],`). In that case the card gives the same reason as
-     for a patch the forge did not return ("the forge gives no diff"), so
-     read the manifest's patch before concluding the forge withheld it.
+     exception, and the card says the dependency is "not inside a
+     dependency section". Unchanged hunk context outside the patch grammar
+     the classifier reads (such as an inline array, `"files": ["dist"],`)
+     withholds it too, and the card then says "the forge gives no diff", the
+     same reason as for a patch the forge did not return: read the
+     manifest's patch before concluding the forge withheld it.
    - It judges a moved or copied manifest by the patch alone, so review the
      effective install configuration at both locations, and the
      destination's whole contents: unchanged fields such as
      `packageManager` can change their effect at the new location (a
      manifest moved to the repository root can start to govern root
      lockfile selection) and moving a manifest away can remove the preference
-     from its former directory. A recognized lockfile qualifies without any
-     manifest, so for a moved or copied lockfile also review which
-     installer each affected directory selects, at both locations.
+     from its former directory. A lockfile-only change can qualify when
+     `update_types` is unset or includes `lockfile`, subject to the other
+     trust rules. Any lockfile added, removed, moved or copied can change
+     which installer a directory selects, so compare the installer each
+     affected directory selects before and after the change.
    - A withheld exception changes only the exception; a qualifying approval
      can still allow merge now, and the ordinary placement rules still
      apply to a behind branch or another blocker, and to forge facts that

@@ -27,8 +27,10 @@ release: minor
   value cannot be determined, and a moved or copied manifest needs review of
   the effective install configuration at both locations and of the
   destination's whole contents, since unchanged fields such as
-  `packageManager` can change their effect and a moved manifest or lockfile
-  can change the installer at either end, which a lockfile moved or copied on its own needs reviewed too. Two-space and one-tab layouts are
+  `packageManager` can change their effect; and any lockfile added, removed,
+  moved or copied can change the installer a directory selects, so the
+  operator compares the installer each affected directory selects before
+  and after. Two-space and one-tab layouts are
   supported; a layout whose root dependency section opener reads as nested
   (such as four-space indentation), or unchanged context outside the
   patch grammar (such as an inline array), withholds the exception, which
