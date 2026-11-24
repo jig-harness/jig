@@ -156,7 +156,9 @@ criteria:
       no gate, hook, script or skill step depends on a host-injected tool.
     observe:
       - "each slash command for a repository skill (one not invoked through a plugin namespace) has a fallback beside it: the runtime's skill directory or a link to the skill's SKILL.md"
-      - "each step that names one runtime's question tool also says what to do elsewhere: a plain-text question in another interactive runtime, and stop and state the question when nobody is there to answer"
+      - "each step that names one runtime's question tool also says what to do elsewhere: the runtime's own question tool or a plain-text numbered question (the recommended option first, marked as the default where there is one) in another interactive runtime or in a session whose permissions deny the native tool while a person is present, and stop and state the question only when nobody is there to answer (parking the question through a control plane is an equally valid route where the repository has one)"
+      - "a page that relies on a variable only one runtime fills in (a skill's own directory) has a paragraph that says what it stands for and that another runtime's agent substitutes it by hand"
+      - "a page that hands a ruling to an agent the plugin ships (the review arbiter) says the calling session makes it where the runtime has no subagents, or names an equivalent that keeps the ruling independent of the caller (a separate read-only session, a person's ruling); on either route the ruling applies the same rubric, anchored evidence and disposition rules as the primary route, and the same ladder verdicts where that route uses them, so the ruling is bound to the same inputs; Jig's own fallback is the calling session"
       - "each other built-in tool a step names has its fallback beside it"
       - "no gate, hook, script or skill step needs a tool that a launcher or workspace app injects and no repository file registers; where a step mentions one, it is optional"
       - "a repository with no instruction that relies on a runtime-specific capability meets it"

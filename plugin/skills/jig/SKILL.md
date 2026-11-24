@@ -142,7 +142,7 @@ filing is publishing: a person confirms every report before it is filed.
    keep the command, the exit code and the output that shows the fault.
 6. **Ask the person** to confirm, showing the title and the body: with
    `AskUserQuestion` in Claude Code where the session can use it, as a
-   plain-text question anywhere else. With nobody there to answer (an
+   plain-text numbered question anywhere else (one numbered line per option, the recommended one first and marked as the default where there is one, which the reply `default` takes). With nobody there to answer (an
    unattended run), stop and leave the draft file's path in the run's
    output; never file it unattended. The draft's stored `url` predates your
    edits, so do not hand it on: step 7's `file` builds the address from the
