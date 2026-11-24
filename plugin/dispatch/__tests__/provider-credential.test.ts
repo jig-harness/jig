@@ -242,13 +242,20 @@ describe("resolving a credential reference", () => {
 
   it("learns trimmed failed-output lines and marker-collision output", async () => {
     const trimmed = "trimmed-opaque-secret-1234";
-    await resolveCredential(
+    const failed = await resolveCredential(
       command(
         `process.stdout.write('unrelated before\\n  ${trimmed}  \\nunrelated after'); process.exit(1)`,
       ),
       "ref",
       process.env,
     );
+    expect(failed).toMatchObject({
+      ok: false,
+      failure: {
+        code: "unauthorized",
+        reason: expect.stringContaining("credential command exited 1"),
+      },
+    });
     expect(maskCredentials(`value ${trimmed}`, "[masked]")).toBe(
       "value [masked]",
     );
@@ -266,6 +273,10 @@ describe("resolving a credential reference", () => {
     expect(maskCredentials(`value ${collision}`, "[masked]")).toBe(
       "value [masked]",
     );
+    expect(
+      maskCredentials(`value prefix<redacted>${collision}`, "[masked]"),
+    ).toBe("value [masked]");
+    expect(maskCredentials("<redacted>", "[masked]")).toBe("<redacted>");
   });
 
   it("is unreachable when the command does not answer in time", async () => {

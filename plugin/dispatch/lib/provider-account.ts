@@ -334,14 +334,19 @@ function baseUrl(
   const url = new URL(raw.value);
   // The path as written is checked before the URL parser normalizes it: a dot segment or an escaped dot could otherwise remove text the checks below never see.
   // Only a plain form is accepted: the URL parser also reads a backslash as a separator and drops tabs and line breaks, which would hide a path segment from these checks.
-  const written = /^[a-z][a-z0-9+.-]*:\/\/[^/?#\\]+(\/[^?#\\]*)?$/i.exec(
+  const written = /^[a-z][a-z0-9+.-]*:\/\/([^/?#\\]+)(\/[^?#\\]*)?$/i.exec(
     raw.value.split(/[?#]/)[0] ?? "",
   );
   if (written === null)
     return invalid(
       `${where} must be a plain URL with no backslash, space or control character (its value is withheld)`,
     );
-  const writtenPath = written[1] ?? "";
+  // URL normalizes an empty username/password away, so catch those raw authority forms before it does.
+  if (written[1]?.startsWith("@") || written[1]?.startsWith(":@"))
+    return invalid(
+      `${where} must carry no user name or password (its value is withheld)`,
+    );
+  const writtenPath = written[2] ?? "";
   if (
     /%/.test(writtenPath) ||
     writtenPath.split("/").some((part) => part === "." || part === "..")

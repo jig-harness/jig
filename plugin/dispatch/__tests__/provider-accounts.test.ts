@@ -236,6 +236,13 @@ describe("a provider account", () => {
     expect(
       refusal([router({ base_url: "https://user:pw@openrouter.ai/api" })]),
     ).toContain("no user name or password");
+    for (const base_url of [
+      "https://@openrouter.ai/api",
+      "https://:@openrouter.ai/api",
+    ])
+      expect(refusal([router({ base_url })])).toContain(
+        "no user name or password",
+      );
     expect(
       refusal([router({ base_url: "https://openrouter.ai/api?key=x" })]),
     ).toContain("no query or fragment");
