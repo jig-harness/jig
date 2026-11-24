@@ -383,10 +383,17 @@ describe("the reading skills", () => {
       "has=equals",
       "has\u001bescape",
       "has\u0085control",
-      "has\u202Ebidi",
-      "has\u2066isolate",
-    ])
+      "",
+      ...[
+        0x061c, 0x200e, 0x200f, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066,
+        0x2067, 0x2068, 0x2069,
+      ].map((code) => `has${String.fromCodePoint(code)}control`),
+    ]) {
       expect(schemaPassModel.test(value)).toBe(PASS_MODEL_PATTERN.test(value));
+      expect(
+        checkConfig({ drive: { pass_model: value } }, schema).length === 0,
+      ).toBe(PASS_MODEL_PATTERN.test(value));
+    }
     expect(field("ci.repair_skill")?.pattern).toBe(SKILL_NAME_PATTERN.source);
     expect(field("drive.pass_args")?.items).toEqual({
       type: "string",

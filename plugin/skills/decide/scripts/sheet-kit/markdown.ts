@@ -31,7 +31,7 @@ const markdownText = (value: string, startsLine: boolean) => {
  * dropped or repeated.
  */
 const LINKABLE_WORD =
-  /@[^\s@]*[^\s@.]\.[^\s@]|(?<![\w@])@\w|:\/\/|www\.|mailto:|xmpp:/i;
+  /@[^\s@]*[^\s@.]\.[^\s@]|(?<!\w)@\w|:\/\/|www\.|mailto:|xmpp:/i;
 const TRAILING_PUNCTUATION = ".,;:!?\"'\u2019\u201D)]}>";
 
 type Autolink = { index: number; value: string };

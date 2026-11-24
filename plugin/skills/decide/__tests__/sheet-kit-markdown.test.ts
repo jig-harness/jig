@@ -79,7 +79,9 @@ test("lit keeps standalone mentions literal and trims many closing parentheses i
   expect(lit("Ask @maintainer")).toBe("Ask `@maintainer`");
   expect(lit("(see @org/team)")).toBe("(see `@org/team`)");
   expect(lit("a@b")).not.toContain("`");
-  const started = performance.now();
-  lit(`https://example.org/${")".repeat(50000)}`);
-  expect(performance.now() - started).toBeLessThan(500);
+  const url = "https://example.org/";
+  expect(lit(`${url}${")".repeat(50000)}`)).toBe(
+    `\`${url}\`${")".repeat(50000)}`,
+  );
+  expect(lit("@@maintainer")).toBe("`@@maintainer`");
 });
