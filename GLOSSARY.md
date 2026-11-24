@@ -1930,10 +1930,13 @@ make, use the entry's term instead.
   In agent and skill metadata the tier follows from the model pin, as the
   [model routing policy](modules/M0-instruction-architecture/reference/model-routing-policy.md)
   sets out; a separately declared tier is checked only where the metadata
-  carries one. In routing configuration an explicit declaration
-  (`routing.model_tiers`, or its older spelling `routing.family_tiers`)
-  comes first and the family the plugin knows second, except that surviving
-  declarations for the same family must agree on their tier and the catalog's
+  carries one. That pinning rule applies to agent and skill metadata. Shared
+  routing configuration instead classifies models for implementer selection:
+  its declarations are per runtime and can name a known family spelling or an
+  exact model identifier. An explicit declaration (`routing.model_tiers`, or
+  its older spelling `routing.family_tiers`) comes first and the family the
+  plugin knows second, except that surviving declarations for the same family
+  or exact identifier in one runtime must agree on their tier and the catalog's
   Scout restriction still applies. Not
   from how important the job sounds. *Avoid*: model level (a *maturity level*
   is something else).
