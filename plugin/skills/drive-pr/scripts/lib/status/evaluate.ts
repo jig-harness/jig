@@ -55,7 +55,6 @@ import { readPrSnapshot } from "./pr-snapshot.ts";
 import {
   readParkedSets,
   standingProvisionalKeys,
-  actionableParkKeys,
   unlistedParkDetails,
 } from "../provisional.ts";
 import {
@@ -1002,22 +1001,15 @@ async function evaluateFresh(
     parkedKeys.has(String(t.threadId)),
   ).length;
   const provisionalKeys = standingProvisionalKeys(threads, parkedKeys);
-  // Computed AFTER parkedKeys: a parked thread is a human decision, not a
-  // finding that LANDED on its file again (structuralEscalationDue's premise),
-  // so one old parked thread on `a.ts` must not arm every consecutive round
-  // pair while it stays parked.
+  // After parkedKeys: a parked thread is a human decision, not a finding
+  // that LANDED again (structuralEscalationDue's premise).
   const summaryLive = summary.unaddressed.filter(
     (f) => !parkedKeys.has(f.fingerprint),
   );
   const summaryParked = summary.unaddressed.length - summaryLive.length;
   report.summaryParked = summaryParked;
-  report.actionableParkKeys = actionableParkKeys(parked);
   const { reversalParked, standaloneParked, standaloneNote } =
-    unlistedParkDetails(
-      parked,
-      report.openThreadKeys,
-      report.summaryUnaddressedKeys,
-    );
+    unlistedParkDetails(parked, report);
 
   // A thread/finding held for `resolve-held-thread.ts` /
   // `answer-summary-finding.ts` to dispatch (an `accepted` or `moot`

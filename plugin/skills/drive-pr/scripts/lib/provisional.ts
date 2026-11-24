@@ -187,14 +187,21 @@ export async function readParkedSets(ctx: {
  */
 export function unlistedParkDetails(
   parked: ParkedSets,
-  threadKeys: readonly string[],
-  summaryKeys: readonly string[],
+  report: {
+    openThreadKeys: string[] | null;
+    summaryUnaddressedKeys: string[] | null;
+    actionableParkKeys: string[] | null;
+  },
 ): {
   reversalParked: number;
   standaloneParked: number;
   standaloneNote: string;
 } {
-  const listedKeys = new Set([...threadKeys, ...summaryKeys]);
+  report.actionableParkKeys = actionableParkKeys(parked);
+  const listedKeys = new Set([
+    ...(report.openThreadKeys ?? []),
+    ...(report.summaryUnaddressedKeys ?? []),
+  ]);
   const unlisted = [...parked.keys].filter((key) => !listedKeys.has(key));
   const reversalParked = unlisted.filter((key) =>
     parked.reversals.has(key),

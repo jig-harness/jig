@@ -6,7 +6,7 @@ import {
 } from "../scripts/lib/status/probe-stop.ts";
 
 test("a park stop carries the actionable keys the status JSON publishes under work", () => {
-  const log = spyOn(console, "error").mockImplementation(() => {});
+  const log = spyOn(console, "error").mockImplementation(() => undefined);
   try {
     const probe = recordProbeStop(8, {
       state: "HITL_PARKED",
@@ -29,7 +29,7 @@ test("a park stop carries the actionable keys the status JSON publishes under wo
 });
 
 test("a park stop keeps every valid parked key, however long or many", () => {
-  const log = spyOn(console, "error").mockImplementation(() => {});
+  const log = spyOn(console, "error").mockImplementation(() => undefined);
   try {
     const keys = [
       "k".repeat(300),

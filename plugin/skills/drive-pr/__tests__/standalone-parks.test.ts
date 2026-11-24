@@ -9,6 +9,15 @@ import { describe, expect, it } from "bun:test";
 import { recoverBeforePass } from "../scripts/lib/driver/round-step.ts";
 import { unlistedParkDetails } from "../scripts/lib/provisional.ts";
 
+const rep = (
+  openThreadKeys: string[] = [],
+  summaryUnaddressedKeys: string[] = [],
+) => ({
+  openThreadKeys,
+  summaryUnaddressedKeys,
+  actionableParkKeys: null,
+});
+
 const sets = (keys: string[], reversals: string[] = []) => ({
   keys: new Set(keys),
   reversals: new Set(reversals),
@@ -16,7 +25,7 @@ const sets = (keys: string[], reversals: string[] = []) => ({
 
 describe("unlistedParkDetails", () => {
   it("counts a standalone finding park that no thread or finding lists", () => {
-    expect(unlistedParkDetails(sets(["ratchet-rule"]), [], [])).toEqual({
+    expect(unlistedParkDetails(sets(["ratchet-rule"]), rep())).toEqual({
       reversalParked: 0,
       standaloneParked: 1,
       standaloneNote: ", 1 standalone park(s)",
@@ -27,14 +36,13 @@ describe("unlistedParkDetails", () => {
     expect(
       unlistedParkDetails(
         sets(["PRRT_live", "fp-live"]),
-        ["PRRT_live"],
-        ["fp-live"],
+        rep(["PRRT_live"], ["fp-live"]),
       ),
     ).toEqual({ reversalParked: 0, standaloneParked: 0, standaloneNote: "" });
   });
 
   it("counts the park of a thread that is no longer open", () => {
-    expect(unlistedParkDetails(sets(["PRRT_resolved"]), [], [])).toEqual({
+    expect(unlistedParkDetails(sets(["PRRT_resolved"]), rep())).toEqual({
       reversalParked: 0,
       standaloneParked: 1,
       standaloneNote: ", 1 standalone park(s)",
@@ -43,7 +51,7 @@ describe("unlistedParkDetails", () => {
 
   it("counts a reversed provisional decision, even on a resolved thread", () => {
     expect(
-      unlistedParkDetails(sets(["PRRT_reopened"], ["PRRT_reopened"]), [], []),
+      unlistedParkDetails(sets(["PRRT_reopened"], ["PRRT_reopened"]), rep()),
     ).toEqual({ reversalParked: 1, standaloneParked: 0, standaloneNote: "" });
   });
 });
