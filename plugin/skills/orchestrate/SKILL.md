@@ -245,8 +245,10 @@ assignment), but its absence or ambiguity is inconclusive, never a reason to
 retry. Resend only when the mechanism gives a terminal answer that the
 attempt did not land, or accepts a retry keyed to the same attempt; when it
 can give neither, leave the start unresolved, say so, and ask the person.
-Verified pickup activity on the issue stops any resend while who caused it
-stays unknown: record it as "started, attribution unknown".
+Verified evidence of a pickup underway now for this work (not an earlier
+launch that ended or failed) stops any resend while who caused it stays
+unknown: record it as "started, attribution unknown", and keep the send
+attempt's own attribution unresolved.
 Wait
 when pickup is pending (it happens on a later tick). When an accepted pickup
 claimed the item and then stalled, follow the recovery the status reports, or
@@ -257,8 +259,11 @@ When a held task's decision arrives, file and start only the
 newly eligible remainder, never a task already filed. Send the plan keeper
 (step 9, when the plan has one) each decision when it is recorded, including
 a rejection that leaves no task to hand off, and each issue key as soon as
-filing succeeds, whatever the launch outcome. Record each such update as owed
-until the keeper confirms it applied it.
+filing succeeds, whatever the launch outcome. Write each such update into the
+notebook as owed before sending it, and clear it only once the keeper confirms
+it applied it. On every return, reconcile the owed updates against the plan
+the keeper holds before repeating or clearing any (a keeper may have applied
+one whose acknowledgment was lost).
 
 ### 11. Pick up the state on every return
 
@@ -275,7 +280,8 @@ unresolved instead of trusting that read. Treat every recorded attempt with
 no saved outcome as unconfirmed: check it and record where it stands before
 resending that item or starting work that depends on it; independent approved
 work is not held by it. An unreadable source or inconclusive answer keeps the
-start unconfirmed and is never a reason to retry. Then read the
+start unconfirmed, holds the work that depends on it, and is never a reason
+to retry; recording the result does not release dependents. Then read the
 state of started work through
 `/jig:operator` in a fresh session when the `jig` command is available.
 Otherwise, query the configured tracker or delivery mechanism read-only and

@@ -154,6 +154,26 @@ describe("orchestrate's contract", () => {
     expect(text).toContain("record them as unverified");
   });
 
+  test("keeps dependents held, scopes pickup evidence and reconciles owed plan updates", () => {
+    const text = skill.replace(/\s+/g, " ");
+    const step10 = text.slice(
+      text.indexOf("### 10. File and start approved tasks"),
+      text.indexOf("### 11."),
+    );
+    const step11 = text.slice(
+      text.indexOf("### 11. Pick up the state"),
+      text.indexOf("### 12."),
+    );
+    expect(step10).toContain("not an earlier launch that ended or failed");
+    expect(step10).toContain(
+      "keep the send attempt's own attribution unresolved",
+    );
+    expect(step10).toContain("as owed before sending it");
+    expect(step10).toContain("reconcile the owed updates against the plan");
+    expect(step11).toContain("holds the work that depends on it");
+    expect(step11).toContain("does not release dependents");
+  });
+
   test("the configuration command printed by the skill parses with its real CLI", () => {
     const blocks = [...skill.matchAll(/```bash\n([\s\S]*?)```/g)];
     expect(blocks).toHaveLength(2);
