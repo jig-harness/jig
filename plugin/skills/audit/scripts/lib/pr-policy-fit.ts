@@ -63,8 +63,9 @@ export async function policyFindings(
  * that does not read trusts nobody; with no `review.reviewer_app` a person's
  * approval is still the review witness, so the list changes no approval
  * requirement; and when adoption or its trusted-bot rule is off, a
- * listed bot's pull request with no ledger is driven only where a person
- * labels it `drive` or arms a drive by hand.
+ * listed bot's pull request with no ledger is not adopted by its author;
+ * a person's label (where labels are on), a hand-armed drive, or an eligible
+ * pickup handoff can still start its first drive.
  */
 export function trustedFit(config: Config): Finding[] {
   if (at(config, "pull_requests.trusted_automation") === undefined) return [];
@@ -92,14 +93,14 @@ export function trustedFit(config: Config): Finding[] {
       id: "derivation:pull_requests.trusted_automation:adopt",
       severity: "info",
       message:
-        "dispatch.adopt.trusted_automation is false: a listed bot's drive starts only when a person labels it drive, or labels it rearm where it stopped in a state a rearm can restart (not a converged head that moved), or arms it by hand. Review the install inputs (manifests, installer configuration, lockfiles) against a trusted baseline before starting each drive.",
+        "dispatch.adopt.trusted_automation is false: a listed bot's drive starts only when a person arms it by hand or, where dispatch.labels.enabled is on, labels it drive (or rearm where it stopped in a state a rearm can restart, not a converged head that moved); with labels off, start the drive directly. Review the install inputs (manifests, installer configuration, lockfiles) against a trusted baseline before starting each drive.",
     });
   else if (at(config, "dispatch.adopt.enabled") !== true)
     findings.push({
       id: "derivation:pull_requests.trusted_automation:adopt",
       severity: "info",
       message:
-        "Initial adoption is off, so a listed bot's pull request with no ledger is driven only when a person labels it drive or arms a drive by hand. Separately, a completed process pickup starts the first drive of its own same-repository pull request, and ledger-backed recovery restarts a stopped drive. Set dispatch.adopt.trusted_automation: false to require a person to start every listed bot's drive, and review its install inputs first.",
+        "Author-based adoption is off, so a listed bot's pull request with no ledger is not adopted by its author; a person can still label it drive (where dispatch.labels.enabled is on) or arm a drive by hand. A completed process pickup can still start the first drive of its own same-repository pull request, and ledger-backed recovery restarts a stopped drive. Set dispatch.adopt.trusted_automation: false to require a person to start every listed bot's drive, and review its install inputs first.",
     });
   return findings;
 }
