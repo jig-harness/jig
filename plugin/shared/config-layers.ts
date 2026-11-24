@@ -333,6 +333,11 @@ export function formatDisplayValue(value: string): string {
     : value;
 }
 
+/** A configuration value rendered inside a Markdown report without markup. */
+export function formatMarkdownValue(value: string): string {
+  return formatDisplayValue(value).replace(/[`*_[\]<>]/g, "\\\\$&");
+}
+
 export function formatField(path: readonly string[]): string {
   return path
     .map((key) =>

@@ -34,6 +34,7 @@
 import {
   formatDisplayValue,
   formatField,
+  formatMarkdownValue,
 } from "../../../../shared/config-layers.ts";
 import {
   familiesOf,
@@ -502,7 +503,7 @@ export function parseModels(
   for (const [runtime, families] of Object.entries(familyTiers))
     for (const [family, { tier, reason, key }] of Object.entries(families))
       reported.push(
-        `routing.${key}.${formatField([runtime])}.${formatField([family])} reads ${formatField([family])} as a ${tier} family: ${reason}`,
+        `routing.${key}.${formatMarkdownValue(formatField([runtime]))}.${formatMarkdownValue(formatField([family]))} reads ${formatMarkdownValue(formatField([family]))} as a ${tier} family: ${formatMarkdownValue(reason)}`,
       );
   return { models, stages, reported };
 }

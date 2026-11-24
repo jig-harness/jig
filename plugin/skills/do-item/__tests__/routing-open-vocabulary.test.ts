@@ -168,6 +168,35 @@ describe("a model outside the families", () => {
     expect(reported).not.toContain(declared);
   });
 
+  it("renders declaration reasons inert in the audit report", () => {
+    const reported = rules({
+      routing: {
+        model_tiers: {
+          codex: {
+            "gpt-house": {
+              tier: "strategic",
+              reason: "**not a separate result**\nnext line",
+            },
+          },
+        },
+      },
+    }).reported.join("\n");
+    expect(reported).toContain("\\\\*\\\\*not a separate result");
+    expect(reported).not.toContain("**not a separate result**\nnext line");
+  });
+
+  it("renders declared identifiers inert in the audit report", () => {
+    const reported = rules({
+      routing: {
+        model_tiers: {
+          codex: { "model**name": { tier: "strategic", reason: "reserved" } },
+        },
+      },
+    }).reported.join("\n");
+    expect(reported).toContain("model\\\\*\\\\*name");
+    expect(reported).not.toContain("model**name");
+  });
+
   it("keeps an unused legacy declaration from changing a selected model route", () => {
     expect(
       parseRoutingModels({
