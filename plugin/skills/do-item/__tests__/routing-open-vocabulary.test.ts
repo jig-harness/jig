@@ -184,9 +184,19 @@ describe("the host and the repository layers", () => {
     // the all-stages cell. The stage's row is the more specific one.
     const config = layered(
       HOST,
-      `routing:\n  models:\n    codex: { complex: astra }\n`,
+      `routing:
+  models:
+    codex: { simple: gpt-house, complex: astra }
+  model_tiers:
+    codex:
+      gpt-house: { tier: execution, reason: "the house model" }
+`,
     );
     expect(parseRoutingModels(config, "steward").codex?.complex).toBe(OUTSIDE);
+    // A cell the steward's row leaves out is the all-stages cell, not the default.
+    expect(parseRoutingModels(config, "steward").codex?.simple).toBe(
+      "gpt-house",
+    );
     expect(parseRoutingModels(config, "pickup").codex?.complex).toBe("astra");
     expect(parseRoutingModels(config).codex?.complex).toBe("astra");
   });
@@ -203,6 +213,12 @@ describe("the host and the repository layers", () => {
     expect(() => parseRoutingModels({ routing: { stages: null } })).toThrow(
       "routing.stages is null",
     );
+  });
+
+  it("refuses routing.model_tiers set to null, which would erase a lower layer", () => {
+    expect(() =>
+      parseRoutingModels({ routing: { model_tiers: null } }),
+    ).toThrow("routing.model_tiers is null");
   });
 
   it("lets a run's environment win over both files", () => {
@@ -319,6 +335,34 @@ describe("routing.family_tiers", () => {
         },
       }),
     ).toThrow(/declare one model with different tiers/);
+  });
+
+  it("replaces every older-key spelling of one model and keeps each model_tiers spelling", () => {
+    const parsed = rules({
+      routing: {
+        family_tiers: {
+          codex: {
+            sol: { tier: "strategic", reason: "old short" },
+            "gpt-6.1-sol": { tier: "strategic", reason: "old legacy" },
+          },
+        },
+        model_tiers: {
+          codex: {
+            "gpt-6.2-sol": { tier: "strategic", reason: "new release" },
+            sol: { tier: "strategic", reason: "new short" },
+          },
+        },
+      },
+    });
+    const row = parsed.familyTiers.codex ?? {};
+    expect(Object.keys(row).sort()).toEqual(["gpt-6.2-sol", "sol"]);
+    expect(row.sol?.reason).toBe("new short");
+    expect(row["gpt-6.2-sol"]?.reason).toBe("new release");
+    const reported = parsed.reported.join("\n");
+    expect(reported).toContain("new short");
+    expect(reported).toContain("new release");
+    expect(reported).not.toContain("old short");
+    expect(reported).not.toContain("old legacy");
   });
 
   it("accepts one model declared under both keys with one tier", () => {

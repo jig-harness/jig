@@ -90,6 +90,10 @@ export function parseFamilyTiers(raw: unknown): FamilyTiers {
 
 /** `routing.model_tiers`, each entry with its reason. */
 export function parseModelTiers(raw: unknown): FamilyTiers {
+  if (raw === null)
+    throw new RoutingError(
+      "routing.model_tiers is null, which would erase a lower layer's tier declarations whole; omit the key to inherit, or give a mapping",
+    );
   return parseTierEntries(raw, "model_tiers");
 }
 
