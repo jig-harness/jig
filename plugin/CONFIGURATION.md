@@ -446,6 +446,25 @@ command, the presence of `.yarnrc.yml` selects `--immutable`, with
 `--frozen-lockfile` used otherwise. Verify that the resolved Yarn supports
 the selected flag.
 
+**Review the commands, not only the inputs.** Every start or restart under
+the opt-out runs in the same host environment and checkout as the review:
+the environment, an overlay and catalogs read from disk can select a command
+neither repository snapshot holds. Before any drive that can install, review
+each selected install job's full command, working directory, executable and
+effective environment, whether it comes from a `drive.dependency_install`
+override or from the built-in command for the lockfile's own directory. Before
+any restart that can enter conflict repair (whatever the drive stopped on, a
+parked drive whose pull request conflicts included), review every command the
+resolution would run: a migration sequence's command, a
+`resolve_conflicts.generated` entry, the change-area catalog's generator, the
+built-in lockfile table, or a generator the operator finds and records for a
+derived path, with its working directory, against the base's configuration and
+the staged configuration both. Restart a stopped drive by the procedure for
+its stop (answer every parked decision, wait out a quota reset, grant a spent
+round budget). A drive a person stopped stays stopped, a drive converged on
+the current head and base needs no restart, and a drive that stopped
+`TAKEN_OVER` stays stopped: its successor's ledger says whether it can restart.
+
 An entry
 without `update_types` skips manifest classification, so such an edit can
 still qualify for the exception and approval is not owed on that ground; an
