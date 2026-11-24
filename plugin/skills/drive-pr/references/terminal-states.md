@@ -1973,7 +1973,7 @@ carries a stamp for an earlier head, Jig compares the two diffs:
 | names the PR head, and a commit the comparison needs cannot be read here, even after fetching it | [`INDETERMINATE`](../../../protocol/drive-exits.md): re-run                                                                                                                                      |
 | names another head, or is absent                                                                 | `STALE_REVIEW`, as before                                                                                                                                                                        |
 
-When the comment carries no stamp and its skip notice names the current head,
+When the comment carries no stamp and no earlier selected review stamp, and its skip notice names the current head,
 Jig checks the changed paths against `review.skip_excluded_paths`. If an
 explicit list covers every changed path, the head becomes
 `reviewer.reviewedSha` with source `skip-notice`, and the drive may converge

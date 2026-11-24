@@ -3,8 +3,13 @@ import { type SkipNotice, skipNoticeIn } from "./skip-notice.ts";
 
 /** `<!-- ai-review-round: N -->` from a sticky or inline reviewer comment. */
 export function parseReviewRound(body: string): number | null {
-  const m = body.match(/<!--\s*ai-review-round:\s*(\d+)\s*-->/);
-  const round = m ? Number(m[1]) : Number.NaN;
+  const markers = [
+    ...body.matchAll(/<!--\s*ai-review-round:\s*([\s\S]*?)-->/g),
+  ];
+  if (markers.length !== 1) return null;
+  const value = markers[0]?.[1]?.trim() ?? "";
+  if (!/^\d+$/.test(value)) return null;
+  const round = Number(value);
   return Number.isSafeInteger(round) ? round : null;
 }
 
@@ -12,6 +17,15 @@ export function parseReviewRound(body: string): number | null {
 function hasInvalidReviewRound(body: string): boolean {
   return (
     /<!--\s*ai-review-round:/.test(body) && parseReviewRound(body) === null
+  );
+}
+
+/** A SHA marker was present but did not satisfy the marker grammar. */
+function hasInvalidReviewedSha(body: string, marker: string): boolean {
+  const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return (
+    new RegExp(`<!--\\s*${escaped}\\s*:`, "i").test(body) &&
+    reviewedShaIn(body, marker) === ""
   );
 }
 
@@ -126,7 +140,7 @@ export function sameReviewedHead(left: string, right: string): boolean {
 
 /** Whether two non-empty reviewed-SHA markers identify different commits. */
 export function differentReviewedHead(left: string, right: string): boolean {
-  return left !== "" && right !== "" && !sameReviewedHead(left, right);
+  return right !== "" && !sameReviewedHead(left, right);
 }
 
 /** A comment's body when the reviewer wrote it as its sticky summary, else `null`. */
@@ -265,7 +279,8 @@ export function reviewerStickyIn(
     // A malformed explicit ordering claim is untrusted protocol input.  In
     // particular, do not let it fall through as an unstamped skip and alter
     // the witness selected from another comment.
-    if (hasInvalidReviewRound(body)) continue;
+    if (hasInvalidReviewRound(body) || hasInvalidReviewedSha(body, shaMarker))
+      continue;
     // A same-head acknowledgement is auxiliary evidence, not proof a rerun
     // published a review. It must not replace the selected sticky's timestamp.
     // A new reviewed head or a newer explicit review round is a replacement.
