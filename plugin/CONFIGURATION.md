@@ -799,7 +799,9 @@ model.
 - **Naming a model.** `routing.models.<runtime>.<tier>` and
   `routing.stages.<stage>.models.<runtime>.<tier>` take any model the runtime
   accepts, one word with no whitespace, comma, semicolon or equals sign (the same
-  holds for a `model_tiers` key). For a runtime with a list (`claude-code`, `codex`) a name
+  holds for a `model_tiers` key). A declaration key, unlike a model value, may
+  not be `__proto__`: the shared loader rejects that mapping key before routing
+  reads it. For a runtime with a list (`claude-code`, `codex`) a name
   outside the list is **refused** until `routing.model_tiers.<runtime>.<model>` (the recommended spelling; the older
   `routing.family_tiers` supplies the same declaration) says which M0 tier it
   is, so a typo never routes silently; the message names
@@ -855,9 +857,11 @@ model.
   model, `JIG__ROUTING__MODEL_TIERS__CODEX__MODEL_`
   addresses the key `model_` and can take the whole `{tier, reason}` mapping,
   while appending `__TIER` addresses `model._tier` instead; set an affected model's
-  whole entry as a mapping. For the runtime key `custom_` with model `model`, the spelling `CUSTOM___MODEL`
-  splits into `custom` and `_model` (a literal key `custom___model` in a file is a different, valid key), so set `JIG__ROUTING__MODEL_TIERS__CUSTOM_` to the
-  whole runtime mapping, with the model entries inside it. Likewise set such a runtime's
+  whole entry as a mapping. For a runtime named `custom_` holding the model `model`,
+  the variable `JIG__ROUTING__MODEL_TIERS__CUSTOM___MODEL` splits into `custom` and `_model`
+  (a literal key `custom___model` in a file is a different, valid key), so set
+  `JIG__ROUTING__MODEL_TIERS__CUSTOM_` to the whole runtime mapping, with the model
+  entries inside it. Likewise set such a runtime's
   whole row under `routing.models` or a stage's `models` table as one mapping.
 - **Precedence.** For a stage, a runtime and a tier, the first of: the stage's
   cell (highest layer that sets it), the all-stages `routing.models` cell

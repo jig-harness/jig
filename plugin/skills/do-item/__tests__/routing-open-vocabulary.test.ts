@@ -293,7 +293,7 @@ describe("the host and the repository layers", () => {
       "other_house",
     );
     expect(() => parseRoutingModels(run("gpt-house"))).toThrow(
-      /routing\.models\.codex\.standard: gpt-house is not a model codex knows.*routing\.model_tiers\.codex\.gpt-house to \{ tier:/,
+      /routing\.models\.codex\.standard: gpt-house is not a model codex knows[^\n]*by setting routing\.model_tiers\.codex\.gpt-house to \{ tier:/,
     );
   });
 
