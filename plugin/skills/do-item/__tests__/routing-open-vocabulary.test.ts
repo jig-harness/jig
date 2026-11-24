@@ -304,6 +304,9 @@ describe("the host and the repository layers", () => {
   models:
     codex:
       standard: gpt-house
+  model_tiers:
+    codex:
+      host_only: { tier: execution, reason: "the host's own table" }
   family_tiers:
     codex:
       gpt-house: { tier: execution, reason: "the house model" }
@@ -319,6 +322,9 @@ describe("the host and the repository layers", () => {
       JIG__ROUTING__MODEL_TIERS__CODEX__OTHER_HOUSE__REASON: "from the run",
     }).values;
     expect(parseRoutingModels(config).codex?.standard).toBe("gpt-house");
+    const tiers = JSON.stringify(config);
+    expect(tiers).not.toContain("host_only");
+    expect(tiers).toContain("other_house");
   });
 
   it("lets a run's environment win over both files", () => {
