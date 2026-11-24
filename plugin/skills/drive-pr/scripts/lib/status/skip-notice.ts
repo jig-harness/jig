@@ -20,19 +20,32 @@ export interface SkipNotice {
 
 const MAX_TEXT = 300;
 
-/** Strip code examples: protocol notices are prose, never rendered samples. */
+/** Strip block-code examples while retaining backticked commit ids in prose. */
 function proseOnly(body: string): string {
-  let fenced = false;
+  let fence: { character: "`" | "~"; length: number } | null = null;
   return body
     .split(/\r?\n/)
     .map((line) => {
       const bare = line.replace(/^\s*>\s?/, "");
-      if (/^\s*(`{3,}|~{3,})/.test(bare)) {
-        fenced = !fenced;
+      const token = /^\s*(`{3,}|~{3,})/.exec(bare)?.[1] ?? "";
+      if (
+        fence !== null &&
+        token !== "" &&
+        token[0] === fence.character &&
+        token.length >= fence.length &&
+        /^[ \t]*$/.test(bare.slice(bare.indexOf(token) + token.length))
+      ) {
+        fence = null;
         return "";
       }
-      if (fenced || /^\s{4}/.test(bare)) return "";
-      return bare.replace(/(`+)(?:[^`]|`(?!\1))*\1/g, "");
+      if (fence !== null || /^\s{4}/.test(bare)) return "";
+      if (token !== "") {
+        const rest = bare.slice(bare.indexOf(token) + token.length);
+        if (token[0] === "~" || !rest.includes("`"))
+          fence = { character: token[0] as "`" | "~", length: token.length };
+        return "";
+      }
+      return bare;
     })
     .join("\n");
 }
@@ -58,9 +71,9 @@ export function skipNoticeIn(
   const inner = blocks.at(-1)?.[1];
   if (inner === undefined) return null;
   const prose = proseOnly(inner);
-  const head = /(?<![0-9A-Za-z])([0-9a-f]{7,40})(?![0-9A-Za-z])/.exec(
-    prose,
-  )?.[1];
+  const head =
+    /`([0-9a-f]{7,40})`/.exec(prose)?.[1] ??
+    /(?<![0-9A-Za-z])([0-9a-f]{7,40})(?![0-9A-Za-z])/.exec(prose)?.[1];
   if (head === undefined) return null;
   const text = prose
     .replace(/\[![A-Za-z]+\]/g, "")

@@ -51,9 +51,33 @@ function markdownIndentation(line: string): { columns: number; end: number } {
   return { columns, end };
 }
 
-/** Remove inline-code payloads before looking for protocol markers. */
-function withoutInlineCode(line: string): string {
-  return line.replace(/(`+)(?:[^`]|`(?!\1))*\1/g, "");
+/**
+ * Remove inline-code examples of protocol markers without losing ordinary
+ * Markdown data such as the backticked file anchors in a finding. Operate on
+ * the complete block: a code span may cross a physical line.
+ */
+function withoutProtocolInlineCode(body: string): string {
+  let result = "";
+  let offset = 0;
+  while (offset < body.length) {
+    if (body[offset] !== "`") {
+      result += body[offset++] ?? "";
+      continue;
+    }
+    let end = offset;
+    while (body[end] === "`") end += 1;
+    const delimiter = body.slice(offset, end);
+    const close = body.indexOf(delimiter, end);
+    if (close === -1) {
+      result += delimiter;
+      offset = end;
+      continue;
+    }
+    const span = body.slice(offset, close + delimiter.length);
+    result += span.includes("<!--") ? "" : span;
+    offset = close + delimiter.length;
+  }
+  return result;
 }
 
 /** The last reviewed-SHA stamp in one sticky body under the configured marker. */
@@ -81,7 +105,6 @@ export function reviewerStickyBody(
   // summaries; accepting every trimmed line lets an example replace one.
   let fence: { character: "`" | "~"; length: number } | null = null;
   const structural: string[] = [];
-  let structuralMarker = false;
   for (const line of body.split(/\r?\n/)) {
     // Fenced blocks are structural only at Markdown's permitted indentation.
     // Remember their delimiter length: three backticks inside a four-backtick
@@ -109,18 +132,19 @@ export function reviewerStickyBody(
       fence = null;
       continue;
     }
-    const evidenceLine = withoutInlineCode(line);
-    const trimmed = evidenceLine.trimStart();
     if (fence !== null || indentation.columns >= 4) continue;
     if (/^ {0,3}>/.test(line)) continue;
-    structural.push(evidenceLine);
-    if (trimmed.startsWith(summaryMarker)) structuralMarker = true;
+    structural.push(line);
   }
   // Every evidence parser consumes this structural view. Returning the raw
   // comment after finding a genuine marker let examples later in that same
   // comment contribute a stamp, backlog, or finding.
-  return reviewerLogin(login) && structuralMarker
-    ? structural.join("\n")
+  const structuralBody = withoutProtocolInlineCode(structural.join("\n"));
+  return reviewerLogin(login) &&
+    structuralBody
+      .split(/\r?\n/)
+      .some((line) => line.trimStart().startsWith(summaryMarker))
+    ? structuralBody
     : null;
 }
 

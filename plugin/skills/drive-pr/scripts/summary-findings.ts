@@ -1368,6 +1368,11 @@ export function reviewerSticky(
       decodeBacklog(body).length > 0 ||
       parseBodyFindings(body).length > 0 ||
       parseDeclaredUnanchored(body) > 0;
+    // A clean current-head review legitimately replaces the preceding
+    // finding-bearing summary even when the reviewer omits a round marker.
+    // A skip notice is deliberately excluded below: it retains an older stamp
+    // while saying that no review occurred for the pushed head.
+    const carriesCleanStamp = reviewedShaIn(body, reviewedShaMarker()) !== "";
     const skipOnly =
       !carriesFindingEvidence &&
       reviewerStickyIn(
@@ -1398,7 +1403,7 @@ export function reviewerSticky(
         round !== null &&
         (selectedRound === null || round > selectedRound)) ||
       (!skipOnly &&
-        carriesFindingEvidence &&
+        (carriesFindingEvidence || carriesCleanStamp) &&
         (round === null || selectedRound === null || round === selectedRound))
     ) {
       selected = comment;
