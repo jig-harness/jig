@@ -292,7 +292,9 @@ describe("the host and the repository layers", () => {
     expect(parseRoutingModels(run("other_house")).codex?.standard).toBe(
       "other_house",
     );
-    expect(() => parseRoutingModels(run("gpt-house"))).toThrow();
+    expect(() => parseRoutingModels(run("gpt-house"))).toThrow(
+      /routing\.models\.codex\.standard/,
+    );
   });
 
   it("lets a run's environment win over both files", () => {
