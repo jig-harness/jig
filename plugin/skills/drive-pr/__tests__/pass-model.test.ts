@@ -414,13 +414,23 @@ describe("withoutModel for a registered harness's compact short flag", () => {
       });
       expect(
         effectivePass(
-          [fakeHarness.program, "run", "x"],
+          [fakeHarness.program, "-M", "old", "run", "x"],
           "complex",
           configured,
           undefined,
           resolve,
         ),
-      ).toMatchObject({ model: `${fakeHarness.runtime}-complex` });
+      ).toEqual({
+        argv: [
+          fakeHarness.program,
+          "--fake-model",
+          `${fakeHarness.runtime}-complex`,
+          "run",
+          "x",
+        ],
+        model: `${fakeHarness.runtime}-complex`,
+        source: "--pass-model",
+      });
     } finally {
       off();
     }

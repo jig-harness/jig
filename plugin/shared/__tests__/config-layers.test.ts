@@ -6,6 +6,7 @@ import {
   clonePath,
   environmentLayer,
   fieldInMessage,
+  formatDisplayValue,
   formatField,
   layerOf,
   loadLayeredConfig,
@@ -528,6 +529,12 @@ test("field paths escape control and bidirectional characters", () => {
     'routing.model_tiers."model\\u0080\\u202ename"',
   );
   expect(parseField(formatField(path))).toEqual(path);
+});
+
+test("display values escape Unicode line separators", () => {
+  expect(formatDisplayValue("model\u2028name\u2029next")).toBe(
+    '"model\\u2028name\\u2029next"',
+  );
 });
 
 test("jig-config reports a key that holds a dot as one field", () => {

@@ -12,16 +12,25 @@
  * indentation is dropped (it would open a code block) and a leading `-`, `+`,
  * `=` or list number is escaped (thematic break, setext heading, list).
  */
-const markdownText = (value: string) =>
-  value
+const markdownText = (value: string, startsLine: boolean) => {
+  const prefixed = startsLine ? value : `x${value}`;
+  const rendered = prefixed
     .replace(/^[ \t]+/gm, "")
-    .replace(/[\\`*_[\]<>&|#~]/g, "\\$&")
+    .replace(/[\\`*_[\]<>&#~]/g, "\\$&")
     .replace(/^([-+=])/gm, "\\$1")
     .replace(/^(\d{1,9})([.)])/gm, "$1\\$2");
+  return startsLine ? rendered : rendered.slice(1);
+};
 
 /** Every GFM bare-autolink form, rendered as source text rather than a link. */
 const BARE_AUTOLINK =
-  /\b(?:(?:https?|ftp):\/\/[^\s<>()]+|(?:www\.)[^\s<>()]+|(?:mailto|xmpp):[^\s<>()]+|[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+)/gi;
+  /\b(?:(?:https?|ftp):\/\/[^\s<>()]+|(?:www\.)[^\s<>()]+|(?:mailto|xmpp):[^\s<>()]+|[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9_-]+(?:\.[a-z0-9_-]+)+)/gi;
+
+const trimAutolinkPunctuation = (value: string) => {
+  let end = value.length;
+  while (end > 0 && ".,;:!?".includes(value[end - 1] ?? "")) end--;
+  return value.slice(0, end);
+};
 
 /**
  * Source text is literal text, never markup. Bare autolinks need a parsing
@@ -34,15 +43,23 @@ export const lit = (value: string) => {
   let rendered = "";
   for (const match of value.matchAll(BARE_AUTOLINK)) {
     const start = match.index ?? 0;
-    const target = match[0].replace(/[.,;:!?]+$/, "");
-    rendered += markdownText(value.slice(at, start));
+    const target = trimAutolinkPunctuation(match[0]);
+    rendered += markdownText(
+      value.slice(at, start),
+      at === 0 || value[at - 1] === "\n",
+    );
     rendered += code(target);
     at = start + target.length;
   }
-  return rendered + markdownText(value.slice(at));
+  return (
+    rendered + markdownText(value.slice(at), at === 0 || value[at - 1] === "\n")
+  );
 };
 /** Source text inside a table cell: escaped, and on one line. */
-export const cell = (value: string) => lit(value).replace(/\s*\n\s*/g, " ");
+export const cell = (value: string) =>
+  lit(value)
+    .replace(/\|/g, "\\|")
+    .replace(/\s*\n\s*/g, " ");
 /**
  * A URL inside a link target. Characters that end or escape the destination,
  * or split a table row, are percent-encoded; `&` becomes an entity because
@@ -56,9 +73,17 @@ export const href = (url: string) =>
       (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`,
     );
 /**
- * A citation or a file name, as inline code. A backtick inside becomes a
- * quote, and line breaks become spaces: a blank line would end the code span's
- * paragraph and let the rest be read as Markdown or raw HTML.
+ * A citation or a file name, as inline code. The delimiter is longer than
+ * any backtick run in the value, and line breaks become spaces: a blank line
+ * would end the code span's paragraph and let the rest be read as Markdown or
+ * raw HTML.
  */
-export const code = (value: string) =>
-  `\`${value.replace(/`/g, "'").replace(/\s+/g, " ").trim()}\``;
+export const code = (value: string) => {
+  const text = value.replace(/\s+/g, " ").trim();
+  const longestBacktickRun = Math.max(
+    0,
+    ...[...text.matchAll(/`+/g)].map((match) => match[0].length),
+  );
+  const fence = "`".repeat(longestBacktickRun + 1);
+  return `${fence}${text}${fence}`;
+};

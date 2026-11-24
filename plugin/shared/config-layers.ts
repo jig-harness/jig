@@ -315,14 +315,14 @@ export function repositoryConfigPath(
 
 const escapeDisplayControls = (value: string): string =>
   value.replace(
-    /[\p{Cc}\p{Bidi_Control}]/gu,
+    /[\p{Cc}\p{Bidi_Control}\u2028\u2029]/gu,
     (character) =>
       `\\u${character.codePointAt(0)?.toString(16).padStart(4, "0")}`,
   );
 
 /** A value for a diagnostic, with invisible controls escaped but ordinary text unchanged. */
 export function formatDisplayValue(value: string): string {
-  return /[\p{Cc}\p{Bidi_Control}]/u.test(value)
+  return /[\p{Cc}\p{Bidi_Control}\u2028\u2029]/u.test(value)
     ? escapeDisplayControls(JSON.stringify(value))
     : value;
 }
