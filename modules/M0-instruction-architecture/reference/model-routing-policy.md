@@ -25,12 +25,13 @@ by writing its own policy page (this file is a skeleton).
 
 This invariant governs model pins and tier declarations in agent and skill
 metadata, including a skill's explicit judgment-pass setting. Shared routing
-configuration is a separate declaration table: it classifies a model for
-selection by a runtime, and may name either a known family spelling or an
-exact model identifier. A shared route that selects the Judgment tier records
-the tier's admission and A/B baseline with that routing declaration. Its
-validation and merge rules belong with the routing configuration, not this
-metadata-pinning policy.
+configuration is separate: it classifies a model for selection by a runtime,
+and may name either a known family spelling or an exact model identifier. It
+does not admit a decision layer to the Judgment tier or provide that layer's
+baseline. A layer that selects a Judgment model through shared routing still
+records its admission and A/B baseline at the layer's own metadata or
+configuration declaration point. Routing validation and merge rules belong
+with the routing configuration, not this metadata-pinning policy.
 
 Where a runtime has no family aliases, the pin uses the vendor's most general
 model name, or one central name the repository maps to a release in a single
@@ -308,8 +309,8 @@ can be searched for and audited:
 Shared routing is not a pin declaration point: its `routing.model_tiers`,
 `routing.models`, and stage rows classify and select runtime models. It may
 use a known family spelling or an exact model identifier under the routing
-configuration's validation rules. When its effective route is Judgment, its
-routing declaration records the admission and A/B baseline for that route.
+configuration's validation rules. A route can serve several decision layers,
+so it cannot stand in for their separate Judgment admissions or baselines.
 
 Never in prose, in a prompt body or in a string literal in a script, and
 never as a model chosen at invocation time (a subagent call's model

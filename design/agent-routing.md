@@ -397,11 +397,11 @@ is policy, not an override, and the reasons name the rule that fired.
   report across pull requests of one type and area, are how that
   comparison is run, and a person moves the row with the report beside the
   change.
-- **M0's declaration points** gain a row: the routing table in the
-  repository's configuration (`routing.models`), beside agent and skill
-  metadata. The policy's invariant, its table and the audit's
-  `model-pins-are-family-aliases` criterion say so, and the configuration
-  loader is the check. One list of known families per runtime in
+- **Shared routing** is a separate runtime-selection contract, not an M0
+  metadata declaration point. Its configuration (`routing.models`) chooses a
+  model for a runtime, while each Judgment decision layer keeps its own
+  admission and baseline at its metadata or configuration declaration point.
+  The routing loader checks the selection. One list of known families per runtime in
   `plugin/shared/` (`model-families.ts`), which M0's mappings link,
   records the tier M0's mappings give each family (for Claude Code:
   `haiku` scout, `sonnet` execution, `opus` strategic, `fable` judgment; for
