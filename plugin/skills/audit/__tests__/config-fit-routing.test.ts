@@ -191,3 +191,23 @@ test("the Markdown rendering keeps routing findings literal", () => {
     "model\\*\\*name reads model\\*\\*name as a strategic family: \\*\\*not a separate result\\*\\*",
   );
 });
+
+test("the Markdown rendering does not autolink a configured URL", () => {
+  const report: FitReport = {
+    file: ".config/jig.yaml",
+    configured: true,
+    forge: "offline",
+    facts: {},
+    findings: [
+      {
+        id: "report:routing.models",
+        severity: "info",
+        message:
+          "routing.model_tiers.codex.example has reason https://example.org/model-notes",
+      },
+    ],
+    declined: [],
+    suggestions: [],
+  };
+  expect(render(report)).toContain("https\\://example.org/model-notes");
+});

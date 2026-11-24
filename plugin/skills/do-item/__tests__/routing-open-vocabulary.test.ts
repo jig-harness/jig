@@ -94,11 +94,11 @@ describe("a model outside the families", () => {
     ).toThrow(`routing.model_tiers.claude-code."${OUTSIDE}"`);
   });
 
-  it("escapes controls in an undeclared selected model", () => {
+  it("refuses controls in an undeclared selected model", () => {
     const selected = "outside\u202Emodel";
     expect(() =>
       rules({ routing: { models: { codex: { complex: selected } } } }),
-    ).toThrow('"outside\\u202emodel" is not a model codex knows');
+    ).toThrow("routing.models.codex.complex must be a family alias");
   });
 
   it("keeps a declared outside model available to route derivation", () => {

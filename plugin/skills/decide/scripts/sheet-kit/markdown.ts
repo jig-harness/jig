@@ -16,6 +16,9 @@ export const lit = (value: string) =>
   value
     .replace(/^[ \t]+/gm, "")
     .replace(/[\\`*_[\]<>&|#~]/g, "\\$&")
+    // An escaped protocol delimiter renders as ordinary text but cannot start
+    // GFM's bare-URL autolink extension.
+    .replace(/(https?):/gi, "$1\\:")
     .replace(/^([-+=])/gm, "\\$1")
     .replace(/^(\d{1,9})([.)])/gm, "$1\\$2");
 /** Source text inside a table cell: escaped, and on one line. */
