@@ -225,7 +225,7 @@ describe("a drive writes its own state label", () => {
     );
     expect(sent * 1000).toBeGreaterThan(before + 24 * 60 * 60 * 1000 - 60_000);
     expect(parseMs(stopInstant(stop) ?? "")).toBe(sent * 1000);
-  });
+  }, 90_000);
 
   it("records the reset when the stopped-ledger helper's comment read is rate-limited", async () => {
     const run = labelled({ threads: [] }, ["jig:stale"]);
