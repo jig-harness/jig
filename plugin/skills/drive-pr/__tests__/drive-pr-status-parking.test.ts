@@ -38,7 +38,7 @@ describe("drive-status.ts HITL parking", () => {
     expect(result.json.work).toMatchObject({ parkedKeys: ["ratchet-rule"] });
   });
 
-  it("does not park on a parked thread that is no longer open", async () => {
+  it("parks on a parked thread that is no longer open", async () => {
     // Park the thread while it is open, then read the gate where it is gone.
     const { stateDir } = writeFixture({
       threads: [{ id: "PRRT_gone", path: "a.ts", bot: true }],
@@ -47,7 +47,7 @@ describe("drive-status.ts HITL parking", () => {
     const { dir } = writeFixture({ threads: [] });
     const result = await probeIn(dir, stateDir);
     expect(result.json.work).toMatchObject({ parkedKeys: ["PRRT_gone"] });
-    expect(result.state).not.toBe("HITL_PARKED");
+    expect(result.state).toBe("HITL_PARKED");
   });
 
   it("HITL_PARKED — every remaining thread awaits a human", async () => {

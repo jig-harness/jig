@@ -624,14 +624,14 @@ describe("re-arming a HITL-parked drive with items unanswered", () => {
 });
 
 describe("actionableParkKeys", () => {
-  it("leaves out the park of a thread that is no longer open", () => {
+  it("keeps the park of a thread that is no longer open", () => {
     const sets = {
-      keys: new Set(["open", "resolved", "standalone"]),
+      keys: new Set(["standalone", "resolved", "open"]),
       reversals: new Set<string>(),
-      threads: new Set(["open", "resolved"]),
     };
-    expect(actionableParkKeys(sets, ["open"], [])).toEqual([
+    expect(actionableParkKeys(sets)).toEqual([
       "open",
+      "resolved",
       "standalone",
     ]);
   });

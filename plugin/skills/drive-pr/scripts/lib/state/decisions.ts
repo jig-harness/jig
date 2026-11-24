@@ -185,22 +185,19 @@ export function reversalParkedKeys(
 
 /**
  * `parked-keys [PR]`: every parked key, one per line;
- * `reversal-parked-keys [PR]`: only `reversalParkedKeys`;
- * `thread-parked-keys [PR]`: only the keys of parked review threads.
+ * `reversal-parked-keys [PR]`: only `reversalParkedKeys`.
  */
 export function printParkedKeys(
   state: {
     parked: ReadonlyArray<{ key: string; kind?: string }>;
     decisions?: readonly UnattendedDecision[];
   },
-  only: "all" | "reversals" | "threads",
+  only: "all" | "reversals",
 ): number {
   const keys =
     only === "reversals"
       ? reversalParkedKeys(state.parked, state.decisions ?? [])
-      : state.parked
-          .filter((p) => only === "all" || p.kind === "thread")
-          .map((p) => p.key);
+      : state.parked.map((p) => p.key);
   for (const key of keys) process.stdout.write(`${key}\n`);
   return 0;
 }

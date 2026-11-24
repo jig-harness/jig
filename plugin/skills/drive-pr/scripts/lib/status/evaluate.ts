@@ -1011,11 +1011,7 @@ async function evaluateFresh(
   );
   const summaryParked = summary.unaddressed.length - summaryLive.length;
   report.summaryParked = summaryParked;
-  report.actionableParkKeys = actionableParkKeys(
-    parked,
-    report.openThreadKeys,
-    report.summaryUnaddressedKeys,
-  );
+  report.actionableParkKeys = actionableParkKeys(parked);
   const { reversalParked, standaloneParked, standaloneNote } =
     unlistedParkDetails(
       parked,

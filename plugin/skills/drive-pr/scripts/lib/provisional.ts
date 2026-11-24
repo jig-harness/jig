@@ -151,13 +151,11 @@ const lines = (text: string): string[] =>
 type ParkedSets = {
   keys: Set<string>;
   reversals: Set<string>;
-  threads: Set<string>;
 };
 
 /**
- * The round gate's parked keys, those of them that hold a reversed
- * provisional decision, and those that park a review thread; `null` when
- * any could not be read, which the
+ * The round gate's parked keys, and those of them that hold a reversed
+ * provisional decision; `null` when either could not be read, which the
  * gate takes as INDETERMINATE: an unreadable parked set would re-arm work a
  * person parked. drive-state's stderr is passed through; each read is
  * bounded by the helper deadline, and a fired deadline reads as unreadable.
@@ -176,20 +174,16 @@ export async function readParkedSets(ctx: {
   if (all.code !== 0) return null;
   const reversals = await read("reversal-parked-keys");
   if (reversals.code !== 0) return null;
-  const threads = await read("thread-parked-keys");
-  if (threads.code !== 0) return null;
   return {
     keys: new Set(lines(all.stdout)),
     reversals: new Set(lines(reversals.stdout)),
-    threads: new Set(lines(threads.stdout)),
   };
 }
 
 /**
  * Count the parks that have no live review thread or summary finding and
- * still await a person. A reversed provisional decision does, wherever it
- * was made. Any other park does unless it parks a review thread that is no
- * longer open: a resolved thread leaves nothing for the drive to hand back.
+ * still await a person: a reversed provisional decision, wherever it was
+ * made, and any other park, whether or not the thread it names is still open.
  */
 export function unlistedParkDetails(
   parked: ParkedSets,
@@ -206,7 +200,7 @@ export function unlistedParkDetails(
     parked.reversals.has(key),
   ).length;
   const standaloneParked = unlisted.filter(
-    (key) => !parked.reversals.has(key) && !parked.threads.has(key),
+    (key) => !parked.reversals.has(key),
   ).length;
   return {
     reversalParked,
@@ -217,24 +211,12 @@ export function unlistedParkDetails(
 }
 
 /**
- * The parked keys a hand-back waits on: every park with a live review thread
- * or summary finding, a reversed provisional decision, or no thread at all.
- * A park of a thread that is no longer open is not among them.
+ * The parked keys a hand-back waits on: every park. A park of a thread that
+ * has since been resolved still waits for its answer, since a re-arm unparks
+ * nothing until every stored park is answered.
  */
-export function actionableParkKeys(
-  parked: ParkedSets,
-  threadKeys: readonly string[],
-  summaryKeys: readonly string[],
-): string[] {
-  const listedKeys = new Set([...threadKeys, ...summaryKeys]);
-  return [...parked.keys]
-    .filter(
-      (key) =>
-        listedKeys.has(key) ||
-        parked.reversals.has(key) ||
-        !parked.threads.has(key),
-    )
-    .sort((a, b) => a.localeCompare(b));
+export function actionableParkKeys(parked: ParkedSets): string[] {
+  return [...parked.keys].sort((a, b) => a.localeCompare(b));
 }
 
 /** The first comment a person wrote after a thread's last provisional reply. */

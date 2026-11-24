@@ -9,14 +9,9 @@ import { describe, expect, it } from "bun:test";
 import { recoverBeforePass } from "../scripts/lib/driver/round-step.ts";
 import { unlistedParkDetails } from "../scripts/lib/provisional.ts";
 
-const sets = (
-  keys: string[],
-  reversals: string[] = [],
-  threads: string[] = [],
-) => ({
+const sets = (keys: string[], reversals: string[] = []) => ({
   keys: new Set(keys),
   reversals: new Set(reversals),
-  threads: new Set(threads),
 });
 
 describe("unlistedParkDetails", () => {
@@ -31,30 +26,24 @@ describe("unlistedParkDetails", () => {
   it("leaves out a park the live threads and summary findings already list", () => {
     expect(
       unlistedParkDetails(
-        sets(["PRRT_live", "fp-live"], [], ["PRRT_live"]),
+        sets(["PRRT_live", "fp-live"]),
         ["PRRT_live"],
         ["fp-live"],
       ),
     ).toEqual({ reversalParked: 0, standaloneParked: 0, standaloneNote: "" });
   });
 
-  it("leaves out the park of a thread that is no longer open", () => {
-    expect(
-      unlistedParkDetails(
-        sets(["PRRT_resolved"], [], ["PRRT_resolved"]),
-        [],
-        [],
-      ),
-    ).toEqual({ reversalParked: 0, standaloneParked: 0, standaloneNote: "" });
+  it("counts the park of a thread that is no longer open", () => {
+    expect(unlistedParkDetails(sets(["PRRT_resolved"]), [], [])).toEqual({
+      reversalParked: 0,
+      standaloneParked: 1,
+      standaloneNote: ", 1 standalone park(s)",
+    });
   });
 
   it("counts a reversed provisional decision, even on a resolved thread", () => {
     expect(
-      unlistedParkDetails(
-        sets(["PRRT_reopened"], ["PRRT_reopened"], ["PRRT_reopened"]),
-        [],
-        [],
-      ),
+      unlistedParkDetails(sets(["PRRT_reopened"], ["PRRT_reopened"]), [], []),
     ).toEqual({ reversalParked: 1, standaloneParked: 0, standaloneNote: "" });
   });
 });
