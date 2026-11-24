@@ -17,6 +17,51 @@ export const diagnosisStartedPrefix = (head: string) =>
 export const diagnosisSkippedPrefix = (head: string) =>
   `diagnose-skipped: head ${head}: `;
 
+const PARK_TAG = /^\[park ("(?:[^"\\]|\\.)*")\] /;
+
+/** The tag a diagnosis that handed back to a person puts before its text, naming its park. */
+export const parkTag = (key: string): string =>
+  `[park ${JSON.stringify(key)}] `;
+
+/** A recorded diagnosis text split into the park it named, when it named one, and its prose. */
+export function splitParkTag(text: string): {
+  key: string | null;
+  text: string;
+} {
+  const match = PARK_TAG.exec(text);
+  if (match === null) return { key: null, text };
+  try {
+    const key: unknown = JSON.parse(match[1] ?? '""');
+    return typeof key === "string"
+      ? { key, text: text.slice(match[0].length) }
+      : { key: null, text };
+  } catch {
+    return { key: null, text };
+  }
+}
+
+/** The park the diagnosis at `head` handed to a person, when it handed one. */
+export function diagnosedParkKey(
+  actions: readonly CiAction[],
+  head: string,
+): string | null {
+  const last = lastDiagnosisAt(actions, head);
+  if (last === undefined || !last.detail.startsWith(diagnosisPrefix(head)))
+    return null;
+  return splitParkTag(last.detail.slice(diagnosisPrefix(head).length)).key;
+}
+
+/** The park the latest recorded diagnosis, on any head, handed to a person. */
+export function latestDiagnosedParkKey(
+  actions: readonly CiAction[],
+): string | null {
+  const last = actions.findLast(
+    (a) => a.action === "repair" && a.detail.startsWith("diagnosis: head "),
+  );
+  if (last === undefined) return null;
+  return splitParkTag(last.detail.replace(/^diagnosis: head \S+: /, "")).key;
+}
+
 /** The latest escalation at `head`: a started, recorded or skipped diagnosis. */
 export function lastDiagnosisAt(
   actions: readonly CiAction[],
@@ -46,7 +91,7 @@ export function diagnosisOutcome(
   )
     return undefined;
   return last.detail.startsWith(diagnosisPrefix(head))
-    ? last.detail.slice(diagnosisPrefix(head).length)
+    ? splitParkTag(last.detail.slice(diagnosisPrefix(head).length)).text
     : "the diagnosing session recorded no outcome";
 }
 
@@ -65,7 +110,8 @@ export function diagnosisDetail(
     .findLast(
       (a) => a.action === "repair" && a.detail.startsWith("diagnosis: head "),
     )
-    ?.detail.replace(/^diagnosis: head \S+: /, "");
+    ?.detail.replace(/^diagnosis: head \S+: /, "")
+    .replace(PARK_TAG, "");
 }
 
 /** Keep the latest diagnosis receipt for every head when telemetry is trimmed. */

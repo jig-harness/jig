@@ -370,13 +370,11 @@ export async function runRoundIteration(
 
 const CANCELLED_CI_KEY = "cancelled-ci";
 
-/** Whether the gate's parked set is the cancelled-CI recovery's park alone. */
-function parkedOnlyCancelled(status: Record<string, unknown>): boolean {
+/** Whether the gate's parked set holds the cancelled-CI recovery's park. */
+function parkedCancelled(status: Record<string, unknown>): boolean {
   const work = status.work as { parkedKeys?: unknown } | undefined;
   const keys = work?.parkedKeys;
-  return (
-    Array.isArray(keys) && keys.length === 1 && keys[0] === CANCELLED_CI_KEY
-  );
+  return Array.isArray(keys) && keys.includes(CANCELLED_CI_KEY);
 }
 
 /**
@@ -409,12 +407,13 @@ export async function recoverBeforePass(
   const recovery = await recover(context.pr, head);
   const stop = recoveryExit(recovery);
   if (stop !== null) return stop;
-  // A gate that stopped on the cancelled-CI park alone is read again once the
-  // recovery has cleared that park, rather than handed back with nothing parked.
+  // A gate that stopped with the cancelled-CI park among its parks is read
+  // again once the recovery has cleared that park: the next gate says whether
+  // an actionable park remains, rather than handing back a stale set.
   if (
     recovery === "none" &&
     code === 8 &&
-    parkedOnlyCancelled(status) &&
+    parkedCancelled(status) &&
     (await parkCleared(context.pr))
   )
     return "continue";

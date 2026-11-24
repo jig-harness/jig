@@ -85,8 +85,8 @@ describe("recoverBeforePass after a gate parked on cancelled CI alone", () => {
     expect(await pass(["cancelled-ci"], false)).toBeNull();
   });
 
-  it("hands back a gate that holds other parks as well", async () => {
-    expect(await pass(["cancelled-ci", "ratchet-rule"], true)).toBeNull();
+  it("reads the gate again when the cleared park was one of several", async () => {
+    expect(await pass(["cancelled-ci", "ratchet-rule"], true)).toBe("continue");
     expect(await pass(["ratchet-rule"], true)).toBeNull();
   });
 });

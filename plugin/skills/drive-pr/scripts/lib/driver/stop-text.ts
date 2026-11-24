@@ -7,8 +7,12 @@
  * read; every other exit says what the terminal-state registry's
  * `report.stop` says for it.
  */
+import type { ParkedItem } from "../state/park-frame.ts";
 import type { DriveState } from "../state/schema.ts";
-import { diagnosisDetail } from "../state/ci-actions.ts";
+import {
+  diagnosisDetail,
+  latestDiagnosedParkKey,
+} from "../state/ci-actions.ts";
 import { lastStopEvent, stopInstant } from "../state/events.ts";
 import {
   DRIVE_EXIT,
@@ -27,10 +31,20 @@ export function oneLine(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+/**
+ * The parked item a park's stop prints: the one the head's diagnosis handed
+ * to a person, else the first.
+ */
+export function leadPark(state: DriveState | null): ParkedItem | undefined {
+  const parked = state?.parked ?? [];
+  const key = latestDiagnosedParkKey(state?.ciActions ?? []);
+  return parked.find((p) => p.key === key) ?? parked[0];
+}
+
 /** A park's line: the first parked item's question, and how many more wait. */
 function parkStop(pr: string, code: number, state: DriveState | null): string {
   const parked = state?.parked ?? [];
-  const first = parked[0];
+  const first = leadPark(state);
   const probe = driverRuntime.stopProbe;
   const prefix =
     probe?.code === code

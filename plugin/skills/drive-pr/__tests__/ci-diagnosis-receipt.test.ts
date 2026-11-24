@@ -1,3 +1,4 @@
+import { parkTag, splitParkTag } from "../scripts/lib/state/ci-actions.ts";
 /**
  * The diagnosing repair pass's receipt, judged without a drive: what
  * `readDiagnosis` accepts from the report file, and what `judgeReceipt` makes
@@ -153,9 +154,16 @@ describe("judgeReceipt", () => {
       stateWith([park()]),
     );
     expect(receipt).toEqual({
-      text: "no issue filed (parked for a person). the local gate ran no tests",
+      text: `${parkTag(FILING)}no issue filed (parked for a person). the local gate ran no tests`,
       pushedHead: undefined,
       parked: true,
+    });
+  });
+
+  it("refuses a review thread's park, which can outlive its thread", async () => {
+    const answer = read({ diagnosis: "done", parked: FILING });
+    expect(await judge(answer, stateWith([park({ kind: "thread" })]))).toEqual({
+      refused: expect.stringContaining("not open"),
     });
   });
 
@@ -179,7 +187,7 @@ describe("judgeReceipt", () => {
       park({ class: "scope", at: "2026-11-20T09:59:59.000Z" }),
     ])
       expect(await judge(answer, stateWith([held]))).toEqual({
-        text: "no issue filed (parked for a person). the ratchet needs a decision",
+        text: `${parkTag(FILING)}no issue filed (parked for a person). the ratchet needs a decision`,
         pushedHead: undefined,
         parked: true,
       });
@@ -191,7 +199,7 @@ describe("judgeReceipt", () => {
       ciActions: [],
     });
     expect(receipt).toEqual({
-      text: "no issue filed (parked for a person). done",
+      text: `${parkTag(FILING)}no issue filed (parked for a person). done`,
       pushedHead: undefined,
       parked: true,
     });
@@ -209,5 +217,13 @@ describe("judgeReceipt", () => {
 
   it("passes the stand-down marker through", async () => {
     expect(await judge({ standDown: true }, null)).toEqual({ standDown: true });
+  });
+});
+
+describe("park tag", () => {
+  it("round-trips a key and leaves untagged text alone", () => {
+    const key = 'filing "with" quotes';
+    expect(splitParkTag(`${parkTag(key)}rest`)).toEqual({ key, text: "rest" });
+    expect(splitParkTag("rest")).toEqual({ key: null, text: "rest" });
   });
 });

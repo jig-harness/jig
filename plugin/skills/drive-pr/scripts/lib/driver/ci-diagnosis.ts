@@ -14,6 +14,8 @@ import {
   diagnosisSkippedPrefix,
   diagnosisStartedPrefix,
   lastDiagnosisAt,
+  parkTag,
+  splitParkTag,
 } from "../state/ci-actions.ts";
 import { DRIVE_EXIT } from "../status/terminal-states.ts";
 import { recordCiAttempt } from "./ci-attempt-record.ts";
@@ -183,10 +185,14 @@ export async function judgeReceipt(
       refused:
         "The diagnosing repair report names an open park, but the drive state could not be read to verify it.",
     };
-  const parked = state.parked.some((p) => p.key === answer.parked);
+  // A review thread's park can outlive its thread, so only a park that is
+  // not a thread's can stand for the decision the diagnosis waits on.
+  const parked = state.parked.some(
+    (p) => p.key === answer.parked && p.kind !== "thread",
+  );
   return parked
     ? {
-        text: `no issue filed (parked for a person). ${diagnosis}`,
+        text: `${parkTag(answer.parked ?? "")}no issue filed (parked for a person). ${diagnosis}`,
         pushedHead,
         parked,
       }
@@ -234,11 +240,12 @@ export async function diagnosedHeadStop(
       head,
       "The diagnosing repair was interrupted before it recorded its report.",
     );
-  return await stopWithDiagnosis(
-    context.pr,
-    head,
-    previous.detail.slice(diagnosisPrefix(head).length),
-  );
+  const recorded = previous.detail.slice(diagnosisPrefix(head).length);
+  // A diagnosis that handed the head to a person ends with that park: once
+  // an answer has removed it, the repair they decided is owed on this head.
+  const { key } = splitParkTag(recorded);
+  if (key !== null && !prior.parked.some((p) => p.key === key)) return null;
+  return await stopWithDiagnosis(context.pr, head, recorded);
 }
 
 /**
