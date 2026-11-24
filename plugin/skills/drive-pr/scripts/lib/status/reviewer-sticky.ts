@@ -61,25 +61,42 @@ export function reviewerStickyBody(
   // are not reviewer evidence. Requiring byte zero rejected valid configured
   // summaries; accepting every trimmed line lets an example replace one.
   let fence: { character: "`" | "~"; length: number } | null = null;
+  const structural: string[] = [];
   const structuralMarker = body.split(/\r?\n/).some((line) => {
     // Fenced blocks are structural only at Markdown's permitted indentation.
     // Remember their delimiter length: three backticks inside a four-backtick
     // block are content, not its closing fence.
-    const fenceLine = line.match(/^ {0,3}(`{3,}|~{3,})(?:[ \t].*)?$/);
-    if (fenceLine) {
-      const token = fenceLine[1] ?? "";
-      const character = token[0] as "`" | "~";
-      if (fence === null) fence = { character, length: token.length };
-      else if (fence.character === character && token.length >= fence.length)
-        fence = null;
+    const token = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1] ?? "";
+    if (fence === null && token !== "") {
+      // An opening fence may have an info string immediately after it.  A
+      // closing fence, on the other hand, admits whitespace only.
+      const rest = line.slice(line.indexOf(token) + token.length);
+      if (!rest.includes(token[0] ?? ""))
+        fence = { character: token[0] as "`" | "~", length: token.length };
+      return false;
+    }
+    if (
+      fence !== null &&
+      token !== "" &&
+      token[0] === fence.character &&
+      token.length >= fence.length &&
+      /^[ \t]*$/.test(line.slice(line.indexOf(token) + token.length))
+    ) {
+      fence = null;
       return false;
     }
     const trimmed = line.trimStart();
     if (fence !== null || /^ {0,3}>/.test(line) || /^(?: {4}|\t)/.test(line))
       return false;
+    structural.push(line);
     return trimmed.startsWith(summaryMarker);
   });
-  return reviewerLogin(login) && structuralMarker ? body : null;
+  // Every evidence parser consumes this structural view. Returning the raw
+  // comment after finding a genuine marker let examples later in that same
+  // comment contribute a stamp, backlog, or finding.
+  return reviewerLogin(login) && structuralMarker
+    ? structural.join("\n")
+    : null;
 }
 
 /** The review stamp and its companion markers from the newest qualifying sticky. */

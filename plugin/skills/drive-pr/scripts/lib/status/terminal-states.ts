@@ -216,7 +216,7 @@ export const TERMINAL_STATES: Readonly<
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
     meaning:
-      "The pull request is ready to merge: the reviewer reviewed this exact head, or its configured excluded-path skip proof covers the head, and nothing is left open. `drive.ts` exits `0` for it, once its own working tree is clean.",
+      "The pull request is ready to merge: the reviewer reviewed this exact head, an earlier reviewed head has the same pull-request diff after a current-head skip notice, or its configured excluded-path skip proof covers the head, and nothing is left open. `drive.ts` exits `0` for it, once its own working tree is clean.",
     report: {
       stop: "converged: review evidence covers its head and nothing is left open",
       next: {

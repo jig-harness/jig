@@ -65,6 +65,7 @@ import {
   reviewerApp,
   reviewerEvidence,
   reviewerExpected,
+  skipNoticeMarker,
   stickyMarker,
 } from "./lib/overlay.ts";
 import { ghCall } from "./lib/proc.ts";
@@ -453,7 +454,12 @@ export function parseDeclaredUnanchored(body: string): number {
   const m = body.match(
     /(\d+)\s+finding\(s\)\s+without\s+a\s+diff-anchorable\s+line/i,
   );
-  return m ? Number.parseInt(m[1] ?? "", 10) : 0;
+  if (!m) return 0;
+  const value = Number(m[1]);
+  // A reviewer comment is untrusted input.  This count controls a loop which
+  // creates synthetic findings, so refuse an implausible declaration rather
+  // than allocating until the process is exhausted.
+  return Number.isSafeInteger(value) && value >= 0 && value <= 1000 ? value : 0;
 }
 
 export interface BodyFinding {
@@ -1341,7 +1347,9 @@ export function reviewerSticky(
     const round = parseReviewRound(body);
     const carriesEvidence =
       reviewedShaFrom(body) !== undefined ||
-      /<!--\s*ai-review-backlog\s*:/.test(body) ||
+      // Decode rather than merely spotting an opener: malformed protocol
+      // evidence is unreadable, never a clean replacement summary.
+      decodeBacklog(body).length > 0 ||
       parseBodyFindings(body).length > 0 ||
       parseDeclaredUnanchored(body) > 0;
     const skipOnly =
@@ -1351,6 +1359,7 @@ export function reviewerSticky(
         isReviewerLogin,
         stickyMarker(),
         reviewedShaMarker(),
+        skipNoticeMarker(),
       ).skip !== null;
     // An auxiliary response never supersedes a finding-bearing summary just
     // because it happens to mention a protocol marker. A newer declared round
@@ -1360,7 +1369,9 @@ export function reviewerSticky(
       (!skipOnly &&
         round !== null &&
         (selectedRound === null || round > selectedRound)) ||
-      (!skipOnly && round === selectedRound && carriesEvidence)
+      (!skipOnly &&
+        carriesEvidence &&
+        (round === null || selectedRound === null || round === selectedRound))
     ) {
       selected = comment;
       selectedRound = round;

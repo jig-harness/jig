@@ -1547,7 +1547,10 @@ async function main(): Promise<number> {
       continue;
     }
 
-    await exportPolicyBase(pr);
+    // Resolve policy in the driven clone.  A pass may be launched from a
+    // dispatcher directory, while its skip proof is deliberately evaluated
+    // against DRIVE_PR_WORKTREE.
+    await exportPolicyBase(pr, process.env.DRIVE_PR_WORKTREE);
     const code = await evaluate(ctx, report);
     firstEvaluationDone = true;
 

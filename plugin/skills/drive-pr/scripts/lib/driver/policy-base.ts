@@ -64,7 +64,7 @@ async function commitOf(
 async function refreshTrackingRef(
   root: string,
   ref: string,
-): Promise<{ error: string } | null> {
+): Promise<{ commit: string } | { error: string }> {
   const remote = readRemoteName(root);
   if ("error" in remote) return remote;
   const prefix = `refs/remotes/${remote.remote}/`;
@@ -85,11 +85,13 @@ async function refreshTrackingRef(
       env: gitIdentityEnv(),
     },
   );
-  return r.code === 0
-    ? null
-    : {
-        error: `cannot fetch ${remote.remote}/${branch}, so its current commit is unknown${r.stderrTail ? ` (${r.stderrTail.trim()})` : ""}`,
-      };
+  if (r.code !== 0)
+    return {
+      error: `cannot fetch ${remote.remote}/${branch}, so its current commit is unknown${r.stderrTail ? ` (${r.stderrTail.trim()})` : ""}`,
+    };
+  // Pin the observed tip immediately after this fetch.  A later refresh in
+  // this process must not turn this policy read into a different observation.
+  return commitOf(root, ref);
 }
 
 /**
@@ -108,9 +110,9 @@ export async function exportPolicyBase(
   const resolved =
     "error" in base
       ? base
-      : fetched !== null
+      : fetched !== null && "error" in fetched
         ? fetched
-        : await commitOf(root, base.ref);
+        : (fetched ?? (await commitOf(root, base.ref)));
   const bound =
     "error" in base || "error" in resolved
       ? null
@@ -150,8 +152,7 @@ async function integrationBound(
   const branch = declared?.branch ?? defaultBranch;
   const ref = `refs/remotes/${remote.remote}/${branch}`;
   if (ref === baseRef) return null;
-  const fetched = await refreshTrackingRef(root, ref);
-  return fetched !== null ? fetched : commitOf(root, ref);
+  return await refreshTrackingRef(root, ref);
 }
 
 /**
@@ -169,10 +170,8 @@ async function declaredIntegrationBranch(
 ): Promise<{ branch: string } | { error: string } | null> {
   if ((process.env.DRIVE_PR_BASE_BRANCH ?? "").trim() !== "") return null;
   const ref = `refs/remotes/${remote}/${defaultBranch}`;
-  const fetched = await refreshTrackingRef(root, ref);
-  if (fetched !== null) return fetched;
-  const at = await commitOf(root, ref);
-  if ("error" in at) return at;
+  const at = await refreshTrackingRef(root, ref);
+  if (!("commit" in at)) return at;
   const snapshot = readSnapshotAt(
     at.commit,
     POLICY_BASE_VARIABLE,
