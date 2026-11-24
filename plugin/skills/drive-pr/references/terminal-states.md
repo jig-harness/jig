@@ -275,8 +275,9 @@ history on it; a direct re-arm does not, so that park waits for its answer
 like every other stored park, with one exception: at the `wide` autonomy
 level a re-arm unparks parks of the class `escalated` that nobody answered
 and hands them to the next round to decide provisionally. The exception is
-all or none: one unanswered park of any other class, any place an answer
-could be that the re-arm could not read, a dispute or an answer that does not
+all or none: one unanswered park of any other class that still waits after
+the settlement above (a resolved thread's park a dispatcher re-arm settled
+does not), any place an answer could be that the re-arm could not read, a dispute or an answer that does not
 settle an item, or a condition note without an answer leaves every item
 parked, the `escalated` ones too. Nothing else is unparked until all of them
 are settled.
