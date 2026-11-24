@@ -170,19 +170,25 @@ describe("jig dispatch adopts a repository's own recent pull requests", () => {
     const w = fixture(
       `${NAMED}    trusted_automation: false\npull_requests:\n  trusted_automation: ["dependabot[bot]"]\n`,
     );
+    const failed = {
+      ...authored(13, "app/dependabot", ago(HOUR), { bot: true }),
+      ...FAILING,
+    };
+    const healthy = authored(15, "app/dependabot", ago(HOUR), { bot: true });
+    for (const n of [10, 13, 14, 15]) w.setComments(n, []);
+    w.setPrs("open", [failed, healthy]);
+    expect(rearms(await tick(w, ["--apply"]))).toEqual([]);
+    expect(driveRuns(w)).toEqual([]);
+
     w.setPrs("open", [
       authored(10, "someone-else", ago(HOUR)),
-      {
-        ...authored(13, "app/dependabot", ago(HOUR), { bot: true }),
-        ...FAILING,
-      },
+      failed,
       labeled(
         authored(14, "app/dependabot", ago(HOUR), { bot: true }),
         "jig:drive",
       ),
-      authored(15, "app/dependabot", ago(HOUR), { bot: true }),
+      healthy,
     ]);
-    for (const n of [10, 13, 14, 15]) w.setComments(n, []);
     const planned = rearms(await tick(w));
     expect(planned.map((a) => a.target)).toEqual(["PR #10", "PR #14"]);
     expect(planned[1]?.reason).toContain("person's drive label");

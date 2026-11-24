@@ -468,9 +468,10 @@ a full page of either does not read whole.
 The dispatcher keeps the read between ticks, keyed by the head and the base
 commit, and the drive's announcement keeps it for the run.
 
-With `dispatch.adopt` on, a listed bot's pull request is adopted whether or
-not `adopt.authors` names the bot, and it is driven to convergence while
-healthy, and again when its head moves, so the board can place it. Adoption
+With `dispatch.adopt` on and its trusted automation option enabled, a listed
+bot's pull request is adopted even if `adopt.authors` omits the bot. It is
+driven to convergence while healthy and again when its head moves, so the
+board can place it. Adoption
 needs a head known to be in the repository, a recent update and no hold; the
 commit, path and update-type rules apply only afterwards, when the board
 places it, so a listed pull request can be driven and still not reach merge

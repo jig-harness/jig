@@ -167,7 +167,7 @@ export function automationStartBlock(
   )
     return null;
   if (pr.evidence.trustedDriveManual === true)
-    return "dispatch.adopt.trusted_automation requires a person to review and rearm this listed bot's drive";
+    return "dispatch.adopt.trusted_automation requires manual review and a person to start the drive";
   if (pr.evidence.automationIdle === true)
     return "it is an automation pull request that needs no work (no failing check, no conflict, no unresolved thread), so nothing is started of itself: a person merges it, or labels it rearm";
   return null;

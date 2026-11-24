@@ -97,6 +97,18 @@ export function trustedBot(
   return adoption.trusted.includes(normalLogin(author.login));
 }
 
+/** A missing author cannot establish that the opt-out allows an automatic drive. */
+export function requiresManualTrustedDrive(
+  author: Author | undefined,
+  adoption: Adoption | null,
+): boolean {
+  return (
+    adoption?.excludeTrusted === true &&
+    adoption.trusted.length > 0 &&
+    (!author?.login || trustedBot(author, adoption))
+  );
+}
+
 /** Why a ledger-backed automation pull request may need a person to rearm it. */
 export function idleForAdoption(
   pr: TroubleFacts & {
@@ -107,7 +119,7 @@ export function idleForAdoption(
   adoption: Adoption | null,
   login: string | null,
 ): { automationIdle?: true; trustedDriveManual?: true } {
-  if (adoption?.excludeTrusted === true && trustedBot(pr.author, adoption))
+  if (requiresManualTrustedDrive(pr.author, adoption))
     return { trustedDriveManual: true };
   // A trusted bot is exempt from idleness only while its head is known to be
   // in the repository, as first adoption requires.
@@ -186,7 +198,7 @@ export function adopts(
   if (author === undefined || author.login === "") return null;
   if (labels !== null && hasCommand(labels, pr.labels, "hold")) return null;
   const listed = trustedBot(author, adoption);
-  if (listed && adoption.excludeTrusted === true) return null;
+  if (requiresManualTrustedDrive(author, adoption)) return null;
   const trusted = pr.isCrossRepository === false && listed;
   if (!eligibleAuthor(author, adoption, trusted)) return null;
   const updated = parseMs(pr.updatedAt ?? "");
