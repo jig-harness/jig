@@ -326,3 +326,66 @@ describe("jig dispatch --apply re-drives an in-pass check-runs listing stop", ()
     expect(driveRuns(w)).toHaveLength(1);
   }, 180_000);
 });
+
+describe("jig dispatch --apply re-drives an unmeasured status probe read stop", () => {
+  // A status probe stop never measures the tree it left, so its stop event
+  // omits `leftWork`: the re-drive is bound to the workspace it stopped in.
+  const exit = DRIVE_EXIT.INDETERMINATE;
+  const probe = {
+    code: exit,
+    state: "INDETERMINATE",
+    failure: "read" as const,
+    reason: "cannot read PR #7 (too-costly: HTTP 502)",
+  };
+  const ledger =
+    (generation: number, actor: (ws: string) => string) => (ws: string) =>
+      stop(exit, generation, {
+        events: [
+          {
+            at: currentIso(),
+            round: generation,
+            kind: "stop",
+            cause: String(exit),
+          },
+        ],
+        driver: {
+          ...stoppedLedger(7, exit).driver,
+          probe,
+          actor: actor(ws),
+          clone: `clone-a@${hostLabel()}`,
+        },
+      });
+
+  it("launches the retry in the stopped tree, once for its head", async () => {
+    const own = fixture(
+      { mergeable: "MERGEABLE" },
+      ledger(3, (ws) => `wt-${worktreePathKey(ws)}`),
+    );
+    writeFileSync(
+      join(own.w.dir, "drive-stderr"),
+      `drive.ts: status probe stopped: ${JSON.stringify(probe)}\n`,
+    );
+    const record = await redrive(own.w, exit);
+    const kept = readRecord(record, dispatchState(own.w));
+    expect(kept?.workspace?.path).toBe(own.ws);
+    expect(kept?.redrive).toMatchObject({
+      change: `head ${HEAD_SHA}, stopped ${exit}`,
+      mechanicalStop: "probe-read",
+      tree: { actor: `wt-${worktreePathKey(own.ws)}`, here: true },
+    });
+    current?.close();
+  }, 180_000);
+
+  it("tells a person when no open workspace holds the stopped tree", async () => {
+    const gone = fixture(
+      { mergeable: "MERGEABLE" },
+      ledger(3, () => "wt-0123456789abcdef"),
+    );
+    const r = await tick(gone.w);
+    expect(launches(r)).toEqual([]);
+    expect(notified(r)).toEqual([["PR #7", "needs-person", "sent"]]);
+    expect(r.repos[0]?.actions[0]?.notice?.text).toContain(
+      "which no open workspace on this host holds",
+    );
+  }, 180_000);
+});
