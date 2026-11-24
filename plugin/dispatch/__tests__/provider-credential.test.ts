@@ -15,7 +15,7 @@ import {
   type CredentialSettings,
   providerIdentity,
 } from "../lib/provider-account.ts";
-import { maskCredentials } from "../../shared/credentials.ts";
+import { maskCredentials, redactExact } from "../../shared/credentials.ts";
 import { resolveCredential } from "../lib/provider-credential.ts";
 import { existingStateDb } from "../lib/state.ts";
 import { accountWall } from "../lib/walls.ts";
@@ -24,6 +24,16 @@ import { accountWall } from "../lib/walls.ts";
 function command(script: string, timeoutMs = 10_000): CredentialSettings {
   return {
     credentialCommand: [process.execPath, "-e", script],
+    credentialTimeoutMs: timeoutMs,
+    credentialEnv: [],
+    providerHosts: {},
+  };
+}
+
+/** A credential command that uses the shell only to leave a child process behind. */
+function shellCommand(script: string, timeoutMs = 10_000): CredentialSettings {
+  return {
+    credentialCommand: ["sh", "-c", script],
     credentialTimeoutMs: timeoutMs,
     credentialEnv: [],
     providerHosts: {},
@@ -220,12 +230,41 @@ describe("resolving a credential reference", () => {
     expect(maskCredentials("<redacted>", "[masked]")).toBe("<redacted>");
   });
 
+  it("masks the union of overlapping exact credential values", () => {
+    expect(
+      redactExact(
+        "longer-prefix-fixture<redacted>abcdef0123456789",
+        "[masked]",
+        ["longer-prefix-fixture<redacted>abcdef", "abcdef0123456789"],
+      ),
+    ).toBe("[masked]");
+  });
+
+  it("learns trimmed failed-output lines and marker-collision output", async () => {
+    const opaque = "trimmed-opaque-secret-1234";
+    await resolveCredential(
+      command(
+        `process.stdout.write('  ${opaque}  \\nmarker<redacted>${opaque}'); process.exit(1)`,
+      ),
+      "ref",
+      process.env,
+    );
+    await resolveCredential(
+      command(`process.stdout.write('prefix<redacted>${opaque}')`),
+      "ref",
+      process.env,
+    );
+    expect(maskCredentials(`value ${opaque}`, "[masked]")).toBe(
+      "value [masked]",
+    );
+  });
+
   it("is unreachable when the command does not answer in time", async () => {
     const printed = "timed-out-secret-1234";
     const value = await resolveCredential(
       command(
         `process.stdout.write(${JSON.stringify(printed)}); await Bun.sleep(10_000)`,
-        1000,
+        1_000,
       ),
       "op://a/b/c",
       process.env,
@@ -233,6 +272,25 @@ describe("resolving a credential reference", () => {
     expect(value).toMatchObject({
       ok: false,
       failure: { code: "unreachable" },
+    });
+    expect(maskCredentials(`value ${printed}`, "[masked]")).toBe(
+      "value [masked]",
+    );
+  }, 10_000);
+
+  it("refuses and masks output when the command leaves its process group alive", async () => {
+    const printed = "surviving-group-secret-1234";
+    const value = await resolveCredential(
+      shellCommand(`printf %s ${JSON.stringify(printed)}; sleep 30 &`),
+      "ref",
+      process.env,
+    );
+    expect(value).toMatchObject({
+      ok: false,
+      failure: {
+        code: "unauthorized",
+        reason: expect.stringContaining("background process"),
+      },
     });
     expect(maskCredentials(`value ${printed}`, "[masked]")).toBe(
       "value [masked]",

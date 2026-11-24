@@ -284,10 +284,33 @@ export function redactExact(
   mark: string,
   values: readonly string[] = [],
 ): string {
-  let out = text;
-  for (const value of [...values, ...exactSecrets()])
-    if (value.length >= SHORTEST_EXACT) out = out.split(value).join(mark);
-  return out;
+  const ranges: Array<{ start: number; end: number }> = [];
+  for (const value of [...values, ...exactSecrets()]) {
+    if (value.length < SHORTEST_EXACT) continue;
+    for (let start = text.indexOf(value); start >= 0; ) {
+      ranges.push({ start, end: start + value.length });
+      start = text.indexOf(value, start + 1);
+    }
+  }
+  if (ranges.length === 0) return text;
+
+  ranges.sort((a, b) => a.start - b.start || b.end - a.end);
+  const merged: Array<{ start: number; end: number }> = [];
+  for (const range of ranges) {
+    const previous = merged.at(-1);
+    if (previous !== undefined && range.start < previous.end) {
+      previous.end = Math.max(previous.end, range.end);
+    } else {
+      merged.push({ ...range });
+    }
+  }
+  let out = "";
+  let last = 0;
+  for (const range of merged) {
+    out += text.slice(last, range.start) + mark;
+    last = range.end;
+  }
+  return out + text.slice(last);
 }
 
 /** Replace every credential-shaped value in `text`, and every exact secret this process holds, with `mark`. */

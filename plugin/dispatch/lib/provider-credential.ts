@@ -45,13 +45,18 @@ export type CredentialCode = "unauthorized" | "unreachable";
 const LONGEST_VALUE = 4096;
 
 /**
- * What a failed command's output teaches this process: every line it printed
- * on standard output is remembered, so no later record carries it. Its error
+ * What captured command output teaches this process: every line it printed on
+ * standard output is remembered, so no later record carries it. Its error
  * output is never quoted, since an opaque secret printed only there could not
  * be recognised.
  */
 function learnPrinted(stdout: string): void {
-  for (const part of [stdout.trim(), ...stdout.split(/\r?\n/)]) {
+  const lines = stdout.split(/\r?\n/);
+  for (const part of [
+    stdout.trim(),
+    ...lines,
+    ...lines.map((line) => line.trim()),
+  ]) {
     // Keep the full failed line as an exact mask too. Splitting alone loses a
     // credential whose pieces either side of a replacement marker are too
     // short to be maskable on their own.
@@ -163,6 +168,9 @@ export async function resolveCredential(
       "the credential command left a background process running; it was stopped, and its value is not used",
     );
   }
+  // Learn captured output before refusing marker-shaped values too: a failed
+  // value can contain a marker beside opaque material that must stay masked.
+  learnPrinted(done.stdout);
   const value = done.stdout.replace(/\r?\n$/, "");
   if (value === "")
     return failed("unauthorized", "the credential command printed no value");
