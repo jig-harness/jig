@@ -51,11 +51,7 @@ import {
   withSource,
 } from "../../../shared/consumer.ts";
 import { detectHarness } from "../../../shared/harness.ts";
-import {
-  familiesOf,
-  familyOf,
-  runtimeModel,
-} from "../../../shared/model-families.ts";
+import { runtimeModel } from "../../../shared/model-families.ts";
 import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
 import {
   type MapEntry,
@@ -368,11 +364,6 @@ function modelFor(
     return null;
   }
   reasons.push(`model: ${model} (routing.models.${runtime}.${tier})`);
-  const families = familiesOf(runtime);
-  if (families?.takesAlias === true && familyOf(runtime, model) === undefined)
-    throw new RoutingError(
-      `routing.models.${runtime}.${tier}: ${model} is not a family alias that the delegated ${runtime} agent accepts; use a family alias for this delegation, or leave its model unpinned`,
-    );
   const given = runtimeModel(runtime, model);
   if (given !== model)
     reasons.push(`model: ${given} for ${runtime} (the model ${model} names)`);

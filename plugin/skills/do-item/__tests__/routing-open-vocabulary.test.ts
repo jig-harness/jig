@@ -94,7 +94,7 @@ describe("a model outside the families", () => {
     ).toThrow(`routing.model_tiers.claude-code."${OUTSIDE}"`);
   });
 
-  it("accepts a declared outside model in shared routing but refuses it for alias-only delegation", () => {
+  it("keeps a declared outside model available to route derivation", () => {
     const config = {
       routing: {
         models: { "claude-code": { complex: OUTSIDE } },
@@ -106,11 +106,9 @@ describe("a model outside the families", () => {
       },
     };
     expect(parseRoutingModels(config)["claude-code"]?.complex).toBe(OUTSIDE);
-    expect(() =>
+    expect(
       deriveRoute(facts({ runtime: "claude-code" }), rules(config)),
-    ).toThrow(
-      /is not a family alias that the delegated claude-code agent accepts/,
-    );
+    ).toMatchObject({ model: OUTSIDE, runtime_model: OUTSIDE });
   });
 
   it("is refused for a stage's row too", () => {

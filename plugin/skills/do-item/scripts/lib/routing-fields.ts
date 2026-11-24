@@ -41,7 +41,7 @@ export function tierNamed(value: unknown): Tier | undefined {
 /** A runtime name, as `routing.models` and `routing.efforts` key it. */
 const RUNTIME_NAME = /^[a-z][a-z0-9_-]*$/;
 /** A name a runtime takes: one token, so the route record needs no escaping. */
-const TOKEN = /^[^\s,;=]+$/;
+const TOKEN = /^[^\s,;=\0]+$/;
 
 export function oneOf<T extends string>(
   value: unknown,

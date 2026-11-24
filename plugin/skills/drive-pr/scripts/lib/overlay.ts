@@ -431,7 +431,8 @@ export const DEFAULT_PASS_MODEL = "sonnet";
  * A model as a pass command takes it: one word that does not start with a
  * dash (a model id, a Claude Code alias such as `sonnet`, or a routing tier).
  */
-export const PASS_MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/@[\]-]*$/;
+/** Keep pass-command operands compatible with routing's model-token grammar. */
+export const PASS_MODEL_PATTERN = /^[^\s,;=\0]+$/;
 
 /** `drive.pass_model`: the model, alias or routing tier each pass runs on; `undefined` when not configured. */
 export function passModelSetting(): string | undefined {
