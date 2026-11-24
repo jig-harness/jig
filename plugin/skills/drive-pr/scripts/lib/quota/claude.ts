@@ -102,6 +102,30 @@ interface Notice {
   clause: string | null;
 }
 
+/** The notice one text block is, end to end, or `null` when it is none. */
+function noticeOf(block: string, at: Temporal.Instant): Notice | null {
+  if (SESSION_LIMIT_NOTICE_RE.test(block))
+    return {
+      window: "short",
+      label: "session limit",
+      reset: parseResetClause(block, at)?.at ?? null,
+      clause: matchResetClauseText(block),
+    };
+  if (!WEEKLY_LIMIT_NOTICE_RE.test(block)) return null;
+  const reset = parseDatedResetClause(block, at)?.at ?? null;
+  const plausible =
+    reset !== null &&
+    reset.epochMilliseconds - at.epochMilliseconds <= WEEKLY_RESET_MAX_MS;
+  return {
+    window: plausible ? "weekly" : "unknown",
+    label: "weekly limit",
+    reset: plausible ? reset : null,
+    clause: matchDatedResetClauseText(block),
+  };
+}
+
+const NOTICE_RANK = { short: 0, unknown: 1, weekly: 2 } as const;
+
 /**
  * The most restrictive whole recognised notice among `blocks`, read at the
  * record's instant `at`; `null` when none is. A weekly notice outranks one
@@ -113,32 +137,12 @@ function recognisedNotice(
   blocks: readonly string[],
   at: Temporal.Instant,
 ): Notice | null {
-  const rank = { short: 0, unknown: 1, weekly: 2 } as const;
   let best: Notice | null = null;
   for (const block of blocks) {
-    let notice: Notice | null = null;
-    if (SESSION_LIMIT_NOTICE_RE.test(block)) {
-      notice = {
-        window: "short",
-        label: "session limit",
-        reset: parseResetClause(block, at)?.at ?? null,
-        clause: matchResetClauseText(block),
-      };
-    } else if (WEEKLY_LIMIT_NOTICE_RE.test(block)) {
-      const reset = parseDatedResetClause(block, at)?.at ?? null;
-      const plausible =
-        reset !== null &&
-        reset.epochMilliseconds - at.epochMilliseconds <= WEEKLY_RESET_MAX_MS;
-      notice = {
-        window: plausible ? "weekly" : "unknown",
-        label: "weekly limit",
-        reset: plausible ? reset : null,
-        clause: matchDatedResetClauseText(block),
-      };
-    }
+    const notice = noticeOf(block, at);
     if (
       notice !== null &&
-      (best === null || rank[notice.window] > rank[best.window])
+      (best === null || NOTICE_RANK[notice.window] > NOTICE_RANK[best.window])
     )
       best = notice;
   }
@@ -422,6 +426,15 @@ function textBlocks(record: Record<string, unknown>): string[] {
   return out;
 }
 
+/** A reset clause found in any block, shown as evidence only, never trusted. */
+function anyResetClause(blocks: readonly string[]): string | null {
+  for (const b of blocks) {
+    const m = matchDatedResetClauseText(b) ?? matchResetClauseText(b);
+    if (m !== null) return m;
+  }
+  return null;
+}
+
 /**
  * The wall one `rate_limit` record at instant `ts` in `path` reports.
  */
@@ -457,12 +470,7 @@ function blockOf(
   // For an unrecognised wall, still surface any resets clause found in
   // ANY block purely as evidence — it is never trusted for `resetAt`
   // or `window` unless it came from the block that is the notice.
-  const resetClauseText =
-    notice !== null
-      ? notice.clause
-      : (blocks
-          .map((b) => matchDatedResetClauseText(b) ?? matchResetClauseText(b))
-          .find((m) => m !== null) ?? null);
+  const resetClauseText = notice ? notice.clause : anyResetClause(blocks);
   const recognised = [notice?.label ?? null, resetClauseText].filter(
     (p): p is string => p !== null,
   );
