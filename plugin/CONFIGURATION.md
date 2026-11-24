@@ -855,7 +855,7 @@ model.
   model, `JIG__ROUTING__MODEL_TIERS__CODEX__MODEL_`
   addresses the key `model_` and can take the whole `{tier, reason}` mapping,
   while appending `__TIER` addresses `model._tier` instead; set an affected model's
-  whole entry as a mapping. For the intended runtime key `custom_` with model `model`, the attempted spelling `CUSTOM___MODEL`
+  whole entry as a mapping. For the runtime key `custom_` with model `model`, the spelling `CUSTOM___MODEL`
   splits into `custom` and `_model` (a literal key `custom___model` in a file is a different, valid key), so set `JIG__ROUTING__MODEL_TIERS__CUSTOM_` to the
   whole runtime mapping, with the model entries inside it. Likewise set such a runtime's
   whole row under `routing.models` or a stage's `models` table as one mapping.

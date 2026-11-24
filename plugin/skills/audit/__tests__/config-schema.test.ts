@@ -695,6 +695,12 @@ describe("the reading skills", () => {
       ["null:repository.base_branch", "info"],
     ]);
     expect(severities({ drive: null })).toEqual([["null:drive", "error"]]);
+    expect(severities({ routing: { model_tiers: null } })).toEqual([
+      ["null:routing.model_tiers", "error"],
+    ]);
+    expect(severities({ routing: { stages: null } })).toEqual([
+      ["null:routing.stages", "error"],
+    ]);
     expect(severities({ review: null })).toEqual([]);
   });
 
