@@ -62,8 +62,8 @@ export async function policyFindings(
  * What `pull_requests.trusted_automation` does in this configuration: a list
  * that does not read trusts nobody; with no `review.reviewer_app` a person's
  * approval is still the review witness, so the list changes no approval
- * requirement; and with `dispatch.adopt` off a listed bot's healthy pull
- * request is not adopted on its own, so it is driven only where a person
+ * requirement; and when adoption or its trusted-bot rule is off, a
+ * listed bot's pull request with no ledger is driven only where a person
  * labels it `drive` or arms a drive by hand.
  */
 export function trustedFit(config: Config): Finding[] {
@@ -87,12 +87,15 @@ export function trustedFit(config: Config): Finding[] {
       message:
         "pull_requests.trusted_automation does not change the approval requirement for merge now without review.reviewer_app: a person's approval is then the witness of every review and also satisfies the author condition",
     });
-  if (at(config, "dispatch.adopt.enabled") !== true)
+  if (
+    at(config, "dispatch.adopt.enabled") !== true ||
+    at(config, "dispatch.adopt.trusted_automation") === false
+  )
     findings.push({
       id: "derivation:pull_requests.trusted_automation:adopt",
       severity: "info",
       message:
-        "dispatch.adopt is off, so a listed bot's healthy pull request is not adopted automatically: a person labels it drive or arms a drive by hand before it can reach Ready to merge",
+        "Automatic adoption is off for listed bots. Review the install inputs before starting a listed bot's drive by hand.",
     });
   return findings;
 }

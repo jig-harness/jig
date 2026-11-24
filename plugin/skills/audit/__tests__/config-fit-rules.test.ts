@@ -13,12 +13,16 @@ afterAll(() => {
 });
 
 /** The fit's findings for a repository with this configuration. */
-function findings(config: string): { id: string; message: string }[] {
+function findings(
+  config: string,
+): { id: string; message: string; severity: string }[] {
   const dir = scratchRepo({ ".config/jig.yaml": config });
   dirs.push(dir);
   const run = runScript("config-fit.ts", ["--offline", "--json"], dir);
   return (
-    JSON.parse(run.out) as { findings: { id: string; message: string }[] }
+    JSON.parse(run.out) as {
+      findings: { id: string; message: string; severity: string }[];
+    }
   ).findings;
 }
 
@@ -78,5 +82,15 @@ test("a trusted automation list with no reviewer app and no adoption is said to 
   ).map((f) => f.id);
   expect(witnessed).not.toContain(
     "derivation:pull_requests.trusted_automation:witness",
+  );
+});
+
+test("the trusted automation adoption opt-out is accepted and reported", () => {
+  const found = findings(
+    'dispatch:\n  labels: { enabled: true }\n  adopt: { enabled: true, trusted_automation: false }\npull_requests:\n  trusted_automation: ["renovate[bot]"]\n',
+  );
+  expect(found.filter((finding) => finding.severity === "error")).toEqual([]);
+  expect(found.map((finding) => finding.id)).toContain(
+    "derivation:pull_requests.trusted_automation:adopt",
   );
 });

@@ -166,6 +166,28 @@ describe("jig dispatch adopts a repository's own recent pull requests", () => {
     expect(rearms(await tick(w))).toEqual([]);
   });
 
+  it("requires a manual drive for a trusted bot when trusted automation adoption is disabled", async () => {
+    const w = fixture(
+      `${NAMED}    trusted_automation: false\npull_requests:\n  trusted_automation: ["dependabot[bot]"]\n`,
+    );
+    w.setPrs("open", [
+      authored(10, "someone-else", ago(HOUR)),
+      {
+        ...authored(13, "app/dependabot", ago(HOUR), { bot: true }),
+        ...FAILING,
+      },
+      labeled(
+        authored(14, "app/dependabot", ago(HOUR), { bot: true }),
+        "jig:drive",
+      ),
+      authored(15, "app/dependabot", ago(HOUR), { bot: true }),
+    ]);
+    for (const n of [10, 13, 14, 15]) w.setComments(n, []);
+    const planned = rearms(await tick(w));
+    expect(planned.map((a) => a.target)).toEqual(["PR #10", "PR #14"]);
+    expect(planned[1]?.reason).toContain("person's drive label");
+  });
+
   it("arms an adopted pull request once per head commit", async () => {
     const w = fixture(ADOPT);
     w.setPrs("open", [authored(8, "drive-bot", ago(HOUR))]);
@@ -290,12 +312,33 @@ describe("dispatch.adopt", () => {
       "dispatch.adopt.within",
     );
     refusal(
+      { adopt: { enabled: true, trusted_automation: "false" } },
+      "dispatch.adopt.trusted_automation",
+    );
+    refusal(
       {
         labels: { enabled: true, only_labeled: true },
         adopt: { enabled: true },
       },
       "only_labeled",
     );
+  });
+
+  it("refuses adoption with the opt-out when the trust list cannot be read", () => {
+    expect(
+      dispatchSection({
+        dispatch: {
+          labels: { enabled: true },
+          adopt: { enabled: true, trusted_automation: false },
+        },
+        pull_requests: { trusted_automation: "dependabot[bot]" },
+      }),
+    ).toMatchObject({
+      ok: false,
+      failure: {
+        reason: expect.stringContaining("pull_requests.trusted_automation"),
+      },
+    });
   });
 });
 

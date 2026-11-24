@@ -92,6 +92,8 @@ export interface AdoptRule {
   withinMs: number;
   /** The bots `pull_requests.trusted_automation` names, case folded: adopted, and driven while healthy too; absent for none. */
   trusted?: string[];
+  /** Listed bots need a manual drive or rearm, even when named in `authors`. */
+  excludeTrusted?: true;
 }
 
 /** One repository as the tick dispatches for it. */

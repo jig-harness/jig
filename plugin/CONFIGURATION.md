@@ -424,15 +424,20 @@ protection) still decide its lane:
      apply to a behind branch or another blocker, and to forge facts that
      are incomplete or a mergeability not yet known.
 
-**Warning: the drive host installs what the pull request selects.** The
-classifier reads the textual patch, not its effect on the install: which
-lockfile is consumed, which installer runs, and which command applies. Jig
-picks the command from the lockfile it detects; for `yarn.lock`, an existing
-`.yarnrc.yml` alone selects `--immutable` over `--frozen-lockfile`. The drive
-host runs that install during a base merge or a conflict resolution, before
-the Ready decision, so a review at merge time comes too late. With
-`dispatch.adopt` on, a listed bot's pull request can be adopted and installed
-before anyone has looked at it.
+**The drive can install dependencies before the Ready decision.** To review
+install inputs before a listed bot's drive starts, set
+`dispatch.adopt.trusted_automation: false` and start each drive after review.
+Stop any running drives while putting this procedure in place. For a clean
+base merge, compare the merged tree with its first parent (the pre-merge branch).
+For a conflict resolution, compare the resolved index with that branch.
+Recheck when the head, base or resolution changes the inputs. Review the
+contents of any newly selected lockfile, including an unchanged lockfile
+selected after a manifest edit or after a lockfile is added, removed, moved
+or copied. Verify the executable, version and source the host resolves for
+the install command, including any shim or override. For the built-in Yarn
+command, the presence of `.yarnrc.yml` selects `--immutable`, with
+`--frozen-lockfile` used otherwise. Verify that the resolved Yarn supports
+the selected flag.
 
 An entry
 without `update_types` skips manifest classification, so such an edit can
@@ -1636,6 +1641,7 @@ repository. What a run may start is the machine's to say, in
 | `dispatch.adopt.enabled` | `true` or `false` | `false`: a pull request with no drive ledger is driven only when a person labels it `drive`. `true` turns the adoption rule on (below). Refused beside `labels.only_labeled: true` | dispatch |
 | `dispatch.adopt.authors` | nonempty list of forge logins (a GitHub App's as `<name>[bot]`) | The login the dispatcher reads the forge as, the one the host's sessions open pull requests under: the authors whose pull requests the rule adopts | dispatch |
 | `dispatch.adopt.within` | duration | `168h` (a week): how recently a pull request must have been updated for the rule to adopt it | dispatch |
+| `dispatch.adopt.trusted_automation` | `true` or `false` | `true`: the rule can adopt same-repository pull requests from bots listed in `pull_requests.trusted_automation`. Set `false` to require a manual drive or rearm for those bots, including bots also named in `adopt.authors` | dispatch |
 | `dispatch.pool.states` | nonempty list of [canonical states](#issue_tracker), under the same restrictions as `dispatch.states` | None: no ready pool. Set, the unassigned open items in these states (inside `issue_tracker.jira.pool_issue_types` on Jira) are pickups too, when a person who can write to the repository made each ready (below). Refused without `dispatch.identity` and without `do_item.claim_marker: true` | dispatch |
 
 A repository whose lane is a ready pool (validated items left unassigned
@@ -1855,7 +1861,10 @@ draft is adopted like any other, since a drive marks its pull request
 ready. A bot's pull request (a dependency update, say) is adopted only
 when `authors` names the bot or
 [`pull_requests.trusted_automation`](#trusted-automation) lists it, and one
-carrying `jig:hold` never is. An automation pull request (above) is adopted
+carrying `jig:hold` never is. Set `adopt.trusted_automation: false` to leave
+starts and restarts for the listed bots to a person, including those also
+named in `adopt.authors`. This restart rule applies even with adoption off.
+An automation pull request (above) is adopted
 only while it needs work, except a listed bot's, which is driven while
 healthy too; a healthy one is otherwise left for a person to merge, and
 `jig:drive` still drives
@@ -2315,6 +2324,7 @@ dispatch:
     enabled: true
     authors: [example-factory]
     within: 168h
+    trusted_automation: false            # request each listed bot's drive or rearm by hand
   pool:
     states: [todo]                       # needs do_item.claim_marker: true
 gates:

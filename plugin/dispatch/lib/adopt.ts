@@ -8,7 +8,9 @@
  *   host's sessions open pull requests under;
  * - it was updated within the rule's window (`within`, a week by default);
  * - a bot opened it only where the rule names that bot, never through the
- *   default author, or where `pull_requests.trusted_automation` lists it;
+ *   default author, or where `pull_requests.trusted_automation` lists it.
+ *   With `adopt.trusted_automation: false`, every listed bot needs a manual
+ *   drive or rearm;
  * - a person's `hold` label is not on it;
  * - an automation pull request (`automation.ts`: a bot's the rule does not
  *   name, or one carrying `automation` or an `automation:` label) needs
@@ -44,6 +46,8 @@ export interface Adoption {
   withinMs: number;
   /** The bots `pull_requests.trusted_automation` names, case folded. */
   trusted: string[];
+  excludeTrusted?: true;
+  initialAdoptionDisabled?: true;
 }
 
 /** A pull request's author as the forge lists it. */
@@ -67,17 +71,20 @@ export function adoptionOf(
   login: string | null,
 ): Adoption | null {
   const rule = section.adopt;
-  if (!rule.enabled) return null;
+  if (!rule.enabled && rule.excludeTrusted !== true) return null;
   return {
     authors: [
       ...new Set([
-        ...(rule.authors ?? (login === null ? [] : [login])),
-        ...(rule.servedAuthors ?? []),
+        ...((rule.enabled ? rule.authors : null) ??
+          (login === null ? [] : [login])),
+        ...(rule.enabled ? (rule.servedAuthors ?? []) : []),
       ]),
     ],
-    named: rule.authors !== null,
+    named: rule.enabled && rule.authors !== null,
     withinMs: rule.withinMs,
     trusted: rule.trusted ?? [],
+    ...(rule.excludeTrusted === true ? { excludeTrusted: true } : {}),
+    ...(!rule.enabled ? { initialAdoptionDisabled: true } : {}),
   };
 }
 
@@ -90,7 +97,7 @@ export function trustedBot(
   return adoption.trusted.includes(normalLogin(author.login));
 }
 
-/** Whether a pull request's drive is idle automation under `adoption`; a bot `pull_requests.trusted_automation` lists is never idle. */
+/** Why a ledger-backed automation pull request may need a person to rearm it. */
 export function idleForAdoption(
   pr: TroubleFacts & {
     author?: Author;
@@ -99,7 +106,9 @@ export function idleForAdoption(
   },
   adoption: Adoption | null,
   login: string | null,
-): { automationIdle?: true } {
+): { automationIdle?: true; trustedDriveManual?: true } {
+  if (adoption?.excludeTrusted === true && trustedBot(pr.author, adoption))
+    return { trustedDriveManual: true };
   // A trusted bot is exempt from idleness only while its head is known to be
   // in the repository, as first adoption requires.
   const trusted = pr.isCrossRepository === false ? adoption?.trusted : [];
@@ -120,14 +129,19 @@ export function adoptionNote(
   adoption: Adoption | null,
   drives: ReadonlyArray<{ evidence: Record<string, unknown> }>,
 ): string {
-  if (adoption === null) return "";
-  if (adoption.authors.length === 0 && adoption.trusted.length === 0)
+  if (adoption === null || adoption.initialAdoptionDisabled === true) return "";
+  if (
+    adoption.authors.length === 0 &&
+    (adoption.excludeTrusted === true || adoption.trusted.length === 0)
+  )
     return "; dispatch.adopt names no author and the dispatcher's forge login does not read, so it adopts none";
   const adopted = drives.filter((d) => typeof d.evidence.adopted === "string");
   const who = [
     ...adoption.authors,
-    ...adoption.trusted.map(
-      (t) => `${t} (trusted automation, same-repository only)`,
+    ...adoption.trusted.map((login) =>
+      adoption.excludeTrusted === true
+        ? `${login} (trusted automation, manual drive)`
+        : `${login} (trusted automation, same-repository only)`,
     ),
   ];
   return `; ${adopted.length} adopted by dispatch.adopt (authors ${who.join(", ")}, within ${shownWindow(adoption.withinMs)})`;
@@ -167,11 +181,13 @@ export function adopts(
   labels: LabelConfig | null,
   nowMs: number,
 ): string | null {
+  if (adoption.initialAdoptionDisabled === true) return null;
   const author = pr.author;
   if (author === undefined || author.login === "") return null;
   if (labels !== null && hasCommand(labels, pr.labels, "hold")) return null;
-  const trusted =
-    pr.isCrossRepository === false && trustedBot(author, adoption);
+  const listed = trustedBot(author, adoption);
+  if (listed && adoption.excludeTrusted === true) return null;
+  const trusted = pr.isCrossRepository === false && listed;
   if (!eligibleAuthor(author, adoption, trusted)) return null;
   const updated = parseMs(pr.updatedAt ?? "");
   if (!Number.isFinite(updated) || nowMs - updated > adoption.withinMs)

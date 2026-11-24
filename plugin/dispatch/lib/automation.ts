@@ -156,11 +156,19 @@ const AUTOMATIC: ReadonlySet<LedgerClass> = new Set([
 /** The classes a pending launch may still replay from: the automatic ones, and a park a pending conflict repair replays through. */
 const REPLAYED: ReadonlySet<LedgerClass> = new Set([...AUTOMATIC, "parked"]);
 
-/** Whether a drive's pull request is an automation pull request that needs no work, so that no drive is started on it of itself; a person's rearm request still starts one. */
-export function idleBlocksStart(pr: DrivenPr, replay = false): boolean {
-  return (
-    pr.evidence.automationIdle === true &&
-    pr.evidence.rearm !== true &&
-    (replay ? REPLAYED : AUTOMATIC).has(pr.class)
-  );
+/** Why the dispatcher leaves an automation drive to a person, when it does. */
+export function automationStartBlock(
+  pr: DrivenPr,
+  replay = false,
+): string | null {
+  if (
+    pr.evidence.rearm === true ||
+    !(replay ? REPLAYED : AUTOMATIC).has(pr.class)
+  )
+    return null;
+  if (pr.evidence.trustedDriveManual === true)
+    return "dispatch.adopt.trusted_automation requires a person to review and rearm this listed bot's drive";
+  if (pr.evidence.automationIdle === true)
+    return "it is an automation pull request that needs no work (no failing check, no conflict, no unresolved thread), so nothing is started of itself: a person merges it, or labels it rearm";
+  return null;
 }

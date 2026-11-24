@@ -4,7 +4,7 @@
  * and claim the launch before calling the runtime. Pending launches replay
  * under their own record and token once their checkout is proven again.
  */
-import { idleBlocksStart } from "../automation.ts";
+import { automationStartBlock } from "../automation.ts";
 import { readCloneKey, takeoverHostDriver } from "../host-drivers.ts";
 import type { UnrecordedDriver } from "../host-drivers.ts";
 import { consumeRearm, pendingRearm } from "./rearm-request.ts";
@@ -275,8 +275,6 @@ async function unclaimed(
 }
 
 const EARLIER_REARM = "a rearm request for an earlier stop is pending";
-const IDLE =
-  "it is an automation pull request that needs no work now (no failing check, no conflict, no unresolved thread)";
 
 function requestMoved(pr: DrivenPr, id: unknown): boolean {
   return pr.evidence.rearm !== true || pr.evidence.rearmRequestId !== id;
@@ -479,7 +477,7 @@ async function provenWorkspace(
  * only while this host still shows that driver's run ended.
  */
 function classBlocked(record: LaunchRecord, read: DrivenPr): string | null {
-  return idleBlocksStart(read, true) ? IDLE : classChanged(record, read);
+  return automationStartBlock(read, true) ?? classChanged(record, read);
 }
 
 /**
@@ -541,7 +539,8 @@ function stillWanted(
       requestMoved(fresh, action.evidence.rearmRequestId))
   )
     return "the rearm request changed or expired since the plan read it";
-  if (idleBlocksStart(fresh)) return IDLE;
+  const blocked = automationStartBlock(fresh);
+  if (blocked !== null) return blocked;
   if (action.takeoverGone !== undefined && fresh.evidence.driverGone !== true)
     return `this host no longer shows its driver's run ended: ${String(fresh.evidence.driverCheck)}`;
   return changedStale(action.redrive, fresh);

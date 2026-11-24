@@ -49,7 +49,7 @@ import { planDrift } from "./expectations.ts";
 import { isDrive, type ReadRecord } from "./launches.ts";
 import { parkNotice, stopNotice, unreportedNotice } from "./notices.ts";
 import { goneUnlaunched } from "./recovery-facts.ts";
-import { idleBlocksStart } from "./automation.ts";
+import { automationStartBlock } from "./automation.ts";
 import { backingOff } from "./infra-backoff.ts";
 import { conflictNote } from "./sources/ledger-probe.ts";
 import { requestedTree, workspaceOfTree } from "./stall-tree.ts";
@@ -659,12 +659,6 @@ function treeBound(pr: DrivenPr, sessions: SessionsReport): DrivenPr | null {
   };
 }
 
-/** Why an automation pull request's drive is not started again of itself: it needs no work. `null` for any other drive, and for a person's rearm request. */
-function idleWhy(pr: DrivenPr): string | null {
-  if (!idleBlocksStart(pr)) return null;
-  return `${pr.why}; but it is an automation pull request that needs no work (no failing check, no conflict, no unresolved thread), so nothing is started of itself: a person merges it, or labels it rearm`;
-}
-
 /** A drive left unplaced; a ledger or comments that did not read are said to be a failed read. */
 function unplacedDrive(target: string, pr: DrivenPr): Unplaced {
   return {
@@ -701,7 +695,10 @@ function plannable(
     raiseStrandedDrive(input, read, want);
     return null;
   }
-  const waiting = backingOff(pr, input.nowMs) ?? idleWhy(pr);
+  const startsBlocked = automationStartBlock(pr);
+  const waiting =
+    backingOff(pr, input.nowMs) ??
+    (startsBlocked === null ? null : `${pr.why}; ${startsBlocked}`);
   if (waiting === null) return pr;
   plan.quiet.push({ target, class: pr.class, why: waiting });
   // Nothing is launched for the drive, but a launch of unknown process still
