@@ -307,10 +307,17 @@ export const MARKER_SAFE_FINGERPRINT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
  */
 export function decodeBacklog(body: string): BacklogEntry[] {
   const m = body.match(/<!--\s*ai-review-backlog:\s*([A-Za-z0-9+/=]+)\s*-->/);
-  if (!m) return [];
   const fail = (why: string): never => {
     throw new Error(`ai-review-backlog present but ${why}`);
   };
+  // An opener that is not a complete, valid marker is malformed protocol
+  // evidence, not an absent backlog. Treating it as empty can erase a prior
+  // summary when a newer round marker selects this comment.
+  if (!m) {
+    if (/<!--\s*ai-review-backlog\s*:/.test(body))
+      return fail("is not a complete base64 marker");
+    return [];
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(Buffer.from(m[1] ?? "", "base64").toString("utf8"));
@@ -1341,10 +1348,20 @@ export function reviewerSticky(
   // finding-bearing summary merely because it is newer.
   let selected: IssueComment | undefined;
   let selectedRound: number | null = null;
+  let highestExplicitRound: number | null = null;
   for (const comment of comments) {
     const body = reviewerStickyBody(comment, isReviewerLogin, stickyMarker());
     if (body === null) continue;
     const round = parseReviewRound(body);
+    // An older explicit round can never replace the selected summary. Reject
+    // it before decoding its payload, since malformed evidence there is not
+    // evidence about the current summary at all.
+    if (
+      round !== null &&
+      highestExplicitRound !== null &&
+      round < highestExplicitRound
+    )
+      continue;
     const carriesEvidence =
       reviewedShaFrom(body) !== undefined ||
       // Decode rather than merely spotting an opener: malformed protocol
@@ -1375,6 +1392,8 @@ export function reviewerSticky(
     ) {
       selected = comment;
       selectedRound = round;
+      if (round !== null)
+        highestExplicitRound = Math.max(highestExplicitRound ?? round, round);
     }
   }
   return selected;
@@ -1480,14 +1499,20 @@ export async function summaryReport(
     const issueComments =
       comments ?? (await issueCommentsFor(repo, prNumber, undefined));
     const sticky = reviewerSticky(issueComments, configuredReviewerOnly);
-    const stickyRound = sticky ? parseReviewRound(sticky.body) : null;
-    const winddownDeferred = sticky
-      ? winddownFingerprintsOf(sticky.body)
+    // Selection is deliberately based on the structural body. Keep using that
+    // exact body below: parsing the raw comment after selection would let a
+    // fenced or quoted example alter the selected summary's evidence.
+    const stickyBody = sticky
+      ? reviewerStickyBody(sticky, isReviewerLogin, stickyMarker())
+      : null;
+    const stickyRound = stickyBody ? parseReviewRound(stickyBody) : null;
+    const winddownDeferred = stickyBody
+      ? winddownFingerprintsOf(stickyBody)
       : new Set<string>();
     const bodyFormat = reviewBodyFormat();
     if (bodyFormat !== undefined)
       return reviewBodyReportFor(prNumber, repo, issueComments, bodyFormat);
-    if (!sticky) return emptyReport(prNumber);
+    if (!sticky || stickyBody === null) return emptyReport(prNumber);
 
     const reviewComments: ReviewComment[] = JSON.parse(
       await slurp(
@@ -1502,17 +1527,17 @@ export async function summaryReport(
             .filter((c) => isReviewerLogin(c.user?.login ?? ""))
             .filter((c) => parseReviewRound(c.body ?? "") === stickyRound)
             .map((c) => anchorKey(c.path, c.line ?? null));
-    const reviewedSha = reviewedShaFrom(sticky.body);
+    const reviewedSha = reviewedShaFrom(stickyBody);
     const addressed = collectAddressed(markerSourcesOf(issueComments), {
       reviewerPosition: (sha) => reviewerPosition(sha, reviewedSha),
-      backlogFingerprints: backlogFingerprintsOf(sticky.body),
+      backlogFingerprints: backlogFingerprintsOf(stickyBody),
       winddownDeferred,
       currentRound: stickyRound,
     });
     return classify({
       pr: prNumber,
       stickyCommentId: sticky.id,
-      stickyBody: sticky.body,
+      stickyBody,
       stickyAuthor: sticky.user.login,
       anchoredKeys,
       addressedFingerprints: addressed,

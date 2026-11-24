@@ -62,7 +62,9 @@ export function reviewerStickyBody(
   // summaries; accepting every trimmed line lets an example replace one.
   let fence: { character: "`" | "~"; length: number } | null = null;
   const structural: string[] = [];
-  const structuralMarker = body.split(/\r?\n/).some((line) => {
+  let structuralMarker = false;
+  let skipDepth = 0;
+  for (const line of body.split(/\r?\n/)) {
     // Fenced blocks are structural only at Markdown's permitted indentation.
     // Remember their delimiter length: three backticks inside a four-backtick
     // block are content, not its closing fence.
@@ -73,7 +75,7 @@ export function reviewerStickyBody(
       const rest = line.slice(line.indexOf(token) + token.length);
       if (!rest.includes(token[0] ?? ""))
         fence = { character: token[0] as "`" | "~", length: token.length };
-      return false;
+      continue;
     }
     if (
       fence !== null &&
@@ -83,14 +85,22 @@ export function reviewerStickyBody(
       /^[ \t]*$/.test(line.slice(line.indexOf(token) + token.length))
     ) {
       fence = null;
-      return false;
+      continue;
     }
     const trimmed = line.trimStart();
-    if (fence !== null || /^ {0,3}>/.test(line) || /^(?: {4}|\t)/.test(line))
-      return false;
+    if (fence !== null || /^(?: {4}|\t)/.test(line)) continue;
+    // Skip notices intentionally use blockquoted payload. Keep that payload
+    // for skipNoticeIn, but never let an arbitrary quoted example qualify as
+    // a sticky marker or contribute ordinary protocol evidence.
+    if (/<!--\s*\/?.*skip-notice\s*-->/.test(line)) {
+      skipDepth += /<!--\s*\//.test(line) ? -1 : 1;
+      structural.push(line);
+      continue;
+    }
+    if (/^ {0,3}>/.test(line) && skipDepth <= 0) continue;
     structural.push(line);
-    return trimmed.startsWith(summaryMarker);
-  });
+    if (trimmed.startsWith(summaryMarker)) structuralMarker = true;
+  }
   // Every evidence parser consumes this structural view. Returning the raw
   // comment after finding a genuine marker let examples later in that same
   // comment contribute a stamp, backlog, or finding.

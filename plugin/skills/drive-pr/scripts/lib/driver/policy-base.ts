@@ -116,7 +116,7 @@ export async function exportPolicyBase(
   const bound =
     "error" in base || "error" in resolved
       ? null
-      : await integrationBound(root, base.ref);
+      : await integrationBound(root, base.ref, resolved);
   const result = bound !== null && "error" in bound ? bound : resolved;
   const failed = "error" in result;
   process.env[POLICY_BASE_VARIABLE] = failed ? "" : result.commit;
@@ -134,6 +134,7 @@ export async function exportPolicyBase(
 async function integrationBound(
   root: string,
   baseRef: string,
+  base: { commit: string },
 ): Promise<{ commit: string } | { error: string } | null> {
   const remote = readRemoteName(root);
   if ("error" in remote) return remote;
@@ -147,6 +148,9 @@ async function integrationBound(
     root,
     remote.remote,
     defaultBranch,
+    baseRef === `refs/remotes/${remote.remote}/${defaultBranch}`
+      ? base
+      : undefined,
   );
   if (declared !== null && "error" in declared) return declared;
   const branch = declared?.branch ?? defaultBranch;
@@ -167,10 +171,14 @@ async function declaredIntegrationBranch(
   root: string,
   remote: string,
   defaultBranch: string,
+  observedDefault?: { commit: string },
 ): Promise<{ branch: string } | { error: string } | null> {
   if ((process.env.DRIVE_PR_BASE_BRANCH ?? "").trim() !== "") return null;
   const ref = `refs/remotes/${remote}/${defaultBranch}`;
-  const at = await refreshTrackingRef(root, ref);
+  // If the PR already targets the default branch, reuse the exact fetched
+  // observation that supplied its policy. A second fetch could observe a
+  // revoked policy yet leave the earlier commit in force for this evaluation.
+  const at = observedDefault ?? (await refreshTrackingRef(root, ref));
   if (!("commit" in at)) return at;
   const snapshot = readSnapshotAt(
     at.commit,

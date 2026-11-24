@@ -216,7 +216,7 @@ export const TERMINAL_STATES: Readonly<
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
     meaning:
-      "The pull request is ready to merge: the reviewer reviewed this exact head, an earlier reviewed head has the same pull-request diff after a current-head skip notice, or its configured excluded-path skip proof covers the head, and nothing is left open. `drive.ts` exits `0` for it, once its own working tree is clean.",
+      "Review work is settled: either no AI reviewer is configured, the reviewer reviewed this exact head, the draft-only skip is provisional until the PR is marked Ready and reviewed, or an earlier reviewed head has the same pull-request diff after a current-head skip notice or configured excluded-path proof. Nothing is left open. `drive.ts` exits `0` only after its own working tree is clean and its exact-head required CI proof passes; convergence alone does not make the pull request ready to merge.",
     report: {
       stop: "converged: review evidence covers its head and nothing is left open",
       next: {
@@ -341,12 +341,12 @@ export const TERMINAL_STATES: Readonly<
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
     meaning:
-      "The reviewer skipped this head. An earlier review does not cover it, or the notice has no stamp and Jig cannot verify that the diff is empty after the configured exclusions. A person has this head reviewed, then re-arms.",
+      "The reviewer skipped or paused this head. An earlier review does not cover it, a skip notice has no stamp and Jig cannot verify that the diff is empty after the configured exclusions, or a review-object check reports `Review paused…` or `Review skipped…`. A person resumes the reviewer or has this head reviewed, then re-arms.",
     report: {
       stop: "stopped: the reviewer skipped its head and will not review it",
       cause: "environment",
       next: {
-        step: "Have this head reviewed, then re-arm the drive.",
+        step: "Resume the reviewer or have this head reviewed, then re-arm the drive.",
         owner: "person",
         act: "Do",
       },
