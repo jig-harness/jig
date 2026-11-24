@@ -587,8 +587,9 @@ describe("drive-status.ts terminal states", () => {
     // This fixture performs two top-level PR reads for every evaluation. The
     // 1s → 2s → 3s capped cadence makes at most six evaluations; a loaded
     // runner may fit fewer, so the count has a loose lower bound. Fixed
-    // one-second polling would make about eleven evaluations.
-    expect(polls.length % 2).toBe(0);
+    // one-second polling would make about eleven evaluations. The deadline can
+    // end the run between the two reads of its last evaluation, so the count
+    // may be odd.
     expect(polls.length).toBeGreaterThanOrEqual(4);
     expect(polls.length).toBeLessThanOrEqual(12);
     // Read when each evaluation started (two reads each). A timer never fires
