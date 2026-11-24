@@ -1372,7 +1372,10 @@ export function reviewerSticky(
     // finding-bearing summary even when the reviewer omits a round marker.
     // A skip notice is deliberately excluded below: it retains an older stamp
     // while saying that no review occurred for the pushed head.
-    const carriesCleanStamp = reviewedShaIn(body, reviewedShaMarker()) !== "";
+    // A stamp identifies a reviewed head, not a replacement boundary. Without
+    // an affirmative review round it may be an auxiliary acknowledgement on
+    // that same head, which must not erase an earlier finding-bearing summary.
+    const carriesCleanStamp = cleanReplacementStamp(body, round);
     const skipOnly =
       !carriesFindingEvidence &&
       reviewerStickyIn(
@@ -1411,6 +1414,10 @@ export function reviewerSticky(
     }
   }
   return selected;
+}
+
+function cleanReplacementStamp(body: string, round: number | null): boolean {
+  return reviewedShaIn(body, reviewedShaMarker()) !== "" && round !== null;
 }
 
 /** The PR number from `argv`, else the current branch's PR. */

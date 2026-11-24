@@ -56,28 +56,46 @@ function markdownIndentation(line: string): { columns: number; end: number } {
  * Markdown data such as the backticked file anchors in a finding. Operate on
  * the complete block: a code span may cross a physical line.
  */
-function withoutProtocolInlineCode(body: string): string {
-  let result = "";
-  let offset = 0;
-  while (offset < body.length) {
-    if (body[offset] !== "`") {
-      result += body[offset++] ?? "";
-      continue;
-    }
-    let end = offset;
-    while (body[end] === "`") end += 1;
-    const delimiter = body.slice(offset, end);
-    const close = body.indexOf(delimiter, end);
-    if (close === -1) {
-      result += delimiter;
-      offset = end;
-      continue;
-    }
-    const span = body.slice(offset, close + delimiter.length);
-    result += span.includes("<!--") ? "" : span;
-    offset = close + delimiter.length;
-  }
-  return result;
+export function withoutProtocolInlineCode(body: string): string {
+  // Inline spans cannot cross a blank-line block boundary. Preserve their
+  // ordinary contents (notably backticked finding anchors), but hide only the
+  // protocol opener from the marker parsers.
+  return body
+    .split(/(\r?\n\r?\n)/)
+    .map((block) => {
+      let result = "";
+      let offset = 0;
+      while (offset < block.length) {
+        if (block[offset] !== "`") {
+          result += block[offset++] ?? "";
+          continue;
+        }
+        let end = offset;
+        while (block[end] === "`") end += 1;
+        const delimiter = block.slice(offset, end);
+        let close = -1;
+        for (let cursor = end; cursor < block.length; cursor += 1) {
+          if (block[cursor] !== "`") continue;
+          let runEnd = cursor;
+          while (block[runEnd] === "`") runEnd += 1;
+          if (runEnd - cursor === delimiter.length) {
+            close = cursor;
+            break;
+          }
+          cursor = runEnd - 1;
+        }
+        if (close === -1) {
+          result += delimiter;
+          offset = end;
+          continue;
+        }
+        const span = block.slice(offset, close + delimiter.length);
+        result += span.replaceAll("<!--", "< !--");
+        offset = close + delimiter.length;
+      }
+      return result;
+    })
+    .join("");
 }
 
 /** The last reviewed-SHA stamp in one sticky body under the configured marker. */
@@ -153,6 +171,7 @@ export function reviewerStickyBody(
  * retaining their deliberately blockquoted payload for the skip decoder.
  */
 function structuralSkipNotices(body: string, marker: string): string {
+  body = withoutProtocolInlineCode(body);
   const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const opener = new RegExp(`^ {0,3}<!--\\s*${escaped}\\s*-->\\s*$`);
   const closer = new RegExp(`^ {0,3}<!--\\s*/\\s*${escaped}\\s*-->\\s*$`);

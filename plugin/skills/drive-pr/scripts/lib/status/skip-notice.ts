@@ -27,6 +27,14 @@ function proseOnly(body: string): string {
     .split(/\r?\n/)
     .map((line) => {
       const bare = line.replace(/^\s*>\s?/, "");
+      let columns = 0;
+      let indentEnd = 0;
+      while (indentEnd < bare.length) {
+        if (bare[indentEnd] === " ") columns += 1;
+        else if (bare[indentEnd] === "\t") columns += 4 - (columns % 4);
+        else break;
+        indentEnd += 1;
+      }
       const token = /^\s*(`{3,}|~{3,})/.exec(bare)?.[1] ?? "";
       if (
         fence !== null &&
@@ -38,7 +46,7 @@ function proseOnly(body: string): string {
         fence = null;
         return "";
       }
-      if (fence !== null || /^\s{4}/.test(bare)) return "";
+      if (fence !== null || columns >= 4) return "";
       if (token !== "") {
         const rest = bare.slice(bare.indexOf(token) + token.length);
         if (token[0] === "~" || !rest.includes("`"))
