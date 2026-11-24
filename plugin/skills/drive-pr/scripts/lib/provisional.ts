@@ -216,6 +216,27 @@ export function unlistedParkDetails(
   };
 }
 
+/**
+ * The parked keys a hand-back waits on: every park with a live review thread
+ * or summary finding, a reversed provisional decision, or no thread at all.
+ * A park of a thread that is no longer open is not among them.
+ */
+export function actionableParkKeys(
+  parked: ParkedSets,
+  threadKeys: readonly string[],
+  summaryKeys: readonly string[],
+): string[] {
+  const listedKeys = new Set([...threadKeys, ...summaryKeys]);
+  return [...parked.keys]
+    .filter(
+      (key) =>
+        listedKeys.has(key) ||
+        parked.reversals.has(key) ||
+        !parked.threads.has(key),
+    )
+    .sort();
+}
+
 /** The first comment a person wrote after a thread's last provisional reply. */
 export function reversalInThread(
   comments: readonly CommentLike[],

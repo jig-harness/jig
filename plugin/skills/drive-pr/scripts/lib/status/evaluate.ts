@@ -55,6 +55,7 @@ import { readPrSnapshot } from "./pr-snapshot.ts";
 import {
   readParkedSets,
   standingProvisionalKeys,
+  actionableParkKeys,
   unlistedParkDetails,
 } from "../provisional.ts";
 import {
@@ -161,6 +162,8 @@ export interface StatusReport extends CiReport {
   /** Unaddressed finding holds whose promised fix has no recorded push stamp. */
   summaryHeldUndispatchedKeys: string[] | null;
   parkedItemKeys: string[] | null;
+  /** The parked keys a `HITL_PARKED` stop waits on; `null` when not measured. */
+  actionableParkKeys: string[] | null;
   /**
    * WHICH FILES this round's open findings anchor to — threads AND
    * summary-only findings both, sorted, de-duplicated, `null` when nothing
@@ -236,6 +239,7 @@ export function emptyReport(): StatusReport {
     summaryUnaddressedKeys: null,
     summaryHeldUndispatchedKeys: null,
     parkedItemKeys: null,
+    actionableParkKeys: null,
     openThreadPaths: null,
     ci: "",
     failingCheckNames: null,
@@ -1007,6 +1011,11 @@ async function evaluateFresh(
   );
   const summaryParked = summary.unaddressed.length - summaryLive.length;
   report.summaryParked = summaryParked;
+  report.actionableParkKeys = actionableParkKeys(
+    parked,
+    report.openThreadKeys,
+    report.summaryUnaddressedKeys,
+  );
   const { reversalParked, standaloneParked, standaloneNote } =
     unlistedParkDetails(
       parked,

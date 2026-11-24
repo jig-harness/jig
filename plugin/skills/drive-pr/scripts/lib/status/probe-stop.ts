@@ -18,6 +18,10 @@ export const PROBE_STOP_SHAPE = s.object({
     pattern: "^[^\\r\\n]+$",
   }),
   failure: s.optional(s.enum(FAILURE_KINDS)),
+  /** The parked keys the stop waits on, when it is a park. */
+  parkKeys: s.optional(
+    s.array(s.string({ minLength: 1, maxLength: 128 }), { maxItems: 64 }),
+  ),
 });
 
 export type ProbeStop = Infer<typeof PROBE_STOP_SHAPE>;
@@ -33,10 +37,16 @@ function safeReason(reason: string): string {
 
 export function probeStopOf(value: unknown): ProbeStop | null {
   if (!matches(PROBE_STOP_SHAPE, value)) return null;
-  const { code, state, failure } = value;
+  const { code, state, failure, parkKeys } = value;
   const reason = safeReason(value.reason);
   if (reason === "") return null;
-  return { code, state, reason, ...(failure === undefined ? {} : { failure }) };
+  return {
+    code,
+    state,
+    reason,
+    ...(failure === undefined ? {} : { failure }),
+    ...(parkKeys === undefined ? {} : { parkKeys }),
+  };
 }
 
 export function recordProbeStop(
@@ -49,6 +59,10 @@ export function recordProbeStop(
     state: status.state,
     reason: safeReason(status.reason),
     failure: status.failure,
+    parkKeys:
+      status.state === "HITL_PARKED" && Array.isArray(status.actionableParkKeys)
+        ? status.actionableParkKeys
+        : undefined,
   });
   if (probe !== null) console.error(`${PREFIX}${JSON.stringify(probe)}`);
   return probe;

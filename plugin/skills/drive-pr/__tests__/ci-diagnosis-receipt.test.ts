@@ -11,7 +11,7 @@ import {
  * drive-pr-drive-final-ci.test.ts.
  */
 
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,6 +20,7 @@ import {
   judgeReceipt,
   readDiagnosis,
 } from "../scripts/lib/driver/ci-diagnosis.ts";
+import { driverRuntime } from "../scripts/lib/driver/runtime.ts";
 import { leadPark } from "../scripts/lib/driver/stop-text.ts";
 import { diagnosisStartedPrefix } from "../scripts/lib/state/ci-actions.ts";
 import { HUMAN_DECISION_CLASS } from "../scripts/lib/state/rulings.ts";
@@ -286,30 +287,47 @@ describe("latest diagnosed park", () => {
 });
 
 describe("lead park of a stop", () => {
-  it("prefers a park made after the diagnosis over the diagnosed one", () => {
-    const state = {
-      ...freshState(1928),
-      ciActions: [
-        {
-          at: "2026-01-01T00:00:00.000Z",
-          round: 0,
-          action: "repair" as const,
-          detail: `diagnosis: head ${HEAD}: ${parkTag("old")}parked`,
-        },
-      ],
-      parked: [
-        { key: "old", kind: "thread", reason: "old?", round: 1 },
-        {
-          key: "new",
-          kind: "thread",
-          reason: "new?",
-          round: 2,
-          at: "2026-01-02T00:00:00.000Z",
-        },
-      ],
-    } as unknown as DriveState;
-    expect(leadPark(state)?.key).toBe("new");
-    const same = { ...state, parked: [state.parked[0]] } as DriveState;
-    expect(leadPark(same)?.key).toBe("old");
+  const state = {
+    ...freshState(1928),
+    ciActions: [
+      {
+        at: "2026-01-01T00:00:00.000Z",
+        round: 0,
+        action: "repair" as const,
+        detail: `diagnosis: head ${HEAD}: ${parkTag("old")}parked`,
+      },
+    ],
+    parked: [
+      { key: "gone", kind: "thread", reason: "gone?", round: 1 },
+      { key: "old", kind: "thread", reason: "old?", round: 1 },
+    ],
+  } as unknown as DriveState;
+  const stop = (parkKeys?: string[]) => {
+    driverRuntime.stopProbe = {
+      code: 8,
+      state: "HITL_PARKED",
+      reason: "parked",
+      ...(parkKeys === undefined ? {} : { parkKeys }),
+    };
+  };
+  afterEach(() => {
+    driverRuntime.stopProbe = null;
+  });
+
+  it("prefers the diagnosed park while the stop waits on it", () => {
+    stop(["gone", "old"]);
+    expect(leadPark(state)?.key).toBe("old");
+  });
+
+  it("never selects a park the stop does not wait on", () => {
+    stop(["gone"]);
+    expect(leadPark(state)?.key).toBe("gone");
+    stop(["old"]);
+    expect(leadPark(state)?.key).toBe("old");
+  });
+
+  it("reads every park when the stop names none", () => {
+    stop();
+    expect(leadPark(state)?.key).toBe("old");
   });
 });

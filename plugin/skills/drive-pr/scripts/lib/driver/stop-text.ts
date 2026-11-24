@@ -29,23 +29,19 @@ export function oneLine(text: string): string {
 }
 
 /**
- * The parked item a park's stop prints: the one the latest CI diagnosis
- * handed to a person while it is still parked and no other item was parked
- * after that diagnosis (a later park is what an ordinary gate stopped on),
- * else the first.
+ * The parked item a park's stop prints: among the parks the stop waits on
+ * (the gate's own list, when the stop carries one), the one the latest CI
+ * diagnosis handed to a person, else the first.
  */
 export function leadPark(state: DriveState | null): ParkedItem | undefined {
-  const parked = state?.parked ?? [];
+  const all = state?.parked ?? [];
+  const probe = driverRuntime.stopProbe;
+  const keys = probe?.parkKeys;
+  const waiting =
+    keys === undefined ? all : all.filter((p) => keys.includes(p.key));
+  const parked = waiting.length > 0 ? waiting : all;
   const diagnosed = latestDiagnosedPark(state?.ciActions ?? []);
-  const diagnosedItem = parked.find((p) => p.key === diagnosed?.key);
-  if (diagnosed === null || diagnosedItem === undefined) return parked[0];
-  const later = parked.find(
-    (p) =>
-      p.key !== diagnosedItem.key &&
-      p.at !== undefined &&
-      Date.parse(p.at) > Date.parse(diagnosed.at),
-  );
-  return later ?? diagnosedItem;
+  return parked.find((p) => p.key === diagnosed?.key) ?? parked[0];
 }
 
 /** A park's line: the first parked item's question, and how many more wait. */
