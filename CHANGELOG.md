@@ -404,6 +404,33 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.306.0] - 2026-11-23
+
+### Changed
+
+- `drive-pr`'s status evaluation reads the pull request (state, draft, head
+  and base, mergeability and merge state) with one conditional REST read of
+  the pull document instead of `gh pr view`, for its opening snapshot and for
+  the recheck before a terminal verdict. An unchanged pull request answers
+  `304`, which costs nothing from the account's rate limit. A failed read, or
+  a kept reading that is incomplete, is followed by one full read (except after a rate limit, an auth failure or a
+  missing pull request, which a second request cannot clear), and is
+  never taken for an unchanged pull request. Mergeability GitHub has not
+  finished computing still reads as unknown. `drive-status.ts` resolves a
+  pull request given as a URL or branch to its number once, before it
+  evaluates, and refuses a URL naming another repository.
+- **Breaking:** [`drive-exits.md`](plugin/protocol/drive-exits.md), now
+  version 2, lists `UNSUPPORTED_CLI` as a `driver-only` exit: `drive.ts`
+  exits `2` when it refuses to start, and `drive-status.ts` no longer reports
+  it as a state, since every `gh` serves the evaluation's REST read. Its
+  `driveStatusExit` in
+  [data/drive-exits.json](plugin/protocol/data/drive-exits.json) is now
+  `null`; `drive-status.ts` still exits `2`, with no
+  report, on argument errors and when startup cannot resolve the repository or
+  the pull request selector (which may be a network or authentication failure). **Consumer action:** advised at instructions. A program that runs
+  `drive-status.ts` itself reads its exit `2` as a startup refusal with no
+  report, never as a state. **Detect:** `text:UNSUPPORTED_CLI`.
+
 ## [0.305.0] - 2026-11-23
 
 ### Added
@@ -10848,7 +10875,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.305.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.306.0...HEAD
+[0.306.0]: https://github.com/jig-harness/jig/compare/v0.305.0...v0.306.0
 [0.305.0]: https://github.com/jig-harness/jig/compare/v0.304.5...v0.305.0
 [0.304.5]: https://github.com/jig-harness/jig/compare/v0.304.4...v0.304.5
 [0.304.4]: https://github.com/jig-harness/jig/compare/v0.304.3...v0.304.4
