@@ -5,9 +5,9 @@ tracker supplies the live issue type, states and children. The coordinator
 supplies the evidence about the scope because a tracker state cannot say
 whether a plan entry still describes work the epic was meant to deliver.
 
-Run the commands from the repository root. Substitute the installed
-`do-item` skill directory for `${CLAUDE_SKILL_DIR}` if the runtime leaves it
-unset. The commands use the configured tracker adapter and its credentials.
+Run the commands from the repository root. `<skill-dir>` is the directory of
+the `do-item` skill (`${CLAUDE_SKILL_DIR}` in `SKILL.md`); a reference page is
+never substituted, so replace it with that path yourself. The commands use the configured tracker adapter and its credentials.
 Use an identity that can read the issues for a proposal and can comment,
 move children and close epics in the configured repository for acceptance.
 
@@ -33,7 +33,7 @@ scope leaves no work for the backlog.
 ```
 
 ```sh
-bun "${CLAUDE_SKILL_DIR}/scripts/epic-sweep.ts" --propose --input scope.json
+bun "<skill-dir>/scripts/epic-sweep.ts" --propose --input scope.json
 ```
 
 Save the command's JSON output as `proposal.json`. It lists the shipped
@@ -64,7 +64,7 @@ the epic. Set `issue` on each corresponding remainder entry in the scope file
 to the new issue's key. Keep the proposed titles and references intact.
 
 ```sh
-bun "${CLAUDE_SKILL_DIR}/scripts/epic-sweep.ts" --accept --input scope.json --proposal proposal.json --reply "<tracker reply URL>"
+bun "<skill-dir>/scripts/epic-sweep.ts" --accept --input scope.json --proposal proposal.json --reply "<tracker reply URL>"
 ```
 
 The command checks the original proposal and the person's reply, rereads the

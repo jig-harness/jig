@@ -35,7 +35,7 @@ import { timeLeftMs } from "./actions/launch.ts";
 import { applySteward } from "./actions/steward.ts";
 import { applyStewardRecords } from "./steward-apply.ts";
 import { applySteers, retireSteers } from "./actions/steer.ts";
-import { adoptionOf, ownAuthors } from "./adopt.ts";
+import { adoptionOf, ownAuthors, trustedBot } from "./adopt.ts";
 import { type LaunchGroup, launchStageOrder } from "./apply-order.ts";
 import { readOutcomes } from "./followup-outcomes.ts";
 import { holderActions } from "./holder-notices.ts";
@@ -63,7 +63,7 @@ import type {
 } from "./runtime/port.ts";
 import { launchClaimer, type SharedContext } from "./shared-launches.ts";
 import { readDrives } from "./sources/ledgers.ts";
-import type { ForgeRead } from "./tick-forge.ts";
+import { type ForgeRead, readsHeadRepository } from "./tick-forge.ts";
 import {
   allRecords,
   bookOf,
@@ -560,7 +560,8 @@ async function freshDriveReading(
   const { repo, login, section } = inputs;
   const view = await openPullRequest(repo.slug, pr, {
     labels: labels !== null || steward,
-    headRepository: inputs.pickupArms.has(pr),
+    // The same-repository guard of first adoption runs on this read too.
+    headRepository: readsHeadRepository(section, inputs.pickupArms),
   });
   if (!view.ok) return view;
   const listed = view.value;
@@ -571,7 +572,11 @@ async function freshDriveReading(
     repo.slug,
     listed,
     ownAuthors(adoption, login),
-    asksForDrive(inputs.pickupArms, labels, listed),
+    // A same-repository trusted bot is adopted while healthy, so its launch
+    // does not wait on the trouble count, as adoption and idleness read it.
+    asksForDrive(inputs.pickupArms, labels, listed) ||
+      (listed.isCrossRepository === false &&
+        trustedBot(listed.author, adoption)),
   );
   if (!counted.ok) return counted;
   const [again] = await readDrives(

@@ -1239,7 +1239,13 @@ automation pull request (a bot's the rule does not name, or one carrying
 or re-armed of the dispatcher's own accord only while it needs work: a
 failed check (not a cancelled one or one waiting for approval), a conflict
 with its base, or an unresolved review thread. A healthy one is left for a
-person to merge. A person can still ask the dispatcher to drive it. Each
+person to merge, unless `pull_requests.trusted_automation` lists the bot
+that opened it: that one is adopted and driven to convergence (when its
+head is known to be in the repository, it was updated recently and carries no
+hold; the commit, path and update-type rules apply later, at placement), so the board
+can place it (see `pull_requests.trusted_automation` in
+[CONFIGURATION.md](CONFIGURATION.md#pull_requests)). A person can still ask
+the dispatcher to drive it. Each
 run reports every pull request the rule adopted, with the reason.
 
 **Serialized areas.** Some pull requests conflict with each other whenever
@@ -2616,7 +2622,10 @@ them together.
 
 - **Skills** work in Codex as in Claude Code. Codex does not fill in
   `${CLAUDE_SKILL_DIR}`; each `SKILL.md` tells the agent to substitute the
-  skill's own directory.
+  skill's own directory, and `bun run gates` (`scripts/check-skill-runtime-forms.ts`)
+  fails a skill that does not. The same check fails a skill that names
+  `AskUserQuestion` without the plain-text numbered fallback, or hands a
+  finding to the arbiter without the no-subagent fallback.
 - **The turn-budget hook is registered in Codex's own `hooks.json`.** Codex
   skips a plugin's hooks until their current definition and the plugin's
   contents are trusted (`/hooks`), and asks again whenever a release changes
@@ -2651,7 +2660,8 @@ them together.
   finding to a subagent that is given
   [`agents/review-arbiter.md`](agents/review-arbiter.md) as its
   instructions, or define the arbiter once as a Codex custom agent from that
-  file.
+  file. A harness with no subagents at all has the calling session rule
+  contested findings itself, with the same rubric and the same file.
 - **A drive pass waits on a long step through Codex's own command session.**
   Codex's default Linux sandbox ends the processes a tool call started when
   the call returns, so drive-pr's foreground wait, which starts a step in one

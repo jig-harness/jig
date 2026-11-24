@@ -92,6 +92,8 @@ export interface AdoptRule {
   authors: string[] | null;
   /** How recently a pull request must have been updated. */
   withinMs: number;
+  /** The bots `pull_requests.trusted_automation` names, case folded: adopted, and driven while healthy too; absent for none. */
+  trusted?: string[];
 }
 
 /** One repository as the tick dispatches for it. */

@@ -4132,7 +4132,9 @@ On top of those gates it asks the Ready predicate (`scripts/lib/merge-ready.ts`,
 the one the dispatcher's tick and `jig ask` place the pull request with) about
 the live head: the forge must witness a review of it (the reviewer app's check
 run, or a person's approval where no app is named), an outside author's pull
-request needs a person's approval, and branch protection must let it merge. It
+request needs a person's approval (unless its author is a bot the default
+branch's `pull_requests.trusted_automation` lists and every rule of that
+setting holds), and branch protection must let it merge. It
 posts only in merge now or approve first, the second worded "an approval is
 still required", and otherwise refuses with the predicate's reason (exit `4`,
 or `1` when the forge's facts did not read). And it waits (exit `4`) until
