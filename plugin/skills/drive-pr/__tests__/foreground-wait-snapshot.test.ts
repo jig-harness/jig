@@ -84,6 +84,7 @@ describe("foreground-wait snapshot recovery", () => {
             {
               NODE_ENV: "test",
               DRIVE_PR_FOREGROUND_WAIT_CAPTURE_ACK: captured,
+              DRIVE_PR_FOREGROUND_WAIT_CANCEL_MS: "60000",
               DRIVE_PR_FOREGROUND_WAIT_TIMEOUT: "3",
               DRIVE_PR_FOREGROUND_WAIT_DEADLINE_GATE: deadlineGate,
               PATH: path,
