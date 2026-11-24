@@ -184,6 +184,11 @@ reviewer's check run, comment marker and commit stamp
 ([fields](../../CONFIGURATION.md#review),
 [AI reviewers](../../EXTENDING.md#ai-reviewers)).
 
+The drive reports explicitly non-blocking wind-down backlog entries in its
+status JSON. Those entries need no reply and do not block convergence.
+When a round answers several summary findings, it posts their outcomes and
+reasons in one PR comment, with a marker for each finding.
+
 A reviewer that submits the forge's own pull-request reviews instead
 (`review.reviewer_evidence: review_object`) is read from two other
 witnesses: its check run on the head, and the commit its newest review names.

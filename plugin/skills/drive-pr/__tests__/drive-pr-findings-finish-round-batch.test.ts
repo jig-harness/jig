@@ -4,6 +4,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 import { writeFileSync } from "node:fs";
 
@@ -12,9 +13,15 @@ import { join } from "node:path";
 import {
   HEAD,
   PREV,
+  STICKY_ROUND,
   gitCleanEnv,
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
+import {
+  collectAddressed,
+  findExactMarkers,
+} from "../scripts/summary-findings.ts";
+import { deferredReplies } from "../../resolve-review-comments/scripts/lib/pr-body.ts";
 import { createFindingsFinishRoundFixtures } from "./drive-pr-findings-finish-round-fixtures.ts";
 
 useDrivePrSuite();
@@ -234,6 +241,110 @@ describe("finish-round.ts", () => {
       await seed(r.stateDir, r.fixtureDir, r.repo.dir, ["held", "999"]),
     ) as Array<{ key: string }>;
     expect(held).toEqual([]);
+  });
+
+  it("posts one comment with the distinct outcomes and reasons of a round", async () => {
+    const prUrl = "https://github.com/example/repository/pull/999";
+    const commentUrl = `${prUrl}#issuecomment-123`;
+    const decisions = [
+      ["fp-accepted", "accepted", "The write is now bounded."],
+      ["fp-rejected", "rejected", "The fallback already handles this."],
+      ["fp-moot", "moot", "The caller was removed."],
+      [
+        "fp-wont-fix",
+        "wont-fix",
+        "This optional cleanup is outside this change.",
+      ],
+      ["fp-deferred", "deferred", `Recorded in ${prUrl}#deferred`],
+    ] as const;
+    const r = await finishRound({
+      seedState: async ({ stateDir, fixtureDir, cwd }) => {
+        for (const [key, outcome, reason] of decisions) {
+          await seed(
+            stateDir,
+            fixtureDir,
+            cwd,
+            [
+              "hold",
+              "999",
+              "--key",
+              key,
+              "--kind",
+              "finding",
+              "--outcome",
+              outcome,
+            ],
+            reason,
+          );
+        }
+      },
+    });
+    expectSpawnExit(r, 0);
+    // The stub appends raw JSON per POST, so this parses only one comment.
+    const body = (JSON.parse(r.posted) as { body: string }).body;
+    for (const [key, outcome, reason] of decisions) {
+      expect(body).toContain(`**${outcome}** — ${reason}`);
+      const suffix =
+        outcome === "accepted" || outcome === "moot"
+          ? `@${r.repo.head}#${STICKY_ROUND}`
+          : "";
+      expect(body).toContain(`<!-- drive-pr-addressed: ${key}${suffix} -->`);
+    }
+    const sources = [{ body, authorAssociation: "OWNER" }];
+    expect(
+      collectAddressed(sources, { reviewerPosition: () => "behind" }),
+    ).toEqual(new Set(decisions.map(([key]) => key)));
+    expect(
+      findExactMarkers(
+        sources,
+        new Set(decisions.map(([key]) => key)),
+        undefined,
+      ),
+    ).toEqual(new Set(["fp-rejected", "fp-wont-fix", "fp-deferred"]));
+    expect(
+      deferredReplies([{ body, association: "OWNER", url: commentUrl }], prUrl),
+    ).toEqual([{ fingerprint: "fp-deferred", reply: commentUrl }]);
+  });
+
+  it("skips the delivered part of a batch and posts the remaining answers together", async () => {
+    const decisions = [
+      ["fp-already-delivered", "wont-fix"],
+      ["fp-fresh-fix", "accepted"],
+      ["fp-fresh-standing", "rejected"],
+    ] as const;
+    const r = await finishRound({
+      fixture: { addressed: ["fp-already-delivered"] },
+      seedState: async ({ stateDir, fixtureDir, cwd }) => {
+        for (const [key, outcome] of decisions) {
+          await seed(
+            stateDir,
+            fixtureDir,
+            cwd,
+            [
+              "hold",
+              "999",
+              "--key",
+              key,
+              "--kind",
+              "finding",
+              "--outcome",
+              outcome,
+            ],
+            "The evidence supports this outcome.",
+          );
+        }
+      },
+    });
+    expectSpawnExit(r, 0);
+    const body = (JSON.parse(r.posted) as { body: string }).body;
+    expect(body).not.toContain("fp-already-delivered");
+    expect(body).toContain(
+      `<!-- drive-pr-addressed: fp-fresh-fix@${r.repo.head}#${STICKY_ROUND} -->`,
+    );
+    expect(body).toContain("<!-- drive-pr-addressed: fp-fresh-standing -->");
+    expect(
+      (r.report.items as Array<{ action: string }>).map((item) => item.action),
+    ).toEqual(["answered", "answered", "answered"]);
   });
 
   it("re-running after a completed drain dispatches nothing a second time", async () => {

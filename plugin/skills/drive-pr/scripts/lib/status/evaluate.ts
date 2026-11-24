@@ -158,6 +158,7 @@ export interface StatusReport extends CiReport {
   /** Latest comment per open thread; null when a version could not be read. */
   openThreadVersions: [string, string][] | null;
   summaryUnaddressedKeys: string[] | null;
+  summaryIgnoredBacklogKeys: string[] | null;
   /** Unaddressed finding holds whose promised fix has no recorded push stamp. */
   summaryHeldUndispatchedKeys: string[] | null;
   parkedItemKeys: string[] | null;
@@ -236,6 +237,7 @@ export function emptyReport(): StatusReport {
     openThreadKeys: null,
     openThreadVersions: null,
     summaryUnaddressedKeys: null,
+    summaryIgnoredBacklogKeys: null,
     summaryHeldUndispatchedKeys: null,
     parkedItemKeys: null,
     actionableParkKeys: null,
@@ -969,6 +971,9 @@ async function evaluateFresh(
     );
   }
   report.summaryTotal = summary.total;
+  report.summaryIgnoredBacklogKeys = summary.ignoredBacklog
+    .map((entry) => entry.fingerprint)
+    .sort();
   report.summaryUnaddressed = summary.unaddressed.length;
   report.summaryUnaddressedKeys = summary.unaddressed
     .map((f) => String(f.fingerprint))

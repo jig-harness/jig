@@ -2156,7 +2156,15 @@ producer and the measurement filter directly, with bounded subprocesses and
 without a shell pipeline. A failed producer or filter returns its failure and
 publishes no findings, including any partial output.
 
-Both are open work. A finding the reviewer could not anchor to a diff line
+Both enumerations report open work. An entry is informational when the sticky marks it
+`blocking: false` or `reason: "winddown-deferred"`, or explicitly marks its
+Beyond this PR backlog section non-blocking. An explicit `blocking: true`
+or a fresh body bullet with the same fingerprint takes precedence. The report lists skipped entries under `ignoredBacklog`
+and status JSON lists their fingerprints under `work.summaryIgnoredBacklogKeys`.
+These entries need no answer. Body bullets, unaccounted slots and backlog
+entries without an explicit non-blocking disposition still count as work.
+
+A finding the reviewer could not anchor to a diff line
 creates **no thread** — thread count reads zero while it sits live, so a
 thread count alone reports such a PR converged. It also has no `threadId`, so
 `reply-to-thread.ts` cannot answer it. For a review-object reviewer
@@ -2699,36 +2707,15 @@ a `not`/`no`/`never` word — a word-only change with neither (`pending` →
 no sibling exists for that kind of correction. Search manually for siblings of
 a claim, value, or status change outside those shapes.
 
-Summary-only findings answer differently, because there is no thread:
+Hold each decided summary-only finding with its outcome and reason. Step 6
+posts the round's answers in one top-level PR comment. Each answer keeps its
+own closed-vocabulary outcome and fingerprint marker. When the outcome is
+`deferred`, file the follow-up first and carry its link in the reason.
 
-**exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
-
-Write `.context/scratch/finding-reason.md` with the file editor:
-
-```text
-valid, but a docs-polish item on an unchanged file; declined per the triage rubric (docs tier).
-```
-
-```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/finding-reason.md -- bun "${CLAUDE_SKILL_DIR}/scripts/answer-summary-finding.ts"  --outcome wont-fix --fingerprint b9a7a18089043564 [PR]
-```
-
-The outcome is a **flag**, and the body is composed for you — so the closed
-vocabulary is enforced by exact match rather than by a second copy of
-`reply-to-thread.ts`'s parser. Several findings sharing one decision take
-repeated `--fingerprint` flags and answer in a single comment.
-
-The **fix-dependent** outcomes — `accepted` and `moot` — are **held exactly like
-an accepted thread**, with one difference: a thread's reply is already posted
-to GitHub by hold time, so its text survives independently of this state.
-A finding's is not — `bun "${CLAUDE_SKILL_DIR}/scripts/answer-summary-finding.ts" --pushed-sha` can't legally run
-until step 6, after the push, so at hold time the reasoning exists nowhere but
-your own context. `hold` needs it on stdin, not just `--outcome` — and that
-stdin is the **reason alone, with no leading outcome token**. Unlike a thread
-reply, whose whole text you write, the token here is composed from `--outcome`
-at answer time; one in the held reason too posts a doubled token, which a
-reviewer-scoring harvester, where the repository runs one, reads as malformed. `answer-summary-finding.ts`
-refuses such a body, but the fix belongs at the `hold` call:
+Pass the **reason alone** on stdin. The posting script adds the outcome
+token, and a second token in the reason makes the reply malformed for
+downstream scoring. For a fix-dependent outcome (`accepted` or `moot`),
+hold it before the push so the round can bind the answer to the pushed head.
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
@@ -2746,7 +2733,7 @@ Their marker is proof the finding is answered, so it may not exist before the
 change that answers it does. The script enforces the ordering rather than
 trusting it: both require `--pushed-sha`, verified against the PR's live head
 *and* this worktree's clean HEAD, so they can only be posted in step 6 after
-the push has landed. `finish-round.ts` brackets each one with a claim; when you
+the push has landed. `finish-round.ts` claims each finding before posting the batch; when you
 post a held finding by hand instead (settling one of its refusals), do the same
 — `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" claim-held --kind finding` before `answer-summary-finding.ts`,
 `release-held --key K --token T` after (§ Guardrails).
@@ -2768,8 +2755,7 @@ set it deliberately holds out of inline review and carries forward by the
 entry's original `firstRound` rather than re-deriving from the diff, so its
 re-emission at the fix's head judges nothing. A body bullet at that same head
 *is* a fresh judgment, so it still expires — including when the sticky emits
-one fingerprint **both** ways, where the fresh judgment wins and neither this
-grace nor the round budget below applies to it. A fingerprint is one global
+one fingerprint **both** ways, where the fresh judgment takes precedence and the grace expires. A fingerprint is one global
 key, so there is no clearing "the backlog copy" alone.
 
 That `at` case is not an edge: step 6 orders push → `stamp-held` → status →
@@ -2779,24 +2765,6 @@ verified-fixed finding is re-answered round after round, and a drive
 can end `HITL_PARKED` instead of `CONVERGED` purely because of it. The grace
 is exactly one head wide: any later push moves the
 reviewed SHA off the marked one, so a reverted or regressed fix is re-asked.
-
-Past that one head, one narrower exemption keeps running, itself bounded — and
-bounded along a different axis, which is why the one-head rule above does not
-replace it: a backlog entry the reviewer carries with
-`reason: "winddown-deferred"` is forwarded unconditionally by its original
-round, never re-verified against the diff, so its re-emission falsifies nothing
-— a dated `accepted`/`moot` marker for one survives the expiry (without
-that, the expiry re-asks the same verified-fixed finding every round). It
-survives it for `WINDDOWN_EXEMPTION_ROUNDS` further rounds, not
-forever: the same absent signal means a later round that *reverts* the fix
-re-emits the identical fingerprint under the identical reason, which an
-unbounded exemption would suppress permanently. The marker therefore
-carries the round it was posted in, and past the bound the finding is re-asked
-once. Bounded in rounds and nothing else — that clause ignores the reviewer's
-**position** by design, but not the marker's **dating**: a SHA git cannot
-resolve to a commit gets no exemption at all, since a marker naming nothing
-datable can never be checked. The clauses live in `collectAddressed` in
-`summary-findings.ts`, which is the rule; this is a summary of it.
 
 And one limit to plan around, stated rather than gated: a fix applied **only**
 to the PR description (`gh pr edit`) produces no commit, so its
@@ -2813,9 +2781,8 @@ findings held in one round share it) is a proxy and must not be presented as
 proof. Do not add one — and an exemption keyed on a pre-existing artifact the
 gate itself did not emit is a bypass, not a compatibility measure.
 
-What limits a wrong answer **between** rounds is the **expiry** above: one head
-for the `at` grace, `WINDDOWN_EXEMPTION_ROUNDS` for a winddown-deferred entry,
-then the finding is re-asked. Do not read that as a bound on the last round.
+What limits a wrong answer **between** rounds is the **expiry** above: the marked head
+for the `at` grace. A later review that repeats the finding reopens it. Do not read that as a bound on the last round.
 At the head a drive converges on, no later reviewer pass runs, so nothing
 expires the marker and the answer stands on the driver's word. That residual is accepted rather than closed: it is not specific to a
 description-only fix — a code commit that does not actually fix the finding
@@ -3331,11 +3298,11 @@ That is the whole of step 6. It performs, in this exact order:
    load-bearing, and omitting it stales every hold before the drain reads it
    back). The head is still counted exactly once — by § 1's gate at the top of
    the next round;
-6. drains the held batch from a **fresh** `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" held` read, one item
-   at a time — a `thread` through `resolve-held-thread.ts`, a `finding`
-   through claim → `answer-summary-finding.ts` → release, giving a claim back
-   on a failed dispatch — releasing each key the instant its own external
-   operation succeeds, never accumulating into an end-of-batch `--all`.
+6. drains a fresh held batch. It resolves threads through
+   `resolve-held-thread.ts` and claims summary findings for a single comment
+   through `answer-summary-finding.ts`. After delivery it releases each
+   completed finding's claim and gives back claims on failed dispatches.
+   A retry reads existing trusted markers and posts only outstanding answers.
 
 Each of those orderings is one an agent gets wrong by hand, which is why
 they are a script and not a checklist.

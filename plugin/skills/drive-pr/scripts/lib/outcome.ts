@@ -35,6 +35,16 @@ export const OUTCOMES = [
 
 export type Outcome = (typeof OUTCOMES)[number];
 
+export function isOutcome(value: unknown): value is Outcome {
+  return (OUTCOMES as readonly unknown[]).includes(value);
+}
+
+export function isFixDependentOutcome(
+  value: unknown,
+): value is "accepted" | "moot" {
+  return value === "accepted" || value === "moot";
+}
+
 /**
  * Outcomes that DECLINE a finding on merit rather than acting on it — the
  * population a defect-escape sample is drawn from. `rejected` is deliberately

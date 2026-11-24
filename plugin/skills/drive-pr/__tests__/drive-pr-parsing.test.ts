@@ -1580,8 +1580,7 @@ describe("summary-findings parsing", () => {
     // on, and the reviewer has since reviewed exactly that head while still
     // carrying the entry forward. The answered entry carries no `reason` at
     // all, which pins that the grace keys on backlog MEMBERSHIP rather than on
-    // the retired `winddown-deferred` reason. The sibling entry, never
-    // answered, must remain the only unaddressed finding.
+    // the retired `winddown-deferred` reason. The wind-down sibling is ignored.
     //
     // The set comes from `backlogFingerprintsOf` — the function the CLI itself
     // calls — not from a hand-copy of its body. Re-implementing the expression
@@ -1610,7 +1609,8 @@ describe("summary-findings parsing", () => {
       addressedFingerprints: addressed,
       reviewedSha: HEAD,
     });
-    expect(r.unaddressed.map((f) => f.fingerprint)).toEqual([
+    expect(r.unaddressed).toEqual([]);
+    expect(r.ignoredBacklog.map((entry) => entry.fingerprint)).toEqual([
       "b9a7a18089043564",
     ]);
   });
@@ -2099,9 +2099,8 @@ describe("summary-findings parsing", () => {
       anchoredKeys: [".claude/agents/review-arbiter.md"],
       addressedFingerprints: new Set(),
     });
-    // Only the two backlog entries remain — the anchored bullet is a thread's
-    // problem, and list-unresolved-threads.ts already counts it.
-    expect(r.total).toBe(2);
+    expect(r.total).toBe(1);
+    expect(r.ignoredBacklog).toHaveLength(1);
     expect(r.findings.every((f) => f.source === "backlog")).toBe(true);
   });
 
@@ -2113,9 +2112,9 @@ describe("summary-findings parsing", () => {
       anchoredKeys: [],
       addressedFingerprints: new Set(),
     });
-    expect(r.total).toBe(3);
+    expect(r.total).toBe(2);
     expect(r.findings.filter((f) => f.source === "body")).toHaveLength(1);
-    expect(r.unaddressed).toHaveLength(3);
+    expect(r.unaddressed).toHaveLength(2);
   });
 
   it("marks a finding addressed only via its drive-pr-addressed marker", () => {
@@ -2124,11 +2123,61 @@ describe("summary-findings parsing", () => {
       stickyCommentId: 9,
       stickyBody: stickyBody(),
       anchoredKeys: [".claude/agents/review-arbiter.md"],
-      addressedFingerprints: new Set(["b9a7a18089043564"]),
+      addressedFingerprints: new Set(["c773d9fdb7974e6d"]),
     });
-    expect(r.total).toBe(2);
-    expect(r.unaddressed).toHaveLength(1);
-    expect(r.unaddressed[0]?.fingerprint).toBe("c773d9fdb7974e6d");
+    expect(r.total).toBe(1);
+    expect(r.findings[0]?.addressed).toBe(true);
+    expect(r.unaddressed).toEqual([]);
+  });
+
+  it("honors explicit non-blocking dispositions without suppressing blocking backlog or a fresh body bullet", () => {
+    const path = "fresh.ts";
+    const text = "This is a fresh finding.";
+    const fingerprint = fingerprintOf(path, 3, text);
+    const entries = [
+      { fingerprint: "entry-flag", blocking: false },
+      { fingerprint: "section-flag" },
+      {
+        fingerprint: "keep-blocking",
+        blocking: true,
+        reason: "winddown-deferred",
+      },
+      { fingerprint, blocking: false },
+    ].map((entry) => ({ path, comment: text, ...entry }));
+    const blob = Buffer.from(JSON.stringify(entries)).toString("base64");
+    const input = {
+      pr: 1,
+      stickyCommentId: 9,
+      stickyBody: [
+        `- \`${path}:3\` — ${text}`,
+        "",
+        "<details><summary>🗂️ <b>Beyond this PR</b> — 4 finding(s) for triage (not posted inline)</summary>",
+        "",
+        "Held out of the inline threads so this PR can converge — **not blocking**.",
+        "</details>",
+        `<!-- ai-review-backlog: ${blob} -->`,
+      ].join("\n"),
+      anchoredKeys: [],
+      addressedFingerprints: new Set<string>(),
+    };
+    const r = classify(input);
+    expect(r.ignoredBacklog.map((entry) => entry.fingerprint)).toEqual([
+      "entry-flag",
+      "section-flag",
+    ]);
+    expect(
+      r.unaddressed.map(({ fingerprint, source }) => [fingerprint, source]),
+    ).toEqual([
+      ["keep-blocking", "backlog"],
+      [fingerprint, "body"],
+    ]);
+    const countMismatch = classify({
+      ...input,
+      stickyBody: input.stickyBody.replace("4 finding(s)", "3 finding(s)"),
+    });
+    expect(
+      countMismatch.unaddressed.map((entry) => entry.fingerprint),
+    ).toContain("section-flag");
   });
 
   it("reports a shortfall when the declared count exceeds what was classified", () => {
@@ -2148,26 +2197,35 @@ describe("summary-findings parsing", () => {
     expect(r.unaddressed).toHaveLength(3);
   });
 
-  it("does not manufacture a phantom slot for a finding the backlog already holds", () => {
-    // The declaration may well count backlog entries, which are unanchored by
-    // construction. Measuring the shortfall against body bullets alone then
-    // synthesises a slot for a finding that was already enumerated — a phantom
-    // that answering real findings cannot clear and that returns on every new
-    // head, i.e. a loop that never converges rather than one that fails closed.
+  it("does not manufacture a phantom slot for a blocking backlog finding", () => {
     const r = classify({
       pr: 1,
       stickyCommentId: 9,
-      // 2 backlog entries + 1 unanchored bullet = 3 classified; declared 3.
-      stickyBody: stickyBody({ unanchored: 3 }),
+      stickyBody: stickyBody({ unanchored: 2 }),
       anchoredKeys: [],
       addressedFingerprints: new Set(),
       reviewedSha: HEAD,
     });
-    expect(r.declaredUnanchored).toBe(3);
-    expect(r.findings.filter((f) => f.source === "unaccounted")).toHaveLength(
-      0,
-    );
-    expect(r.total).toBe(3);
+    expect(r.findings.map((finding) => finding.source)).toEqual([
+      "backlog",
+      "body",
+    ]);
+    expect(r.ignoredBacklog).toHaveLength(1);
+  });
+
+  it("keeps an unexplained slot open alongside ignored wind-down backlog", () => {
+    const r = classify({
+      pr: 1,
+      stickyCommentId: 9,
+      stickyBody: stickyBody({ backlog: "winddown-only", unanchored: 1 }),
+      anchoredKeys: [".claude/agents/review-arbiter.md:31"],
+      addressedFingerprints: new Set(),
+      reviewedSha: HEAD,
+    });
+    expect(r.unaddressed.map((finding) => finding.source)).toEqual([
+      "unaccounted",
+    ]);
+    expect(r.ignoredBacklog).toHaveLength(1);
   });
 
   it("inline comments anchor a `path:line` group ENTIRELY or not at all", () => {
@@ -2287,7 +2345,7 @@ describe("summary-findings parsing", () => {
       stickyCommentId: 9,
       // 2 backlog entries, no unanchored bullet (the one body bullet IS
       // anchored), declared 4 → 2 classified, 2 unaccounted slots.
-      stickyBody: stickyBody({ unanchored: 4 }),
+      stickyBody: stickyBody({ backlog: "blocking-only", unanchored: 4 }),
       anchoredKeys: [".claude/agents/review-arbiter.md:31"],
       addressedFingerprints: new Set(),
       reviewedSha: HEAD,

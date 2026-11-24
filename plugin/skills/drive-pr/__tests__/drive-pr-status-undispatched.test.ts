@@ -12,7 +12,7 @@ useDrivePrSuite();
 
 describe("drive-status held summary dispatch", () => {
   it("reports unaddressed holds without a push stamp separately, with recovery", async () => {
-    const { dir, stateDir } = writeFixture({ backlog: true });
+    const { dir, stateDir } = writeFixture({ backlog: "blocking-only" });
     const keys = ["b9a7a18089043564", "c773d9fdb7974e6d"];
     for (const key of keys) await hold(stateDir, key, "finding");
     const r = await probeIn(dir, stateDir, HEAD);
@@ -40,7 +40,10 @@ describe("drive-status held summary dispatch", () => {
 
   it("does not report an answered finding even if a stale hold remains", async () => {
     const keys = ["b9a7a18089043564", "c773d9fdb7974e6d"];
-    const { dir, stateDir } = writeFixture({ backlog: true, addressed: keys });
+    const { dir, stateDir } = writeFixture({
+      backlog: "blocking-only",
+      addressed: keys,
+    });
     for (const key of keys) await hold(stateDir, key, "finding");
     const r = await probeIn(dir, stateDir, HEAD);
     expect(
