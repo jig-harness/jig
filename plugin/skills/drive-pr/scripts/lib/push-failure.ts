@@ -132,40 +132,83 @@ function scanQuotes(
   start: QuoteState,
   stopAtClose = false,
 ): { state: QuoteState; openAt: number; end: number } {
-  let { q, esc } = start;
-  let pend = false;
-  let openAt = -1;
-  let i0 = 0;
-  if (buf.length === 0) return { state: start, openAt, end: -1 };
-  if (start.pend && q !== 0) {
-    // The previous chunk ended on a quote: a second one here doubles it.
-    if (buf[0] === q) i0 = 1;
-    else {
-      q = 0;
-      if (stopAtClose) return { state: { q, esc: false }, openAt, end: 0 };
-    }
-  }
-  for (let i = i0; i < buf.length; i++) {
-    const b = buf[i] as number;
-    if (q !== 0) {
-      if (esc) esc = false;
-      else if (b === 92) esc = true;
-      else if (b === q) {
-        if (i + 1 === buf.length && stopAtClose) {
-          pend = true;
-        } else if (buf[i + 1] === q) i++;
-        else {
-          q = 0;
-          openAt = -1;
-          if (stopAtClose) return { state: { q, esc }, openAt, end: i + 1 };
-        }
-      }
+  const s = { q: start.q, esc: start.esc, pend: false, openAt: -1 };
+  if (buf.length === 0) return { state: start, openAt: -1, end: -1 };
+  const i0 = resumeAfterQuote(buf, start, s);
+  if (i0 < 0 && stopAtClose)
+    return { state: { q: 0, esc: false }, openAt: -1, end: 0 };
+  for (let i = Math.max(i0, 0); i < buf.length; i++) {
+    if (s.q !== 0) {
+      const skip = stepInQuote(buf, i, s, stopAtClose);
+      if (skip < 0 && stopAtClose)
+        return { state: { q: 0, esc: s.esc }, openAt: -1, end: i + 1 };
+      if (skip > 0) i += skip;
     } else if (opensValue(buf, i)) {
-      q = b;
-      openAt = i;
+      s.q = buf[i] as number;
+      s.openAt = i;
     }
   }
-  return { state: pend ? { q, esc, pend } : { q, esc }, openAt, end: -1 };
+  const state = s.pend
+    ? { q: s.q, esc: s.esc, pend: true }
+    : { q: s.q, esc: s.esc };
+  return { state, openAt: s.openAt, end: -1 };
+}
+
+/**
+ * Where the scan starts when the previous chunk ended on a quote: after a
+ * second quote that doubles it, else at the start with the value closed
+ * (`-1`, the value ended before this chunk).
+ */
+function resumeAfterQuote(
+  buf: Buffer,
+  start: QuoteState,
+  s: { q: number },
+): number {
+  if (!start.pend || s.q === 0) return 0;
+  if (buf[0] === s.q) return 1;
+  s.q = 0;
+  return -1;
+}
+
+/** One byte inside a quoted value: the bytes to skip after it, or -1 when it closed the value. */
+function stepInQuote(
+  buf: Buffer,
+  i: number,
+  s: { q: number; esc: boolean; pend: boolean; openAt: number },
+  stopAtClose: boolean,
+): number {
+  const b = buf[i] as number;
+  if (s.esc) {
+    s.esc = false;
+    return 0;
+  }
+  if (b === 92) {
+    s.esc = true;
+    return 0;
+  }
+  if (b !== s.q) return 0;
+  if (i + 1 === buf.length && stopAtClose) {
+    s.pend = true;
+    return 0;
+  }
+  if (buf[i + 1] === s.q) return 1;
+  s.q = 0;
+  s.openAt = -1;
+  return -1;
+}
+
+/** Where an oversized escape sequence ends in `text`: the index after its terminator (or at the byte that cut it short), -1 while it goes on. */
+function discardEnd(text: string, csi: boolean): number {
+  for (let i = 0; i < text.length; i++) {
+    const b = text.charCodeAt(i);
+    if (csi) {
+      if (b >= 0x20 && b <= 0x3f) continue;
+      return b >= 0x40 && b <= 0x7e ? i + 1 : i;
+    }
+    if (b === 7) return i + 1;
+    if (b === 27) return i;
+  }
+  return -1;
 }
 
 /**
@@ -199,19 +242,10 @@ export function outputTail(): {
 
   /** Drop the rest of an oversized escape sequence from the front of `text`. */
   const discard = (text: string): string => {
-    for (let i = 0; i < text.length; i++) {
-      const b = text.charCodeAt(i);
-      if (discarding === "csi") {
-        if (b >= 0x20 && b <= 0x3f) continue;
-        discarding = null;
-        return text.slice(b >= 0x40 && b <= 0x7e ? i + 1 : i);
-      }
-      if (b === 7 || b === 27) {
-        discarding = null;
-        return text.slice(b === 7 ? i + 1 : i);
-      }
-    }
-    return "";
+    const end = discardEnd(text, discarding === "csi");
+    if (end < 0) return "";
+    discarding = null;
+    return text.slice(end);
   };
 
   /** Strip terminal escapes from a chunk, as the masker reads the text, holding back a cut one. */
