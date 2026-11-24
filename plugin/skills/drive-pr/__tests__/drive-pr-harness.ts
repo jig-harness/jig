@@ -1215,7 +1215,7 @@ if [ -n "$rest_pr" ]; then
   if [ -n "\${DRIVE_PR_STUB_GH_TIMES:-}" ]; then
     for a in "$@"; do
       if [ "$a" = "X-Drive-Pr-Caller: snapshot" ]; then
-        date +%s%N >> "$DRIVE_PR_STUB_GH_TIMES"
+        bun -e 'console.log(BigInt(Date.now()) * 1000000n)' >> "$DRIVE_PR_STUB_GH_TIMES"
       fi
     done
   fi

@@ -29,7 +29,9 @@ const PACING = {
   DRIVE_PR_FOREGROUND_WAIT_POLL_MS: "100",
   DRIVE_PR_FOREGROUND_WAIT_TRACK_MS: "200",
   DRIVE_PR_FOREGROUND_WAIT_KILL_GRACE_MS: "1000",
-  DRIVE_PR_FOREGROUND_WAIT_DEADLINE_GATE_TIMEOUT_MS: "120000",
+  // Keep the fixture gate within this test's timeout even if every readiness
+  // observation consumes its full individual allowance.
+  DRIVE_PR_FOREGROUND_WAIT_DEADLINE_GATE_TIMEOUT_MS: "20000",
 };
 const busy = "setInterval(() => {}, 1000)";
 const bunCommand = (source: string) => [process.execPath, "-e", source];
