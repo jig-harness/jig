@@ -56,12 +56,19 @@ test("literal Markdown keeps sentence punctuation and closing quotes outside the
   expect(lit("(see https://example.org)")).toBe("(see `https://example.org`)");
 });
 
+test("balanced parentheses stay inside the span and plain @ words stay text", () => {
+  expect(lit("see https://example.org/path_(item).")).toBe(
+    "see `https://example.org/path_(item)`.",
+  );
+  expect(lit("owner/repo@main")).toBe("owner/repo@main");
+});
+
 test("table cells escape each pipe once, in text and in code spans", () => {
   expect(cell("a | b")).toBe("a \\| b");
   expect(cell("x@y.co|z")).toBe("`x@y.co\\|z`");
 });
 
-test("literal Markdown scans non-email prose in linear time", () => {
+test("literal Markdown leaves long non-email prose unchanged", () => {
   const input = "a-".repeat(30_000);
   expect(lit(input)).toBe(input);
   const nearMisses = "a.b-c@".repeat(5_000);

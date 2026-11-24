@@ -30,7 +30,7 @@ const markdownText = (value: string, startsLine: boolean) => {
  * than a pattern for each form. Words never overlap, so no candidate can be
  * dropped or repeated.
  */
-const LINKABLE_WORD = /@|:\/\/|www\.|mailto:|xmpp:/i;
+const LINKABLE_WORD = /@[^\s@]*[^\s@.]\.[^\s@]|:\/\/|www\.|mailto:|xmpp:/i;
 const TRAILING_PUNCTUATION = ".,;:!?\"'\u2019\u201D)]}>";
 
 type Autolink = { index: number; value: string };
@@ -61,7 +61,13 @@ const bareAutolinks = (value: string): Autolink[] => {
 /** Sentence punctuation and closing quotes stay outside the code span. */
 const trimAutolinkPunctuation = (value: string) => {
   let end = value.length;
-  while (end > 0 && TRAILING_PUNCTUATION.includes(value[end - 1] ?? "")) end--;
+  const count = (ch: string) => value.slice(0, end).split(ch).length - 1;
+  while (end > 0) {
+    const last = value[end - 1] ?? "";
+    if (!TRAILING_PUNCTUATION.includes(last)) break;
+    if (last === ")" && count(")") <= count("(")) break;
+    end--;
+  }
   return end === 0 ? value : value.slice(0, end);
 };
 
