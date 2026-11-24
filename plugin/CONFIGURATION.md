@@ -855,6 +855,10 @@ model.
   while appending `__TIER` addresses `model._tier` instead. This applies to a
   runtime name ending in `_` as well. An underscore inside a segment (`my_model`)
   works in either position; set an affected model's whole entry as a mapping.
+  A runtime name that ends in `_` has the same problem one level up: `CUSTOM___MODEL`
+  splits into `custom` and `_model`, so set `JIG__ROUTING__MODEL_TIERS__CUSTOM_` to the
+  whole runtime mapping, with the model entries inside it. Likewise set such a runtime's
+  whole row under `routing.models` or a stage's `models` table as one mapping.
 - **Precedence.** For a stage, a runtime and a tier, the first of: the stage's
   cell (highest layer that sets it), the all-stages `routing.models` cell
   (highest layer that sets it), the runtime's default. A stage's cell is

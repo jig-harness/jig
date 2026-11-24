@@ -230,6 +230,12 @@ describe("the host and the repository layers", () => {
       standard: "terra",
       complex: "sol",
     });
+    expect(parseRoutingModels(config, "pickup").codex).toEqual(
+      parseRoutingModels(config, "steward").codex,
+    );
+    expect(parseRoutingModels(config).codex).toEqual(
+      parseRoutingModels(config, "steward").codex,
+    );
   });
 
   it("lets a run's environment win over both files", () => {
@@ -371,16 +377,12 @@ describe("routing.family_tiers", () => {
     expect(row["gpt-6.2-sol"]?.reason).toBe("new release");
     expect(parsed.reported).toHaveLength(2);
     expect(new Set(parsed.reported).size).toBe(2);
-    for (const line of parsed.reported) {
-      expect(line).not.toContain("; ");
-    }
-    const [short, release] = ["new short", "new release"].map((reason) =>
-      parsed.reported.filter((line) => line.includes(reason)),
+    expect([...parsed.reported].sort()).toEqual(
+      [
+        "routing.model_tiers.codex.sol reads sol as a strategic family: new short",
+        'routing.model_tiers.codex."gpt-6.2-sol" reads gpt-6.2-sol as a strategic family: new release',
+      ].sort(),
     );
-    expect(short).toHaveLength(1);
-    expect(release).toHaveLength(1);
-    expect(short?.[0]).toContain("routing.model_tiers.codex.sol");
-    expect(release?.[0]).toContain('routing.model_tiers.codex."gpt-6.2-sol"');
     expect(parsed.reported.join("\n")).not.toMatch(/old short|old legacy/);
   });
 
