@@ -120,7 +120,9 @@ strict:
 
 # Sections and fields whose `null` a skill refuses rather than reading it as
 # not set: a higher layer's `null` there would otherwise put a lower layer's
-# value back to its default unnoticed. Elsewhere a `null` reads as not set.
+# value back to its default unnoticed. Elsewhere a `null` reads as not set,
+# except that routing's own validation (a stage's `models` map among them)
+# refuses its nulls separately.
 null_refused:
   - repository
   - repository.remote

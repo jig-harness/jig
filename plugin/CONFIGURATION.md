@@ -841,13 +841,17 @@ model.
   `routing.stages` and a stage's `models` map, have dedicated null messages
   (`routing.models` accepts a null and restores the default rows); a null
   deeper down, such as a stage, a runtime's row or a tier's cell, fails the
-  mapping or model-token check that field requires: a higher layer's mapping at the same path replaces it and the lower
-  layer's cells with it. The audit's `null_refused` check reads the selected
-  repository file on its own, so it can still flag that file's `null` where
-  the loader accepts it; a `null` only in the host file is outside that
-  check. A model key that ends in an underscore cannot be
-  a leaf override (the split reads `___` as a separator and a child that starts
-  with one); set the model's whole entry as a mapping instead.
+  mapping or model-token check that field requires. A higher layer can replace
+  any of these nulls with a value valid for the field (a mapping for a
+  mapping-valued path, a model string for a model cell). The audit's
+  `null_refused` check names exact paths and covers only `routing.model_tiers`
+  and `routing.stages` of those discussed here; a stage's `models: null` is
+  reported by the separate routing validation, which parses the repository file
+  on its own, so it can flag that file's `null` where a higher runtime layer
+  masks it and the loader accepts the merged result. A `null` only in the host
+  file is outside both checks. A model key that ends in an underscore, or has one before a further
+  segment, cannot be a leaf override (the split reads `___` as a separator and
+  a child that starts with one); set the model's whole entry as a mapping instead.
 - **Precedence.** For a stage, a runtime and a tier, the first of: the stage's
   cell (highest layer that sets it), the all-stages `routing.models` cell
   (highest layer that sets it), the runtime's default. A stage's cell is
