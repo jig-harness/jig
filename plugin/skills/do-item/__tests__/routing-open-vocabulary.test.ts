@@ -297,6 +297,30 @@ describe("the host and the repository layers", () => {
     );
   });
 
+  it("routes a model the host declared under family_tiers after a repository resets model_tiers", () => {
+    writeFileSync(
+      join(home, "jig.yaml"),
+      `routing:
+  models:
+    codex:
+      standard: gpt-house
+  family_tiers:
+    codex:
+      gpt-house: { tier: execution, reason: "the house model" }
+`,
+    );
+    writeFileSync(
+      join(repo, ".config", "jig.yaml"),
+      "routing:\n  model_tiers: null\n",
+    );
+    const config = loadLayeredConfig(repo, {
+      JIG_HOME: home,
+      JIG__ROUTING__MODEL_TIERS__CODEX__OTHER_HOUSE__TIER: "execution",
+      JIG__ROUTING__MODEL_TIERS__CODEX__OTHER_HOUSE__REASON: "from the run",
+    }).values;
+    expect(parseRoutingModels(config).codex?.standard).toBe("gpt-house");
+  });
+
   it("lets a run's environment win over both files", () => {
     layered(HOST, null);
     const config = loadLayeredConfig(repo, {
