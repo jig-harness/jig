@@ -272,8 +272,10 @@ A park whose thread has since been resolved still counts toward the hand-back.
 A re-arm the dispatcher launches for a validated request settles it without
 an answer when nobody left an answer, a condition note or an unreadable
 history on it; a direct re-arm does not, so that park waits for its answer
-like every other stored park. Nothing is unparked until all of them are
-settled.
+like every other stored park, with one exception: at the `wide` autonomy
+level a re-arm unparks a park of the class `escalated` that nobody answered
+and hands it to the next round to decide provisionally. Nothing else is
+unparked until all of them are settled.
 
 ### The final status re-read
 
