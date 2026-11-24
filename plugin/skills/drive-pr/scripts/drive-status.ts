@@ -1008,6 +1008,9 @@ async function main(): Promise<number> {
             summaryUnaddressedKeys: report.summaryUnaddressedKeys,
             summaryHeldUndispatchedKeys: report.summaryHeldUndispatchedKeys,
             parkedKeys: report.parkedItemKeys,
+            // The parks a HITL_PARKED stop waits on: the stop's lead park is
+            // chosen from these, not from every stored park.
+            actionableParkKeys: report.actionableParkKeys,
             // The evidence `structuralEscalationDue` above is derived from —
             // published for visibility, the same reason the key sets beside
             // it are. NOT the recurrence result itself: this is only THIS

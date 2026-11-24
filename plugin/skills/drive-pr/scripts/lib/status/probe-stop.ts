@@ -54,14 +54,16 @@ export function recordProbeStop(
   status: Record<string, unknown>,
 ): ProbeStop | null {
   if (typeof status.reason !== "string") return null;
+  const work = status.work as { actionableParkKeys?: unknown } | undefined;
+  const actionable = work?.actionableParkKeys;
   const probe = probeStopOf({
     code,
     state: status.state,
     reason: safeReason(status.reason),
     failure: status.failure,
     parkKeys:
-      status.state === "HITL_PARKED" && Array.isArray(status.actionableParkKeys)
-        ? status.actionableParkKeys
+      status.state === "HITL_PARKED" && Array.isArray(actionable)
+        ? actionable
         : undefined,
   });
   if (probe !== null) console.error(`${PREFIX}${JSON.stringify(probe)}`);
