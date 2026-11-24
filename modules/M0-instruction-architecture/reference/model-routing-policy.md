@@ -318,9 +318,11 @@ parameter, a `--model` flag on a spawned CLI) independently of these places:
 an invocation-time value outranks the definition's own metadata
 ([Claude Code](../mappings.md#family-aliases-and-pins-in-claude-code)), and a
 tier declared in any of those places is invisible to the check and to the
-audit. An invocation-time argument that only forwards a value read from one
-of the places above, such as a skill passing its own configured judgment-pass
-model to the subagent it calls, declares nothing new and is allowed.
+audit. An invocation-time argument declares nothing new and is allowed only
+when it forwards a value read from one of the places above, such as a skill
+passing its own configured judgment-pass model to the subagent it calls, or
+when shared routing selects a value for a field the effective definition
+leaves open. Shared routing never replaces a valid metadata pin.
 
 **An A/B baseline is mandatory.** Every Judgment-tier assignment names its
 Strategic-tier baseline next to the assignment, in a field of its own (such
@@ -330,11 +332,13 @@ Before the comparison has run, the baseline holds the family alias and the
 planned comparison; when it runs, the exact versioned id that was measured is
 recorded with its result.
 
-**A downgrade is one line.** Reverting a Judgment-tier assignment edits that
-single `model:` value or configuration setting back to the baseline's family
-alias, together with the declared cost tier beside it where the metadata
-carries one (the check rejects a tier that contradicts the model), and
-nothing else. It is an exact reversal only while the alias still
+**A downgrade changes the affected selection.** Reverting a Judgment-tier
+assignment edits the layer's `model:` value or configuration setting back to
+the baseline's family alias, together with the declared cost tier beside it
+where the metadata carries one (the check rejects a tier that contradicts the
+model). Where shared routing selects the model, change the row that selects
+the affected layer and check every other consumer of that row; split the row
+first if they need different models. It is an exact reversal only while the alias still
 resolves to the measured release. Once the family has moved on, or when the
 measured baseline itself can no longer be used and some other model stands in
 as an operational fallback, the result is a provisional substitution: label

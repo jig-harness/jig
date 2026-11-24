@@ -406,17 +406,10 @@ is policy, not an override, and the reasons name the rule that fired.
   records the tier M0's mappings give each family (for Claude Code:
   `haiku` scout, `sonnet` execution, `opus` strategic, `fable` judgment; for
   Codex: `luna` scout, `terra` execution, `sol` strategic, `astra`
-  judgment, rows M0's mappings gain at step 4). The loader
-  refuses an alias outside the list, and a `routing.models` row in which a
-  stricter complexity tier maps to a family of a lower M0 tier than a
-  lighter one: `complex: sonnet` with `standard: opus` would make the
-  strictest tier the cheaper family, the declared tier contradicting the
-  model's that M0's policy rejects. A repository whose mapping
-  legitimately differs (a provider whose alias resolves to another family)
-  declares the family's tier in `routing.family_tiers.<runtime>.<family>`
-  with a `reason`, which the loader reads in place of the list's tier for
-  that family and refuses without the reason; the audit reports each one.
-  A runtime with no list takes any name.
+  judgment, rows M0's mappings gain at step 4). The current configuration
+  reference's [open model vocabulary](../plugin/CONFIGURATION.md#the-open-model-vocabulary)
+  defines how a repository declares an unlisted model and how stage rows
+  select and validate their effective models.
   Independently of ordering, the loader refuses any tier mapped to a
   Scout family, and a `family_tiers` override cannot move a Scout family
   out of that refusal. A tier mapped to a Judgment family is accepted when

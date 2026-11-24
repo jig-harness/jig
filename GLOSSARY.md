@@ -1933,11 +1933,11 @@ make, use the entry's term instead.
   carries one. That pinning rule applies to agent and skill metadata. Shared
   routing configuration instead classifies models for shared model selection:
   its declarations are per runtime and can name a known family spelling or an
-  exact model identifier. An explicit declaration (`routing.model_tiers`, or
-  its older spelling `routing.family_tiers`) comes first and the family the
-  plugin knows second, except that surviving declarations for the same family
-  or exact identifier in one runtime must agree on their tier and the catalog's
-  Scout restriction still applies. Not
+  exact model identifier. For one runtime, every surviving declaration of the
+  same family or exact identifier — from `routing.model_tiers` or its older
+  spelling `routing.family_tiers` — must agree on its tier; otherwise the
+  plugin's known-family classification applies. The catalog's Scout
+  restriction still applies. Not
   from how important the job sounds. *Avoid*: model level (a *maturity level*
   is something else).
 - **Route** — the agent, *complexity tier* and reasoning effort chosen for the
