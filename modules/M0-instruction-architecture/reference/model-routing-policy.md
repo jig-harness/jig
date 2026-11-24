@@ -345,12 +345,13 @@ the baseline's family alias, together with the declared cost tier beside it
 where the metadata carries one (the check rejects a tier that contradicts the
 model). Where shared routing selects the model, change the cell that selects
 the affected layer and check tier ordering across every affected effective
-row, including inherited rows and other cells in the same stage. Consumers that
-resolve different runtime or complexity-tier cells are already isolated. A
-stage override can isolate the change only when each affected launch reads that
-stage row; different stage names alone do not establish isolation. Split
-the affected layer into a separately configured selection only when consumers
-that must stay on different models resolve to the same cell. It
+row, including inherited rows and other cells in the same stage. Different
+runtime rows are isolated, but different complexity-tier cells in one row are
+still compared by the tier-ordering check. A stage override can isolate the
+change only when each affected launch reads that stage row; different stage
+names alone do not establish isolation. Split the affected layer into a
+separately configured selection only when consumers that must stay on different
+models resolve to the same cell. It
 is an exact reversal only while the alias still
 resolves to the measured release. Once the family has moved on, or when the
 measured baseline itself can no longer be used and some other model stands in

@@ -94,19 +94,18 @@ describe("a model outside the families", () => {
     ).toThrow(`routing.model_tiers.claude-code."${OUTSIDE}"`);
   });
 
-  it("refuses a declared outside model for a runtime that takes aliases", () => {
-    expect(() =>
-      rules({
-        routing: {
-          models: { "claude-code": { complex: OUTSIDE } },
-          model_tiers: {
-            "claude-code": {
-              [OUTSIDE]: { tier: "strategic", reason: "a provider model" },
-            },
+  it("routes a declared outside model for a runtime that takes aliases", () => {
+    const parsed = rules({
+      routing: {
+        models: { "claude-code": { complex: OUTSIDE } },
+        model_tiers: {
+          "claude-code": {
+            [OUTSIDE]: { tier: "strategic", reason: "a provider model" },
           },
         },
-      }),
-    ).toThrow("claude-code family alias, and this launch accepts aliases only");
+      },
+    });
+    expect(parsed.models["claude-code"]?.complex).toBe(OUTSIDE);
   });
 
   it("is refused for a stage's row too", () => {

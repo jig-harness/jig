@@ -299,10 +299,9 @@ function declaredTier(
  * The M0 tier the family at `field` runs, `undefined` where nothing names
  * one. The family is resolved once, from its alias or from the model id
  * it names today, and its declaration is read under any spelling of it, so
- * every spelling gets one tier. Refused: a family outside a runtime's known
- * families that `family_tiers` does not declare, a Scout family, however
- * declared, and a model id for a runtime that takes aliases, since its
- * release id would freeze the pin.
+ * every spelling gets one tier. Refused: a model outside a runtime's known
+ * families that neither declaration key classifies, or a Scout family,
+ * however it is declared.
  */
 function familyTier(
   runtime: string,
@@ -325,10 +324,6 @@ function familyTier(
     );
   if (family !== undefined && byAlias === undefined)
     refuseReleaseId(runtime, name, field, family);
-  if (familiesOf(runtime)?.takesAlias && byAlias === undefined)
-    throw new RoutingError(
-      `${field}: ${name} is not a ${runtime} family alias, and this launch accepts aliases only`,
-    );
   return own ?? family?.tier;
 }
 

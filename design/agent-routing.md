@@ -88,8 +88,9 @@ such mapping
 ([ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md)). The
 tier is never a model id. Model identifiers used by the complexity-tier
 translation appear in routing configuration and its classification keys, both
-of which the loader checks; a launch can also receive a one-run model choice
-or a skill pass model, which do not use that routing loader.
+of which the loader checks. A direct model name in a one-run operator choice
+or skill pass model does not use that routing loader; a tier-valued choice
+still resolves through it.
 
 ### Complexity tiers
 
