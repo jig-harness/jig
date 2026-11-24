@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { accountStartupNeeds } from "../lib/account-startup.ts";
 import type { ApplyState } from "../lib/actions/launch.ts";
 import {
@@ -279,6 +280,44 @@ describe("resolving a credential reference", () => {
       maskCredentials(`value prefix<redacted>${collision}`, "[masked]"),
     ).toBe("value [masked]");
     expect(maskCredentials("<redacted>", "[masked]")).toBe("<redacted>");
+  });
+
+  it("does not relay a failed credential command's stderr to its parent", async () => {
+    const stderrOnly = "opaque-stderr-diagnostic-1234";
+    const credentialModule = new URL(
+      "../lib/provider-credential.ts",
+      import.meta.url,
+    ).href;
+    const source = `
+      import { resolveCredential } from ${JSON.stringify(credentialModule)};
+      const result = await resolveCredential({
+        credentialCommand: [process.execPath, "-e", ${JSON.stringify(
+          `process.stderr.write(${JSON.stringify(stderrOnly)}); process.exit(1)`,
+        )}],
+        credentialTimeoutMs: 10_000,
+        credentialEnv: [],
+        providerHosts: {},
+      }, "ref", process.env);
+      if (result.ok) throw new Error("expected credential command failure");
+      console.log(result.failure.reason);
+    `;
+    const child = Bun.spawn([process.execPath, "-e", source], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [exitCode, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    expectSpawnExit(
+      { exitCode, stdout, stderr },
+      0,
+      "credential resolver child",
+    );
+    expect(stdout).toContain("error output is not recorded");
+    expect(stdout).not.toContain(stderrOnly);
+    expect(stderr).not.toContain(stderrOnly);
   });
 
   it("is unreachable when the command does not answer in time", async () => {
