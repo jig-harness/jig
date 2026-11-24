@@ -17,14 +17,20 @@
  *    "message":{"content":[{"type":"text",
  *      "text":"You've hit your session limit · resets 3:20am (Europe/Amsterdam)"}]}}
  *
- * WHAT THIS ADAPTER CANNOT DO, stated rather than papered over: it has never
- * seen a WEEKLY wall. Every `rate_limit` record in 371 samples here is the
- * five-hour "session limit" wording. So `session limit` is the only phrasing
- * classified `short`; every other recognised `rate_limit` is `unknown`, which
- * the caller treats exactly like `weekly` — stop and notify. That is the
- * correct behaviour for a weekly wall arriving in wording we have not seen,
- * and adding its recogniser later is additive. Guessing `short` from an
- * unrecognised phrase is the one mistake that would sleep a drive for days.
+ * TWO WORDINGS ARE RECOGNISED, each only as a whole text block:
+ *
+ *   - the five-hour notice, `You've hit your session limit · resets 3:20am
+ *     (Europe/Amsterdam)`, classified `short` with the next occurrence of
+ *     that clock as its reset;
+ *   - the weekly notice, `You've hit your weekly limit · resets Nov 27, 11am
+ *     (Europe/Amsterdam)`, classified `weekly` with the dated reset it
+ *     states, when that reset resolves and falls within a week and a day of
+ *     the record.
+ *
+ * Every other `rate_limit` record, including a weekly notice whose reset does
+ * not resolve, is `unknown` with no reset, which the caller treats exactly
+ * like `weekly` — stop and notify. Guessing `short` from an unrecognised
+ * phrase is the one mistake that would sleep a drive for days.
  */
 
 import { randomUUID } from "node:crypto";
@@ -38,16 +44,21 @@ import {
   forEachDirEntry,
   isConfirmedAbsence,
   MAX_CANDIDATE_FILES_SCANNED,
+  MAX_TRANSCRIPT_READ_BYTES,
   detectionTimeBounds,
   maxCandidateScanMs,
   type PreparedSpawn,
   type QuotaAdapter,
   type QuotaBlock,
   readBoundedTail,
+  reportTruncatedScan,
   scanBudgetExceeded,
 } from "./types.ts";
 import {
+  DATED_RESET_CLAUSE_RE,
+  matchDatedResetClauseText,
   matchResetClauseText,
+  parseDatedResetClause,
   parseResetClause,
   RESET_CLAUSE_RE,
 } from "./wallclock.ts";
@@ -68,6 +79,185 @@ const SESSION_LIMIT_NOTICE_RE = new RegExp(
   `^you(?:'|’)ve hit your session limit\\s*·\\s*${RESET_CLAUSE_RE.source}$`,
   "i",
 );
+
+/** The weekly notice, anchored end to end the same way, on the dated reset clause. */
+const WEEKLY_LIMIT_NOTICE_RE = new RegExp(
+  `^you(?:'|’)ve hit your weekly limit\\s*·\\s*${DATED_RESET_CLAUSE_RE.source}$`,
+  "i",
+);
+
+/**
+ * The furthest a weekly notice's reset may lie after its record: a week and
+ * a day. A reset further out means the clause was not what it seemed (a date
+ * resolved into the wrong year), and the wall is then read as one whose reset
+ * is unknown rather than walling an account for months.
+ */
+const WEEKLY_RESET_MAX_MS = 8 * 24 * 60 * 60 * 1000;
+
+/** What one text block of a `rate_limit` record says, when it is a recognised notice. */
+interface Notice {
+  window: "short" | "weekly" | "unknown";
+  label: string;
+  reset: Temporal.Instant | null;
+  clause: string | null;
+}
+
+/** The notice one text block is, end to end, or `null` when it is none. */
+function noticeOf(block: string, at: Temporal.Instant): Notice | null {
+  if (SESSION_LIMIT_NOTICE_RE.test(block))
+    return {
+      window: "short",
+      label: "session limit",
+      reset: parseResetClause(block, at)?.at ?? null,
+      clause: matchResetClauseText(block),
+    };
+  if (!WEEKLY_LIMIT_NOTICE_RE.test(block)) return null;
+  const reset = parseDatedResetClause(block, at)?.at ?? null;
+  const plausible =
+    reset !== null &&
+    reset.epochMilliseconds - at.epochMilliseconds <= WEEKLY_RESET_MAX_MS;
+  return {
+    window: plausible ? "weekly" : "unknown",
+    label: "weekly limit",
+    reset: plausible ? reset : null,
+    clause: matchDatedResetClauseText(block),
+  };
+}
+
+const NOTICE_RANK = { short: 0, unknown: 1, weekly: 2 } as const;
+
+/**
+ * The most restrictive whole recognised notice among `blocks`, read at the
+ * record's instant `at`; `null` when none is. A weekly notice outranks one
+ * whose reset cannot be trusted (`unknown`), which outranks a session limit,
+ * so a short notice never hides a longer wall in the same record. Only the
+ * chosen block's own reset clause is ever trusted.
+ */
+function recognisedNotice(
+  blocks: readonly string[],
+  at: Temporal.Instant,
+): Notice | null {
+  let best: Notice | null = null;
+  for (const block of blocks) {
+    const notice = noticeOf(block, at);
+    if (
+      notice !== null &&
+      (best === null || NOTICE_RANK[notice.window] > NOTICE_RANK[best.window])
+    )
+      best = notice;
+  }
+  return best;
+}
+
+/** What reading one session's transcripts by name found. */
+interface SessionLookup {
+  /** Its transcripts changed since the pass started. */
+  files: string[];
+  /** The subset of `files` the lookup found by name. */
+  own: ReadonlySet<string>;
+  /**
+   * Whether the session's own transcript was found and every listing and
+   * file stat in the lookup completed within its bounds, and no file is
+   * larger than the tail the detection reads: then the walk's truncation
+   * hides nothing of this pass. The detection loop still clears it when a
+   * file it reads from `own` fails to read.
+   */
+  read: boolean;
+}
+
+/**
+ * The wall-clock bound of the by-name lookup, in milliseconds: its own
+ * dial (`DRIVE_PR_QUOTA_MAX_LOOKUP_MS`), apart from the walk's, since the
+ * lookup is the cheaper read that must still finish when the walk does not.
+ */
+function maxLookupMs(): number {
+  const raw = Number(process.env.DRIVE_PR_QUOTA_MAX_LOOKUP_MS);
+  return Number.isFinite(raw) &&
+    raw >= 0 &&
+    process.env.DRIVE_PR_QUOTA_MAX_LOOKUP_MS !== ""
+    ? raw
+    : 5000;
+}
+
+/**
+ * The transcripts of session `sessionId` changed since `sinceMs`, read
+ * without walking the tree: `<project>/<sessionId>.jsonl` and the subagent
+ * transcripts under `<project>/<sessionId>/subagents/`, for every project
+ * directory. Only the top level is listed and the entry and time budgets
+ * of the walk bound it. The file name only narrows where to look: every
+ * record read is still matched on its own `sessionId`. A file that vanished
+ * is absent; any other failure to read one, a bound reached or a file
+ * larger than the detection's tail leaves the lookup incomplete.
+ */
+function sessionFiles(sessionId: string, sinceMs: number): SessionLookup {
+  // A session id names a file; one that could name a path is not read.
+  if (!/^[A-Za-z0-9_-]+$/.test(sessionId))
+    return { files: [], own: new Set(), read: false };
+  const root = projectsRoot();
+  const files: string[] = [];
+  let found = false;
+  let complete = true;
+  let scanned = 0;
+  const deadlineAt = currentMs() + maxLookupMs();
+  const exceeded = (): boolean => {
+    if (
+      scanBudgetExceeded(
+        scanned,
+        MAX_CANDIDATE_FILES_SCANNED,
+        deadlineAt,
+        currentMs(),
+      )
+    ) {
+      complete = false;
+      return true;
+    }
+    scanned++;
+    return false;
+  };
+  // Whether `path` exists, with any failure but a confirmed absence
+  // leaving the lookup incomplete.
+  const present = (path: string): boolean => {
+    try {
+      statSync(path);
+      return true;
+    } catch (err) {
+      if (!isConfirmedAbsence(err)) complete = false;
+      return false;
+    }
+  };
+  const keep = (path: string): void => {
+    try {
+      const st = statSync(path);
+      if (st.mtimeMs >= sinceMs) {
+        files.push(path);
+        if (st.size > MAX_TRANSCRIPT_READ_BYTES) complete = false;
+      }
+    } catch (err) {
+      if (!isConfirmedAbsence(err)) complete = false;
+    }
+  };
+  const listed = forEachDirEntry(root, (project) => {
+    if (exceeded()) return false;
+    if (!project.isDirectory()) return true;
+    const dir = join(root, project.name);
+    const transcript = join(dir, `${sessionId}.jsonl`);
+    if (present(transcript)) {
+      found = true;
+      keep(transcript);
+    }
+    const subagents = join(dir, sessionId, "subagents");
+    if (!present(subagents)) return true;
+    const all = forEachDirEntry(subagents, (entry) => {
+      if (exceeded()) return false;
+      if (!entry.isDirectory() && entry.name.endsWith(".jsonl"))
+        keep(join(subagents, entry.name));
+      return true;
+    });
+    if (!all) complete = false;
+    return true;
+  });
+  return { files, own: new Set(files), read: found && listed && complete };
+}
 
 /**
  * Where Claude Code keeps transcripts. Overridable so the tests can point at a
@@ -234,6 +424,90 @@ function textBlocks(record: Record<string, unknown>): string[] {
     if (typeof t === "string") out.push(t.replace(/\s+/g, " ").trim());
   }
   return out;
+}
+
+/** A reset clause found in any block, shown as evidence only, never trusted. */
+function anyResetClause(blocks: readonly string[]): string | null {
+  for (const b of blocks) {
+    const m = matchDatedResetClauseText(b) ?? matchResetClauseText(b);
+    if (m !== null) return m;
+  }
+  return null;
+}
+
+/**
+ * The wall one `rate_limit` record at instant `ts` in `path` reports.
+ */
+function blockOf(
+  record: Record<string, unknown>,
+  ts: number,
+  path: string,
+): QuotaBlock {
+  const blocks = textBlocks(record);
+  // Classified from a SINGLE block, never the join of all of them: a
+  // vendor message can bundle more than one block, and an incidental
+  // "session limit" mention in one block combined with an unrelated
+  // `resets ...` clause substring from a DIFFERENT block would report a
+  // false SHORT classification for a wall that is actually unknown or
+  // weekly — defeating the fail-closed policy this file otherwise
+  // follows. The first block that is itself a whole notice wins
+  // (`recognisedNotice`, matched end to end — see
+  // `SESSION_LIMIT_NOTICE_RE` for why a partial match at any position
+  // leaves a bypass); its OWN reset clause is the only one trusted.
+  const notice = recognisedNotice(
+    blocks,
+    Temporal.Instant.fromEpochMilliseconds(ts),
+  );
+  // `evidence` is what a human reads via `describeQuota()`, and what
+  // drive.ts logs unattended to a clone-wide log file. A vendor
+  // message's blocks can include ordinary reply content bundled
+  // alongside its own rate-limit line, not just the limit notice
+  // itself. Storing all of it risks logging unrelated transcript
+  // content the user typed, with no classification, redaction, or
+  // retention bound. Record only what was actually RECOGNISED: the
+  // notice's phrase (a fixed label, not a quote) and the `resets ...`
+  // clause substring itself — never the free text either was found in.
+  // For an unrecognised wall, still surface any resets clause found in
+  // ANY block purely as evidence — it is never trusted for `resetAt`
+  // or `window` unless it came from the block that is the notice.
+  const resetClauseText = notice ? notice.clause : anyResetClause(blocks);
+  const recognised = [notice?.label ?? null, resetClauseText].filter(
+    (p): p is string => p !== null,
+  );
+  return {
+    vendor: claudeVendor,
+    window: notice?.window ?? "unknown",
+    // A reset clause is only trusted for wording we classified. On an
+    // unrecognised phrase the instant may well parse, but it would be an
+    // instant for a window whose LENGTH we do not know — and length is
+    // what decides sleepability. Report the block, withhold the reset.
+    resetAt: notice?.reset ?? null,
+    observedAt: Temporal.Instant.fromEpochMilliseconds(ts),
+    evidence:
+      recognised.length > 0
+        ? recognised.join(" · ")
+        : "(rate_limit record with no recognised wording)",
+    source: path,
+  };
+}
+
+/**
+ * `walked`, with the transcripts of `sessionId` read by name when there is
+ * one (`sessionFiles`), and whether that lookup read the session whole.
+ */
+function withSessionFiles(
+  walked: readonly string[],
+  sessionId: string | null,
+  sinceMs: number,
+): SessionLookup {
+  if (sessionId === null)
+    return { files: [...walked], own: new Set(), read: false };
+  const own = sessionFiles(sessionId, sinceMs);
+  return {
+    files: [...new Set([...own.files, ...walked])],
+    own: own.own,
+    read: own.read,
+  };
 }
 
 /**
@@ -525,7 +799,15 @@ export const claudeAdapter: QuotaAdapter = {
     // transcript this walk never reached read as "no wall" indistinguishably
     // from a genuinely clean one.
     const scan = candidateFiles(sinceFloorMs);
-    for (const path of scan.files) {
+    // With the pass's own session id, its transcripts are also read by name
+    // (`sessionFiles`), so a walk cut short by either bound on a large tree
+    // cannot hide this pass's own wall. The walk still runs: a transcript in
+    // a layout the lookup does not know is found there, and matched on the
+    // same record id.
+    const lookup = withSessionFiles(scan.files, ourSessionId, sinceFloorMs);
+    // Cleared when a transcript the lookup counted as read fails to read.
+    let ownReadFailed = false;
+    for (const path of lookup.files) {
       const isPreexisting = opts.preexistingSessions?.has(path) ?? false;
       // A file that already existed when the pass was spawned ORDINARILY
       // belongs to a session that started before it — a human's chat in this
@@ -578,6 +860,7 @@ export const claudeAdapter: QuotaAdapter = {
       try {
         body = readBoundedTail(path);
       } catch {
+        if (lookup.own.has(path)) ownReadFailed = true;
         continue;
       }
       // Cheap reject before parsing tens of thousands of JSON lines: a
@@ -657,72 +940,9 @@ export const claudeAdapter: QuotaAdapter = {
         if (ts < bestAt) continue;
         if (ts === bestAt && path !== bestPath) continue;
 
-        const blocks = textBlocks(record);
-        // Classified from a SINGLE block, never the join of all of them: a
-        // vendor message can bundle more than one block, and an incidental
-        // "session limit" mention in one block combined with an unrelated
-        // `resets ...` clause substring from a DIFFERENT block would report a
-        // false SHORT classification for a wall that is actually unknown or
-        // weekly — defeating the fail-closed policy this file otherwise
-        // follows. First block that itself contains the phrase wins; its OWN
-        // reset clause is the only one ever trusted. Matched against the WHOLE
-        // block via `SESSION_LIMIT_NOTICE_RE` (defined above, next to why it is
-        // anchored end to end) — see that comment for why a partial match at
-        // any position kept leaving a fresh bypass, one position after another.
-        let isSession = false;
-        let reset: { at: Temporal.Instant; zone: string } | null = null;
-        let sessionBlock = "";
-        for (const block of blocks) {
-          if (SESSION_LIMIT_NOTICE_RE.test(block)) {
-            isSession = true;
-            reset = parseResetClause(
-              block,
-              Temporal.Instant.fromEpochMilliseconds(ts),
-            );
-            sessionBlock = block;
-            break;
-          }
-        }
         bestAt = ts;
         bestPath = path;
-        // `evidence` is what a human reads via `describeQuota()`, and what
-        // drive.ts logs unattended to a clone-wide log file. A vendor
-        // message's blocks can include ordinary reply content bundled
-        // alongside its own rate-limit line, not just the limit notice
-        // itself. Storing all of it risks logging unrelated transcript
-        // content the user typed, with no classification, redaction, or
-        // retention bound. Record only what was actually RECOGNISED: the
-        // session-limit phrase (a fixed label, not a quote) and the `resets
-        // ...` clause substring itself — never the free text either was
-        // found in. For an
-        // unrecognised wall, still surface any resets clause found in ANY
-        // block purely as evidence — it is never trusted for `resetAt` or
-        // `window` unless it came from the block that also matched the
-        // session-limit phrase.
-        const resetClauseText = isSession
-          ? matchResetClauseText(sessionBlock)
-          : (blocks
-              .map((b) => matchResetClauseText(b))
-              .find((m) => m !== null) ?? null);
-        const recognised = [
-          isSession ? "session limit" : null,
-          resetClauseText,
-        ].filter((p): p is string => p !== null);
-        best = {
-          vendor: claudeVendor,
-          window: isSession ? "short" : "unknown",
-          // A reset clause is only trusted for wording we classified. On an
-          // unrecognised phrase the instant may well parse, but it would be an
-          // instant for a window whose LENGTH we do not know — and length is
-          // what decides sleepability. Report the block, withhold the reset.
-          resetAt: isSession && reset !== null ? reset.at : null,
-          observedAt: Temporal.Instant.fromEpochMilliseconds(ts),
-          evidence:
-            recognised.length > 0
-              ? recognised.join(" · ")
-              : "(rate_limit record with no recognised wording)",
-          source: path,
-        };
+        best = blockOf(record, ts, path);
       }
     }
     if (best === null && rejectedBySession > 0) {
@@ -753,14 +973,18 @@ export const claudeAdapter: QuotaAdapter = {
         "  If this recurs, the ~/.claude/projects tree may be too large to scan within budget; DRIVE_PR_QUOTA_MAX_SCAN_MS raises the wall-clock allowance.",
       );
     }
-    if (best === null && scan.truncated) {
+    if (best === null && scan.truncated && (!lookup.read || ownReadFailed)) {
       // A DIFFERENT walk from the two above: this is the detection-time scan
       // itself giving up before reaching every transcript touched since the
       // pass started, not the pre-spawn snapshot. "No wall found" here is not
       // the same claim as "no wall exists" — the walk may simply not have
       // reached the transcript carrying one. Say so rather than letting the
-      // caller read this as an ordinary, fully-investigated pass failure.
-      console.error(
+      // caller read this as an ordinary, fully-investigated pass failure;
+      // unless the session lookup read this pass's own transcripts whole,
+      // when the walk's truncation hides nothing of this pass.
+      reportTruncatedScan(
+        opts,
+        claudeVendor,
         "drive-pr quota: the detection scan over ~/.claude/projects was truncated (see MAX_CANDIDATE_FILES_SCANNED/DRIVE_PR_QUOTA_MAX_SCAN_MS) before it finished — a Claude quota wall may exist in a transcript this walk did not reach.",
       );
     }

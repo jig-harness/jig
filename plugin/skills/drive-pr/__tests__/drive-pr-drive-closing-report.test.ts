@@ -24,6 +24,7 @@ import {
   writeFixture,
 } from "./drive-pr-harness.ts";
 import { runDrive, runDriveIn, PASS_NOOP } from "./drive-loop-harness.ts";
+import { readState } from "./state-rows.ts";
 
 useDrivePrSuite();
 
@@ -52,6 +53,58 @@ function written(file: string) {
   expect(kept.schema).toBe("driver-closing-report/v1");
   expect(kept.launch).toBe(LAUNCH);
   return kept.report;
+}
+
+/**
+ * A dispatched drive whose every pass ends its round the way
+ * finish-round.ts records `state` with `reason`, changing nothing the drive
+ * can observe, run to its stall stop.
+ */
+async function stallEndingEvery(state: string, reason: string) {
+  const { file, env } = dispatched();
+  const { dir, stateDir } = writeFixture(
+    {
+      threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
+      head: scratchClean.head,
+      reviewedSha: scratchClean.head,
+    },
+    scratchClean.dir,
+  );
+  const recorder = join(dir, "record-finish.ts");
+  writeFileSync(
+    recorder,
+    [
+      `import { recordRoundFinish } from ${JSON.stringify(join(SCRIPTS, "lib", "state", "round-finish.ts"))};`,
+      `import { resolveStateDir } from ${JSON.stringify(join(SCRIPTS, "lib", "state", "store.ts"))};`,
+      `import { currentIso } from ${JSON.stringify(join(SCRIPTS, "..", "..", "..", "shared", "time.ts"))};`,
+      "const stateDir = process.env.DRIVE_PR_STATE_DIR || (await resolveStateDir());",
+      'recordRoundFinish(stateDir, "999", {',
+      "  round: Number(process.env.DRIVE_PR_ROUND),",
+      `  state: ${JSON.stringify(state)},`,
+      `  reason: ${JSON.stringify(reason)},`,
+      '  head: "a".repeat(40),',
+      "  at: currentIso(),",
+      "});",
+    ].join("\n"),
+  );
+  const pass = [
+    "sh",
+    "-c",
+    [
+      ": pass for 999",
+      `'${process.execPath}' '${recorder}' >&2`,
+      "exit 0",
+    ].join("\n"),
+  ];
+  const r = await runDriveIn(
+    dir,
+    stateDir,
+    ["--max-rounds", "10", "--", ...pass],
+    undefined,
+    { env: { ...env, DRIVE_PR_STALL_ROUNDS: "2" } },
+  );
+  expectSpawnExit({ ...r, stdout: null }, 14);
+  return { r, report: written(file), stateDir };
 }
 
 describe("drive.ts's closing report", () => {
@@ -192,59 +245,42 @@ describe("drive.ts's closing report", () => {
   }, 120_000);
 
   it("at a stall whose passes all ended finish-round.ts CI_HOLD_WAIT, names that state and its reason instead of cause unknown", async () => {
-    const { file, env } = dispatched();
-    const { dir, stateDir } = writeFixture(
-      {
-        threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
-        head: scratchClean.head,
-        reviewedSha: scratchClean.head,
-      },
-      scratchClean.dir,
+    const { r, report } = await stallEndingEvery(
+      "CI_HOLD_WAIT",
+      "the CI hold is not ready on the current PR head",
     );
-    // Each pass ends its round the way finish-round.ts records it when the
-    // CI hold waits, and changes nothing the drive can observe.
-    const recorder = join(dir, "record-finish.ts");
-    writeFileSync(
-      recorder,
-      [
-        `import { recordRoundFinish } from ${JSON.stringify(join(SCRIPTS, "lib", "state", "round-finish.ts"))};`,
-        `import { resolveStateDir } from ${JSON.stringify(join(SCRIPTS, "lib", "state", "store.ts"))};`,
-        `import { currentIso } from ${JSON.stringify(join(SCRIPTS, "..", "..", "..", "shared", "time.ts"))};`,
-        "const stateDir = process.env.DRIVE_PR_STATE_DIR || (await resolveStateDir());",
-        'recordRoundFinish(stateDir, "999", {',
-        "  round: Number(process.env.DRIVE_PR_ROUND),",
-        '  state: "CI_HOLD_WAIT",',
-        '  reason: "the CI hold is not ready on the current PR head",',
-        '  head: "a".repeat(40),',
-        "  at: currentIso(),",
-        "});",
-      ].join("\n"),
-    );
-    const pass = [
-      "sh",
-      "-c",
-      [
-        ": pass for 999",
-        `'${process.execPath}' '${recorder}' >&2`,
-        "exit 0",
-      ].join("\n"),
-    ];
-    const r = await runDriveIn(
-      dir,
-      stateDir,
-      ["--max-rounds", "10", "--", ...pass],
-      undefined,
-      { env: { ...env, DRIVE_PR_STALL_ROUNDS: "2" } },
-    );
-    expectSpawnExit({ ...r, stdout: null }, 14);
     expect(r.stderr).toContain(
       "Every one of those passes ended finish-round.ts CI_HOLD_WAIT: the CI hold is not ready on the current PR head",
     );
-    const report = written(file);
     expect(report.concluded).toStartWith(
       "PR #999's drive stalled: every stalled pass's round ended CI_HOLD_WAIT: the CI hold is not ready on the current PR head (exit 14)",
     );
     expect(report.cause).toBe("environment");
+  }, 120_000);
+
+  it("at a stall whose every pass's push failed, names the push's failure in the stop event and the report, and sends a person to fix it", async () => {
+    const reason =
+      "guarded-push.ts exited 1 (pre-push-gate): the pre-push hook's gates refused the push — typecheck failed";
+    const { report, stateDir } = await stallEndingEvery("PUSH_FAILED", reason);
+    expect(report.concluded).toStartWith(
+      `PR #999's drive stalled: every stalled pass's round ended PUSH_FAILED: ${reason} (exit 14)`,
+    );
+    expect(report.cause).toBe("tool-failed");
+    expect(report.suggested_next).toMatchObject({
+      owner: "person",
+      act: "Investigate",
+    });
+    expect(report.suggested_next.step).toContain("Fix what refuses the push");
+    expect(report.suggested_next.step).not.toContain(
+      "Read what the passes decided",
+    );
+    const state = readState(stateDir, "999") as {
+      events: { kind: string; cause: string; finish?: unknown }[];
+    };
+    expect(state.events.findLast((e) => e.kind === "stop")).toMatchObject({
+      cause: "14",
+      finish: { state: "PUSH_FAILED", reason },
+    });
   }, 120_000);
 
   it("is not written for a drive no wrapper named a file for", async () => {

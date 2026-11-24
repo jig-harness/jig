@@ -71,13 +71,16 @@ import {
   type DriveEvent,
   isOptionalEvents,
   lastStopEvent,
+  redactedFinish,
+  stopFinishSummary,
+  withOlderFinishesCut,
 } from "./events.ts";
 import { probeStopOf } from "../status/probe-stop.ts";
 import {
   type CiAction,
   boundedCiDetail,
   isOptionalCiActions,
-  retainedDiagnosis,
+  withTelemetryCut,
 } from "./ci-actions.ts";
 import { type ArbiterRuling, isOptionalRulings } from "./rulings.ts";
 import { isOptionalRetryCount } from "./deadline-retries.ts";
@@ -233,7 +236,7 @@ export function ledgerFromState(
       record: redact(d.record),
       reverse: redact(d.reverse),
     })),
-    events: (s.events ?? []).map(cleanStopEvent),
+    events: (s.events ?? []).map(cleanStopEvent).map(redactedFinish),
     ciActions: (s.ciActions ?? []).map((action) => ({
       ...action,
       detail: boundedCiDetail(redact(action.detail)),
@@ -374,6 +377,8 @@ function ledgerBody(l: Ledger, parkedList: boolean, writer: Writer): string {
   ];
   if (d.personStop !== undefined)
     lines.push("", stopSummary(d.personStop, d.state));
+  const held = stopFinishSummary(l.events, d);
+  if (held !== null) lines.push("", summaryText(held));
   lines.push(...ciEventLines(l.ciActions));
   if (parkedList && l.parked.length > 0) {
     lines.push("", "Parked, awaiting a person:");
@@ -392,9 +397,9 @@ export const RESOLVED_PARKS_CUT = "the resolved parks";
 export const OLDER_PARKS_CUT = "the older resolved parks";
 
 /**
- * The comment body for `ledger`, cut to `limit`: the resolved parks' receipts
- * go first, held items' outcomes next, the narrative then, and last the
- * visible list of parked decisions
+ * The comment body for `ledger`, cut to `limit`: CI telemetry and older stops'
+ * finish details go first, the resolved parks' receipts, held items' outcomes
+ * and the narrative then, and last the visible list of parked decisions
  * (the data keeps every one). A parked decision is never dropped, so a body
  * that still does not fit is an error, not a smaller ledger. `writer` is the
  * envelope's: this process, with the forge login where the caller knows it.
@@ -419,13 +424,12 @@ export function renderLedger(
   if (bytes(body) <= limit) return { body, ledger: l };
   // This is optional telemetry. It must not prevent the resumable control
   // record, its decisions, or the visible summary from fitting on the forge.
-  const ciActions = l.ciActions ?? [];
-  const diagnosis = retainedDiagnosis(ciActions);
-  if (ciActions.length > diagnosis.length) {
-    l = { ...l, ciActions: diagnosis, cut: [...l.cut, "CI telemetry"] };
-    body = ledgerBody(l, true, writer);
-    if (bytes(body) <= limit) return { body, ledger: l };
-  }
+  l = withTelemetryCut(l);
+  body = ledgerBody(l, true, writer);
+  if (bytes(body) <= limit) return { body, ledger: l };
+  l = withOlderFinishesCut(l);
+  body = ledgerBody(l, true, writer);
+  if (bytes(body) <= limit) return { body, ledger: l };
   const receipts = l.resolvedParks ?? [];
   const cutBeforeReceipts = l.cut;
   // The oldest receipts go first: the newest are the ones no tick has read.

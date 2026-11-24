@@ -1535,6 +1535,9 @@ make, use the entry's term instead.
   other decision the agent takes itself and records where a person can
   reverse it
   ([ADR-0010](docs/adr/ADR-0010-parking-is-reserved-for-registry-classes.md)).
+  A **standalone park** names no review thread or summary finding, such as a
+  CI repair's decision on whether to loosen a rule; it holds the drive for a
+  person like any other park.
 - **Session-framed decision, dispatcher-framed decision** — the *framed
   decision* a need on the dispatcher's line carries when it is not a
   *park*. A **session-framed decision** is the one a dispatched follow-up's

@@ -28,12 +28,17 @@
  *     records, on a `CHECK_RUNS_UNREADABLE` stop, how many pages of the
  *     head's check-runs listing were read. `until` records, on
  *     a stop on the forge's spent rate limit, when the limit resets: the
- *     dispatcher re-drives it from then.
+ *     dispatcher re-drives it from then. `finish` records, on a stall
+ *     whose passes all ended `finish-round.ts` on the same state, that state
+ *     and the last pass's reason (`round-finish.ts`): the dispatcher hands a
+ *     stall held by a failed push to a person rather than re-driving it onto
+ *     the same refusal, and the ledger's summary names it.
  *
  * Takeovers have their own record (`takeover.ts`). Optional in a stored
  * state: a file written before the field existed reads as no events.
  */
 import { isRecord } from "../../../../../shared/guards.ts";
+import { redactReportText } from "../../../../../shared/closing-report.ts";
 import { fail } from "../cli.ts";
 import type { StateStore } from "./store.ts";
 import { currentIso, parseMs } from "../../../../../shared/time.ts";
@@ -63,6 +68,113 @@ export interface DriveEvent {
   until?: unknown;
   /** A status probe report on a stop whose exit was passed through. */
   probe?: unknown;
+  /** On a stall's `stop`: the `finish-round.ts` state every stalled pass ended on, with the last reason. The ledger's shape leaves it open, so a reader takes it only when it is one (`stopFinish`) and a malformed value never makes the ledger unreadable. */
+  finish?: unknown;
+}
+
+/** The finish a stall's passes shared (`round-finish.ts`'s `sharedFinish`). */
+export interface StopFinish {
+  state: string;
+  reason: string;
+}
+
+/** The longest finish reason a stop event keeps. */
+export const STOP_FINISH_REASON_MAX = 1000;
+
+/** Whether `v` is a finish a stop event may carry. */
+export function isStopFinish(v: unknown): v is StopFinish {
+  return (
+    isRecord(v) &&
+    typeof v.state === "string" &&
+    /^[A-Z][A-Z_]*$/.test(v.state) &&
+    typeof v.reason === "string" &&
+    v.reason.length <= STOP_FINISH_REASON_MAX
+  );
+}
+
+/** The finish a stop event records, cut to the kept length; `undefined` for none. */
+export function stopFinishOf(
+  finish: { state: string; reason: string } | null | undefined,
+): StopFinish | undefined {
+  if (finish === null || finish === undefined) return undefined;
+  const kept = {
+    state: finish.state,
+    reason:
+      finish.reason.length > STOP_FINISH_REASON_MAX
+        ? `${finish.reason.slice(0, STOP_FINISH_REASON_MAX - 1)}…`
+        : finish.reason,
+  };
+  return isStopFinish(kept) ? kept : undefined;
+}
+
+/** The finish the drive's last stop recorded, when that stop is the one with `exit` and the finish reads as one; `null` otherwise. */
+export function stopFinish(
+  events: readonly DriveEvent[] | undefined,
+  exit: number | null | undefined,
+): StopFinish | null {
+  const stop = lastStopEvent(events ?? []);
+  if (exit === null || exit === undefined || stop?.cause !== String(exit))
+    return null;
+  return isStopFinish(stop.finish) ? stop.finish : null;
+}
+
+/**
+ * The ledger summary's line for a stopped drive whose last stop recorded a
+ * finish, a `@` in its reason kept from mentioning anyone where the forge
+ * renders it; `null` when there is none.
+ */
+export function stopFinishSummary(
+  events: readonly DriveEvent[] | undefined,
+  driver: { state: string; exit?: number | null },
+): string | null {
+  const finish =
+    driver.state === "stopped" ? stopFinish(events, driver.exit) : null;
+  if (finish === null) return null;
+  return `Every stalled pass ended \`${finish.state}\`: ${withoutMentions(finish.reason)}`;
+}
+
+/** `text` with each `@` that would mention a forge login or team broken by a zero-width space. */
+export function withoutMentions(text: string): string {
+  return text.replace(/@(?=[A-Za-z0-9])/g, "@\u200B");
+}
+
+/** `event` with its stall finish's reason redacted as a report's is, and cut back to the kept length; a finish that does not read as one is dropped. */
+export function redactedFinish(event: DriveEvent): DriveEvent {
+  if (event.finish === undefined) return event;
+  const { finish, ...rest } = event;
+  const kept = isStopFinish(finish)
+    ? stopFinishOf({ ...finish, reason: redactReportText(finish.reason) })
+    : undefined;
+  return kept === undefined ? rest : { ...rest, finish: kept };
+}
+
+/** What a ledger's `cut` names when its older stops' finish details were dropped. */
+export const OLDER_FINISH_DETAILS_CUT = "the older finish details";
+
+/**
+ * `ledger` with every finish but the newest stop's dropped, or `ledger` itself
+ * when there is none to drop. The newest finish explains the current state;
+ * older finish prose is history that can grow until the forge refuses the
+ * whole ledger.
+ */
+export function withOlderFinishesCut<
+  L extends { events?: readonly DriveEvent[]; cut: readonly string[] },
+>(ledger: L): L {
+  const events = ledger.events ?? [];
+  const latest = events.findLastIndex(
+    (event) => event.kind === "stop" && event.finish !== undefined,
+  );
+  if (!events.some((e, i) => i !== latest && e.finish !== undefined))
+    return ledger;
+  return {
+    ...ledger,
+    events: events.map((event, index) => {
+      if (index === latest || event.finish === undefined) return event;
+      const { finish: _finish, ...withoutFinish } = event;
+      return withoutFinish;
+    }),
+    cut: [...ledger.cut, OLDER_FINISH_DETAILS_CUT],
+  };
 }
 
 /** Whether `cause` is one of the causes of an event of `kind`. */
@@ -93,7 +205,8 @@ export function isDriveEvent(v: unknown): v is DriveEvent {
       Number.isSafeInteger(v.listingPages) && (v.listingPages as number) >= 0,
     ) &&
     stopOnly(v.kind, v.leftWork, typeof v.leftWork === "boolean") &&
-    stopOnly(v.kind, v.tree, typeof v.tree === "string" && v.tree !== "")
+    stopOnly(v.kind, v.tree, typeof v.tree === "string" && v.tree !== "") &&
+    stopOnly(v.kind, v.finish, true)
   );
 }
 
@@ -139,7 +252,7 @@ export function lastStopEvent(
   return events.findLast((e) => e.kind === "stop");
 }
 
-/** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`, optional `"leftWork"` with `"tree"` on a measured stop, `"listingPages"` on a listing stop, and `"until"` on a forge-rate-limit stop). */
+/** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`, optional `"leftWork"` with `"tree"` on a measured stop, `"listingPages"` on a listing stop, `"until"` on a forge-rate-limit stop, and `"finish"` on a stall's stop). */
 export async function recordEvent(
   store: StateStore,
   raw: string,
@@ -187,6 +300,7 @@ export async function recordEvent(
         : { listingPages: input.listingPages }),
       ...(input.until === undefined ? {} : { until: input.until }),
       ...(input.probe === undefined ? {} : { probe: input.probe }),
+      ...(input.finish === undefined ? {} : { finish: input.finish }),
     };
     if (
       !isDriveEvent(event) ||
