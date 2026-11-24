@@ -17,6 +17,75 @@ export const diagnosisStartedPrefix = (head: string) =>
 export const diagnosisSkippedPrefix = (head: string) =>
   `diagnose-skipped: head ${head}: `;
 
+const PARK_TAG = /^\[park ("(?:[^"\\]|\\.)*")\] /;
+
+/** The tag a diagnosis that handed back to a person puts before its text, naming its park. */
+export const parkTag = (key: string): string =>
+  `[park ${JSON.stringify(key)}] `;
+
+const PARK_TAG_LIMIT = 300;
+
+/**
+ * Whether `key` comes back unchanged from a stored diagnosis: the telemetry
+ * bound redacts and truncates the detail, so a key it would alter (an
+ * email-shaped one, or one whose escaped tag is long) cannot be told apart
+ * from another park once recorded.
+ */
+export function parkKeySurvivesStorage(key: string): boolean {
+  const tag = parkTag(key);
+  return (
+    tag.length <= PARK_TAG_LIMIT &&
+    splitParkTag(boundedCiDetail(`${tag}x`)).key === key
+  );
+}
+
+/** A recorded diagnosis text split into the park it named, when it named one, and its prose. */
+export function splitParkTag(text: string): {
+  key: string | null;
+  text: string;
+} {
+  const match = PARK_TAG.exec(text);
+  if (match === null) return { key: null, text };
+  try {
+    const key: unknown = JSON.parse(match[1] ?? '""');
+    return typeof key === "string"
+      ? { key, text: text.slice(match[0].length) }
+      : { key: null, text };
+  } catch {
+    return { key: null, text };
+  }
+}
+
+/** The park the diagnosis at `head` handed to a person, when it handed one. */
+export function diagnosedParkKey(
+  actions: readonly CiAction[],
+  head: string,
+): string | null {
+  const last = lastDiagnosisAt(actions, head);
+  if (last === undefined || !last.detail.startsWith(diagnosisPrefix(head)))
+    return null;
+  return splitParkTag(last.detail.slice(diagnosisPrefix(head).length)).key;
+}
+
+/**
+ * The park the latest recorded diagnosis, of whichever head, handed to a
+ * person. The diagnosed head is not the head the drive counted last (a red
+ * head can converge without a counted round), so the park is read from the
+ * receipt itself; a key no longer parked selects nothing.
+ */
+export function latestDiagnosedPark(
+  actions: readonly CiAction[],
+): { key: string | null; at: string } | null {
+  const last = actions.findLast(
+    (a) => a.action === "repair" && a.detail.startsWith("diagnosis: head "),
+  );
+  if (last === undefined) return null;
+  return {
+    key: splitParkTag(last.detail.replace(/^diagnosis: head \S+: /, "")).key,
+    at: last.at,
+  };
+}
+
 /** The latest escalation at `head`: a started, recorded or skipped diagnosis. */
 export function lastDiagnosisAt(
   actions: readonly CiAction[],
@@ -46,7 +115,7 @@ export function diagnosisOutcome(
   )
     return undefined;
   return last.detail.startsWith(diagnosisPrefix(head))
-    ? last.detail.slice(diagnosisPrefix(head).length)
+    ? splitParkTag(last.detail.slice(diagnosisPrefix(head).length)).text
     : "the diagnosing session recorded no outcome";
 }
 
@@ -65,7 +134,8 @@ export function diagnosisDetail(
     .findLast(
       (a) => a.action === "repair" && a.detail.startsWith("diagnosis: head "),
     )
-    ?.detail.replace(/^diagnosis: head \S+: /, "");
+    ?.detail.replace(/^diagnosis: head \S+: /, "")
+    .replace(PARK_TAG, "");
 }
 
 /** Keep the latest diagnosis receipt for every head when telemetry is trimmed. */

@@ -148,7 +148,7 @@ infrastructure. The table describes recovery in `drive.ts` after a verdict from 
 
 | Trigger | Pass | Budget (env, `0` disables) | Falls back to |
 |---|---|---|---|
-| Converged head, fresh exact-head verdict `failing: …` | `ci-repair` (repair the failing checks) | `drive.ci_repair_rounds` (`DRIVE_PR_CI_REPAIR_ROUNDS` for one run) per head and failing check, default 2 | A `ci-diagnose` session once per head after a positive budget is spent, then [`CI_REPAIR_SPENT`](../../../protocol/drive-exits.md) if diagnosis could not complete the repair. [`INDETERMINATE`](../../../protocol/drive-exits.md) when the budget is `0` |
+| Converged head, fresh exact-head verdict `failing: …` | `ci-repair` (repair the failing checks) | `drive.ci_repair_rounds` (`DRIVE_PR_CI_REPAIR_ROUNDS` for one run) per head and failing check, default 2 | A `ci-diagnose` session once per head after a positive budget is spent. A receipt naming an open park with no replacement push ends in [`HITL_PARKED`](../../../protocol/drive-exits.md). Other incomplete repairs end in [`CI_REPAIR_SPENT`](../../../protocol/drive-exits.md). [`INDETERMINATE`](../../../protocol/drive-exits.md) when the budget is `0` |
 | The same, every failing check a job of a workflow run that concluded `cancelled`, no commit status failing, and a cancelled job that no run has replaced (a failed job in a cancelled run with no cancelled job is repaired instead) | none: the driver's cancelled-run recovery re-runs that run, spending no CI-repair budget | one re-run per head, shared across re-arms, and one more per person's "Re-run safely" answer; a cancellation a label write caused gets one re-run per run attempt outside it | [`HITL_PARKED`](../../../protocol/drive-exits.md), parked `cancelled-ci`; a read of the recovery that keeps failing in a way waiting can clear ends in [`NOT_SETTLED`](../../../protocol/drive-exits.md), naming the read and its failure class |
 | Converged head, a workflow job the runner stopped at its time limit (concluded `cancelled`, its check run annotated "exceeded the maximum execution time"), alone or beside failing checks | `ci-repair`, its detail naming the job, its limit and its run time | the same `drive.ci_repair_rounds` per head and failing check | [`CI_REPAIR_SPENT`](../../../protocol/drive-exits.md); [`INDETERMINATE`](../../../protocol/drive-exits.md) when the budget is `0` |
 | The same, every failing check failed on the infrastructure | the driver re-runs failed jobs, or moves the head when a run cannot be re-run; a local base merge goes through a validated review round before pushing, spending no CI-repair budget | `DRIVE_PR_CI_INFRA_RERUNS` per head and `DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive, default 2 each | [`CI_INFRA_PERSISTED`](../../../protocol/drive-exits.md) |
@@ -266,7 +266,21 @@ reviewer, [below](#the-reviewer-is-identified-by-app-slug-not-by-check-name)):
 4. **Zero** unaddressed summary-only findings.
 
 If any parked item remains while 3 and 4 are otherwise satisfied, the state is
-`HITL_PARKED`, not `CONVERGED`.
+`HITL_PARKED`, not `CONVERGED`. That includes a standalone park, one that
+names no thread or summary finding, such as a CI repair's decision on a rule.
+A park whose thread has since been resolved still counts toward the hand-back.
+A re-arm the dispatcher launches for a validated request settles it without
+an answer when nobody left an answer, a condition note or an unreadable
+history on it; a direct re-arm does not, so that park waits for its answer
+like every other stored park, with one exception: at the `wide` autonomy
+level a re-arm unparks parks of the class `escalated` that nobody answered
+and hands them to the next round to decide provisionally. The exception is
+all or none: one unanswered park of any other class that still waits after
+the settlement above (a resolved thread's park a dispatcher re-arm settled
+does not), any place an answer could be that the re-arm could not read, a dispute or an answer that does not
+settle an item, or a condition note without an answer leaves every item
+parked, the `escalated` ones too. Once every item is answered, resolved or
+eligible for provisional handling, the re-arm unparks the whole set together.
 
 ### The final status re-read
 
