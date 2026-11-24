@@ -233,17 +233,25 @@ export function reviewerStickyIn(
     const body = reviewerStickyBody(raw, reviewerLogin, summaryMarker);
     if (body === null) continue;
     const bodySha = reviewedShaIn(body, shaMarker);
+    const round = parseReviewRound(body);
     const rawBody = String((raw as Record<string, unknown>).body ?? "");
     const skip = skipNoticeIn(
       structuralSkipNotices(rawBody, skipNoticeMarker),
       skipNoticeMarker,
     );
-    // Only a stamp can replace a stamped sticky. An unstamped comment
-    // qualifies as evidence only when it carries a skip notice.
-    if (bodySha === "" && (sticky.sha !== "" || skip === null)) continue;
+    // A same-head acknowledgement is auxiliary evidence, not proof a rerun
+    // published a review. It must not replace the selected sticky's timestamp.
+    // A new reviewed head or a newer explicit review round is a replacement.
+    const replacesSticky =
+      bodySha !== "" &&
+      (sticky.sha === "" ||
+        bodySha !== sticky.sha ||
+        (round !== null && (sticky.round === null || round > sticky.round)));
+    // An unstamped comment qualifies only when it carries a skip notice.
+    if (!replacesSticky && skip === null) continue;
     sticky = {
       sha: bodySha,
-      round: parseReviewRound(body),
+      round,
       // Absent/malformed reads as `''`, never as "now" — a caller flooring
       // on this must fail closed on an undatable sticky rather than treat it
       // as freshly written.
