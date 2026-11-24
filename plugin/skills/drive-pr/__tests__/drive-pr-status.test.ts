@@ -600,8 +600,8 @@ describe("drive-status.ts terminal states", () => {
     expect(stamps.length).toBeLessThanOrEqual(12);
     const gaps = stamps.slice(1).map((t, i) => t - (stamps[i] ?? t));
     expect(gaps.length).toBeGreaterThanOrEqual(1);
-    // The last gap is exempt: the final wait is shortened to leave the
-    // deadline margin for the closing evaluation, so it can be under its wait.
+    // The last gap is exempt: the final sleep is clamped to the wall-clock
+    // deadline, while the closing evaluation keeps its own call deadlines.
     const slackMs = 50;
     gaps.slice(0, Math.min(3, gaps.length - 1)).forEach((gap, i) => {
       expect(gap).toBeGreaterThanOrEqual((i + 1) * 1000 - slackMs);
