@@ -123,5 +123,6 @@ lists, a model outside a runtime's known families whose tier neither
 `routing.model_tiers` nor `routing.family_tiers` declares, and a row in
 which a stricter complexity tier maps to a cheaper family
 than a lighter one, from one families list in `plugin/shared/` that the
-policy's mappings link. The audit's M0 criterion reads the `## Route` section of
-recent pull requests as evidence beside the score.
+policy's mappings link. The audit's M0 criterion currently evaluates
+layer-specific admission and baseline evidence at each declaration; collecting
+recent pull requests' `## Route` sections as routing evidence is planned.

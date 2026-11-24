@@ -322,7 +322,9 @@ audit. An invocation-time argument declares nothing new and is allowed only
 when it forwards a value read from one of the places above, such as a skill
 passing its own configured judgment-pass model to the subagent it calls, or
 when shared routing selects a value for a field the effective definition
-leaves open. Shared routing never replaces a valid metadata pin.
+leaves open. An explicit one-run operator choice is also allowed: it is
+recorded as the operator's choice and wins over a metadata pin. Shared routing
+never replaces a valid metadata pin.
 
 **An A/B baseline is mandatory.** Every Judgment-tier assignment names its
 Strategic-tier baseline next to the assignment, in a field of its own (such
@@ -336,11 +338,13 @@ recorded with its result.
 assignment edits the layer's `model:` value or configuration setting back to
 the baseline's family alias, together with the declared cost tier beside it
 where the metadata carries one (the check rejects a tier that contradicts the
-model). Where shared routing selects the model, change the row that selects
-the affected layer and check every other consumer of that row. A stage override
-can isolate the change only when those consumers run in different stages;
-otherwise split the affected layer into a separately configured selection
-before changing it. It is an exact reversal only while the alias still
+model). Where shared routing selects the model, change the cell that selects
+the affected layer and check every consumer of that cell; consumers in the
+same stage can already be separated by runtime or complexity-tier cells. A
+stage override can isolate the change only when the affected launch reads that
+stage row and its consumers run in different stages; otherwise split the
+affected layer into a separately configured selection before changing it. It
+is an exact reversal only while the alias still
 resolves to the measured release. Once the family has moved on, or when the
 measured baseline itself can no longer be used and some other model stands in
 as an operational fallback, the result is a provisional substitution: label

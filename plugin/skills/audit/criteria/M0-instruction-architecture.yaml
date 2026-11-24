@@ -142,7 +142,7 @@ criteria:
       - "a CI check reads that metadata and accepts the runtime's inheritance selector as unpinned, and rejects an unknown model family, a versioned id used as a pin, and a declared cost tier that contradicts the model; it runs whether or not a roster is kept"
       - "a roster of model assignments, where one is committed, is generated from the metadata and a CI check fails when it drifts; no per-agent assignment is kept by hand in prose"
       - "a repository whose agents and skills pin no model in metadata or at invocation meets this pin check (expected-absent)"
-    since: 0.40.0
+    since: next
 
   - id: judgment-tier-admission-and-baseline
     level: standard
@@ -155,10 +155,10 @@ criteria:
       several decision layers.
     observe:
       - "each Judgment-tier assignment identifies its decision layer, admission and A/B baseline beside the layer's own metadata or configuration declaration"
-      - "each decision layer selected onto a Judgment model through shared routing has the same layer-specific admission and baseline evidence"
+      - "each decision layer selected onto a Judgment model through shared routing has the same layer-specific admission and baseline evidence; an implementation consumer that may edit code is not Judgment-only merely because shared routing selects a Judgment family for it"
       - "a shared routing row alone is not evidence of admission or a baseline"
       - "a repository with no Judgment-tier metadata pin, skill Judgment-pass setting or shared-routing Judgment selection meets it (expected-absent)"
-    since: 0.40.0
+    since: next
 
   - id: runtime-capabilities-name-fallbacks
     level: standard

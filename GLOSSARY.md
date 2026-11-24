@@ -1926,7 +1926,8 @@ make, use the entry's term instead.
   implementation to gather facts; part of tiered model routing (expensive
   models decide, cheap models explore).
 - **Model tier** <a id="model-tier"></a> — the cost class of model an agent or
-  skill runs on, named by role: *Judgment*, Strategic, Execution or *Scout*.
+  skill runs on, named by role: *Judgment*, Strategic, Execution or *Scout*;
+  it is not chosen from how important the job sounds.
   In agent and skill metadata the tier follows from the model pin, as the
   [model routing policy](modules/M0-instruction-architecture/reference/model-routing-policy.md)
   sets out; a separately declared tier is checked only where the metadata
@@ -1938,8 +1939,7 @@ make, use the entry's term instead.
   spelling `routing.family_tiers` — must agree on its tier; conflicting
   declarations are refused. When neither key declares a listed family or
   identifier, the plugin's known-family classification applies. The catalog's Scout
-  restriction still applies. Not
-  from how important the job sounds. *Avoid*: model level (a *maturity level*
+  restriction still applies. *Avoid*: model level (a *maturity level*
   is something else).
 - **Route** — the agent, *complexity tier* and reasoning effort chosen for the
   implementer of one piece of work at its pickup; derived from the item's

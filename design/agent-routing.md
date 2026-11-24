@@ -427,9 +427,10 @@ that routes (`do-item` with this design built). There is no `mechanical`
 observation yet: a required check that the pull request's `## Route`
 section parses and agrees with the base branch's rules is future, and until
 it exists the criterion scores `advisory` at most. Beside the score, as
-evidence, the audit reads the `## Route` section of the pull requests the
-repository's recent history shows and reports the share routed by the
-rules, the share a person chose and the share recorded and not applied.
+evidence, the audit currently reads the effective routing configuration and
+reports informational findings from it. Collecting recent pull requests'
+`## Route` records and reporting the shares routed by rules, chosen by a
+person, or recorded but not applied is planned work.
 
 ## Configuration
 
@@ -442,7 +443,8 @@ rules, the share a person chose and the share recorded and not applied.
 | `routing.raise.flags` | list of labels, or `catalog` | `catalog`: every flag the catalog's areas declare | `determine_route.ts` |
 | `routing.raise.sizes` | list of labels | the known sizes (`work_batch.sizes`, else the batchable sizes, always with `review.taxonomy.sizes`) outside `batch_sizes`; `[large]` where that leaves none | `determine_route.ts` |
 | `routing.raise.reviews` | `true`, `false` | `true` | `determine_route.ts` |
-| `routing.models.<runtime>.<tier>` | the runtime's family alias, per complexity tier | `claude-code: {simple: sonnet, standard: sonnet, complex: opus}`, `codex: {simple: terra, standard: terra, complex: sol}` | `determine_route.ts`, the configuration loader, `drive-pr`, the dispatcher |
+| `routing.models.<runtime>.<tier>` | a runtime family alias or classified model identifier, per complexity tier | `claude-code: {simple: sonnet, standard: sonnet, complex: opus}`, `codex: {simple: terra, standard: terra, complex: sol}` | `determine_route.ts`, the configuration loader, `drive-pr`, the dispatcher |
+| `routing.stages.<stage>.models.<runtime>.<tier>` | a stage-specific family alias or classified model identifier | absent: the all-stages `routing.models` cell | the steward dispatcher today; other declared stages are validated but not yet read |
 | `routing.efforts.<runtime>.<effort>` | the runtime's own level name | unchanged | `determine_route.ts` |
 | `routing.model_tiers.<runtime>.<model>` (or the older `routing.family_tiers.<runtime>.<model>`) | `{tier, reason}` | none: the tier the known-families list gives | the configuration loader, the audit |
 
@@ -470,10 +472,10 @@ complete row where the repository renamed it (the
 [work-types rule](work-types.md#configuration)); a tier or effort outside
 the closed lists (`execution` and `strategic` read as `standard` and
 `complex`); a model outside a runtime's known families whose M0 tier neither
-`routing.model_tiers` nor `routing.family_tiers` declares; a `routing.models` row in which a stricter complexity tier maps
+`routing.model_tiers` nor `routing.family_tiers` declares; a `routing.models` or effective stage row in which a stricter complexity tier maps
 to a family of a lower M0 tier (from the list, or from
-`routing.family_tiers`) than a lighter one; a
-`family_tiers` entry with no reason; and, where the repository has a label taxonomy
+`routing.family_tiers`) than a lighter one; a `model_tiers` or `family_tiers`
+entry with no reason; and, where the repository has a label taxonomy
 (`issue_tracker.taxonomy`), a raise list the repository declares naming a
 label the taxonomy does not declare. A default list is never refused: a
 default label the taxonomy does not declare raises nothing, since no item
