@@ -138,10 +138,10 @@ criteria:
       - "every model: value in agent and skill definitions that pins a model is a bare family alias (Claude Code: fable, opus, sonnet, haiku), not a versioned id with a date or release number; an inheritance selector (Claude Code: inherit) or an absent field pins nothing and is not a pin"
       - "where a runtime has no family aliases, the pin is the vendor's undated, most general model name, or one central name the repository maps to a release in a single place; no agent or skill carries a release of its own"
       - "a model setting in a skill's configuration for a judgment pass follows the same rule"
-      - "no skill, prompt or script assigns a model at invocation time (Claude Code: the model parameter of a subagent call, a --model flag on a spawned CLI) other than from that metadata; such an override outranks the definition's own model: and is a declaration point outside it"
+      - "no skill, prompt or script assigns a model at invocation time (Claude Code: the model parameter of a subagent call, a --model flag on a spawned CLI) other than by forwarding a model selected from agent or skill metadata or from the shared routing table; such an override otherwise outranks the definition's own model and is an undeclared pin"
       - "a CI check reads that metadata and accepts the runtime's inheritance selector as unpinned, and rejects an unknown model family, a versioned id used as a pin, and a declared cost tier that contradicts the model; it runs whether or not a roster is kept"
       - "a roster of model assignments, where one is committed, is generated from the metadata and a CI check fails when it drifts; no per-agent assignment is kept by hand in prose"
-      - "every Judgment-tier assignment records its A/B baseline and its admission next to it"
+      - "every Judgment-tier metadata pin, and every effective shared route at the Judgment tier, records its A/B baseline and admission beside its own declaration"
       - "a repository whose agents and skills pin no model, in metadata or at invocation, meets it"
     since: 0.40.0
 

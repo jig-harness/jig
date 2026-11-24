@@ -27,8 +27,10 @@ This invariant governs model pins and tier declarations in agent and skill
 metadata, including a skill's explicit judgment-pass setting. Shared routing
 configuration is a separate declaration table: it classifies a model for
 selection by a runtime, and may name either a known family spelling or an
-exact model identifier. Its validation and merge rules belong with the routing
-configuration, not this metadata-pinning policy.
+exact model identifier. A shared route that selects the Judgment tier records
+the tier's admission and A/B baseline with that routing declaration. Its
+validation and merge rules belong with the routing configuration, not this
+metadata-pinning policy.
 
 Where a runtime has no family aliases, the pin uses the vendor's most general
 model name, or one central name the repository maps to a release in a single
@@ -164,8 +166,9 @@ it first would never ask the judgment question.
 
 If two tiers seem to fit, choose the cheaper and let it **escalate**: a scout
 hands a "harder than expected" finding up to an Execution or Strategic agent.
-Record the choice in the `model:` metadata (and in the declared cost tier,
-where the metadata carries one).
+Record the choice in the agent's or skill's `model:` metadata (and in the
+declared cost tier, where that metadata carries one). A runtime's shared
+routing configuration records its selection separately.
 
 ## Moving a pin on cost grounds needs a measurement
 
@@ -291,16 +294,22 @@ own account and runtime before a Judgment-tier layer becomes load-bearing on
 an unattended path, and again after a runtime upgrade
 ([observations, dated](../mappings.md#judgment-tier-access-and-data-retention)).
 
-### Declaration points and the baseline
+### Metadata declaration points and the baseline
 
-A tier lives in exactly one of these places, so it can be searched for and
-audited:
+A pin's tier lives in exactly one of these metadata declaration points, so it
+can be searched for and audited:
 
 | Surface | Where its tier is declared |
 |---------|----------------------------|
 | Agent | `model:` in the agent's metadata, checked and rendered into the roster |
 | Skill that pins a model | `model:` in that skill's own metadata |
 | Judgment pass inside a skill | an explicit model setting in that skill's configuration |
+
+Shared routing is not a pin declaration point: its `routing.model_tiers`,
+`routing.models`, and stage rows classify and select runtime models. It may
+use a known family spelling or an exact model identifier under the routing
+configuration's validation rules. When its effective route is Judgment, its
+routing declaration records the admission and A/B baseline for that route.
 
 Never in prose, in a prompt body or in a string literal in a script, and
 never as a model chosen at invocation time (a subagent call's model
