@@ -324,8 +324,10 @@ passing its own configured pass model to the subagent it calls, or when shared
 routing selects a value for a field the effective definition leaves open. A
 documented built-in default is allowed only as the fallback when neither a
 configured nor routed value applies. A persistent setting that selects an
-invocation model is a skill configuration declaration, not a built-in default,
-and is checked and audited as such. An explicit one-run operator choice is
+invocation model for a Judgment pass is a skill configuration declaration,
+not a built-in default, and is checked and audited as such. Persistent
+selections for other passes remain routing configuration, not pin
+declarations. An explicit one-run operator choice is
 also allowed: it is recorded as the operator's choice and wins over a metadata
 pin. Shared routing never replaces a valid metadata pin.
 

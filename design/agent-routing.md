@@ -72,7 +72,7 @@ they have today ([Left out](#left-out)).
 | Part | Values | Who takes it |
 |---|---|---|
 | `agent` | the repository's agent names, as `determine_agent.ts` prints them today | `do-item`'s delegation, as the subagent type |
-| `tier` | `simple`, `standard` or `complex`, the [complexity tier](../GLOSSARY.md) | translated to the runtime's [family alias](../GLOSSARY.md) through `routing.models.<runtime>.<tier>` before the runtime sees it |
+| `tier` | `simple`, `standard` or `complex`, the [complexity tier](../GLOSSARY.md) | translated to the configured model selection through `routing.models.<runtime>.<tier>` before the runtime sees it |
 | `effort` | `low`, `medium`, `high`, `max` | translated through `routing.efforts` where a runtime spells a level differently |
 
 A complexity tier says how hard the item is, not which model runs it. By
@@ -85,8 +85,9 @@ sub-steps to a Scout model, as a skill chooses its own scouts. No tier's
 default is a Judgment family (`fable`, `astra`); the loader accepts one
 where a repository configures it for a tier, and the audit reports each
 such mapping
-([ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md)). The tier is never a model id: the translation table is the
-only place a model name appears, and it is configuration a check reads.
+([ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md)). The
+tier is never a model id. Model identifiers appear only in routing
+configuration and its classification keys, both of which the loader checks.
 
 ### Complexity tiers
 
@@ -213,8 +214,8 @@ implementer ran ([the record](#where-it-is-read)):
    line), the rules forward no model and no effort, and the reasons say
    `tier: pin unknown`: a missed pin overwritten by a rule is the failure
    this step exists to prevent.
-6. **The translation**: the tier to the runtime's family alias through
-   `routing.models.<runtime>`, the effort through
+6. **The translation**: the tier to the runtime's configured model selection
+   through `routing.models.<runtime>`, the effort through
    `routing.efforts.<runtime>`. The runtime is derived from the environment
    the way [`reflect`](../plugin/skills/reflect/README.md) derives the
    harness (that reader moves to `plugin/shared/`, since two skills use it).
@@ -426,9 +427,9 @@ the routing policy page names the tiers and says routes are derived. The
 that routes (`do-item` with this design built). There is no `mechanical`
 observation yet: a required check that the pull request's `## Route`
 section parses and agrees with the base branch's rules is future, and until
-it exists the criterion scores `advisory` at most. Beside the score, as
-evidence, the audit currently reads the repository routing configuration and
-reports informational findings from it. Collecting recent pull requests'
+it exists the criterion scores `advisory` at most. The audit currently reads
+the repository routing configuration and reports informational diagnostics
+from it; it does not yet score or validate route records. Collecting recent pull requests'
 `## Route` records and reporting the shares routed by rules, chosen by a
 person, or recorded but not applied is planned work.
 
