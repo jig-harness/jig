@@ -212,6 +212,7 @@ describe("a silent drive the trusted automation opt-out blocks", () => {
     expect(plan.running).toHaveLength(1);
     expect(plan.running[0]).toMatchObject({ target: "PR #7", stage: "rearm" });
     expect(plan.running[0]?.reason).toContain("held by host other-host");
+    expect(plan.actions.filter((a) => a.target === "PR #7")).toHaveLength(0);
   });
 
   it("places an unread claim listing of a protected silent drive as unplaced", () => {
@@ -227,7 +228,7 @@ describe("a silent drive the trusted automation opt-out blocks", () => {
     expect(plan.unplaced.find((u) => u.target === "PR #7")).toMatchObject({
       readFailed: true,
     });
-    expect(plan.actions.map((a) => a.stage)).not.toContain("rearm");
+    expect(plan.actions.filter((a) => a.target === "PR #7")).toHaveLength(0);
   });
 
   it("leaves a silent idle automation drive quiet, without the opt-out", () => {
