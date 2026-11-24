@@ -213,8 +213,13 @@ the configured mechanism and identity established in step 6.
 Where the host has no dispatcher, use its configured work-start procedure
 (a single issue's pickup belongs to `/jig:do-item`); if none is configured,
 ask the person how to start the filed issues. Record what actually started, and each held task with the decision that
-blocks it. When that decision arrives, file and start only the newly
-eligible remainder, never a task already filed.
+blocks it. Track filing and starting separately: when a task is filed but
+not started (the work-start procedure was unknown, or a launch failed), reuse
+its recorded issue key and check whether it has started before retrying the
+start. When a held task's decision arrives, file and start only the newly
+eligible remainder, never a task already filed. After each such late handoff,
+send the plan keeper (step 9, when the plan has one) the newly resolved
+decisions and the issue keys that now carry them.
 
 ### 11. Pick up the state on every return
 
