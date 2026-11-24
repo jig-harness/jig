@@ -467,12 +467,17 @@ export function parseDeclaredUnanchored(body: string): number {
   // Declarations are protocol prose, not examples. Mask complete inline code
   // spans without changing line structure so a quoted sample cannot affect the
   // synthetic-work count.
-  const prose = body.replace(/(`+)(?:[^`]|`(?!\1))*\1/g, (span) =>
-    span.replace(/[^\r\n]/g, " "),
-  );
+  const prose = body
+    .split(/(\r?\n\r?\n)/)
+    .map((block) =>
+      block.replace(/(`+)(?:[^`]|`(?!\1))*\1/g, (span) =>
+        span.replace(/[^\r\n]/g, " "),
+      ),
+    )
+    .join("");
   const declarations = [
     ...prose.matchAll(
-      /([^\s]+)\s+finding\(s\)\s+without\s+a\s+diff-anchorable\s+line/gi,
+      /([^\s]+)\s+findings?(?:\(s\))?\s+without\s+a\s+diff-anchorable\s+line/gi,
     ),
   ];
   if (declarations.length === 0) return 0;
@@ -1413,18 +1418,19 @@ export function reviewerSticky(
         reviewedShaMarker(),
         skipNoticeMarker(),
       ).skip !== null;
+    // A skip notice never describes a review summary. In particular it must
+    // not establish the initial selection or an ordering watermark that hides
+    // a later affirmative review with findings.
+    if (skipOnly) continue;
     // An auxiliary response never supersedes a finding-bearing summary just
     // because it happens to mention a protocol marker. A newer declared round
     // is also evidence: it is the reviewer's explicit replacement boundary.
-    if (!skipOnly && round !== null)
+    if (round !== null)
       highestExplicitRound = Math.max(highestExplicitRound ?? round, round);
     if (
       selected === undefined ||
-      (!skipOnly &&
-        round !== null &&
-        (selectedRound === null || round > selectedRound)) ||
-      (!skipOnly &&
-        replacesSelection &&
+      (round !== null && (selectedRound === null || round > selectedRound)) ||
+      (replacesSelection &&
         (round === null || selectedRound === null || round === selectedRound))
     ) {
       selected = comment;

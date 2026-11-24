@@ -8,6 +8,13 @@ export function parseReviewRound(body: string): number | null {
   return Number.isSafeInteger(round) ? round : null;
 }
 
+/** A malformed or out-of-range round is not equivalent to an absent round. */
+function hasInvalidReviewRound(body: string): boolean {
+  return (
+    /<!--\s*ai-review-round:/.test(body) && parseReviewRound(body) === null
+  );
+}
+
 export interface ReviewerSticky {
   /** The `ai-reviewed-sha` marker from the newest STICKY comment, or `''`
    * when the reviewer has posted no sticky. */
@@ -255,6 +262,10 @@ export function reviewerStickyIn(
       structuralSkipNotices(rawBody, skipNoticeMarker),
       skipNoticeMarker,
     );
+    // A malformed explicit ordering claim is untrusted protocol input.  In
+    // particular, do not let it fall through as an unstamped skip and alter
+    // the witness selected from another comment.
+    if (hasInvalidReviewRound(body)) continue;
     // A same-head acknowledgement is auxiliary evidence, not proof a rerun
     // published a review. It must not replace the selected sticky's timestamp.
     // A new reviewed head or a newer explicit review round is a replacement.
@@ -280,7 +291,16 @@ export function reviewerStickyIn(
     if (!replacesSticky) {
       // A no-stamp skip can prove its own excluded-path case, but it cannot
       // borrow the reviewed SHA of an earlier comment.
-      if (skip !== null) sticky = { ...sticky, skip };
+      // A skip without its own review stamp cannot borrow the selected
+      // witness's stamp. A lower-round stamped skip cannot update it either:
+      // both pieces of evidence must remain from the same comment.
+      if (
+        skip !== null &&
+        bodySha !== "" &&
+        sameReviewedHead(bodySha, sticky.sha) &&
+        !lowerRound
+      )
+        sticky = { ...sticky, skip };
       continue;
     }
     if (round !== null)
