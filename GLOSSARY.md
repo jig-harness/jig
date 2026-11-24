@@ -1924,10 +1924,13 @@ make, use the entry's term instead.
   models decide, cheap models explore).
 - <a id="model-tier"></a>**Model tier** — the cost class of model an agent or
   skill runs on, named by role: *Judgment*, Strategic, Execution or *Scout*.
-  A tier is declared with the model: in agent and skill metadata, as the
+  In agent and skill metadata the tier follows from the model pin, as the
   [model routing policy](modules/M0-instruction-architecture/reference/model-routing-policy.md)
-  sets out, and in routing configuration, from an explicit declaration
-  (`routing.model_tiers`) first and the family the plugin knows second. Not
+  sets out; a separately declared tier is checked only where the metadata
+  carries one. In routing configuration an explicit declaration
+  (`routing.model_tiers`, or its older spelling `routing.family_tiers`)
+  comes first and the family the plugin knows second, except that the
+  catalog's Scout restriction still applies. Not
   from how important the job sounds. *Avoid*: model level (a *maturity level*
   is something else).
 - **Route** — the agent, *complexity tier* and reasoning effort chosen for the
