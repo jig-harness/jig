@@ -215,25 +215,25 @@ Where the host has no dispatcher, use its configured work-start procedure
 ask the person how to start the filed issues. Record what actually started, and each held task with the decision that
 blocks it. Track filing and starting separately: when a task is filed but
 not started (the work-start procedure was unknown, or a launch failed), reuse
-its recorded issue key. Note the time of each start attempt before sending it. Before retrying the start, check whether the start
-request was accepted: an assignment can land before its confirmation read
-fails, and a repeated assignment is refused. Count it accepted only on
-trusted evidence from after that attempt began, or from a pickup that is
-active now and already satisfies the handoff; an earlier launch of the same
-issue does not count. For a dispatcher start that is a pickup launch record or
-assignment record tied to the issue; a tracker state someone set by hand
-(assigned, in progress) is not proof. For a configured work-start
-procedure it is that mechanism's own receipt or status read. Only a
-rejection verified to have come before anything was written is blocked. Any
-failure that could follow a write (a refused result whose confirmation read
-threw, a timeout) is unconfirmed: record it so and recheck the same issue on
-return (step 11) before deciding on a retry. Wait
+its recorded issue key. Before sending a start, record
+the issue key, the time, and the settings the send resolves (the tracker
+target, the identity and the dispatch states). A start whose result is not a
+verified rejection made before anything was written (a refused result whose
+confirmation read threw, a timeout) is **unconfirmed**: it may still be in
+flight, so never resend it on a guess. Settle it only by the mechanism's own
+terminal answer for that attempt: a launch record or assignment record tied
+to the issue, or the work-start procedure's receipt or status read. A state
+someone set by hand (assigned, in progress), an earlier launch of the same
+issue, or a missing entry in a thread is not evidence either way. Resend
+only when the mechanism gives a terminal answer that the attempt did not
+land, or accepts a retry keyed to the same attempt; when it can give
+neither, leave the start unresolved, say so, and ask the person. Wait
 when pickup is pending (it happens on a later tick). When an accepted pickup
 claimed the item and then stalled, follow the recovery the status reports, or
 surface the blocker, keeping the issue key. When the assignment landed but the issue is still outside the
 configured dispatch states, do not repeat the send (it is refused): name the
 state transition needed and ask for it through the authorized recovery path.
-Retry only when a fresh read shows the request did not land. When a held task's decision arrives, file and start only the
+When a held task's decision arrives, file and start only the
 newly eligible remainder, never a task already filed. Send the plan keeper
 (step 9, when the plan has one) each decision when it is recorded, including
 a rejection that leaves no task to hand off, and each issue key as soon as
@@ -246,12 +246,10 @@ the source of the mechanism that sent the request: a dispatcher start through
 the operator's pickup thread read for that issue (the ordinary status can
 report a claim from tracker membership alone), any other work-start
 procedure through its own receipt or status read. Read it with the settings
-the send used (the default branch's tracker, identity and dispatch states),
-not a worktree's own. The thread shows nothing for an item outside the
-dispatch states, so a missing entry is no evidence the request failed: also
-read the item's current assignee, state and trusted assignment history
-directly, and retry only when that read shows the request did not land.
-Keep the start unconfirmed whenever a source cannot be read. Then read the
+recorded for the attempt in step 10, never the current checkout's or a
+later configuration's, and apply the same rule: an unreadable source or
+inconclusive answer keeps the start unconfirmed and is never a reason to
+retry. Then read the
 state of started work through
 `/jig:operator` in a fresh session when the `jig` command is available.
 Otherwise, query the configured tracker or delivery mechanism read-only and
