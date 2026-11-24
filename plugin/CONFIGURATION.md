@@ -837,10 +837,13 @@ model.
   a leaf variable leaves the file layers' other cells in place, but a variable
   that sets a parent key to a non-mapping (`JIG__ROUTING__MODELS=null`) replaces
   everything below it, and the loader refuses a `null` only when it is the value
-  that survives the merge: a higher layer's mapping at the same path replaces
-  it and the lower layer's cells with it (the audit's `null_refused` check reads
-  each file on its own, so it can still flag a file's `null` that the loader
-  accepts). A model key that ends in an underscore cannot be
+  that survives the merge, at `routing.model_tiers`, `routing.stages` or a
+  stage's `models` map (`routing.models` accepts it and restores the default
+  rows): a higher layer's mapping at the same path replaces it and the lower
+  layer's cells with it. The audit's `null_refused` check reads the selected
+  repository file on its own, so it can still flag that file's `null` where
+  the loader accepts it; a `null` only in the host file is outside that
+  check. A model key that ends in an underscore cannot be
   a leaf override (the split reads `___` as a separator and a child that starts
   with one); set the model's whole entry as a mapping instead.
 - **Precedence.** For a stage, a runtime and a tier, the first of: the stage's
@@ -860,7 +863,7 @@ model.
 Loading `routing.models` and `routing.stages` refuses, for a runtime with a
 list, a model outside it whose tier neither `routing.model_tiers` nor `routing.family_tiers` declares. It
 also refuses: any tier mapped to a Scout model (`haiku`, `luna`), by default or by
-configuration, where the runtime has a catalog that identifies it (a runtime without one can use the name `luna` undeclared, while an explicit `scout` declaration is refused on any runtime), which no `routing.model_tiers` or `routing.family_tiers` entry
+configuration, where the runtime has a catalog that identifies it (a runtime without one can use the name `luna` undeclared, while routing a model an explicit declaration classifies as `scout` is refused on any runtime), which no `routing.model_tiers` or `routing.family_tiers` entry
 waives, since M0 keeps that tier read-only (an implementer may still hand it
 simple sub-steps); and a row in which a stricter complexity tier runs on a
 model of a lower M0 tier than a lighter one (a stage's cells are checked
