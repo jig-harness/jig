@@ -167,7 +167,6 @@ export type EvaluateStateName =
   | "ROUND_READY"
   | "CONVERGED"
   | "INDETERMINATE"
-  | "UNSUPPORTED_CLI"
   | "HEAD_LAG"
   | "HEAD_MOVED"
   | "MERGEABILITY_UNKNOWN"
@@ -388,23 +387,6 @@ export const TERMINAL_STATES: Readonly<
       },
     },
   },
-  UNSUPPORTED_CLI: {
-    exitCode: 2,
-    category: "state",
-    terminal: true,
-    emittedBy: EVALUATE_EMITTER,
-    meaning:
-      "A prerequisite is missing: the installed `gh` cannot report a field the round needs. `drive.ts` also exits `2`, with no report, when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which.",
-    report: {
-      stop: "stopped: a usage error, or a gh that cannot report the pull request",
-      cause: "environment",
-      next: {
-        step: "Read the drive's message, fix the command line, the working tree or the gh install it names, then re-arm the drive.",
-        owner: "person",
-        act: "Investigate",
-      },
-    },
-  },
 
   // ── real states, set OUTSIDE evaluate() — code-bound via outOfBandExitCode()
   // below, not terminal ────────────────────────────────────────
@@ -471,6 +453,23 @@ export const TERMINAL_STATES: Readonly<
 
   // ── drive.ts-only exits: no --json report, code-bound via the constants
   // `lib/driver/settings.ts` exports (see the header) ──────────────────────
+  UNSUPPORTED_CLI: {
+    exitCode: 2,
+    category: "driver-only",
+    terminal: true,
+    emittedBy: "drive.ts only (UNSUPPORTED_CLI_EXIT)",
+    meaning:
+      "A prerequisite is missing. `drive.ts` exits `2`, with no state report (a dispatcher closing report may still be written), when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which. `drive-status.ts` also exits `2`, before there is a pull request to report on and naming no state, on arguments it cannot use and when its startup cannot resolve the repository or the pull request selector, which can be a network or authentication failure rather than an argument error. The same exit can end a drive already running: when a later round's `drive-status.ts` fails that way, the driver passes the `2` on, after earlier rounds' passes may have changed the tree or the pull request, so read the handoff file before assuming no work occurred.",
+    report: {
+      stop: "stopped: a usage error, or a gh that cannot report the pull request",
+      cause: "environment",
+      next: {
+        step: "Read the drive's message, fix the command line, the working tree or the gh install it names, then re-arm the drive.",
+        owner: "person",
+        act: "Investigate",
+      },
+    },
+  },
   MAX_ROUNDS: {
     exitCode: 6,
     category: "driver-only",
@@ -729,6 +728,7 @@ export function terminal(
  * driver-only declarations to work around that.
  */
 export type DriverOnlyStateName =
+  | "UNSUPPORTED_CLI"
   | "MAX_ROUNDS"
   | "SINGLE_INSTANCE_LOCK"
   | "WORKTREE_UNCLEAN"

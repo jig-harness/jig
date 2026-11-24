@@ -232,7 +232,7 @@ describe("waiting evaluation cache", () => {
   });
 });
 
-it("the real evaluator primes conditional headers, skips a waiting GraphQL read, and freshly observes closure", () => {
+it("the real evaluator primes conditional headers, skips a waiting poll's snapshot read, and freshly observes closure", () => {
   const dir = mkdtempSync(join(tmpdir(), "waiting-evaluator-"));
   try {
     const fixtureEnv: typeof process.env = {
@@ -265,7 +265,9 @@ if (args[0] === 'pr' && args[1] === 'view') {
   const runs = {check_runs: [{id: 1, name: 'AI review', status: 'queued', conclusion: null,
     app: {slug: 'example-review'}, output: {title: ''}, started_at: null}]};
   let body;
-  if (path.includes('/pulls/')) body = {state: closed ? 'closed' : 'open', merged: false, head: {sha: head}};
+  if (path.includes('/pulls/')) body = {state: closed ? 'closed' : 'open', merged: false, draft: false,
+    head: {sha: head, ref: 'feature/example'}, base: {sha: 'b'.repeat(40), ref: 'develop'},
+    mergeable: true, mergeable_state: 'clean'};
   else if (path.includes('/check-runs')) body = runs;
   else if (path.includes('/status')) body = {statuses: []};
   else if (path.includes('/comments')) body = [];
@@ -323,16 +325,31 @@ console.log(JSON.stringify(results));
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line) as string[]);
-    expect(calls.filter((args) => args[0] === "pr")).toHaveLength(3);
+    // The evaluation reads the pull request over REST alone: no GraphQL read.
+    expect(calls.filter((args) => args[0] === "pr")).toHaveLength(0);
     const pulls = calls.filter((args) => args.at(-1)?.includes("/pulls/"));
-    expect(pulls).toHaveLength(4);
+    const caller = (args: string[]) =>
+      args.find((a) => a.startsWith("X-Drive-Pr-Caller: "));
+    // Each poll reads the waiting signals; the waiting poll (the second)
+    // reuses its observation and reads no snapshot.
+    expect(pulls.map(caller)).toEqual([
+      "X-Drive-Pr-Caller: evaluate-waiting",
+      "X-Drive-Pr-Caller: snapshot",
+      "X-Drive-Pr-Caller: evaluate-waiting",
+      "X-Drive-Pr-Caller: evaluate-waiting",
+      "X-Drive-Pr-Caller: snapshot",
+      "X-Drive-Pr-Caller: evaluate-waiting",
+      "X-Drive-Pr-Caller: snapshot",
+    ]);
     expect(pulls[0]).not.toContain('If-None-Match: "open"');
     expect(pulls[1]).toContain('If-None-Match: "open"');
     expect(calls[0]?.at(-1)).toContain("/pulls/");
-    const firstGraphql = calls.findIndex((args) => args[0] === "pr");
+    const firstSnapshot = calls.findIndex(
+      (args) => caller(args) === "X-Drive-Pr-Caller: snapshot",
+    );
     expect(
       calls
-        .slice(0, firstGraphql)
+        .slice(0, firstSnapshot)
         .some((args) => args.at(-1)?.includes("/check-runs")),
     ).toBe(true);
   } finally {
