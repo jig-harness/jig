@@ -192,7 +192,7 @@ test("the Markdown rendering keeps routing findings literal", () => {
   );
 });
 
-test("the Markdown rendering does not autolink a configured URL", () => {
+test("the Markdown rendering leaves configured autolink forms literal", () => {
   const report: FitReport = {
     file: ".config/jig.yaml",
     configured: true,
@@ -203,11 +203,15 @@ test("the Markdown rendering does not autolink a configured URL", () => {
         id: "report:routing.models",
         severity: "info",
         message:
-          "routing.model_tiers.codex.example has reason https://example.org/model-notes",
+          "routing.model_tiers.codex.example has reason https://example.org/model-notes, www.example.org, team@example.org, mailto:team@example.org and xmpp:team@example.org",
       },
     ],
     declined: [],
     suggestions: [],
   };
   expect(render(report)).toContain("https\\://example.org/model-notes");
+  expect(render(report)).toContain("www\\.example.org");
+  expect(render(report)).toContain("team@example\\.org");
+  expect(render(report)).toContain("mailto\\:team@example\\.org");
+  expect(render(report)).toContain("xmpp\\:team@example\\.org");
 });

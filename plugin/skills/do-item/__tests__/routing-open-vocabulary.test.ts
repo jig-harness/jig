@@ -98,7 +98,9 @@ describe("a model outside the families", () => {
     const selected = "outside\u202Emodel";
     expect(() =>
       rules({ routing: { models: { codex: { complex: selected } } } }),
-    ).toThrow("routing.models.codex.complex must be a family alias");
+    ).toThrow(
+      "routing.models.codex.complex must be a model: one word that does not start with a dash or contain control or bidirectional characters",
+    );
   });
 
   it("keeps a declared outside model available to route derivation", () => {

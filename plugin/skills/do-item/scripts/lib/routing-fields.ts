@@ -4,7 +4,11 @@
  * `RoutingError` whose message opens with the field at fault.
  */
 
-import { formatField, isMapping } from "../../../../shared/config-layers.ts";
+import {
+  formatDisplayValue,
+  formatField,
+  isMapping,
+} from "../../../../shared/config-layers.ts";
 
 /** The complexity tiers a route may name, lightest first. */
 export const TIERS = ["simple", "standard", "complex"] as const;
@@ -76,7 +80,7 @@ export function refuseUnknownKeys(
 export function token(value: unknown, field: string, what: string): string {
   if (typeof value !== "string" || !MODEL_TOKEN_PATTERN.test(value))
     throw new RoutingError(
-      `${field} must be ${what}: one word that does not start with a dash or contain control characters, whitespace, a comma, semicolon or equals sign`,
+      `${field} must be ${what}: one word that does not start with a dash or contain control or bidirectional characters, whitespace, a comma, semicolon or equals sign (got ${typeof value === "string" ? formatDisplayValue(value) : String(value)})`,
     );
   return value;
 }

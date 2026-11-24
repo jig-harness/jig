@@ -235,7 +235,7 @@ function coalesced(
 function namedAliases(row: Record<string, unknown>, at: string) {
   const named: Record<string, string> = Object.create(null);
   for (const [key, value] of Object.entries(row))
-    named[key] = token(value, `${at}.${key}`, "a family alias");
+    named[key] = token(value, `${at}.${key}`, "a model");
   return named;
 }
 

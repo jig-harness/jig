@@ -34,6 +34,7 @@
  * it rather than guessed into its grammar.
  */
 import { basename } from "node:path";
+import { formatDisplayValue } from "../../../../shared/config-layers.ts";
 import { swallow } from "../../../../shared/errors.ts";
 import { runtimeModel } from "../../../../shared/model-families.ts";
 import {
@@ -84,7 +85,7 @@ export function resolveModelValue(
 ): PassModel {
   if (!PASS_MODEL_PATTERN.test(value))
     throw new PassModelUsageError(
-      `${where} must be one word naming a model, a Claude Code alias or a complexity tier (got '${value}')`,
+      `${where} must be one word naming a model, a Claude Code alias or a complexity tier (got ${formatDisplayValue(value)})`,
     );
   const tier = tierNamed(value);
   if (tier === undefined) {
@@ -265,7 +266,7 @@ function ownModel(
     return {
       argv: [...argv],
       model: null,
-      source: `the pass command's own --model '${value}', which names no model`,
+      source: `the pass command's own --model ${formatDisplayValue(value)}, which names no model`,
     };
   const config = configuredOrNull(configured);
   return {
@@ -292,7 +293,7 @@ function codexPass(
       return {
         argv: [...argv],
         model: null,
-        source: `the pass command's own model '${own.value}', which names no model`,
+        source: `the pass command's own model ${formatDisplayValue(own.value)}, which names no model`,
       };
     let config: CodexPassModel | null = null;
     try {

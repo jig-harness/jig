@@ -16,9 +16,12 @@ export const lit = (value: string) =>
   value
     .replace(/^[ \t]+/gm, "")
     .replace(/[\\`*_[\]<>&|#~]/g, "\\$&")
-    // An escaped protocol delimiter renders as ordinary text but cannot start
-    // GFM's bare-URL autolink extension.
-    .replace(/(https?):/gi, "$1\\:")
+    // Break every GFM bare-autolink form while keeping the displayed text
+    // unchanged. A backslash before the punctuation is rendered literally,
+    // but prevents the parser from recognizing a URI, www host, or email.
+    .replace(/(https?|mailto|xmpp):/gi, "$1\\:")
+    .replace(/\bwww\./gi, "www\\.")
+    .replace(/\b([a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+)\./gi, "$1\\.")
     .replace(/^([-+=])/gm, "\\$1")
     .replace(/^(\d{1,9})([.)])/gm, "$1\\$2");
 /** Source text inside a table cell: escaped, and on one line. */
