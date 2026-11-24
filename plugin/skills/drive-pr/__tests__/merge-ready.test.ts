@@ -681,7 +681,7 @@ describe("required checks and reviewer attempts", () => {
     ];
     const r = readiness(f, RULES);
     expect(r.says).toBe(
-      `a required check failed after the drive converged (${ci.name}); other failing checks: ${ci.name}: re-run it, or re-arm the drive`,
+      `a required check failed after the drive converged (${ci.name} (ci-a)); other failing checks: ${ci.name} (ci-b): re-run it, or re-arm the drive`,
     );
   });
   it("does not let an optional pending check hide an approval request", () => {

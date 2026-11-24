@@ -351,7 +351,7 @@ protection) still decide its lane:
    custom author, committer or signature: confirm that your bot's commits
    show as verified before you list it, or set `signed: false` for a bot
    that commits unsigned, which trusts the author attribution alone.
-3. Every changed file, and a renamed file's old path, matches one of
+3. Every changed file, and the original path of a renamed or copied file, matches one of
    `paths`. By default those are `package.json` and the JavaScript
    lockfiles (`bun.lock`, `bun.lockb`, `pnpm-lock.yaml`, `yarn.lock`,
    `package-lock.json`, `npm-shrinkwrap.json`) anywhere in the repository;
@@ -372,8 +372,8 @@ protection) still decide its lane:
    changed. A change inside a section other than the dependency sections,
    a hunk that does not show the root-level section opener with no closing
    brace before the line, a patch the forge cut short (its added and
-   removed line counts differ from the file's), a file moved to a lockfile
-   name from another name, a decrease, a
+   removed line counts differ from the file's), a file moved or copied to a lockfile
+   name from a name that is not a recognized lockfile, a decrease, a
    prerelease version, or a range change that moves the operator with the
    numbers does not read. The branch, title and description are not read:
    they are text the bot or the upstream wrote. A manifest other than

@@ -343,13 +343,6 @@ function witness(
   };
 }
 
-/** The checks failing on the head, the reviewer's own left to the witness. */
-function failingChecks(facts: ForgeFacts, rules: ReadyRules): string[] {
-  return facts.checks
-    .filter((c) => c.state === "failure" && !isReviewerCheck(c, rules))
-    .map((c) => c.name);
-}
-
 /** Whether condition 8 already holds without trusted automation: an own author association, or a qualifying approval. */
 export function authorSatisfied(facts: ForgeFacts): boolean {
   return OWN.has(facts.authorAssociation) || approvedHere(facts);
@@ -709,19 +702,26 @@ function readOf(facts: MergeFacts, rules: ReadyRules): Read {
   const failingRecords = facts.checks.filter(
     (c) => c.state === "failure" && !isReviewerCheck(c, rules),
   );
-  const requiredFailingNames = failingRecords
+  const labelled = failingRecords.map((c) => ({
+    required: c.required,
+    label:
+      c.app !== null && failingRecords.some((o) => o !== c && o.name === c.name)
+        ? `${c.name} (${c.app})`
+        : c.name,
+  }));
+  const requiredFailingNames = labelled
     .filter((c) => c.required)
-    .map((c) => c.name);
-  const optionalFailingNames = failingRecords
+    .map((c) => c.label);
+  const optionalFailingNames = labelled
     .filter((c) => !c.required)
-    .map((c) => c.name);
+    .map((c) => c.label);
   const trusted = trustOf(facts, rules);
   return {
     facts,
     seen: witness(facts, rules),
     ciHeld:
       rules.ciHoldLabel !== null && facts.labels.includes(rules.ciHoldLabel),
-    failing: failingChecks(facts, rules),
+    failing: labelled.map((c) => c.label),
     requiredFailing: requiredFailingNames.length > 0,
     requiredFailingNames,
     optionalFailingNames,
