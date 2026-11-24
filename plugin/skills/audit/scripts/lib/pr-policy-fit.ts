@@ -98,7 +98,7 @@ export function trustedFit(config: Config): Finding[] {
     findings.push({
       id: "derivation:pull_requests.trusted_automation:adopt",
       severity: "info",
-      message: `dispatch.adopt.trusted_automation is false: no automatic start is left for a listed bot's pull request. Its first drive, a restart after a head that moved and a conflict repair all wait for a person, and a pickup handoff cannot start it. Review the install inputs (manifests, installer configuration, lockfiles) against a trusted baseline, then start the drive directly from a verified checkout${
+      message: `dispatch.adopt.trusted_automation is false: no automatic start is left for a listed bot's pull request. Its first drive, a restart after a head that moved and a conflict repair all wait for a person, and a pickup handoff cannot start it. Review the install inputs (manifests, installer configuration, lockfiles) against a trusted baseline, then start the drive directly from a verified checkout, and review the merge of the base too, since the drive merges it and may install from the merged tree (stop the drive and recheck if the inputs move). Retire every outstanding drive and rearm request first: one made before the switch can still start a drive without a new review${
         labels.enabled
           ? ". A drive or rearm label is not a substitute: it pins neither the reviewed head nor the base the drive merges, and a rearm label needs a trusted request bound to an eligible stop, so the dispatcher may start from inputs nobody reviewed"
           : " (dispatch.labels.enabled is off, so there is no label route)"

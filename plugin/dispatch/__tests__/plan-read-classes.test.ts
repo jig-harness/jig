@@ -124,3 +124,31 @@ describe("the plan of an item whose read a failed call stopped", () => {
     ).toBeUndefined();
   });
 });
+
+describe("a silent drive the trusted automation opt-out blocks", () => {
+  it("is still reported to a person, and never taken over", () => {
+    const plan = planTick(
+      input({
+        drives: [
+          drive({
+            class: "silent",
+            why: "its driver is silent",
+            evidence: {
+              started: "2026-11-15T06:00:00Z",
+              trustedDriveManual: true,
+            },
+          }),
+        ],
+      }),
+    );
+    expect(plan.quiet.map((q) => q.target)).not.toContain("PR #7");
+    expect(plan.actions).toHaveLength(1);
+    expect(plan.actions[0]).toMatchObject({
+      stage: "notify",
+      target: "PR #7",
+    });
+    expect(plan.actions[0]?.reason).toContain(
+      "dispatch.adopt.trusted_automation",
+    );
+  });
+});

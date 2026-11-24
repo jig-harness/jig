@@ -696,9 +696,13 @@ function plannable(
     return null;
   }
   const startsBlocked = automationStartBlock(pr);
+  // A silent drive the opt-out blocks is not quiet: its person is still told
+  // (planDrive), only the takeover is withheld.
   const waiting =
     backingOff(pr, input.nowMs) ??
-    (startsBlocked === null ? null : `${pr.why}; ${startsBlocked}`);
+    (startsBlocked === null || pr.class === "silent"
+      ? null
+      : `${pr.why}; ${startsBlocked}`);
   if (waiting === null) return pr;
   plan.quiet.push({ target, class: pr.class, why: waiting });
   // Nothing is launched for the drive, but a launch of unknown process still
@@ -741,13 +745,18 @@ function planDrive(
     raiseStrandedDrive(input, pr, want);
     return;
   }
-  const takeover = hold.kind === "takeover" ? hold.record.record.id : null;
+  const blocked = pr.class === "silent" ? automationStartBlock(pr) : null;
+  const takeover =
+    blocked === null && hold.kind === "takeover" ? hold.record.record.id : null;
   // Another host's open takeover on these ledger facts holds the drive even
   // where this host's own record would take it over.
-  const placed = planForeign(input, pr, plan, want);
+  const placed = blocked === null ? planForeign(input, pr, plan, want) : null;
   if (placed === true) return;
   const foreign = takeover === null ? placed : null;
-  const { holder, gone, unread } = orphanReading(pr, input, takeover, foreign);
+  const { holder, gone, unread } =
+    blocked === null
+      ? orphanReading(pr, input, takeover, foreign)
+      : { holder: null, gone: null, unread: `${pr.why}; ${blocked}` };
   const taken =
     takeover !== null || foreign !== null || holder !== null || gone !== null;
   if (QUIET.has(pr.class) && !taken) {

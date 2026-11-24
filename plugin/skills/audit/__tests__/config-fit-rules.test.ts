@@ -107,6 +107,14 @@ test("the trusted automation adoption opt-out is accepted and reported", () => {
   expect(adopt?.message).toContain("nor the base");
   expect(adopt?.message).toContain("bound to an eligible stop");
   expect(adopt?.message).not.toContain("use a label only");
+  expect(adopt?.message).toContain("review the merge of the base too");
+  expect(adopt?.message).toContain(
+    "Retire every outstanding drive and rearm request",
+  );
+  expect(adopt?.message).not.toContain("go ahead and apply");
+  expect(adopt?.message).not.toMatch(
+    /\b(apply|add|use) (the |a )?(drive|rearm) label\b/,
+  );
 });
 
 test("the opt-out with labels off has no label route, and refusal hides the guidance", () => {
@@ -116,6 +124,9 @@ test("the opt-out with labels off has no label route, and refusal hides the guid
   expect(direct?.message).toContain("start the drive directly");
   expect(direct?.message).toContain("there is no label route");
   expect(direct?.message).toContain("install inputs");
+  expect(direct?.message).toContain(
+    "Retire every outstanding drive and rearm request",
+  );
   expect(direct?.message).not.toContain("pins neither");
   const plain = findings(
     'dispatch:\n  adopt: { enabled: false }\npull_requests:\n  trusted_automation: ["renovate[bot]"]\n',
