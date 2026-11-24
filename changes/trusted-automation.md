@@ -17,15 +17,15 @@ release: minor
   types, and only a `package.json` is classified, by its dependency diff.
   A rename or copy the forge reports for a `package.json` must pass the
   path allowlist, and its destination's diff must show a classifiable
-  dependency-version change. A rename or copy the forge reports to a
+  dependency update. A rename or copy the forge reports to a
   recognized lockfile needs a recognized lockfile name at its original
   path; a copy the forge reports as a plain addition has no original name
   and is judged on its destination alone. Any other destination is
   refused. A lockfile may accompany a classified `package.json` update
   without `lockfile` being listed; `lockfile` is needed only when
-  lockfiles alone change. Jig does not validate lockfile contents, whether
-  a lockfile accompanies a manifest update or is the only change, and does
-  not check it against the manifest. The refusals are in
+  lockfiles alone change. The Ready predicate does not validate lockfile
+  contents, whether a lockfile accompanies a manifest update or is the only
+  change, and does not check it against the manifest. The refusals are in
   [Trusted automation](../plugin/CONFIGURATION.md#trusted-automation) in
   the configuration guide. Any fact
   that does not read withholds the exception, and the card's fact names
