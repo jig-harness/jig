@@ -221,10 +221,9 @@ describe("the host and the repository layers", () => {
     ).toThrow("routing.model_tiers is null");
   });
 
-  it("reads routing: null as a whole-section reset to the defaults", () => {
-    expect(
-      parseRoutingModels({ routing: null }, "steward").codex?.complex,
-    ).toBe("sol");
+  it("reads a repository's routing: null as a whole-section reset to the defaults", () => {
+    const config = layered(HOST, "routing: null\n");
+    expect(parseRoutingModels(config, "steward").codex?.complex).toBe("sol");
   });
 
   it("lets a run's environment win over both files", () => {
@@ -364,11 +363,15 @@ describe("routing.family_tiers", () => {
     expect(Object.keys(row).sort()).toEqual(["gpt-6.2-sol", "sol"]);
     expect(row.sol?.reason).toBe("new short");
     expect(row["gpt-6.2-sol"]?.reason).toBe("new release");
-    const reported = parsed.reported.join("\n");
-    expect(reported).toContain("new short");
-    expect(reported).toContain("new release");
-    expect(reported).not.toContain("old short");
-    expect(reported).not.toContain("old legacy");
+    expect(parsed.reported).toHaveLength(2);
+    const [short, release] = ["new short", "new release"].map((reason) =>
+      parsed.reported.filter((line) => line.includes(reason)),
+    );
+    expect(short).toHaveLength(1);
+    expect(release).toHaveLength(1);
+    expect(short?.[0]).toContain("routing.model_tiers.codex.sol");
+    expect(release?.[0]).toContain('routing.model_tiers.codex."gpt-6.2-sol"');
+    expect(parsed.reported.join("\n")).not.toMatch(/old short|old legacy/);
   });
 
   it("accepts one model declared under both keys with one tier", () => {
