@@ -7,7 +7,7 @@ Declare a model's tier with the new `routing.model_tiers` key, and choose a sepa
 ### Added
 
 - `routing.model_tiers` maps any model identifier that meets Jig's [token rules](../plugin/CONFIGURATION.md#the-open-model-vocabulary) (it holds no whitespace, commas, semicolons or equals signs, and is not the reserved key `__proto__`) to a [model tier](../GLOSSARY.md#model-tier) (`scout`, `execution`, `strategic` or `judgment`) with a reason, so `routing.models` can name a model the plugin's list of families does not.
-- `routing.model_tiers` can be set in a host's user file, in a repository's `.config/jig.yaml` or per run; the layer merger combines these mappings cell by cell across the layers, and the configuration reference says how a `null` in a higher layer resets a section and what routing validation refuses.
+- `routing.model_tiers` can be set in a host's user file, in a repository's `.config/jig.yaml` or per run; the layer merger combines these mappings cell by cell across the layers. A higher-layer `routing: null` resets the whole routing section, while a surviving `routing.model_tiers: null` is refused; the configuration reference describes the remaining validation rules.
 - `routing.stages.<stage>.models.<runtime>.<tier>` sets the model for one launch stage (`pickup`, `rearm`, `followup`, `steward`) in place of the all-stages cell of `routing.models`. A stage's cell is more specific than the all-stages one whichever layer set each. The dispatcher's steward launch reads its row; the other stages are accepted and checked.
 
 ### Changed

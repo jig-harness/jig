@@ -1929,8 +1929,9 @@ make, use the entry's term instead.
   sets out; a separately declared tier is checked only where the metadata
   carries one. In routing configuration an explicit declaration
   (`routing.model_tiers`, or its older spelling `routing.family_tiers`)
-  comes first and the family the plugin knows second, except that the
-  catalog's Scout restriction still applies. Not
+  comes first and the family the plugin knows second, except that surviving
+  declarations for the same family must agree on their tier and the catalog's
+  Scout restriction still applies. Not
   from how important the job sounds. *Avoid*: model level (a *maturity level*
   is something else).
 - **Route** — the agent, *complexity tier* and reasoning effort chosen for the
