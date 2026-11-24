@@ -1,4 +1,24 @@
 import { FORGE_ACCOUNTING_UNAVAILABLE } from "./trace.ts";
+/** The longest prefix of `text` that fits `room` bytes, backed up to the start of the character the limit cuts, so a complete character is kept as it is and a cut one is dropped. */
+function keepWhole(text: string, room: number): string {
+  const whole = Buffer.from(text);
+  let end = Math.min(whole.length, Math.max(0, room));
+  while (end > 0 && end < whole.length && ((whole[end] ?? 0) & 0xc0) === 0x80)
+    end--;
+  return whole.subarray(0, end).toString("utf8");
+}
+
+/** What of a chunk fits under the byte bound, enforced before appending: a chunk that crosses it keeps only what fits, so the result never holds more than the limit. */
+function fitToLimit(
+  text: string,
+  length: number,
+  bytes: number,
+  limit: number,
+): { kept: string; over: boolean } {
+  if (bytes + length <= limit) return { kept: text, over: false };
+  return { kept: keepWhole(text, limit - bytes), over: true };
+}
+
 /** How much of a failed child's error output `RunResult.stderrTail` keeps. */
 export const STDERR_TAIL_BYTES = 4 * 1024;
 
@@ -163,25 +183,12 @@ function captureProcessOutput(
     const limit = options.maxBufferBytes ?? MAX_BUFFER_BYTES;
     let over = false;
     if (captured) {
-      // The bound is enforced before appending: a chunk that crosses it keeps only what fits, so the result never holds more than the limit.
-      let kept = text;
-      if (bytes + length > limit) {
-        over = true;
-        const whole = Buffer.from(text);
-        let end = Math.min(whole.length, Math.max(0, limit - bytes));
-        // Back up to the start of the character the limit cuts, so a complete character is kept as it is and a cut one is dropped.
-        while (
-          end > 0 &&
-          end < whole.length &&
-          ((whole[end] ?? 0) & 0xc0) === 0x80
-        )
-          end--;
-        kept = whole.subarray(0, end).toString("utf8");
-      }
-      if (stream === "stdout") stdout += kept;
-      else stderr += kept;
+      const fit = fitToLimit(text, length, bytes, limit);
+      over = fit.over;
+      if (stream === "stdout") stdout += fit.kept;
+      else stderr += fit.kept;
       bytes += over ? limit + 1 - bytes : length;
-      options.onOutput?.(stream, kept);
+      options.onOutput?.(stream, fit.kept);
     }
     options.onChunk?.(stream, length, captured);
     if (over || bytes > limit) overflow();

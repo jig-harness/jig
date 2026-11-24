@@ -29,8 +29,7 @@
  * | a headless claim with no confirmed cleanup after wrapper death | unknown, holding its slot |
  * | no claim | pending |
  *
- * Pending, alive and unknown records hold their stage and account slot.
- * Clear a record that cannot be retried with `jig dispatch clear`.
+ * Pending, alive and unknown records hold their stage and account slot. Clear a record that cannot be retried with `jig dispatch clear`.
  * An interactive record also ends with its agent (`actions/pickup-hold.ts`).
  *
  * What Control adds while the record runs and when it ends: a drive's

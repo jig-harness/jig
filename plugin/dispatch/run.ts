@@ -165,8 +165,7 @@ import {
 } from "./lib/run-report.ts";
 import { DRIVER_REPORT_VARIABLE } from "../shared/driver-report.ts";
 import { settleAtExit } from "./lib/shared-launches.ts";
-import { followupEndOf, labelFollowupEnd } from "./lib/followup-label.ts";
-import { defectLine } from "../shared/pr-labels/write.ts";
+import { labelFollowupRun } from "./lib/followup-label.ts";
 import {
   followupPassArgv,
   pickupPassArgv,
@@ -853,7 +852,7 @@ async function publishEnd(
   const wallUnrecorded = !(await wallRecorded(record, code));
   recordFinishedExit(id, record, ran, wallUnrecorded);
   await endSharedClaim(id);
-  await labelFollowup(id);
+  await labelFollowupRun(id);
   printKeptReport(id);
   return code ?? 1;
 }
@@ -875,31 +874,6 @@ async function endSharedClaim(id: string): Promise<void> {
     console.error(
       `jig dispatch run: the launch's end is not on its claim (${why}); the next tick writes it`,
     );
-}
-
-/**
- * A follow-up's end as its pull request's state label, now that its exit is
- * recorded: best effort, one line here when it is not written, and the next
- * tick corrects it; the wrapper's exit stays the stage's.
- */
-async function labelFollowup(id: string): Promise<void> {
-  let line: string | null;
-  let target = `the follow-up of launch record ${id}`;
-  try {
-    const ended = readEnded(id);
-    const outcome = ended === null ? null : followupEndOf(ended);
-    if (ended === null || outcome === null || ended.record.pr === null) return;
-    target = `PR #${ended.record.pr}`;
-    const label = await labelFollowupEnd({
-      slug: ended.record.repo,
-      pr: ended.record.pr,
-      outcome,
-    });
-    line = label.line;
-  } catch (error) {
-    line = defectLine(target, error);
-  }
-  if (line !== null) console.error(`jig dispatch run: ${line}`);
 }
 
 /**

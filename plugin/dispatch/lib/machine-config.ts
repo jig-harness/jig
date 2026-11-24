@@ -137,11 +137,11 @@ export interface MachineAccount {
   /** The account's name here, which launch records and walls are keyed by. */
   name: string;
   /**
-   * The agent tool the account bills (`claude`, `codex`): it chooses the
+   * The agent tool the account bills: it chooses the
    * agent every session on the account runs in. Any name is accepted; one
    * the drive documents no pass command for is reported and never admitted.
-   * A provider account's is its harness's program (`claude` for
-   * `claude-code`).
+   * A provider account's is its harness's program
+   * (`HARNESS_VENDOR`).
    */
   vendor: string;
   /** The account's Orca profile configuration directory (`CLAUDE_CONFIG_DIR` or `CODEX_HOME`). */

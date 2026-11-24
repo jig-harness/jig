@@ -16,23 +16,16 @@
  * (`PROVIDER_IDENTITY_VARIABLE`), which the drive's identity resolver reads.
  */
 import { SECRET_VARIABLES } from "../../shared/credentials.ts";
-import {
-  type AccountVendor,
-  PROVIDER_IDENTITY_VARIABLE,
-} from "../../skills/drive-pr/scripts/lib/identity.ts";
+import { claudeCode } from "../../shared/agent-harness/claude-code.ts";
+import { codex } from "../../shared/agent-harness/codex.ts";
+import { PROVIDER_IDENTITY_VARIABLE } from "../../skills/drive-pr/scripts/lib/identity.ts";
 
 /** The credential variables the drive's resolver reads before a configuration directory. */
-export const SUBSCRIPTION_CREDENTIALS = [
+const SUBSCRIPTION_CREDENTIALS = [
   "CLAUDE_CODE_OAUTH_TOKEN",
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
 ] as const;
-
-/** The variable that names each vendor's configuration directory. */
-export const DIRECTORY_VARIABLE: Record<AccountVendor, string> = {
-  claude: "CLAUDE_CONFIG_DIR",
-  codex: "CODEX_HOME",
-};
 
 /**
  * The variable the wrapper hands a resolved credential to its supervisor
@@ -83,11 +76,7 @@ export const PROVIDER_KEYS = [
 ] as const;
 
 /** Name prefixes a provider account's launch removes whatever follows them. */
-export const PROVIDER_PREFIXES = [
-  "OPENAI_",
-  "ANTHROPIC_",
-  "AZURE_OPENAI_",
-] as const;
+const PROVIDER_PREFIXES = ["OPENAI_", "ANTHROPIC_", "AZURE_OPENAI_"] as const;
 
 /** The variables no pass carries on this host (`credential_env`), as the machine file read here names them. */
 let withheld: readonly string[] = [];
@@ -120,9 +109,9 @@ export function withoutVariables(
 
 /** The harnesses a provider account may run in: each vendor's own program. */
 export const HARNESS_VENDOR = {
-  "claude-code": "claude",
-  codex: "codex",
-} as const satisfies Record<string, AccountVendor>;
+  "claude-code": claudeCode.program,
+  codex: codex.program,
+} satisfies Record<string, string>;
 export type Harness = keyof typeof HARNESS_VENDOR;
 
 /**

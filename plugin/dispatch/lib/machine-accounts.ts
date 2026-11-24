@@ -4,8 +4,8 @@
  * - `subscription` (the default): a vendor's subscription, signed in inside
  *   `config_dir`, with the keys `name`, `kind`, `vendor`, `harness`,
  *   `config_dir`, `identity`, `max_per_account` and `stages`. Its `harness`,
- *   when named, is the vendor's own program (`claude-code` for `claude`,
- *   `codex` for `codex`): a Claude login never reaches another harness.
+ *   when named, is the vendor's own program (`HARNESS_VENDOR`): one
+ *   vendor's login never reaches another harness.
  * - `provider`: the host's own key with a model provider
  *   (`provider-account.ts`).
  *

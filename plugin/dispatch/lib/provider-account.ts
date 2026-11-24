@@ -140,6 +140,15 @@ const DEFAULT_ENDPOINT_PROVIDER: Record<Harness, string> = {
   codex: "openai",
 };
 
+/** Whether `value` holds a backslash, a space or a control character: what a plain URL never carries. */
+function hasRefusedCharacter(value: string): boolean {
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code <= 0x20 || code === 0x7f || character === "\\") return true;
+  }
+  return false;
+}
+
 /** The list `table` holds for `key` itself, never one an object inherits (`constructor`). */
 function ownEntry(
   table: Record<string, readonly string[]>,
@@ -310,8 +319,7 @@ function baseUrl(
         );
   }
   // The value as written is checked before `text` trims it: a leading or trailing space or control character is refused like one inside.
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is refused
-  if (typeof value === "string" && /[\u0000-\u0020\u007f\\]/.test(value))
+  if (typeof value === "string" && hasRefusedCharacter(value))
     return invalid(
       `${where} must be a plain URL with no backslash, space or control character (its value is withheld)`,
     );
@@ -329,8 +337,7 @@ function baseUrl(
   const written = /^[a-z][a-z0-9+.-]*:\/\/[^/?#\\]*([^?#\\]*)$/i.exec(
     raw.value.split(/[?#]/)[0] ?? "",
   );
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is refused
-  if (written === null || /[\u0000-\u0020\u007f\\]/.test(raw.value))
+  if (written === null || hasRefusedCharacter(raw.value))
     return invalid(
       `${where} must be a plain URL with no backslash, space or control character (its value is withheld)`,
     );

@@ -85,7 +85,7 @@ export const PROVIDER_IDENTITY_VARIABLE = "JIG_PROVIDER_IDENTITY";
 export const PROVIDER_IDENTITY = /^provider:[a-z][a-z0-9-]*:[0-9a-f]{12}$/;
 
 /** The provider account's identity a launch declared, or `null` when it declared none. */
-function declaredProvider(vendor: AccountVendor): AccountIdentity | null {
+function declaredProvider(vendor: HarnessName): AccountIdentity | null {
   const declared = process.env[PROVIDER_IDENTITY_VARIABLE] ?? "";
   return PROVIDER_IDENTITY.test(declared)
     ? resolved(vendor, declared, PROVIDER_IDENTITY_VARIABLE)

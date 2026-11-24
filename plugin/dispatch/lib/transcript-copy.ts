@@ -166,8 +166,9 @@ function embeddedJson(text: string): unknown {
   if (start === -1 || !/[\]}"]\s*$/.test(text)) return undefined;
   try {
     return JSON.parse(text.slice(start));
-  } catch {
+  } catch (error) {
     // Only a fixed diagnostic: the parser's own message can quote the text.
+    void error;
     swallow(new SyntaxError("not JSON"), "a string that is not JSON is text");
     return undefined;
   }
@@ -357,7 +358,7 @@ function maskExact(value: unknown, secrets: readonly string[]): unknown {
 }
 
 /** The line that stands where one or more lines were left out, so a reader knows evidence is missing there. */
-export const OMITTED_LINE = OMITTED_LINE_TEXT;
+const OMITTED_LINE = OMITTED_LINE_TEXT;
 
 /** The transcript's lines, each redacted; a line that does not read as JSON, or that would still match a held secret, is left out and a marker line stands in its place. `kept` counts the lines that are not markers. */
 function redactedLines(
