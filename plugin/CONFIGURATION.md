@@ -440,11 +440,14 @@ input of the merged tree (or resolved index) against that baseline, since an
 edit already on the bot's branch is identical in the merge and its first
 parent. Then, for a clean base merge, compare the merged tree with its first
 parent (the pre-merge branch), or for a conflict resolution the resolved index
-with that branch, to isolate what the merge or resolution adds. Prepare and
+with that branch, to isolate what the merge or resolution adds. Before preparing
+any checkout or merge, review the Git hooks they run and the merge drivers the
+host configures and the branch's path attributes can select. Then prepare and
 review the actual merge in a scratch checkout of the bot's head and the base
-tip before the drive starts; the drive installs right after its own clean
-merge, so when the head or base has moved since that review, repeat it before
-starting the drive. Recheck when the head, base or resolution changes the
+tip before the drive starts. The drive installs right after its own clean
+merge and cannot wait for a recheck, so keep the base branch from moving
+between that review and the install, and when the head or base has moved since
+the review, repeat it before starting the drive. Recheck when the head, base or resolution changes the
 inputs. Review the
 contents of any newly selected lockfile, including an unchanged lockfile
 selected after a manifest edit or after a lockfile is added, removed, moved
@@ -481,11 +484,14 @@ effective tree before the drive installs.
 Restart a stopped drive by the procedure for its stop (answer every parked
 decision; for a usage-limit stop, follow "Picking up a stopped drive" in the drive-pr skill: a pass that
 bills a known, different account may pick the drive up now, while the same
-account or an unresolvable one waits for the reset; grant a spent
+account or an unresolvable one waits for the reset unless a person knows the
+window reopened and passes `--window-reopened`; grant a spent
 round budget). A drive a person stopped stays stopped, a drive converged on
 a head that is still its verified head and mergeable needs no restart (a base
-that merely advanced does not stale it; a moved head or a new conflict is a
-new stop to restart, or a ledger recovery), and a drive that stopped
+that merely advanced does not stale it; a head the dispatcher proves moved only by a clean base
+merge does not count as moved; any other moved head, or a new conflict, is a
+new stop to restart or a ledger recovery, when the ledger reading shows the
+prior convergence no longer settles the pull request), and a drive that stopped
 `TAKEN_OVER` stays stopped: its successor's ledger says whether it can restart.
 
 An entry
