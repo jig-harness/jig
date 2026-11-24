@@ -404,6 +404,13 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.306.2] - 2026-11-24
+
+### Fixed
+
+- Make the pull request drive tests more reliable under load by observing the
+  cancellation sequence and giving multi-round fixtures time to finish.
+
 ## [0.306.1] - 2026-11-24
 
 ### Fixed
@@ -10891,7 +10898,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.306.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.306.2...HEAD
+[0.306.2]: https://github.com/jig-harness/jig/compare/v0.306.1...v0.306.2
 [0.306.1]: https://github.com/jig-harness/jig/compare/v0.306.0...v0.306.1
 [0.306.0]: https://github.com/jig-harness/jig/compare/v0.305.0...v0.306.0
 [0.305.0]: https://github.com/jig-harness/jig/compare/v0.304.5...v0.305.0

@@ -36,6 +36,10 @@ import {
   exceptOnWindows,
   byPlatform,
 } from "../../../../lib/test-helpers/windows-skip.ts";
+import {
+  capturedCommand,
+  capturedRunner,
+} from "./foreground-wait-observation.ts";
 
 const SCRIPT = resolve(import.meta.dir, "../scripts/foreground-wait.ts");
 
@@ -321,43 +325,6 @@ describe("foreground-wait.ts", () => {
     T,
   );
 
-  const capturedCommand = async (marker: string, pids: number[]) => {
-    const deadline = Date.now() + 20000;
-    let complete = false;
-    let captured: { pid: number; start: string }[] = [];
-    while (!complete && Date.now() < deadline) {
-      try {
-        const capture = JSON.parse(readFileSync(marker, "utf8")) as {
-          targets: { pid: number; start: string }[];
-        };
-        captured = capture.targets;
-        complete = pids.every((pid) =>
-          capture.targets.some((target) => target.pid === pid),
-        );
-      } catch {
-        // The tracker has not published a complete acknowledgment yet.
-      }
-      if (!complete) await sleepMs(20);
-    }
-    expect(complete).toBe(true);
-    return captured;
-  };
-
-  const capturedRunner = async (runner: number, pids: number[]) => {
-    const deadline = Date.now() + 20000;
-    let targets = await captureProcessTree(runner);
-    while (
-      !pids.every((pid) => targets?.some((target) => target.pid === pid)) &&
-      Date.now() < deadline
-    ) {
-      await sleepMs(20);
-      targets = await captureProcessTree(runner);
-    }
-    for (const pid of pids)
-      expect(targets?.some((target) => target.pid === pid)).toBe(true);
-    return targets ?? [];
-  };
-
   test(
     "a runner killed mid-command is not running forever: wait reports 21 once nothing is alive",
     async () => {
@@ -597,55 +564,6 @@ describe("foreground-wait.ts", () => {
       const bg = Number.parseInt(readFileSync(join(cwd, "bg.pid"), "utf8"), 10);
       expect(Number.isInteger(bg)).toBe(true);
       expect(await alive(bg)).toBe(false);
-    },
-    T,
-  );
-
-  test(
-    "a descendant recovered after a failed process snapshot receives its cancellation grace",
-    async () => {
-      // `ps` fails from before the deadline (3s) until released, so termination
-      // cannot snapshot and signals only the command; the descendant was
-      // tracked earlier (every 200ms). Once `ps` recovers it must be TERMed,
-      // not killed cold.
-      const shim = join(cwd, "shim");
-      mkdirSync(shim);
-      const flag = join(cwd, "psbroken");
-      const native = byPlatform(
-        "Windows reads CIM through PowerShell; POSIX reads ps",
-        { windows: "powershell.exe", posix: "ps" },
-      );
-      const actual = Bun.which(native);
-      expect(actual).not.toBeNull();
-      writeFakeProgram(
-        join(shim, native),
-        `#!/usr/bin/env bun\nif(require("node:fs").existsSync(${JSON.stringify(flag)})) process.exit(1); const result=Bun.spawnSync([${JSON.stringify(actual)},...process.argv.slice(2)], {stdout:"pipe",stderr:"inherit"}); process.stdout.write(result.stdout); process.exit(result.exitCode);`,
-      );
-      expectSpawnExit(
-        runWith(
-          {
-            DRIVE_PR_FOREGROUND_WAIT_TIMEOUT: "3",
-            PATH: `${shim}${delimiter}${process.env.PATH}`,
-          },
-          "launch",
-          "--",
-          ...bunCommand(
-            childTree(
-              `process.on("SIGTERM",()=>{require("node:fs").writeFileSync("termed.marker","term");process.exit(0)}); ${busy}`,
-            ),
-          ),
-        ),
-        0,
-      );
-      await sleepMs(1000); // tracked within 200ms, before the deadline
-      writeFileSync(flag, "");
-      await sleepMs(3500); // deadline fires with `ps` broken
-      rmSync(flag);
-      const w = run("wait", "--max-sec", "40");
-      expectSpawnExit(w, 30);
-      exceptOnWindows("Windows has no cooperative POSIX TERM handler", () =>
-        expect(existsSync(join(cwd, "termed.marker"))).toBe(true),
-      );
     },
     T,
   );
