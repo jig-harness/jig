@@ -434,10 +434,13 @@ under a label removed afterwards, and a tick on a host left running keeps its
 old policy), then stop any running drives, retire every outstanding `drive`
 and `rearm` request (remove the labels) and resume dispatch once the policy is
 in effect: a request made before the switch can still start a drive without a
-new review. For a clean
-base merge, compare the merged tree with its first parent (the pre-merge branch).
-For a conflict resolution, compare the resolved index with that branch.
-Recheck when the head, base or resolution changes the inputs. Review the
+new review. Start from a trusted baseline: the base branch's installer configuration,
+manifests and lockfiles, not the bot's branch, since an edit already on the
+bot's branch is absent from both merge comparisons below. For a clean base
+merge, compare the merged tree with its first parent (the pre-merge branch);
+for a conflict resolution, compare the resolved index with that branch. These
+comparisons isolate only what the merge or resolution adds. Recheck when the
+head, base or resolution changes the inputs. Review the
 contents of any newly selected lockfile, including an unchanged lockfile
 selected after a manifest edit or after a lockfile is added, removed, moved
 or copied. Verify the executable, version and source the host resolves for
@@ -446,23 +449,37 @@ command, the presence of `.yarnrc.yml` selects `--immutable`, with
 `--frozen-lockfile` used otherwise. Verify that the resolved Yarn supports
 the selected flag.
 
-**Review the commands, not only the inputs.** Every start or restart under
-the opt-out runs in the same host environment and checkout as the review:
-the environment, an overlay and catalogs read from disk can select a command
-neither repository snapshot holds. Before any drive that can install, review
-each selected install job's full command, working directory, executable and
-effective environment, whether it comes from a `drive.dependency_install`
-override or from the built-in command for the lockfile's own directory. Before
-any restart that can enter conflict repair (whatever the drive stopped on, a
-parked drive whose pull request conflicts included), review every command the
-resolution would run: a migration sequence's command, a
+**Review the commands, not only the inputs.** The opt-out controls automatic
+starts only. A drive the operator starts resolves its policy from its bound or
+base configuration when present, otherwise from layered configuration in the
+checkout and environment it runs in, so verify the actual checkout,
+environment and effective policy the drive will use, and repeat the review if
+they differ from the ones reviewed. The environment, an overlay and catalogs
+read from disk can select a command neither repository snapshot holds. Before
+any drive that can install, review each selected install job's full command,
+working directory, executable and effective environment, whether it comes from
+a `drive.dependency_install` override or from the built-in command for the
+lockfile's own directory. Before any start or restart that can enter conflict
+repair (a first drive included, whatever a restarted drive stopped on, a
+parked drive whose pull request conflicts included), review the effective
+inputs of every command the resolution would run, before that command runs
+(a regeneration can run before its result is staged, and a conflicted
+lockfile is an input): a migration sequence's command, a
 `resolve_conflicts.generated` entry, the change-area catalog's generator, the
 built-in lockfile table, or a generator the operator finds and records for a
 derived path, with its working directory, against the base's configuration and
-the staged configuration both. Restart a stopped drive by the procedure for
-its stop (answer every parked decision, wait out a quota reset, grant a spent
+the staged configuration both. Also review the Git hooks a merge or commit
+runs, and the obligation commands and the validation plan or gate that
+validation runs. After a regeneration, review the resulting lockfile and
+effective tree before the drive installs.
+
+Restart a stopped drive by the procedure for its stop (answer every parked
+decision; for a usage-limit stop, wait out the reset only when the pass bills
+the same account, since a pass billing another account may pick the drive up
+now: see "Picking up a stopped drive" in the drive-pr skill; grant a spent
 round budget). A drive a person stopped stays stopped, a drive converged on
-the current head and base needs no restart, and a drive that stopped
+the current head and base needs no restart (when its head or base moves it is
+a new stop to restart, or a ledger recovery), and a drive that stopped
 `TAKEN_OVER` stays stopped: its successor's ledger says whether it can restart.
 
 An entry

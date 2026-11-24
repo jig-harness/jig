@@ -60,7 +60,7 @@ export async function policyFindings(
 }
 
 const TRUSTED_AUTOMATION_PROCEDURE =
-  "https://github.com/jig-harness/jig/blob/main/plugin/CONFIGURATION.md#trusted-automation";
+  "the Trusted automation section of plugin/CONFIGURATION.md in the installed plugin";
 
 /**
  * What `pull_requests.trusted_automation` does in this configuration: a list
@@ -103,7 +103,7 @@ export function trustedFit(config: Config): Finding[] {
       severity: "info",
       message: `dispatch.adopt.trusted_automation is false: no automatic start is left for a listed bot's pull request. Its first drive, a restart after a head that moved and a conflict repair all wait for a person, and a pickup handoff cannot start it. Before switching, pause dispatch on every host that dispatches this repository, let active ticks finish, stop any drive already running on a listed bot's pull request and retire every outstanding drive and rearm request${
         labels.enabled ? "" : " (labels are off, so no label starts a drive)"
-      }. Review the install inputs and every command a start or restart would run, then start each drive directly; resume dispatch once the policy is in effect on every host. The full procedure: ${TRUSTED_AUTOMATION_PROCEDURE}`,
+      }. Review the install inputs and every command a start or restart would run, then, for each drive whose stop allows a restart (not one a person stopped, one converged on the current head and base, or a superseded driver), start it directly; resume dispatch once the policy is in effect on every host. The full procedure, which names the trusted baseline and the restart rules, is in ${TRUSTED_AUTOMATION_PROCEDURE}`,
     });
   else if (!adopt.enabled)
     findings.push({
