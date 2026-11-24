@@ -15,7 +15,7 @@ import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { hostLabel } from "../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { currentIso } from "../../shared/time.ts";
-import { readRecord } from "../lib/launches.ts";
+import { readEnded, readRecord } from "../lib/launches.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
   HEAD_SHA,
@@ -177,6 +177,52 @@ describe("jig dispatch --apply re-drives a stall and a spent CI-repair budget", 
       expect(driveRuns(w)).toHaveLength(2);
     }, 180_000);
   }
+
+  it("re-drives a failed status read once per head, retaining the forge failure", async () => {
+    const exit = DRIVE_EXIT.INDETERMINATE;
+    const probe = {
+      code: exit,
+      state: "INDETERMINATE",
+      failure: "read" as const,
+      reason: "cannot read PR #7 (too-costly: HTTP 502)",
+    };
+    const ledger = (generation: number) =>
+      stop(exit, generation, {
+        driver: { ...stoppedLedger(7, exit).driver, probe },
+      });
+    const { w } = fixture({ mergeable: "CONFLICTING" }, () => ledger(3));
+    writeFileSync(
+      join(w.dir, "drive-stderr"),
+      `drive.ts: status probe stopped: ${JSON.stringify(probe)}\n`,
+    );
+    const record = await redrive(w, exit);
+    expect(readEnded(record, dispatchState(w))).toMatchObject({
+      record: {
+        redrive: {
+          change: `head ${HEAD_SHA}, stopped ${exit}`,
+          mechanicalStop: "probe-read",
+        },
+      },
+      state: {
+        kind: "ended",
+        exit: { context: expect.stringContaining(probe.reason) },
+      },
+    });
+
+    w.setComments(7, [ledgerComment(701, ledger(4))]);
+    const second = await tick(w);
+    expect(launches(second)).toEqual([]);
+    expect(notified(second)).toEqual([["PR #7", "needs-person", "sent"]]);
+    const notice = second.repos[0]?.actions[0]?.notice?.text;
+    expect(notice).toContain("a systematic read failure");
+    expect(notice).toContain(probe.reason);
+
+    w.setPrs("open", [openPr(7, HEAD, { headRefOid: MOVED })]);
+    const again = await redrive(w, exit);
+    expect(readRecord(again, dispatchState(w))?.redrive?.change).toBe(
+      `head ${MOVED}, stopped ${exit}`,
+    );
+  }, 180_000);
 
   it("keeps a generic exit 1 a person's", async () => {
     const { w } = fixture({ mergeable: "MERGEABLE" }, () => stop(1, 3));

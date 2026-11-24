@@ -132,6 +132,7 @@ export type ConditionalGet =
   | {
       ok: false;
       reason: string;
+      budgetSpent?: true;
       /** The failure's class, where the request was sent and answered as one (`outbound/github.ts`). */
       failure?: OutboundFailure;
     };
@@ -371,7 +372,11 @@ export function createConditionalCache({
 
     const left = budgetLeftSec(ctx, startMs);
     if (left === 0) {
-      return { ok: false, reason: `gh api ${path}: caller budget exhausted` };
+      return {
+        ok: false,
+        reason: `gh api ${path}: caller budget exhausted`,
+        budgetSpent: true,
+      };
     }
     const r = await ghCall(
       [

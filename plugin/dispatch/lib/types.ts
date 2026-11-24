@@ -232,7 +232,8 @@ export interface StaleCause {
    * a spent CI-repair budget (`21`), a pass deadline with its restarts
    * spent (`15`), checks still failing on the infrastructure through their
    * re-runs (`23`, `ci-infra`), or a check-runs listing cut short (`25`,
-   * `check-runs`). Re-driven once per head commit, a `ci-infra` stop once per
+   * `check-runs`) or a status probe read failure (`1`, `probe-read`). Re-driven
+   * once per head commit, a `ci-infra` stop once per
    * stop after its backoff; a re-drive that leaves the same stop standing is
    * a person's. The forge's rate limit for the drive's credential spent past
    * what it waits (`24`, `forge-limit`) is re-driven from that reset.
@@ -244,6 +245,7 @@ export interface StaleCause {
     | "deadline"
     | "ci-infra"
     | "check-runs"
+    | "probe-read"
     | "forge-limit";
   /** When the re-drive may start: a `ci-infra` stop's backoff end (`infra-backoff.ts`), a `forge-limit` stop's reset (`forge-limit-redrive.ts`). */
   notBefore?: string;

@@ -167,6 +167,7 @@ export type EvaluateStateName =
   | "ROUND_READY"
   | "CONVERGED"
   | "INDETERMINATE"
+  | "POLL_BUDGET_SPENT"
   | "HEAD_LAG"
   | "HEAD_MOVED"
   | "MERGEABILITY_UNKNOWN"
@@ -226,7 +227,7 @@ export const TERMINAL_STATES: Readonly<
       },
     },
   },
-  // Exit 4's family: the NOT_SETTLED class label below groups these five.
+  // Exit 4's family: the NOT_SETTLED class label below groups these states.
   HEAD_LAG: {
     exitCode: 4,
     category: "state",
@@ -266,6 +267,14 @@ export const TERMINAL_STATES: Readonly<
     emittedBy: EVALUATE_EMITTER,
     meaning:
       "The forge has not yet worked out whether the pull request merges cleanly. Read again.",
+  },
+  POLL_BUDGET_SPENT: {
+    exitCode: 4,
+    category: "state",
+    terminal: false,
+    emittedBy: `${EVALUATE_EMITTER}, drive-status.ts (poll deadline)`,
+    meaning:
+      "The poll budget ended before the next iteration or before a pull-request read could start. The probe reports how long it waited. A request that was sent and failed retains its read failure.",
   },
   PR_NOT_OPEN: {
     exitCode: 5,
@@ -376,7 +385,7 @@ export const TERMINAL_STATES: Readonly<
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
     meaning:
-      "The state could not be read, or a step failed: `drive.ts` also ends with it when a pass fails. Never a settled state; read what the drive printed before re-arming.",
+      "The state could not be read, or a step failed: `drive.ts` also ends with it when a pass fails. A probe stop marked as a read failure keeps the read diagnostic, and the dispatcher re-drives it once per pull-request head. A second such stop on the same head needs a person.",
     report: {
       stop: "stopped on a failure; the drive's log says what failed",
       cause: "tool-failed",
@@ -423,13 +432,13 @@ export const TERMINAL_STATES: Readonly<
     },
   },
 
-  // ── class label: never itself emitted, groups exit 4's five states ───────
+  // ── class label: never itself emitted, groups exit 4's states ───────
   NOT_SETTLED: {
     exitCode: 4,
     category: "class-label",
     terminal: false,
     emittedBy:
-      "never emitted — a class label for HEAD_LAG / AWAITING_REVIEWER / STALE_REVIEW / HEAD_MOVED / MERGEABILITY_UNKNOWN",
+      "never emitted — a class label for HEAD_LAG / AWAITING_REVIEWER / STALE_REVIEW / HEAD_MOVED / MERGEABILITY_UNKNOWN / POLL_BUDGET_SPENT",
     meaning:
       "The name of every state that shares exit `4`: the pull request is not ready to judge yet. Never itself a `state`; the caller waits and runs the drive again. `drive.ts` also exits `4` after the review converged when another driver holds the mark-Ready lease, when the head moved, the CI hold label changed or the forge could not be read as the hold was released, when a read of the cancelled-run recovery kept failing in a way waiting can clear, when no fresh result of a required check came in time (where a skipped or cancelled check means waiting cannot help: re-run the check, then re-arm), and when the drive keeps a draft that the reviewer skips (mark it Ready, then re-arm).",
     report: {

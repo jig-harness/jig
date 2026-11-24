@@ -578,6 +578,7 @@ const REDRIVEN: ReadonlyMap<string, string> = new Map([
   ["deadline", "a drive whose pass deadline recurred"],
   ["ci-infra", "a drive whose checks kept failing on the infrastructure"],
   ["check-runs", "a drive whose check-runs listing could not be read"],
+  ["probe-read", "a drive whose status probe could not read the forge"],
   ["forge-limit", "a drive that stopped on the forge's rate limit"],
 ]);
 
