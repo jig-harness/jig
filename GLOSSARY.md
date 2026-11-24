@@ -1931,7 +1931,7 @@ make, use the entry's term instead.
   [model routing policy](modules/M0-instruction-architecture/reference/model-routing-policy.md)
   sets out; a separately declared tier is checked only where the metadata
   carries one. That pinning rule applies to agent and skill metadata. Shared
-  routing configuration instead classifies models for implementer selection:
+  routing configuration instead classifies models for shared model selection:
   its declarations are per runtime and can name a known family spelling or an
   exact model identifier. An explicit declaration (`routing.model_tiers`, or
   its older spelling `routing.family_tiers`) comes first and the family the

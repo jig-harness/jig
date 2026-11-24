@@ -23,6 +23,13 @@ by writing its own policy page (this file is a skeleton).
 > [decision layer](../../../GLOSSARY.md) at a time, each with a named
 > [A/B baseline](../../../GLOSSARY.md).
 
+This invariant governs model pins and tier declarations in agent and skill
+metadata, including a skill's explicit judgment-pass setting. Shared routing
+configuration is a separate declaration table: it classifies a model for
+selection by a runtime, and may name either a known family spelling or an
+exact model identifier. Its validation and merge rules belong with the routing
+configuration, not this metadata-pinning policy.
+
 Where a runtime has no family aliases, the pin uses the vendor's most general
 model name, or one central name the repository maps to a release in a single
 place; either way, no agent or skill carries a release of its own
