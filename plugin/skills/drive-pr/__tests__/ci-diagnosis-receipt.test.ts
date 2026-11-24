@@ -68,17 +68,8 @@ const park = (overrides: Partial<DriveState["parked"][number]> = {}) => ({
   class: HUMAN_DECISION_CLASS,
   ...overrides,
 });
-const judge = (
-  answer: DiagnosisReport | null,
-  state: DriveState | null,
-  threadOpen: boolean | null = null,
-) =>
-  judgeReceipt(
-    "999",
-    answer,
-    async () => state,
-    async () => threadOpen,
-  );
+const judge = (answer: DiagnosisReport | null, state: DriveState | null) =>
+  judgeReceipt("999", answer, async () => state);
 
 describe("readDiagnosis", () => {
   it("reads a diagnosis with a tracker issue key", () => {
@@ -183,25 +174,12 @@ describe("judgeReceipt", () => {
     });
   });
 
-  it("keeps a review thread's park while the forge reports the thread open", async () => {
+  it("keeps a review thread's park whether or not its thread is resolved", async () => {
     const answer = read({ diagnosis: "done", parked: FILING });
-    expect(
-      await judge(answer, stateWith([park({ kind: "thread" })]), true),
-    ).toEqual({
+    expect(await judge(answer, stateWith([park({ kind: "thread" })]))).toEqual({
       text: `${parkTag(FILING)}no issue filed (parked for a person). done`,
       pushedHead: undefined,
       parked: true,
-    });
-  });
-
-  it("refuses a review thread's park once its thread is resolved or unreadable", async () => {
-    const answer = read({ diagnosis: "done", parked: FILING });
-    const held = stateWith([park({ kind: "thread" })]);
-    expect(await judge(answer, held, false)).toEqual({
-      refused: expect.stringContaining("not open"),
-    });
-    expect(await judge(answer, held, null)).toEqual({
-      refused: expect.stringContaining("could not be read"),
     });
   });
 

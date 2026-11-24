@@ -22,7 +22,6 @@ import { DRIVE_EXIT } from "../status/terminal-states.ts";
 import { recordCiAttempt } from "./ci-attempt-record.ts";
 import { afterTakeover } from "./ci-repair-pass.ts";
 import { mirrorNow } from "./ledger.ts";
-import { threadComments } from "./park-answers.ts";
 import { readDriveState } from "./rearm.ts";
 import { type RepairCi, runRepairPass } from "./repair.ts";
 import type { DriveRoundContext } from "./round-context.ts";
@@ -172,10 +171,6 @@ export async function judgeReceipt(
   answer: DiagnosisReport | null,
   readState: (pr: string) => Promise<DriveState | null> = (p) =>
     readDriveState(p, true),
-  threadOpen: (key: string) => Promise<boolean | null> = async (key) => {
-    const thread = await threadComments(key);
-    return thread?.isResolved == null ? null : !thread.isResolved;
-  },
 ): Promise<Receipt> {
   if (answer === null) return { refused: INCOMPLETE };
   if ("staleHead" in answer || "standDown" in answer) return answer;
@@ -193,25 +188,16 @@ export async function judgeReceipt(
         "The diagnosing repair report names an open park, but the drive state could not be read to verify it.",
     };
   const park = state.parked.find((p) => p.key === answer.parked);
-  // A review thread's park can outlive its thread: it stands for the decision
-  // only while the forge reports the thread open.
-  const open =
-    park === undefined
-      ? false
-      : park.kind === "thread"
-        ? await threadOpen(park.key)
-        : true;
-  if (open === true)
+  // Every stored park is handed back to a person, a resolved thread's
+  // included: the re-arm settles it, so the receipt accepts any park held.
+  if (park !== undefined)
     return {
       text: `${parkTag(answer.parked ?? "")}no issue filed (parked for a person). ${diagnosis}`,
       pushedHead,
       parked: true,
     };
   return {
-    refused:
-      open === null
-        ? `The diagnosing repair report names park ${redactReportText(answer.parked ?? "")}, a review thread whose state could not be read.`
-        : `The diagnosing repair report names park ${redactReportText(answer.parked ?? "")}, but that key is not open in the drive's parked set.`,
+    refused: `The diagnosing repair report names park ${redactReportText(answer.parked ?? "")}, but that key is not open in the drive's parked set.`,
   };
 }
 
