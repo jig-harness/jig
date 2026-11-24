@@ -1642,10 +1642,22 @@ describe("summary-findings marker overrides", () => {
              { id: 15, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 1 -->\\n- \`a.ts\` — finding' },
              { id: 16, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: def5678 -->\\n<!-- ai-review-round: 1 -->\\nall clear' },
            ], false)?.id,
+           abbreviatedAcknowledgementSelected: m.reviewerSticky([
+             { id: 17, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234def5678 -->\\n- \`a.ts\` — finding' },
+             { id: 18, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\nall clear' },
+           ], false)?.id,
            stickyTimestamp: s.reviewerStickyIn([
              { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 1 -->', updated_at: '2026-11-24T10:00:00Z' },
              { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 1 -->\\nacknowledged', updated_at: '2026-11-24T11:00:00Z' },
            ], (login) => login === 'reviewer[bot]', '<!-- other-review -->', 'custom+sha').updatedAt,
+           skipKeepsReviewWitness: s.reviewerStickyIn([
+             { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 2 -->', updated_at: '2026-11-24T10:00:00Z' },
+             { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- ai-review-skip-notice -->\\n\`def5678\` skipped\\n<!-- /ai-review-skip-notice -->', updated_at: '2026-11-24T11:00:00Z' },
+           ], (login) => login === 'reviewer[bot]', '<!-- other-review -->', 'custom+sha'),
+           lowerRoundDoesNotReplace: s.reviewerStickyIn([
+             { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 2 -->', updated_at: '2026-11-24T10:00:00Z' },
+             { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: def5678 -->\\n<!-- ai-review-round: 1 -->', updated_at: '2026-11-24T11:00:00Z' },
+           ], (login) => login === 'reviewer[bot]', '<!-- other-review -->', 'custom+sha'),
            ignoresExamples: s.reviewerStickyBody(
              { user: { login: 'reviewer[bot]' }, body: '> <!-- other-review -->\\n\`\`\`\\n<!-- other-review -->\\n\`\`\`\\n    <!-- other-review -->' },
              (login) => login === 'reviewer[bot]',
@@ -1687,8 +1699,20 @@ describe("summary-findings marker overrides", () => {
     // A clean stamp for a different reviewed head is a replacement, even when
     // the reviewer reuses the previous round marker.
     expect(got.cleanReplacementSelected).toBe(16);
+    expect(got.abbreviatedAcknowledgementSelected).toBe(17);
     // A same-head acknowledgement cannot attest a reviewer rerun in progress.
     expect(got.stickyTimestamp).toBe("2026-11-24T10:00:00Z");
+    expect(got.skipKeepsReviewWitness).toMatchObject({
+      sha: "abc1234",
+      round: 2,
+      updatedAt: "2026-11-24T10:00:00Z",
+    });
+    expect(got.skipKeepsReviewWitness.skip).not.toBeNull();
+    expect(got.lowerRoundDoesNotReplace).toMatchObject({
+      sha: "abc1234",
+      round: 2,
+      updatedAt: "2026-11-24T10:00:00Z",
+    });
     expect(got.ignoresExamples).toBeNull();
     // And the reviewed SHA is actually extracted under the custom name — it
     // scopes the unaccounted-slot keys, so failing to read it degrades every

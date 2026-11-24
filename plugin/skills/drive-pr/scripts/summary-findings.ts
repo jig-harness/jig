@@ -85,6 +85,7 @@ import {
   reviewerStickyBody,
   reviewerStickyIn,
   reviewedShaIn,
+  differentReviewedHead,
 } from "./lib/status/reviewer-sticky.ts";
 import {
   headerOf,
@@ -1430,8 +1431,7 @@ function isCleanReplacement(
 ): boolean {
   return (
     !carriesFindingEvidence &&
-    reviewedSha !== "" &&
-    reviewedSha !== selectedReviewedSha
+    differentReviewedHead(reviewedSha, selectedReviewedSha)
   );
 }
 

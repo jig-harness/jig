@@ -108,6 +108,20 @@ export function reviewedShaIn(body: string, shaMarker: string): string {
   return lastStamp(body, markerRe);
 }
 
+/** Whether two supported reviewed-SHA markers identify the same commit. */
+export function sameReviewedHead(left: string, right: string): boolean {
+  const a = left.toLowerCase();
+  const b = right.toLowerCase();
+  return (
+    a !== "" && b !== "" && (a === b || a.startsWith(b) || b.startsWith(a))
+  );
+}
+
+/** Whether two non-empty reviewed-SHA markers identify different commits. */
+export function differentReviewedHead(left: string, right: string): boolean {
+  return left !== "" && right !== "" && !sameReviewedHead(left, right);
+}
+
 /** A comment's body when the reviewer wrote it as its sticky summary, else `null`. */
 export function reviewerStickyBody(
   raw: unknown,
@@ -242,13 +256,25 @@ export function reviewerStickyIn(
     // A same-head acknowledgement is auxiliary evidence, not proof a rerun
     // published a review. It must not replace the selected sticky's timestamp.
     // A new reviewed head or a newer explicit review round is a replacement.
+    const newerRound =
+      round !== null && (sticky.round === null || round > sticky.round);
+    // A lower declared round cannot replace the selected review just because
+    // it names another head: summary selection rejects that candidate too.
     const replacesSticky =
       bodySha !== "" &&
       (sticky.sha === "" ||
-        bodySha !== sticky.sha ||
-        (round !== null && (sticky.round === null || round > sticky.round)));
+        newerRound ||
+        (!sameReviewedHead(bodySha, sticky.sha) &&
+          (round === null || sticky.round === null || round >= sticky.round)));
     // An unstamped comment qualifies only when it carries a skip notice.
     if (!replacesSticky && skip === null) continue;
+    // A skip says this comment did not review code. Retain the last affirmative
+    // review witness and its timestamp while making the newer skip available
+    // to the skipped-head check.
+    if (!replacesSticky) {
+      sticky = { ...sticky, skip };
+      continue;
+    }
     sticky = {
       sha: bodySha,
       round,
