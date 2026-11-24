@@ -313,12 +313,6 @@ export function repositoryConfigPath(
   return nonEmpty(env.JIG_OVERLAY) ?? join(root, OVERLAY_RELPATH);
 }
 
-/**
- * A field path for a message: segments joined by `.`, a segment that holds
- * anything but letters, digits, `_` and `-` written as a JSON string
- * (`do_item.agents.title_keywords."node.js"`), so the path reads back
- * unambiguously with `parseField`.
- */
 const escapeDisplayControls = (value: string): string =>
   value.replace(
     /[\p{Cc}\p{Bidi_Control}]/gu,
@@ -333,11 +327,12 @@ export function formatDisplayValue(value: string): string {
     : value;
 }
 
-/** A configuration value rendered inside a Markdown report without markup. */
-export function formatMarkdownValue(value: string): string {
-  return formatDisplayValue(value).replace(/[`*_[\]<>]/g, "\\\\$&");
-}
-
+/**
+ * A field path for a message: segments joined by `.`, a segment that holds
+ * anything but letters, digits, `_` and `-` written as a JSON string
+ * (`do_item.agents.title_keywords."node.js"`), so the path reads back
+ * unambiguously with `parseField`.
+ */
 export function formatField(path: readonly string[]): string {
   return path
     .map((key) =>

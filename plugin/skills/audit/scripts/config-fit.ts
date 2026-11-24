@@ -65,6 +65,7 @@ import {
   sizePointsFindings,
   skillValidation,
 } from "./lib/section-validation.ts";
+import { lit } from "../../decide/scripts/sheet-kit/markdown.ts";
 import {
   isMapping as isRecord,
   readConfigFile,
@@ -2300,7 +2301,7 @@ export function render(report: FitReport): string {
     const rows = report.findings.filter((f) => f.severity === severity);
     if (rows.length === 0) continue;
     lines.push(`## ${title} (${rows.length})`, "");
-    for (const f of rows) lines.push(`- \`config/${f.id}\`: ${f.message}`);
+    for (const f of rows) lines.push(`- \`config/${f.id}\`: ${lit(f.message)}`);
     lines.push("");
   }
   lines.push(...closingSections(report));

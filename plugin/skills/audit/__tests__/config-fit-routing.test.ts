@@ -6,6 +6,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { lintTaxonomyText } from "../../file-issue/scripts/lib/taxonomy.ts";
+import { render, type FitReport } from "../scripts/config-fit.ts";
 import { runScript, scratchRepo } from "./helpers.ts";
 
 const dirs: string[] = [];
@@ -167,4 +168,26 @@ test("a tier on a Judgment family is accepted and reported", () => {
 test("routing with no Judgment mapping and no family tiers reports nothing", () => {
   const found = findings("routing: {}\n");
   expect(found.some((f) => f.id === "report:routing.models")).toBe(false);
+});
+
+test("the Markdown rendering keeps routing findings literal", () => {
+  const report: FitReport = {
+    file: ".config/jig.yaml",
+    configured: true,
+    forge: "offline",
+    facts: {},
+    findings: [
+      {
+        id: "report:routing.models",
+        severity: "info",
+        message:
+          "routing.model_tiers.codex.model**name reads model**name as a strategic family: **not a separate result**",
+      },
+    ],
+    declined: [],
+    suggestions: [],
+  };
+  expect(render(report)).toContain(
+    "model\\*\\*name reads model\\*\\*name as a strategic family: \\*\\*not a separate result\\*\\*",
+  );
 });
