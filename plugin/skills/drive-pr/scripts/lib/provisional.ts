@@ -148,6 +148,11 @@ export function standingProvisionalKeys(
 const lines = (text: string): string[] =>
   text.split("\n").filter((k) => k !== "");
 
+type ParkedSets = {
+  keys: Set<string>;
+  reversals: Set<string>;
+};
+
 /**
  * The round gate's parked keys, and those of them that hold a reversed
  * provisional decision; `null` when either could not be read, which the
@@ -159,7 +164,7 @@ export async function readParkedSets(ctx: {
   driveStateScript: string;
   pr: string;
   helperTimeoutSec: number;
-}): Promise<{ keys: Set<string>; reversals: string[] } | null> {
+}): Promise<ParkedSets | null> {
   const read = (cmd: string) =>
     run(tsArgv(ctx.driveStateScript, [cmd, ctx.pr]), {
       stderr: "inherit",
@@ -171,26 +176,55 @@ export async function readParkedSets(ctx: {
   if (reversals.code !== 0) return null;
   return {
     keys: new Set(lines(all.stdout)),
-    reversals: lines(reversals.stdout),
+    reversals: new Set(lines(reversals.stdout)),
   };
 }
 
 /**
- * How many reversed provisional decisions are parked on no live thread or
- * summary finding: a `decide` ruling's key is neither, and a reopened thread
- * may be resolved again, yet each awaits a person and keeps the drive from
- * converging.
+ * Count the parks that have no live review thread or summary finding and
+ * still await a person: a reversed provisional decision, wherever it was
+ * made, and any other park, whether or not the thread it names is still open.
  */
-export function unlistedReversals(
-  reversals: readonly string[],
-  threads: ReadonlyArray<{ threadId?: unknown }>,
-  summary: { unaddressed: ReadonlyArray<{ fingerprint: string }> },
-): number {
-  const counted = new Set([
-    ...threads.map((t) => String(t.threadId)),
-    ...summary.unaddressed.map((f) => f.fingerprint),
+export function unlistedParkDetails(
+  parked: ParkedSets,
+  report: {
+    openThreadKeys: string[] | null;
+    summaryUnaddressedKeys: string[] | null;
+    actionableParkKeys: string[] | null;
+  },
+): {
+  reversalParked: number;
+  standaloneParked: number;
+  standaloneNote: string;
+} {
+  report.actionableParkKeys = actionableParkKeys(parked);
+  const listedKeys = new Set([
+    ...(report.openThreadKeys ?? []),
+    ...(report.summaryUnaddressedKeys ?? []),
   ]);
-  return reversals.filter((k) => !counted.has(k)).length;
+  const unlisted = [...parked.keys].filter((key) => !listedKeys.has(key));
+  const reversalParked = unlisted.filter((key) =>
+    parked.reversals.has(key),
+  ).length;
+  const standaloneParked = unlisted.filter(
+    (key) => !parked.reversals.has(key),
+  ).length;
+  return {
+    reversalParked,
+    standaloneParked,
+    standaloneNote:
+      standaloneParked === 0 ? "" : `, ${standaloneParked} standalone park(s)`,
+  };
+}
+
+/**
+ * The parked keys a hand-back waits on: every park. A park of a thread that
+ * has since been resolved is still handed back; the re-arm settles it without
+ * an answer when none, no condition note and no unreadable history stands on
+ * it, and unparks nothing until every stored park is settled.
+ */
+export function actionableParkKeys(parked: ParkedSets): string[] {
+  return [...parked.keys].sort((a, b) => a.localeCompare(b));
 }
 
 /** The first comment a person wrote after a thread's last provisional reply. */

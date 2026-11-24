@@ -56,7 +56,13 @@ import { driveExitReport } from "../status/terminal-states.ts";
 import { readDriveState } from "./rearm.ts";
 import { driverRuntime } from "./runtime.ts";
 import { finishCause, finishNext } from "../state/round-finish.ts";
-import { exitOf, oneLine, type StallFinish, stopText } from "./stop-text.ts";
+import {
+  exitOf,
+  leadPark,
+  oneLine,
+  type StallFinish,
+  stopText,
+} from "./stop-text.ts";
 
 /** What marks a text cut short. */
 const ELLIPSIS = "…";
@@ -97,13 +103,13 @@ function asQuestion(item: ParkedItem): string {
   return `${cutTo(body, QUESTION_MAX - 1)}?`;
 }
 
-/** The question and framed decision of the parked item a park's stop prints: the first. */
+/** The question and framed decision of the parked item a park's stop prints. */
 export function parkAsk(
   code: number,
   state: DriveState | null,
 ): { question: string; decision?: ParkedDecision } | null {
   if (code !== exitOf("HITL_PARKED")) return null;
-  const first = state?.parked[0];
+  const first = leadPark(state);
   if (first === undefined) return null;
   const decision = first.decision;
   return decision === undefined
@@ -220,7 +226,7 @@ function checkedDriverReport(
       ? [base]
       : [
           { ...base, ...ask },
-          { ...base, question: asQuestion(state?.parked[0] as ParkedItem) },
+          { ...base, question: asQuestion(leadPark(state) as ParkedItem) },
           base,
         ];
   for (const report of tries) {

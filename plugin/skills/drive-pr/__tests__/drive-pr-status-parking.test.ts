@@ -12,15 +12,44 @@ import {
   HEAD,
   binDir,
   writeFixture,
+  probeIn,
+  REVIEWER_RUN,
   park,
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
 
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { FAILING_RUN } from "./drive-loop-harness.ts";
 
 useDrivePrSuite();
 
 describe("drive-status.ts HITL parking", () => {
+  it("parks when a standalone rules decision is the only work left on a red head", async () => {
+    const { dir, stateDir } = writeFixture({
+      threads: [],
+      checkRuns: [REVIEWER_RUN, FAILING_RUN],
+    });
+    await park(stateDir, "ratchet-rule", "finding", "rules");
+    const result = await probeIn(dir, stateDir);
+    expectSpawnExit({ ...result, stdout: JSON.stringify(result.json) }, 8);
+    expect(result.state).toBe("HITL_PARKED");
+    expect(result.json.ci).toBe(`failing: ${FAILING_RUN.name}`);
+    expect(result.json.work).toMatchObject({ parkedKeys: ["ratchet-rule"] });
+  });
+
+  it("parks on a parked thread that is no longer open", async () => {
+    // Park the thread while it is open, then read the gate where it is gone.
+    const { stateDir } = writeFixture({
+      threads: [{ id: "PRRT_gone", path: "a.ts", bot: true }],
+    });
+    await park(stateDir, "PRRT_gone", "thread");
+    const { dir } = writeFixture({ threads: [] });
+    const result = await probeIn(dir, stateDir);
+    expect(result.json.work).toMatchObject({ parkedKeys: ["PRRT_gone"] });
+    expect(result.state).toBe("HITL_PARKED");
+  });
+
   it("HITL_PARKED — every remaining thread awaits a human", async () => {
     const { dir, stateDir } = writeFixture({
       threads: [{ id: "PRRT_parked", path: "a.ts", bot: true }],
@@ -64,6 +93,7 @@ describe("drive-status.ts HITL parking", () => {
       ],
     });
     await park(stateDir, "PRRT_parked", "thread");
+    await park(stateDir, "ratchet-rule", "finding", "rules");
     const proc = Bun.spawn(
       scriptArgv(
         join(SCRIPTS, "drive-status.ts"),
