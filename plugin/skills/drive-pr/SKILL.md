@@ -3976,8 +3976,10 @@ evidence immediately before the spawn:
   exhaust them can still hide the transcript. A pass failure whose walk was
   cut short before it found a wall says so in the drive's closing report
   (cause `unknown`), since "no wall found" was then not a finding; that
-  warning is withheld when the by-name lookup read the pass's session whole,
-  because the pass's own transcript was then checked. Subagent records carry the parent
+  Claude scan's part of that warning is withheld when the by-name lookup read
+  the pass's session whole, because the pass's own transcript was then
+  checked; another adapter's truncated scan (Codex) still raises its own.
+  Subagent records carry the parent
   session id and use the same exact-id correlation below. Both vendors
   create a session's file when the session starts, so anything
   appearing afterwards is a session started during the pass — and, absent the
