@@ -74,6 +74,25 @@ describe("resolveModelValue", () => {
     );
   });
 
+  it("resolves a classified Claude model for the CLI pass launch", () => {
+    const routing = () => ({
+      routing: {
+        models: { "claude-code": { complex: "claude-provider-model" } },
+        model_tiers: {
+          "claude-code": {
+            "claude-provider-model": {
+              tier: "strategic",
+              reason: "the provider supports this CLI model",
+            },
+          },
+        },
+      },
+    });
+    expect(resolveModelValue("complex", "--pass-model", routing).model).toBe(
+      "claude-provider-model",
+    );
+  });
+
   it("gives a Codex tier or family alias as the model the family names", () => {
     expect(
       resolveModelValue("complex", "--pass-model", noRouting, "codex"),
