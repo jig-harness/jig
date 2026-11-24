@@ -288,7 +288,9 @@ removal in step 13):
   recovery read compares the effective destination with the recorded one
   inside the same invocation, on the adapter that then performs the
   operation, and refuses on a mismatch; an earlier check does not stand in
-  for it. Every retry reuses the recorded
+  for it. Where the tracker commands in use accept no expected destination,
+  the invocation cannot make that check: delegate no filing or recovery read
+  through it, and park the filing for a person. Every retry reuses the recorded
   tracker and marker; changing the tracker needs an explicit decision from
   the person before anything is written. On return, recover the key from the
   filing session's durable result or by searching that tracker for the marker
@@ -314,15 +316,19 @@ removal in step 13):
   removals included. Revision order is judged per originating decision and
   target, and only among updates that set decision state; an issue key is a
   filing fact, never rejected as stale, and is reconciled onto the entry
-  whether or not the task is still approved; when the track was removed
+  whether or not the task is still approved; a pending filing records the
+  generation it started under and its key update carries that generation,
+  so the key reaches the entry it was filed for and never one recreated
+  under the same target; when the track was removed
   while the filing was in flight, the key is recorded against the removed
   entry's durable record and the update acknowledged without recreating the
   track. A track's recorded removal
   names its originating decision and the revision it followed, and the
   track carries a generation that each removal and each authorised
   recreation advances; every update that changes track state carries the
-  generation it expects, and the keeper rejects a delivery for a superseded
-  generation. After a removal the keeper rejects every delivery
+  generation it expects, and the keeper applies a delivery only on an exact
+  generation match: it rejects a superseded generation and holds one ahead
+  of its own until it confirms the lifecycle transition that reaches it. After a removal the keeper rejects every delivery
   that would recreate the track, from any decision, up to and including the
   recorded revision for that decision, and recreates it only on the
   person's explicit authorisation; an unrelated owed update for another
@@ -356,9 +362,13 @@ evidence, so it alone cannot do this, even when it lists one launch (that
 entry may be an earlier pickup or only wrapper admission), and never when several launches exist for the
 issue: read the dispatcher's per-launch record (its `launches` table, with
 process and session evidence) read-only on the host that runs the
-dispatcher, through a read-only query of that table; when the dispatcher is
-on another host, ask that host's operator session for the matching launch
-and its milestone evidence. Where it is unreadable leave the milestone
+dispatcher, taking liveness from the dispatcher's own launch-state
+derivation, never from a claim row alone (a wrapper can die leaving its
+claim), and requiring a recorded milestone for an ended launch; when the
+dispatcher is on another host, ask a maintainer, or a read-only diagnostic
+session authorized to inspect that host's launch evidence, for the matching
+launch and its milestone evidence (an operator session cannot: it has only
+`jig ask` and `jig send`). Where it is unreadable leave the milestone
 unconfirmed. A milestone is wrapper admission or session start; an earlier
 failure before admission does not release it; work that needs the send itself
 confirmed keeps waiting for the mechanism's terminal answer. Then read the
