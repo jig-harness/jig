@@ -80,6 +80,7 @@ import {
   retainedDiagnosis,
 } from "./ci-actions.ts";
 import { type ArbiterRuling, isOptionalRulings } from "./rulings.ts";
+import { isOptionalRetryCount } from "./deadline-retries.ts";
 import {
   isOptionalResolvedParks,
   redactedReceipt,
@@ -137,6 +138,8 @@ export interface Ledger {
   attemptsHead: string;
   /** The deadline restarts already spent, shared with a takeover. */
   deadlineRetries: number;
+  /** The rounds a re-arm added to the round budget, shared with a takeover; absent for none. */
+  roundsGranted?: number;
   phase: string;
   lastCountedHead: string;
   verifiedSha: string;
@@ -204,6 +207,7 @@ export function ledgerFromState(
     attempts: s.attempts,
     attemptsHead: s.attemptsHead,
     deadlineRetries: s.deadlineRetries ?? 0,
+    ...(s.roundsGranted ? { roundsGranted: s.roundsGranted } : {}),
     phase: s.phase,
     lastCountedHead: s.lastCountedHead,
     verifiedSha: s.verifiedSha,
@@ -235,7 +239,15 @@ export function ledgerFromState(
       detail: boundedCiDetail(redact(action.detail)),
     })),
     rulings: s.rulings ?? [],
-    resolvedParks: (s.resolvedParks ?? []).map(redactedReceipt),
+    // Readers of earlier releases accept only `answered` and `provisional`
+    // outcomes and drop the whole field on another, so a park the forge
+    // already resolved travels as an answerless `answered` receipt.
+    resolvedParks: (s.resolvedParks ?? []).map((r) => {
+      const receipt = redactedReceipt(r);
+      return receipt.outcome === "resolved-thread"
+        ? { ...receipt, outcome: "answered" as const }
+        : receipt;
+    }),
     driver: ledgerDriverWithProbe(s, opts.driver),
     narrative: opts.narrative.slice(-NARRATIVE_LINES).map(redact),
     cut: s.resolvedParksLost === true ? [OLDER_PARKS_CUT] : [],
@@ -487,6 +499,7 @@ function ledgerFault(v: Record<string, unknown>): string {
     ciActions: () => isOptionalCiActions(v.ciActions),
     rulings: () => isOptionalRulings(v.rulings),
     resolvedParks: () => isOptionalResolvedParks(v.resolvedParks),
+    roundsGranted: () => isOptionalRetryCount(v.roundsGranted),
     driver: () => isLedgerDriver(v.driver),
   };
   return Object.entries(LEDGER_PAYLOAD_FIELDS)
@@ -991,6 +1004,10 @@ export function seedFromLedger(
       : {}),
     ledgerGeneration: l.generation,
   };
+  // The ledger is the history being resumed: an absent grant means none,
+  // whatever this clone's older state held.
+  if (l.roundsGranted === undefined) delete state.roundsGranted;
+  else state.roundsGranted = l.roundsGranted;
   if (!isUsableState(state, local.pr))
     return {
       error: `the ledger (generation ${l.generation}) does not describe a usable drive state`,

@@ -65,6 +65,7 @@ describe("runCheck — the drive.ts emitter checks reach the real entry point", 
   };
 
   const healthyModule = [
+    "export const UNSUPPORTED_CLI_EXIT = 2;",
     "export const MAX_ROUNDS_EXIT = 6;",
     "export const SINGLE_INSTANCE_LOCK_EXIT = 11;",
     "export const WORKTREE_UNCLEAN_EXIT = 12;",
@@ -89,6 +90,7 @@ describe("runCheck — the drive.ts emitter checks reach the real entry point", 
   // resolves to THIS import, not merely to a same-named identifier.
   const healthySource = [
     "import { driverOnlyExitCode } from './lib/status/terminal-states.ts';",
+    "export const UNSUPPORTED_CLI_EXIT = driverOnlyExitCode('UNSUPPORTED_CLI');",
     "export const PASS_DEADLINE_EXIT = driverOnlyExitCode('PASS_DEADLINE');",
     "export const QUOTA_PARKED_EXIT = driverOnlyExitCode('QUOTA_PARKED');",
     "export const MAILBOX_STOPPED_EXIT = driverOnlyExitCode('MAILBOX_STOPPED');",

@@ -260,6 +260,43 @@ same place to paste the comment; the card’s pull-request identity link
 opens the pull request itself. The For everyone filter uses the line's
 answer state. Counts marked “here” reflect answers kept by this browser, and the decision totals count every card, so they are hidden while a filter is on.
 
+**One card for an identical question.** Needs whose decisions are identical
+apart from their own target are one card, a [question group](../GLOSSARY.md)
+([need-classes.md § Identical questions fold](need-classes.md#identical-questions-fold)).
+The card asks the question once, with the target replaced by "each item" or
+"each pull request", says how many it covers ("8 items"), and lists every
+target with its repository, link, age and what became of its answer; the
+opened card shows each target's own evidence, what was already done and the
+reason. A box beside each target leaves it out ("all but these"); the ones
+left out stay open. A pick on the card is kept under the group's identity
+and the framing it was made for; the group's count and list change
+on the next read, and a change of membership changes the framing, which
+drops the pick. An answer covers exactly the targets listed when it
+was sent, which the confirmation names. Send posts one answer per target
+listed, each that target's own station answer with its own key and digest,
+as the person ([ADR-0019](../docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md)),
+so every station checks its answer on its own; a listed target with no Send
+holds the card's Send back until it is left out. A guarded option shows its
+check panel once, naming every target it covers. Copy takes one
+`jig send` command per target listed, since no one comment answers several
+pull requests or issues. A target whose comment GitHub refused, or may have
+posted, is left out of the next send until the person lists it again. One
+that may have posted is kept in the target's own record, the one its own
+card's Send keeps, so either card holds that answer back, says "Still
+unchecked" and offers "I checked the linked target; allow Send again"; a
+send that posted only some of a target's comments is kept as only those, and
+the target's row says "Sent here" only for the answer the card would send it
+now. A pick is kept for the targets and framings it was made for: a target
+joining or leaving, or one framed or parked again, drops it and says so, and
+a send that reached every target forgets it. A target whose answer the tick
+refused, or whose facts changed so it no longer matches, leaves the group and
+is a card of its own. The tab, the answer and
+each act's heading count needs, one per target, as `jig ask --waiting`
+lists one entry per target address. The filter shows a group's card when
+any of its targets' repositories, stages or people matches; the card still
+lists, counts and answers every target, so leave out the ones the filter
+would hide before sending.
+
 **Where the facts come from.** Merge, Needs you, Running, Queue and
 Hosts are drawn from the line each tick writes, with the forge facts its
 board read gathered, so drawing them makes no forge or tracker call, and
@@ -306,6 +343,24 @@ board read in an hour the dashboard read.
 Needs you is read again at each request: nothing is queued in it, and
 acting on an entry writes the record its station reads. Every card ends
 with the tick and the host it was read at.
+
+**Settled recently.** What left Needs you does not vanish without a trace.
+Below the open cards, a section folded to one line with its count ("12
+settled in the last 24 hours · show") lists each need that left the line in
+the window, newest first: its target, repository and link, the question or
+act it carried, when it left, by whom and how, and a link to its History
+rows. *By whom* is the person (their login, and the comment they answered
+in), the tick (naming the rule), the steward (naming its record), or no one
+because the need's facts changed (its pull request is no longer open).
+An answer a station took and did not carry out shows with its outcome, held
+or refused, and its reason, while its card stays open above; one answer that
+settled several targets is one entry listing them. The tick writes one
+`need_leaves` row for every need that the line it writes no longer holds
+that the line before held, whatever its notify stage did, so a need that
+leaves and returns is two entries, and the line's `settled` list is the last
+day of those rows with the unsettled answers. The section adds no forge or
+tracker call. `jig ask --settled --json` answers the same list for the
+panel's inbox and for an agent.
 
 **Marks on every pull request card.** To item 36's status row (conflicts,
 checks, threads, merge;
@@ -468,18 +523,33 @@ host is `dashboard (browser)` since a browser has no machine name to
 digest. One comment per decision, as `jig send` answers one key per
 comment, since a comment carries one record. The page posts each through
 GitHub's REST API (`POST /repos/{owner}/{repo}/issues/{n}/comments`) itself,
-from the browser, with a fine-grained token the person pastes once per
-browser
+from the browser, with the fine-grained token the person pasted in that
+browser for the target repository's owner
 ([ADR-0019](../docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md)). So:
 
-- **Who writes, and with what.** The person, with their own token. The
-  page's settings panel tests a pasted token by asking GitHub who it signs
-  in as (`GET /user`), names that login, keeps the token in the browser's
-  local storage alone (for the page's own origin; a browser that refuses
-  storage keeps it while the page stays open) and forgets it on request. A
-  card names the login it sends as where the park names another person; the
-  drive counts any author its rule for answers trusts, so this informs and
-  never blocks.
+- **Who writes, and with what.** The person, with their own tokens, one per
+  GitHub account they answer as. The page's settings panel tests each
+  pasted token by asking GitHub who it signs in as (`GET /user`), names
+  that login, keeps the token in the browser's local storage alone (for the
+  page's own origin; a browser that refuses storage keeps it while the page
+  stays open) with the repository owners it answers for, and forgets each
+  on request, leaving the others kept. A card names the login it sends as
+  where the park names another person; the drive counts any author its rule
+  for answers trusts, so this informs and never blocks.
+- **Which token a card sends with.** The token that names the card's target
+  repository's owner (`example-org` covers every `example-org/*`
+  repository, compared without case), or else the one token that names no
+  owner, which answers for every owner no other token names. A card whose
+  owner no token answers for has no Send, names that owner and points at
+  the settings; Copy still works. One owner maps to one token, one token at
+  most names no owner, and one account keeps one token: the panel refuses a
+  token or a mapping that would break these, naming the token that holds
+  the owner, rather than choosing. The panel also names the owners of the
+  cards that can send that no token answers for. A browser that kept the
+  single token of the earlier storage shape keeps it as the token that
+  names no owner. Tokens are chosen by owner, not by repository, because an
+  owner's repositories are reached by one account
+  ([ADR-0019](../docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md#which-token-a-card-sends-with)).
 - **What the host never does.** The dashboard's server has no route that
   writes and never receives the token, the comment or GitHub's answer. The
   dispatcher never relays an answer, and no pass sees one before the forge
@@ -502,7 +572,9 @@ browser
 - **Every send is confirmed.** Send first shows the target, the login it
   sends as and the exact answer, and Confirm send posts. The confirmation
   holds for what it showed alone: a change to the target, the decision's
-  framing, the answer's text or the token asks for a new one. A guarded pick
+  framing, the answer's text or the token the card sends with (replaced,
+  forgotten, or another token now answering for its owner) asks for a new
+  one, and a change to another token leaves it standing. A guarded pick
   (under a class the acts table does not list as Decide, or of an option
   that cannot be undone) also takes this second step to copy.
 - **Only where an answer comment is read.** Send is offered where the
@@ -519,7 +591,7 @@ browser
   every card says why it has no Send and the settings panel takes no
   token, since someone on the path who can change the page could read it.
 - **What comes back.** After GitHub answers 201 for each comment, the card
-  links them, in this browser alone, and the page reads the line every 3
+  links them with the login that sent them, in this browser alone, and the page reads the line every 3
   seconds for up to 90 seconds, stopping sooner once the tick records the
   answer's outcome. The card then shows whether the step was carried out,
   refused with its reason, or held: an answered hold leaves the list and is
@@ -532,10 +604,10 @@ browser
   A call with no answer says the comment may or may not be posted and to
   check the linked issue or pull request before sending again.
 
-**The token's scope.** A fine-grained personal access token, limited to the
-repositories the dashboard shows, with Issues and Pull requests set to read
-and write, and a short expiry. The settings panel says so and lists the
-repositories whose cards can send. A token with wider rights works but
+**The tokens' scope.** Each a fine-grained personal access token, limited to
+the repositories the dashboard shows of the owners it answers for, with
+Issues and Pull requests set to read and write, and a short expiry. The
+settings panel says so and lists the repositories whose cards can send. A token with wider rights works but
 risks more if it leaks.
 
 **Threat model.** The token is as safe as the page's origin and the browser

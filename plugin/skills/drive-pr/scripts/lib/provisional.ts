@@ -247,7 +247,10 @@ export async function readReversals(
     const key = d.key ?? "";
     if (d.class === "provisional-reply") {
       const thread = await threadComments(key);
-      out.set(d, thread === null ? undefined : reversalInThread(thread));
+      out.set(
+        d,
+        thread === null ? undefined : reversalInThread(thread.comments),
+      );
     } else
       out.set(
         d,

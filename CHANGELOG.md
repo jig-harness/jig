@@ -404,6 +404,122 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.306.0] - 2026-11-23
+
+### Changed
+
+- `drive-pr`'s status evaluation reads the pull request (state, draft, head
+  and base, mergeability and merge state) with one conditional REST read of
+  the pull document instead of `gh pr view`, for its opening snapshot and for
+  the recheck before a terminal verdict. An unchanged pull request answers
+  `304`, which costs nothing from the account's rate limit. A failed read, or
+  a kept reading that is incomplete, is followed by one full read (except after a rate limit, an auth failure or a
+  missing pull request, which a second request cannot clear), and is
+  never taken for an unchanged pull request. Mergeability GitHub has not
+  finished computing still reads as unknown. `drive-status.ts` resolves a
+  pull request given as a URL or branch to its number once, before it
+  evaluates, and refuses a URL naming another repository.
+- **Breaking:** [`drive-exits.md`](plugin/protocol/drive-exits.md), now
+  version 2, lists `UNSUPPORTED_CLI` as a `driver-only` exit: `drive.ts`
+  exits `2` when it refuses to start, and `drive-status.ts` no longer reports
+  it as a state, since every `gh` serves the evaluation's REST read. Its
+  `driveStatusExit` in
+  [data/drive-exits.json](plugin/protocol/data/drive-exits.json) is now
+  `null`; `drive-status.ts` still exits `2`, with no
+  report, on argument errors and when startup cannot resolve the repository or
+  the pull request selector (which may be a network or authentication failure). **Consumer action:** advised at instructions. A program that runs
+  `drive-status.ts` itself reads its exit `2` as a startup refusal with no
+  report, never as a state. **Detect:** `text:UNSUPPORTED_CLI`.
+
+## [0.305.0] - 2026-11-23
+
+### Added
+
+- The dispatch dashboard's Needs you shows needs whose decisions are identical apart from their own target as one card: the question once, how many targets it covers, and each target with its repository, link, age and its own evidence. One pick on the card answers every target listed, and Send posts each target's own answer, as you, so every station still checks it; leave out the targets you mean to settle differently, and they stay open. A target whose answer the tick refused, or whose facts changed, becomes its own card again. See [design/need-classes.md](design/need-classes.md#identical-questions-fold). **Consumer action:** none.
+- `jig ask --waiting --json` names each entry's `questionGroup`, the identity the dashboard's card carries, so another reader of Needs you's rules can show the same groups. **Consumer action:** none.
+
+## [0.304.5] - 2026-11-23
+
+### Fixed
+
+- Merge-readiness facts preserve a final fractional-second budget, reject malformed first check pages, and retain continuation-query diagnostics. **Consumer action:** none.
+- Merge-readiness facts keep a pull request out of the Ready lane when a null check rollup is not tied to its current head commit. **Consumer action:** none.
+- The Ready board, merge-ready announcement and `jig ask` read additional
+  pages of checks on the verified pull request head. A pull request with
+  more than 100 checks can reach the merge lane once all required checks
+  pass. The shared reader leaves the pull request partial if it cannot
+  read the full connection within four pages or its deadline.
+
+## [0.304.4] - 2026-11-23
+
+### Fixed
+
+- `jig dispatch`: a claimed item whose open pull request's drive is asked for
+  but not yet armed (a person's `drive` label, the completed pickup's
+  first-drive handoff, or `dispatch.adopt`) is now carried by that pull
+  request, shown with its drive waiting to be armed, instead of raised as a
+  stalled pickup whose pull request "has no drive" once it idles past
+  `dispatch.stalled_after`.
+- `jig dispatch`: a stalled pickup relaunched in its own tree
+  (`dispatch.stalled_relaunch: finish-once`) now keeps its workspace's
+  branch on its launch record, a retried relaunch included, so a relaunched
+  process pickup that opens its pull request and hands off the first drive
+  (`drive@`) gets that drive armed, as a first launch does.
+
+## [0.304.3] - 2026-11-23
+
+### Fixed
+
+- An explicit re-arm can restart a parked drive after its review thread is resolved on GitHub. When a park still needs attention, dispatch explains why the re-arm is held.
+
+## [0.304.2] - 2026-11-23
+
+### Fixed
+
+- The drive-pr suite's diagnosing CI repair tests no longer time out under a
+  loaded CI shard: the receipt rules (a tracker issue key or a filing parked
+  during the diagnosis) are unit tests against the driver's receipt reader,
+  and the end-to-end drives that remain have the 120-second headroom of the suite's
+  other multi-round drives. A drive behaves as before. **Consumer action:**
+  none.
+
+## [0.304.1] - 2026-11-23
+
+### Fixed
+
+- Re-arming a drive that stopped on its round budget (`MAX_ROUNDS`) now
+  runs review passes again instead of stopping with exit `6` on its first
+  check. A re-arm a person asks for (`jig send drive@<repo> <PR> rearm`) and
+  `arm-drive.ts --rearm-budget` grant the drive one more round budget:
+  `drive.max_rounds` (or `--max-rounds`) more distinct heads, counting the
+  head it resumes on, and a fresh count of passes on that head. The steward's
+  and the tick's re-drives never grant it. The grant is kept in the drive
+  state and published to the ledger so a restart or a takeover keeps it, and
+  is never renewed without another re-arm: the drive stops on `MAX_ROUNDS` again
+  once it spends it. `jig send … rearm` on such a stop says so.
+
+## [0.304.0] - 2026-11-23
+
+### Added
+
+- The dispatch dashboard's Send keeps one GitHub token per account in the browser, each naming the repository owners it answers for, and a card sends with the token for its target repository's owner, so answers on repositories reached as different accounts post as the right login. A token that names no owner answers for every owner no other token names, and a browser that kept one token keeps it that way. A card whose owner no token answers for has no Send and says so; Copy still works. The settings panel tests, shows and forgets each token on its own, and refuses a second token for one owner. The confirmation and the card's "Sent here" name the login that answered. Forgetting or replacing a token asks again for confirmation only on the cards it answered. The tokens still never reach the dashboard's server ([ADR-0019](docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md#which-token-a-card-sends-with)).
+
+## [0.303.1] - 2026-11-23
+
+### Fixed
+
+- `jig dispatch` no longer drops a stopped or parked pull request off the line's needs when a workspace joined to it has a terminal whose agent the session runtime cannot report, such as an idle shell or an editor. Its notification still goes out; a re-arm or takeover it cannot safely start becomes a need that names the workspace, and closing the terminals that run no agent lets the next tick act on it. A stopped pickup's need goes out the same way, and an agent the runtime reports working now holds its target even beside such a terminal. **Consumer action:** none.
+
+## [0.303.0] - 2026-11-23
+
+The dispatch dashboard's Needs you view now shows what left it: who settled each need and how.
+
+### Added
+
+- **Settled recently** on the dispatch dashboard's Needs you view: below the open cards, a section folded to one line with its count lists each need that left the line in the last 24 hours, newest first. Each entry gives the target and its link, the question or act it carried, when it left, by whom (the person's login, a rule of the tick, the steward's record, or no one because its facts changed), how, and a link to its History rows. An answer a station held or refused shows with its reason while its card stays open. **Consumer action:** none.
+- `jig ask --settled` (with `--json` and `--person`) lists the same entries for an agent or the panel's inbox, from the newest tick's line and with no forge or tracker call. **Consumer action:** none.
+- The tick records every need that leaves the line in a new `need_leaves` table, whatever its notify stage does, and keeps the rows for a week. A need that leaves and returns is two entries. **Consumer action:** none.
+
 ## [0.302.0] - 2026-11-23
 
 ### Changed
@@ -10759,7 +10875,17 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.302.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.306.0...HEAD
+[0.306.0]: https://github.com/jig-harness/jig/compare/v0.305.0...v0.306.0
+[0.305.0]: https://github.com/jig-harness/jig/compare/v0.304.5...v0.305.0
+[0.304.5]: https://github.com/jig-harness/jig/compare/v0.304.4...v0.304.5
+[0.304.4]: https://github.com/jig-harness/jig/compare/v0.304.3...v0.304.4
+[0.304.3]: https://github.com/jig-harness/jig/compare/v0.304.2...v0.304.3
+[0.304.2]: https://github.com/jig-harness/jig/compare/v0.304.1...v0.304.2
+[0.304.1]: https://github.com/jig-harness/jig/compare/v0.304.0...v0.304.1
+[0.304.0]: https://github.com/jig-harness/jig/compare/v0.303.1...v0.304.0
+[0.303.1]: https://github.com/jig-harness/jig/compare/v0.303.0...v0.303.1
+[0.303.0]: https://github.com/jig-harness/jig/compare/v0.302.0...v0.303.0
 [0.302.0]: https://github.com/jig-harness/jig/compare/v0.301.5...v0.302.0
 [0.301.5]: https://github.com/jig-harness/jig/compare/v0.301.4...v0.301.5
 [0.301.4]: https://github.com/jig-harness/jig/compare/v0.301.3...v0.301.4

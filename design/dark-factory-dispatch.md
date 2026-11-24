@@ -711,8 +711,15 @@ stall while an open pull request of the
 repository's own branches that the line links to it (as the need's framed
 decision reads the links) has a drive, whatever its state: live, converged
 and waiting for its merge, parked on a person's question, stopped for a
-re-arm or a re-drive, or unplaced for the tick while the forge leaves its
-state undecided (a mergeability still being computed). The tick reports the
+re-arm or a re-drive, unplaced for the tick while the forge leaves its
+state undecided (a mergeability still being computed), or unarmed: no ledger
+yet, but a person's `drive` label, the completed pickup's first-drive
+handoff or the adoption rule asks for one, so the tick is about to arm it. A
+drive that stays unarmed is reported by whatever keeps it from arming
+(admission, slots, the arming rule), not as a stalled pickup; one a launch
+already armed at its head, which ended without leaving a ledger, is not
+armed again until the head moves, so it carries nothing and the stall need
+names that launch. The tick reports the
 item as carried by that pull request, with its link and the drive's state,
 and the line lists it as [carried](../GLOSSARY.md); what a person must do
 there is the pull request's own need, shown once. A pull request merged
@@ -1298,7 +1305,16 @@ and from the ledger's heartbeat. These answers are unknowns, never "no
 session": a host the runtime's answer marks as not covered, a page cut
 short by its row limit, and a workspace on a branch that matches the item
 or pull request but whose agents the runtime does not report. The tick
-plans nothing for an item or pull request it cannot place, and reports why.
+starts nothing for an item or pull request it cannot place, and reports
+why. An agent the runtime does report working still holds its target
+beside such a workspace. Where the listing read and only a joined
+workspace's terminals are unreported (an idle shell or an editor looks the
+same as an agent the runtime cannot see), a notification, being only a
+message, still goes out, as it does beside a running session, so a stopped
+or parked drive and a stopped pickup stay on the line's needs; and a
+drive's re-arm or takeover becomes a person's need that names the
+workspace: closing the terminals that run no agent lets the next tick act
+on it.
 
 ### The tick reports by default and acts only with `--apply`
 

@@ -24,11 +24,12 @@ import { type RepairCi, runRepairPass } from "./repair.ts";
 import type { DriveRoundContext } from "./round-context.ts";
 import { driverRuntime } from "./runtime.ts";
 import { CI_REPAIR_SPENT_EXIT } from "./settings.ts";
+import type { DriveState } from "../state/schema.ts";
 
 const REPORT_BYTES = 4096;
 const DIAGNOSIS_CHARS = 400;
 const PARK_KEY_CHARS = 200;
-type DiagnosisReport =
+export type DiagnosisReport =
   | { staleHead: true }
   | { standDown: true }
   | {
@@ -90,7 +91,7 @@ function fullReport(value: unknown): DiagnosisReport | null {
 }
 
 /** The report supplied by this pass, bounded and read from a regular file. */
-function readDiagnosis(path: string): DiagnosisReport | null {
+export function readDiagnosis(path: string): DiagnosisReport | null {
   try {
     const text = readBoundedText(path, REPORT_BYTES);
     const value: unknown = text === null ? null : JSON.parse(text);
@@ -150,7 +151,7 @@ const INCOMPLETE =
   "The diagnosing repair report must contain a diagnosis and either a tracker issue key or an open park key.";
 
 /** A receipt the driver accepted, a refused one, or a report of a moved head. */
-type Receipt =
+export type Receipt =
   | { text: string; pushedHead: string | undefined; parked: boolean }
   | { refused: string }
   | { staleHead: true }
@@ -158,11 +159,14 @@ type Receipt =
 
 /**
  * Judge the pass's receipt against the current parked set. A park can be
- * recorded before the diagnosis and still block the repair.
+ * recorded before the diagnosis and still block the repair. `readState`
+ * reads the drive state, `drive-state.ts get` by default.
  */
-async function judgeReceipt(
+export async function judgeReceipt(
   pr: string,
   answer: DiagnosisReport | null,
+  readState: (pr: string) => Promise<DriveState | null> = (p) =>
+    readDriveState(p, true),
 ): Promise<Receipt> {
   if (answer === null) return { refused: INCOMPLETE };
   if ("staleHead" in answer || "standDown" in answer) return answer;
@@ -173,7 +177,7 @@ async function judgeReceipt(
       pushedHead,
       parked: false,
     };
-  const state = await readDriveState(pr, true);
+  const state = await readState(pr);
   if (state === null)
     return {
       refused:

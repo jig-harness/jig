@@ -60,7 +60,7 @@ else if(a[0]==='pr'&&a[1]==='view'){
  }else{
  const endpoint=a.find(s=>s.startsWith('repos/')); if(!endpoint)throw new Error('unhandled endpoint '+JSON.stringify(a));
  let data;
- if(endpoint.includes('/pulls/999'))data={state:'open',head:{sha:f.head},base:{sha:f.head},draft:true};
+ if(endpoint.includes('/pulls/999'))data={state:'open',merged:false,head:{sha:f.head,ref:f.branch},base:{sha:f.head,ref:'main'},draft:true,mergeable:true,mergeable_state:'clean'};
  else if(endpoint.includes('/check-runs'))data={check_runs:[]};
  else if(endpoint.includes('/status'))data={statuses:[]};
  else if(/\\/issues\\/comments\\/\\d+$/.test(endpoint)){const id=Number(endpoint.split('/').pop());const del=value('-X')==='DELETE';const body=del?'':JSON.parse(readFileSync(0,'utf8')).body;f.posted=(f.posted??[]).flatMap(c=>c.id!==id?[c]:del?[]:[{...c,body}]);writeFileSync(file,JSON.stringify(f));data={};}

@@ -187,6 +187,10 @@ export function replyParkedThread(dir: string, args: string[]): void {
     process.exit(1);
   }
   const { json } = files(dir);
+  const resolved = existsSync(join(dir, "resolved-threads")) &&
+    readFileSync(join(dir, "resolved-threads"), "utf8")
+      .split("\n")
+      .includes(id);
   const nodes = readdirSync(dir)
     .filter((name) => /^review-comments-\d+\.json$/.test(name))
     .flatMap((name) => json(name) as RestComment[])
@@ -196,7 +200,7 @@ export function replyParkedThread(dir: string, args: string[]): void {
     JSON.stringify({
       data: {
         node: {
-          isResolved: false,
+          isResolved: resolved,
           comments: {
             pageInfo: { hasNextPage: false },
             nodes: nodes.map((c) => ({

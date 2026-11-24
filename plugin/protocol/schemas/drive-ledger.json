@@ -92,6 +92,7 @@
               "minimum": 0,
               "maximum": 1.7976931348623157e308
             },
+            "roundsGranted": true,
             "phase": {
               "type": "string"
             },
@@ -740,7 +741,7 @@
                     "type": "string"
                   },
                   "outcome": {
-                    "enum": ["answered", "provisional"]
+                    "enum": ["answered", "provisional", "resolved-thread"]
                   },
                   "answers": {
                     "type": "array",
@@ -937,6 +938,7 @@
           "minimum": 0,
           "maximum": 1.7976931348623157e308
         },
+        "roundsGranted": true,
         "phase": {
           "type": "string"
         },
@@ -1579,7 +1581,7 @@
                 "type": "string"
               },
               "outcome": {
-                "enum": ["answered", "provisional"]
+                "enum": ["answered", "provisional", "resolved-thread"]
               },
               "answers": {
                 "type": "array",

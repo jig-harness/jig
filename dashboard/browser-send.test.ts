@@ -13,13 +13,7 @@ import { ok as assert } from "node:assert/strict";
  * `browser.test.ts`'s header.
  */
 import { describe, expect } from "bun:test";
-import type { BrowserContext, Page, Request } from "playwright-core";
-import { withoutAnswerRecord } from "../plugin/shared/decisions/answer-record.ts";
-import { decodeMarker } from "../plugin/shared/records/envelope.ts";
-import type {
-  LineNeed,
-  StateAnswer,
-} from "../plugin/dispatch/lib/dashboard-contract.ts";
+import type { LineNeed } from "../plugin/dispatch/lib/dashboard-contract.ts";
 import { decisionOf } from "../plugin/dispatch/lib/line-decision.ts";
 import {
   frameStationDecision,
@@ -31,196 +25,33 @@ import { stationItem } from "../plugin/dispatch/lib/station-answers.ts";
 import { fixture } from "./fixtures.ts";
 import { PICK_DIGESTS } from "./fixture-picks.ts";
 import { settled, shortControls, shows, until } from "./browser-page.ts";
-import { browserSuite, LAPTOP, PHONE, TIMEOUT } from "./browser-suite.ts";
-import type { ScenarioId } from "./fixtures.ts";
+import {
+  type FakeAnswer,
+  card,
+  clipboard,
+  EARLIER_KEY,
+  expectTokenOnlyToGithub,
+  GITHUB_TOKEN,
+  kept,
+  noSideScroll,
+  posts,
+  sendOpener,
+  showAll,
+} from "./browser-send-page.ts";
+import { browserSuite, PHONE, TIMEOUT } from "./browser-suite.ts";
 
-const { browserIt, requireBrowser, served } = await browserSuite();
+const suite = await browserSuite();
+const { browserIt } = suite;
+const openSend = sendOpener(suite);
 
-const GITHUB_TOKEN = "github_pat_0123456789abcdefSENDTEST";
-const KEY = "jig-dispatch-dashboard:github-token";
 const NARROW = { width: 320, height: 568 };
 const BEFORE = "the clipboard before";
-
-/** CORS answers as GitHub's API gives them, so the browser lets the page read them. */
-const CORS = {
-  "access-control-allow-origin": "*",
-  "access-control-allow-headers": "authorization, content-type, accept",
-  "access-control-allow-methods": "GET, POST",
-};
-
-interface Call {
-  method: string;
-  path: string;
-  authorization: string | null;
-  body: unknown;
-}
-
-interface Opened {
-  page: Page;
-  context: BrowserContext;
-  /** Every call the page made to GitHub. */
-  calls: Call[];
-  /** Every request to the dashboard's own server, with its headers and body. */
-  local: string[];
-  problems: string[];
-}
-
-type Answer = { status: number; json: unknown };
-
-async function openSend(
-  scenario: ScenarioId,
-  o: {
-    viewport?: { width: number; height: number };
-    touch?: boolean;
-    kept?: { login: string } | null;
-    github?: (call: Call) => Answer;
-    needs?: LineNeed[];
-  } = {},
-): Promise<Opened> {
-  const server = await served(scenario);
-  const touch = o.touch === true;
-  const context = await requireBrowser().newContext({
-    viewport: o.viewport ?? LAPTOP,
-    ...(touch ? { hasTouch: true, isMobile: true } : {}),
-  });
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  const calls: Call[] = [];
-  const local: string[] = [];
-  const problems: string[] = [];
-  let comment = 0;
-  const github =
-    o.github ??
-    ((call: Call): Answer => {
-      if (call.path === "/user")
-        return { status: 200, json: { login: "maintainer-a" } };
-      comment++;
-      return {
-        status: 201,
-        json: {
-          html_url: `https://github.com${call.path.replace("/repos", "").replace("/issues/", "/pull/").replace("/comments", `#issuecomment-${comment}`)}`,
-        },
-      };
-    });
-  await context.route("https://api.github.com/**", async (route) => {
-    const request = route.request();
-    if (request.method() === "OPTIONS")
-      return route.fulfill({ status: 204, headers: CORS });
-    const call: Call = {
-      method: request.method(),
-      path: new URL(request.url()).pathname,
-      authorization: (await request.allHeaders()).authorization ?? null,
-      body: request.postData() === null ? null : request.postDataJSON(),
-    };
-    calls.push(call);
-    const answer = github(call);
-    return route.fulfill({
-      status: answer.status,
-      headers: CORS,
-      json: answer.json,
-    });
-  });
-  if (o.kept != null)
-    await context.addInitScript(
-      ([key, value]) => {
-        if (localStorage.getItem(key) === null)
-          localStorage.setItem(key, value);
-      },
-      [
-        KEY,
-        JSON.stringify({ token: GITHUB_TOKEN, login: o.kept.login, at: 1 }),
-      ] as const,
-    );
-  await context.addInitScript(() => {
-    document.addEventListener("securitypolicyviolation", (event) => {
-      console.error(
-        `content security policy: ${event.violatedDirective} ${event.blockedURI}`,
-      );
-    });
-  });
-  const page = await context.newPage();
-  page.on("pageerror", (error) => problems.push(`thrown: ${error}`));
-  page.on("console", (message) => {
-    if (message.type() === "error") problems.push(message.text());
-  });
-  page.on("request", (request: Request) => {
-    if (!request.url().startsWith(server.origin)) return;
-    void request.allHeaders().then((headers) => {
-      local.push(
-        `${request.url()} ${JSON.stringify(headers)} ${request.postData() ?? ""}`,
-      );
-    });
-  });
-  if (o.needs !== undefined)
-    await page.route("**/state?*", async (route) => {
-      const response = await route.fetch();
-      const state = (await response.json()) as { value: StateAnswer };
-      if (state.value.line !== null) state.value.line.needs = o.needs ?? [];
-      await route.fulfill({ response, json: state });
-    });
-  await page.goto(`${server.url}&view=needs`);
-  await shows(page, ".pNeeds .need");
-  await settled(page);
-  return { page, context, calls, local, problems };
-}
-
-/** Opens every card where some wait behind Show all. */
-async function showAll(page: Page): Promise<void> {
-  const more = page.getByRole("button", { name: /Show all/ });
-  if ((await more.count()) > 0) await more.first().click();
-}
-
-function card(page: Page, target: string) {
-  return page.locator(".pNeeds .need", { hasText: target });
-}
-
-function clipboard(page: Page): Promise<string> {
-  return page.evaluate(() => navigator.clipboard.readText());
-}
-
-function kept(page: Page): Promise<string | null> {
-  return page.evaluate((key) => localStorage.getItem(key), KEY);
-}
-
-async function noSideScroll(page: Page): Promise<void> {
-  expect(
-    await page.evaluate(
-      () =>
-        document.documentElement.scrollWidth -
-        document.documentElement.clientWidth,
-    ),
-  ).toBeLessThanOrEqual(0);
-}
-
-/** The token reached GitHub only, in the header it belongs in. */
-function expectTokenOnlyToGithub(opened: Opened): void {
-  for (const request of opened.local)
-    expect(request).not.toContain(GITHUB_TOKEN);
-  for (const call of opened.calls)
-    expect(call.authorization).toBe(`Bearer ${GITHUB_TOKEN}`);
-}
 
 const TWO = [
   `answer PRRT_flag: choose Remove [${PICK_DIGESTS.flag}]`,
   "",
   `answer PRRT_table: approve [${PICK_DIGESTS.table}]`,
 ].join("\n");
-
-/** Each comment the page posted: where, its lines without the record, and the record it carries. */
-function posts(calls: Call[]) {
-  return calls
-    .filter((c) => c.method === "POST")
-    .map((c) => {
-      const body = (c.body as { body: string }).body;
-      const record = decodeMarker(body, "jig-send-answer", "drive-answer");
-      return {
-        path: c.path,
-        lines: withoutAnswerRecord(body),
-        record: record.ok
-          ? { ...record.value.envelope, ...record.value.payload }
-          : null,
-      };
-    });
-}
 
 describe("Send", () => {
   browserIt(
@@ -274,13 +105,16 @@ describe("Send", () => {
         await field.press("Enter");
         await until("the login shows", async () =>
           ((await page.locator(".sendSettings").textContent()) ?? "").includes(
-            "it posts as maintainer-a",
+            "posts as maintainer-a",
           ),
         );
-        expect(JSON.parse((await kept(page)) ?? "{}")).toMatchObject({
-          token: GITHUB_TOKEN,
-          login: "maintainer-a",
-        });
+        expect(await kept(page)).toEqual([
+          expect.objectContaining({
+            token: GITHUB_TOKEN,
+            login: "maintainer-a",
+            owners: [],
+          }),
+        ]);
         expect(opened.calls.at(-1)).toMatchObject({
           method: "GET",
           path: "/user",
@@ -313,6 +147,9 @@ describe("Send", () => {
             .then((n) => n === 0),
         );
         expect(await kept(page)).toBeNull();
+        expect(
+          await page.evaluate((key) => localStorage.getItem(key), EARLIER_KEY),
+        ).toBeNull();
         // The browser reports the refused test's 401 itself; nothing else went wrong.
         expect(
           opened.problems.filter((p) => !p.includes("status of 401")),
@@ -550,7 +387,7 @@ describe("Send", () => {
   browserIt(
     "GitHub's refusals are explained, and a login other than the park's person is named",
     async () => {
-      const answers: Answer[] = [
+      const answers: FakeAnswer[] = [
         { status: 404, json: { message: "Not Found" } },
         {
           status: 403,
@@ -647,7 +484,7 @@ describe("Send", () => {
           await until("the login shows", async () =>
             (
               (await page.locator(".sendSettings").textContent()) ?? ""
-            ).includes("it posts as maintainer-a"),
+            ).includes("posts as maintainer-a"),
           );
           await noSideScroll(page);
           expect(await shortControls(page)).toEqual([]);
