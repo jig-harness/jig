@@ -85,6 +85,17 @@ describe("resolving a credential reference", () => {
     expect(done.ok && done.value).toBe("k".repeat(4096));
   });
 
+  it("keeps a 4 KiB value whose command prints diagnostics past the old combined limit", async () => {
+    const done = await resolveCredential(
+      command(
+        "process.stdout.write('k'.repeat(4096)); process.stderr.write('d'.repeat(20000))",
+      ),
+      "ref",
+      process.env,
+    );
+    expect(done.ok && done.value).toBe("k".repeat(4096));
+  });
+
   it("refuses a value with a malformed byte, which decodes to U+FFFD", async () => {
     const bad = await resolveCredential(
       command(

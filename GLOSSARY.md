@@ -2471,7 +2471,7 @@ make, use the entry's term instead.
 - **Provider account** — an account of the *dispatcher* that pays for model
   use with the host's own key with a model provider, where a subscription
   account pays the program's vendor a flat fee. It names a harness, a
-  provider, a base URL (omitted for the provider that harness itself defaults to: Anthropic on Claude Code, OpenAI on Codex), a *credential reference* and, for a key billed by
+  provider, a base URL (optional for Anthropic on Claude Code and OpenAI on Codex), a *credential reference* and, for a key billed by
   the token, a *spend cap*. A launch on a provider account carries that
   credential and no other provider's key. The machine file accepts it
   today, and the dispatcher reports it as configured and not admitted while

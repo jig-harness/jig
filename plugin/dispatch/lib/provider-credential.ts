@@ -25,7 +25,6 @@
 import { isMaskable, rememberSecret } from "../../shared/credentials.ts";
 import { swallow } from "../../shared/errors.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
-import { STDERR_TAIL_BYTES } from "../../shared/process-output.ts";
 import { run } from "../../shared/proc.ts";
 import { currentMs, isoFromMs } from "../../shared/time.ts";
 import { stateRoot } from "../receipts.ts";
@@ -80,8 +79,9 @@ export async function resolveCredential(
   const done = await run([...command, reference], {
     timeoutSec,
     env,
-    // The runner counts both streams together, so the bound is the longest value plus a line ending and one byte, plus a full error-output allowance; error output is captured only to drain the pipe and is never read or recorded. A value over the longest is refused below by its own length.
-    maxBufferBytes: LONGEST_VALUE + 3 + STDERR_TAIL_BYTES * 2,
+    // Error output is discarded and never counts toward the bound, so the bound is the longest value plus a line ending and one byte. A value over the longest is refused below by its own length.
+    stderr: "ignore",
+    maxBufferBytes: LONGEST_VALUE + 3,
     reapGroup: true,
   });
   if (done.bufferExceeded) {
