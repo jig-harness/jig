@@ -241,20 +241,23 @@ describe("resolving a credential reference", () => {
   });
 
   it("learns trimmed failed-output lines and marker-collision output", async () => {
-    const opaque = "trimmed-opaque-secret-1234";
+    const trimmed = "trimmed-opaque-secret-1234";
     await resolveCredential(
-      command(
-        `process.stdout.write('  ${opaque}  \\nmarker<redacted>${opaque}'); process.exit(1)`,
-      ),
+      command(`process.stdout.write('  ${trimmed}  '); process.exit(1)`),
       "ref",
       process.env,
     );
+    expect(maskCredentials(`value ${trimmed}`, "[masked]")).toBe(
+      "value [masked]",
+    );
+
+    const collision = "marker-collision-secret-1234";
     await resolveCredential(
-      command(`process.stdout.write('prefix<redacted>${opaque}')`),
+      command(`process.stdout.write('prefix<redacted>${collision}')`),
       "ref",
       process.env,
     );
-    expect(maskCredentials(`value ${opaque}`, "[masked]")).toBe(
+    expect(maskCredentials(`value ${collision}`, "[masked]")).toBe(
       "value [masked]",
     );
   });
