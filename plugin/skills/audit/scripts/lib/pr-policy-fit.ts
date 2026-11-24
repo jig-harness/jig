@@ -68,7 +68,7 @@ export async function policyFindings(
  * with only author-based adoption off, a person's label (where labels are
  * on), a hand-armed drive or an eligible pickup handoff can still start its
  * first drive; with the explicit opt-out, no automatic start is left: a
- * person starts every listed bot's drive, by hand or by a label.
+ * person starts every listed bot's drive, directly.
  */
 export function trustedFit(config: Config): Finding[] {
   if (at(config, "pull_requests.trusted_automation") === undefined) return [];
@@ -100,7 +100,7 @@ export function trustedFit(config: Config): Finding[] {
       severity: "info",
       message: `dispatch.adopt.trusted_automation is false: no automatic start is left for a listed bot's pull request. Its first drive, a restart after a head that moved and a conflict repair all wait for a person, and a pickup handoff cannot start it. Review the install inputs (manifests, installer configuration, lockfiles) against a trusted baseline, then start the drive directly from a verified checkout${
         labels.enabled
-          ? "; a drive or rearm label does not pin the reviewed head, because the dispatcher starts from whatever head it reads when it plans the launch, so use a label only when the bot can no longer update the branch. A rearm label restarts only a drive stopped in a state a rearm can restart, never a converged head that moved, so start that drive directly"
+          ? ". A drive or rearm label is not a substitute: it pins neither the reviewed head nor the base the drive merges, and a rearm label needs a trusted request bound to an eligible stop, so the dispatcher may start from inputs nobody reviewed"
           : " (dispatch.labels.enabled is off, so there is no label route)"
       }. A drive a person stopped stays stopped.`,
     });

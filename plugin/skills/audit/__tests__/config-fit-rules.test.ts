@@ -101,10 +101,12 @@ test("the trusted automation adoption opt-out is accepted and reported", () => {
   expect(adopt?.message).toContain("no automatic start is left");
   expect(adopt?.message).toContain("a pickup handoff cannot start it");
   expect(adopt?.message).toContain("conflict repair all wait for a person");
-  expect(adopt?.message).toContain("does not pin the reviewed head");
-  expect(adopt?.message).toContain(
-    "never a converged head that moved, so start that drive directly",
-  );
+  expect(adopt?.message).toContain("install inputs");
+  expect(adopt?.message).toContain("start the drive directly");
+  expect(adopt?.message).toContain("pins neither the reviewed head");
+  expect(adopt?.message).toContain("nor the base");
+  expect(adopt?.message).toContain("bound to an eligible stop");
+  expect(adopt?.message).not.toContain("use a label only");
 });
 
 test("the opt-out with labels off has no label route, and refusal hides the guidance", () => {
@@ -113,7 +115,8 @@ test("the opt-out with labels off has no label route, and refusal hides the guid
   ).find((f) => f.id === "derivation:pull_requests.trusted_automation:adopt");
   expect(direct?.message).toContain("start the drive directly");
   expect(direct?.message).toContain("there is no label route");
-  expect(direct?.message).not.toContain("does not pin");
+  expect(direct?.message).toContain("install inputs");
+  expect(direct?.message).not.toContain("pins neither");
   const plain = findings(
     'dispatch:\n  adopt: { enabled: false }\npull_requests:\n  trusted_automation: ["renovate[bot]"]\n',
   ).find((f) => f.id === "derivation:pull_requests.trusted_automation:adopt");
@@ -124,7 +127,7 @@ test("the opt-out with labels off has no label route, and refusal hides the guid
   expect(refused.map((f) => f.id)).not.toContain(
     "derivation:pull_requests.trusted_automation:adopt",
   );
-  expect(JSON.stringify(refused)).toContain(
-    "dispatch.adopt.trusted_automation",
-  );
+  const rejection = refused.find((f) => f.id === "rejected:dispatch");
+  expect(rejection?.severity).toBe("error");
+  expect(rejection?.message).toContain("dispatch.adopt.trusted_automation");
 });
