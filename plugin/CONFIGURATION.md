@@ -435,12 +435,17 @@ old policy), then stop any running drives, retire every outstanding `drive`
 and `rearm` request (remove the labels) and resume dispatch once the policy is
 in effect: a request made before the switch can still start a drive without a
 new review. Start from a trusted baseline: the base branch's installer configuration,
-manifests and lockfiles, not the bot's branch, since an edit already on the
-bot's branch is absent from both merge comparisons below. For a clean base
-merge, compare the merged tree with its first parent (the pre-merge branch);
-for a conflict resolution, compare the resolved index with that branch. These
-comparisons isolate only what the merge or resolution adds. Recheck when the
-head, base or resolution changes the inputs. Review the
+manifests and lockfiles, not the bot's branch. Compare every effective install
+input of the merged tree (or resolved index) against that baseline, since an
+edit already on the bot's branch is identical in the merge and its first
+parent. Then, for a clean base merge, compare the merged tree with its first
+parent (the pre-merge branch), or for a conflict resolution the resolved index
+with that branch, to isolate what the merge or resolution adds. Prepare and
+review the actual merge in a scratch checkout of the bot's head and the base
+tip before the drive starts; the drive installs right after its own clean
+merge, so when the head or base has moved since that review, repeat it before
+starting the drive. Recheck when the head, base or resolution changes the
+inputs. Review the
 contents of any newly selected lockfile, including an unchanged lockfile
 selected after a manifest edit or after a lockfile is added, removed, moved
 or copied. Verify the executable, version and source the host resolves for
@@ -474,12 +479,13 @@ validation runs. After a regeneration, review the resulting lockfile and
 effective tree before the drive installs.
 
 Restart a stopped drive by the procedure for its stop (answer every parked
-decision; for a usage-limit stop, wait out the reset only when the pass bills
-the same account, since a pass billing another account may pick the drive up
-now: see "Picking up a stopped drive" in the drive-pr skill; grant a spent
+decision; for a usage-limit stop, follow "Picking up a stopped drive" in the drive-pr skill: a pass that
+bills a known, different account may pick the drive up now, while the same
+account or an unresolvable one waits for the reset; grant a spent
 round budget). A drive a person stopped stays stopped, a drive converged on
-the current head and base needs no restart (when its head or base moves it is
-a new stop to restart, or a ledger recovery), and a drive that stopped
+a head that is still its verified head and mergeable needs no restart (a base
+that merely advanced does not stale it; a moved head or a new conflict is a
+new stop to restart, or a ledger recovery), and a drive that stopped
 `TAKEN_OVER` stays stopped: its successor's ledger says whether it can restart.
 
 An entry
