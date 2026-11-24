@@ -465,7 +465,7 @@ export function winddownFingerprintsOf(stickyBody: string): Set<string> {
 
 export function parseDeclaredUnanchored(body: string): number {
   const m = body.match(
-    /(\d+)\s+finding\(s\)\s+without\s+a\s+diff-anchorable\s+line/i,
+    /(-?\d+)\s+finding\(s\)\s+without\s+a\s+diff-anchorable\s+line/i,
   );
   if (!m) return 0;
   const value = Number(m[1]);
