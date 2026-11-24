@@ -1356,7 +1356,7 @@ export function reviewerSticky(
   // finding-bearing summary merely because it is newer.
   let selected: IssueComment | undefined;
   let selectedRound: number | null = null;
-  let selectedReviewedSha = "";
+  let selectedReviewedSha: string | null = null;
   let highestExplicitRound: number | null = null;
   for (const comment of comments) {
     const body = reviewerStickyBody(comment, isReviewerLogin, stickyMarker());
@@ -1427,14 +1427,29 @@ export function reviewerSticky(
 function isCleanReplacement(
   carriesFindingEvidence: boolean,
   reviewedSha: string,
-  selectedReviewedSha: string,
+  selectedReviewedSha: string | null,
 ): boolean {
   return (
     !carriesFindingEvidence &&
     reviewedSha !== "" &&
-    (selectedReviewedSha === "" ||
+    (selectedReviewedSha === null ||
       differentReviewedHead(reviewedSha, selectedReviewedSha))
   );
+}
+
+function structuralStickyEvidence(sticky: IssueComment | undefined): {
+  body: string | null;
+  round: number | null;
+  winddownDeferred: Set<string>;
+} {
+  const body = sticky
+    ? reviewerStickyBody(sticky, isReviewerLogin, stickyMarker())
+    : null;
+  return {
+    body,
+    round: body ? parseReviewRound(body) : null,
+    winddownDeferred: body ? winddownFingerprintsOf(body) : new Set<string>(),
+  };
 }
 
 /** The PR number from `argv`, else the current branch's PR. */
@@ -1543,13 +1558,11 @@ export async function summaryReport(
     // Selection is deliberately based on the structural body. Keep using that
     // exact body below: parsing the raw comment after selection would let a
     // fenced or quoted example alter the selected summary's evidence.
-    const stickyBody = sticky
-      ? reviewerStickyBody(sticky, isReviewerLogin, stickyMarker())
-      : null;
-    const stickyRound = stickyBody ? parseReviewRound(stickyBody) : null;
-    const winddownDeferred = stickyBody
-      ? winddownFingerprintsOf(stickyBody)
-      : new Set<string>();
+    const {
+      body: stickyBody,
+      round: stickyRound,
+      winddownDeferred,
+    } = structuralStickyEvidence(sticky);
     if (!sticky || stickyBody === null) return emptyReport(prNumber);
 
     const reviewComments: ReviewComment[] = JSON.parse(
@@ -1684,19 +1697,14 @@ async function main(): Promise<number> {
   // same comment. A second source for "which round is this" is a second thing
   // to drift, and a marker stamped with a round the consumer never compares
   // against is a suppression nobody can bound.
-  const stickyBody = sticky
-    ? reviewerStickyBody(sticky, isReviewerLogin, stickyMarker())
-    : null;
-  const stickyRound = stickyBody ? parseReviewRound(stickyBody) : null;
+  const { round: stickyRound, winddownDeferred } =
+    structuralStickyEvidence(sticky);
   // Read here — above the `--check-addressed` branch — so that mode's
   // stale-vs-duplicate distinction (`findExactMarkers`) and the main report's
   // exemption (`collectAddressed`, below) key off the exact same backlog
   // snapshot. `decodeBacklog` throws on a malformed blob, which now surfaces
   // as an INDETERMINATE exit for `--check-addressed` too — the same
   // fail-closed direction the main report already took this from.
-  const winddownDeferred = stickyBody
-    ? winddownFingerprintsOf(stickyBody)
-    : new Set<string>();
 
   if (checkFingerprintsArg !== undefined) {
     const requested = checkFingerprintsArg.split(",").filter(Boolean);

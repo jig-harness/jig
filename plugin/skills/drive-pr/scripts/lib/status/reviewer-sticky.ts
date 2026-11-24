@@ -271,16 +271,6 @@ export function reviewerStickyIn(
       (sticky.sha === "" ||
         newerRound ||
         (!sameReviewedHead(bodySha, sticky.sha) && !lowerRound));
-    // A full marker can make an earlier abbreviated witness usable, but an
-    // acknowledgement of the same review must not refresh its timestamp.
-    if (
-      !replacesSticky &&
-      bodySha.length > sticky.sha.length &&
-      sameReviewedHead(bodySha, sticky.sha)
-    ) {
-      sticky = { ...sticky, sha: bodySha };
-      continue;
-    }
     // An unstamped comment qualifies only when it carries a skip notice.
     if (!replacesSticky && skip === null) continue;
     // A skip says this comment did not review code. Retain the last affirmative

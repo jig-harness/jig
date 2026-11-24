@@ -1646,6 +1646,10 @@ describe("summary-findings marker overrides", () => {
              { id: 17, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234def5678 -->\\n- \`a.ts\` — finding' },
              { id: 18, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\nall clear' },
            ], false)?.id,
+           unstampedFindingKeepsSelection: m.reviewerSticky([
+             { id: 19, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n- \`a.ts\` — finding' },
+             { id: 20, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\nacknowledged' },
+           ], false)?.id,
            stickyTimestamp: s.reviewerStickyIn([
              { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 1 -->', updated_at: '2026-11-24T10:00:00Z' },
              { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 1 -->\\nacknowledged', updated_at: '2026-11-24T11:00:00Z' },
@@ -1708,6 +1712,9 @@ describe("summary-findings marker overrides", () => {
     // the reviewer reuses the previous round marker.
     expect(got.cleanReplacementSelected).toBe(16);
     expect(got.abbreviatedAcknowledgementSelected).toBe(17);
+    // A later stamp cannot erase findings whose selected summary has no
+    // reviewed-SHA evidence of a different review.
+    expect(got.unstampedFindingKeepsSelection).toBe(19);
     // A same-head acknowledgement cannot attest a reviewer rerun in progress.
     expect(got.stickyTimestamp).toBe("2026-11-24T10:00:00Z");
     expect(got.skipKeepsReviewWitness).toMatchObject({
@@ -1722,7 +1729,7 @@ describe("summary-findings marker overrides", () => {
       updatedAt: "2026-11-24T10:00:00Z",
     });
     expect(got.fullStampKeepsWitnessTime).toMatchObject({
-      sha: "abc1234def5678",
+      sha: "abc1234",
       round: 2,
       updatedAt: "2026-11-24T10:00:00Z",
     });
