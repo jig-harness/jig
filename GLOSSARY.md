@@ -1922,12 +1922,14 @@ make, use the entry's term instead.
 - **Scout** — a small, cheap agent (fast model, read-only) sent ahead of
   implementation to gather facts; part of tiered model routing (expensive
   models decide, cheap models explore).
-<a id="model-tier"></a>
-- **Model tier** — the cost class of model an agent or skill runs on, named by
-  role: *Judgment*, Strategic, Execution or *Scout*. Derived from the model
-  family it declares, not from how important its job sounds. See the
-  [model routing policy](modules/M0-instruction-architecture/reference/model-routing-policy.md).
-  *Avoid*: model level (a *maturity level* is something else).
+- <a id="model-tier"></a>**Model tier** — the cost class of model an agent or
+  skill runs on, named by role: *Judgment*, Strategic, Execution or *Scout*.
+  A tier is declared with the model: in agent and skill metadata, as the
+  [model routing policy](modules/M0-instruction-architecture/reference/model-routing-policy.md)
+  sets out, and in routing configuration, from an explicit declaration
+  (`routing.model_tiers`) first and the family the plugin knows second. Not
+  from how important the job sounds. *Avoid*: model level (a *maturity level*
+  is something else).
 - **Route** — the agent, *complexity tier* and reasoning effort chosen for the
   implementer of one piece of work at its pickup; derived from the item's
   *work type*, size, *flag labels* and the *change-area catalog*'s flags and
