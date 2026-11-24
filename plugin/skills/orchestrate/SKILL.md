@@ -284,9 +284,11 @@ removal in step 13):
   a sibling update or the revision alone.
 - Before delegating filing, record a pending filing entry for the task, with
   a unique marker the issue body will carry and the tracker the filing
-  targets, both persisted with the entry. Before every write and every
-  recovery read, the filing session confirms its effective tracker
-  destination is the recorded one and refuses otherwise. Every retry reuses the recorded
+  targets, both persisted with the entry. Every write and every
+  recovery read compares the effective destination with the recorded one
+  inside the same invocation, on the adapter that then performs the
+  operation, and refuses on a mismatch; an earlier check does not stand in
+  for it. Every retry reuses the recorded
   tracker and marker; changing the tracker needs an explicit decision from
   the person before anything is written. On return, recover the key from the
   filing session's durable result or by searching that tracker for the marker
@@ -312,10 +314,15 @@ removal in step 13):
   removals included. Revision order is judged per originating decision and
   target, and only among updates that set decision state; an issue key is a
   filing fact, never rejected as stale, and is reconciled onto the entry
-  whether or not the task is still approved. A track's recorded removal
+  whether or not the task is still approved; when the track was removed
+  while the filing was in flight, the key is recorded against the removed
+  entry's durable record and the update acknowledged without recreating the
+  track. A track's recorded removal
   names its originating decision and the revision it followed, and the
   track carries a generation that each removal and each authorised
-  recreation advances. After a removal the keeper rejects every delivery
+  recreation advances; every update that changes track state carries the
+  generation it expects, and the keeper rejects a delivery for a superseded
+  generation. After a removal the keeper rejects every delivery
   that would recreate the track, from any decision, up to and including the
   recorded revision for that decision, and recreates it only on the
   person's explicit authorisation; an unrelated owed update for another
@@ -347,9 +354,12 @@ matching work showing it ran, where the outcome identifies this pickup
 dependent needs. The thread read does not expose a launch ID or session
 evidence, so it alone cannot do this, even when it lists one launch (that
 entry may be an earlier pickup or only wrapper admission), and never when several launches exist for the
-issue: inspect the per-launch record (`plugin/dispatch/lib/launches.ts`,
-which carries the launch ID and session result), and where it is
-unreadable leave the milestone unconfirmed. A milestone is wrapper admission or session start; an earlier
+issue: read the dispatcher's per-launch record (its `launches` table, with
+process and session evidence) read-only on the host that runs the
+dispatcher, through a read-only query of that table; when the dispatcher is
+on another host, ask that host's operator session for the matching launch
+and its milestone evidence. Where it is unreadable leave the milestone
+unconfirmed. A milestone is wrapper admission or session start; an earlier
 failure before admission does not release it; work that needs the send itself
 confirmed keeps waiting for the mechanism's terminal answer. Then read the
 state of started work through
