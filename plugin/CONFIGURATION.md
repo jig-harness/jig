@@ -849,9 +849,12 @@ model.
   reported by the separate routing validation, which parses the repository file
   on its own, so it can flag that file's `null` where a higher runtime layer
   masks it and the loader accepts the merged result. A `null` only in the host
-  file is outside both checks. A model key that ends in an underscore, or has one before a further
-  segment, cannot be a leaf override (the split reads `___` as a separator and
-  a child that starts with one); set the model's whole entry as a mapping instead.
+  file is outside both checks. A segment that ends in an underscore immediately before a `__`
+  separator cannot be addressed by a variable: `JIG__ROUTING__MODEL_TIERS__CODEX__MODEL_`
+  addresses the key `model_` and can take the whole `{tier, reason}` mapping,
+  while appending `__TIER` addresses `model._tier` instead. This applies to a
+  runtime name ending in `_` as well. An underscore inside a segment (`my_model`)
+  works in either position; set an affected model's whole entry as a mapping.
 - **Precedence.** For a stage, a runtime and a tier, the first of: the stage's
   cell (highest layer that sets it), the all-stages `routing.models` cell
   (highest layer that sets it), the runtime's default. A stage's cell is

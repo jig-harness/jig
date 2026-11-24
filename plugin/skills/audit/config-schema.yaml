@@ -120,9 +120,10 @@ strict:
 
 # Sections and fields whose `null` a skill refuses rather than reading it as
 # not set: a higher layer's `null` there would otherwise put a lower layer's
-# value back to its default unnoticed. Elsewhere a `null` reads as not set,
-# except that routing's own validation (a stage's `models` map among them)
-# refuses its nulls separately.
+# value back to its default unnoticed. At other declared field and section
+# paths the schema reads a `null` as not set; nested map types and a skill's
+# own validators can still reject it (a work-type entry must be a mapping, and
+# routing's validation refuses a stage's `models: null` separately).
 null_refused:
   - repository
   - repository.remote

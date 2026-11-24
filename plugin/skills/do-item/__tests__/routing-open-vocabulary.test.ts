@@ -370,6 +370,10 @@ describe("routing.family_tiers", () => {
     expect(row.sol?.reason).toBe("new short");
     expect(row["gpt-6.2-sol"]?.reason).toBe("new release");
     expect(parsed.reported).toHaveLength(2);
+    expect(new Set(parsed.reported).size).toBe(2);
+    for (const line of parsed.reported) {
+      expect(line).not.toContain("; ");
+    }
     const [short, release] = ["new short", "new release"].map((reason) =>
       parsed.reported.filter((line) => line.includes(reason)),
     );
