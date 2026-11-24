@@ -1813,8 +1813,9 @@ Then:
      recurring CI failure blocks the merge), and a matching open issue is
      updated with a comment on the new evidence rather than filed again, as
      the issue-filing row allows. At `attended`, or when the base branch's
-     policy cannot be read, file nothing: park the decision under
-     `human-decision` (§ 4) and still repair the cause.
+     policy cannot be read, file nothing. Use an open park that explains
+     what blocks the repair, or park the filing decision under
+     `human-decision` (§ 4). Carry on with any repair the park allows.
   3. Repair the cause as `ci-repair` does, base sync first: when
      `$DRIVE_PR_ROUND_REPAIR_SKILL` is set load it, else follow
      [`/jig:fix-ci`](../fix-ci/SKILL.md); then § 5 and § 6, pushing through
@@ -1822,12 +1823,13 @@ Then:
   4. Write the receipt to the path in `$DRIVE_PR_CI_DIAGNOSIS_REPORT`, at most
      4096 bytes of JSON, with the file editor:
      `{"diagnosis": "<why the earlier attempts failed and what this one changes>", "issue": "<tracker key>", "pushedHead": "<sha of the head you pushed>"}`.
-     When you parked the filing (attended, or policy unreadable), give
-     `"parked": "<the key you parked it under>"` in place of `issue`. The
-     driver accepts that receipt only when the drive state holds a
-     `human-decision` park of that key made during this diagnosis; it then
-     records "no issue filed" and still verifies the push. A receipt with
-     neither key, or both, is incomplete.
+     When you parked the filing, or an existing park explains why CI repair
+     still needs a person's decision, give `"parked": "<the open park's key>"`
+     in place of `issue`. The driver verifies that the key is still parked and
+     records the diagnosis. A verified push of a replacement head returns to
+     the gate on that head. With no replacement head reported, the driver
+     hands the open decision back as `HITL_PARKED`. A receipt must name
+     exactly one key.
      `diagnosis` is prose (400 characters are kept, secrets and addresses
      redacted); `issue`, when present, is a tracker key of at most 80 characters;
      `parked`, when present, at most 200 characters on one line;
@@ -2914,8 +2916,9 @@ falls in.
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/park-decision.json -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" park [PR] --key <key> --kind <thread|finding> --class <class>
 ```
 
-`<key>` is the thread id (`PRRT_kwDO...`) for `--kind thread` and the
-summary finding's fingerprint for `--kind finding`.
+`<key>` is the thread id (`PRRT_kwDO...`) for `--kind thread`. For
+`--kind finding`, use the summary finding's fingerprint or a stable key
+for a decision that has no summary finding, such as a CI repair blocker.
 
 Pass `--path <repository-relative-path>` for a finding anchored to a file;
 the script reads a thread's anchor from the forge when no path is given.
@@ -3920,7 +3923,9 @@ There is no API for it, so this skill does not pace against it. It does
 **detect** the wall after the fact, because the wall announces itself with a
 reset time: a Claude Code pass's transcript records
 `{"error":"rate_limit","apiErrorStatus":429,…}` whose text reads
-`You've hit your session limit · resets 3:20am (UTC)`, and Codex
+`You've hit your session limit · resets 3:20am (UTC)` (a short window) or
+`You've hit your weekly limit · resets Nov 27, 11am (UTC)` (a weekly window,
+with the dated reset it states), and Codex
 writes `used_percent`, `window_minutes` and an absolute `resets_at` epoch on
 every turn. `lib/quota/` reads it, one adapter per vendor, and the driver acts
 on the answer:
@@ -3966,7 +3971,18 @@ evidence immediately before the spawn:
   Claude adapter's `candidateFiles()` walks through
   `<project>/<session-id>/subagents/agent-*.jsonl`, with a directory-depth
   bound and one aggregate entry and time budget for the whole tree. The
-  snapshot and detection share that walk. Subagent records carry the parent
+  snapshot and detection share that walk. When the pass carries a session id,
+  detection also reads `<project>/<session-id>.jsonl` and its `subagents/`
+  by name, so a tree too large to walk within those bounds usually cannot
+  hide the pass's own wall. The by-name lookup has its own bounds (20,000
+  entries and five seconds), so a projects tree large or slow enough to
+  exhaust them can still hide the transcript. A pass failure whose walk was
+  cut short before it found a wall says so in the drive's closing report
+  (cause `unknown`), since "no wall found" was then not a finding; that
+  Claude scan's part of that warning is withheld when the by-name lookup read
+  the pass's session whole, because the pass's own transcript was then
+  checked; another adapter's truncated scan (Codex) still raises its own.
+  Subagent records carry the parent
   session id and use the same exact-id correlation below. Both vendors
   create a session's file when the session starts, so anything
   appearing afterwards is a session started during the pass — and, absent the

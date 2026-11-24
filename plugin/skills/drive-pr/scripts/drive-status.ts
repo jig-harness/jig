@@ -1001,13 +1001,13 @@ async function main(): Promise<number> {
             summaryUnaddressed: countOrNull(report.summaryUnaddressed),
             parkedSummaryFindings: countOrNull(report.summaryParked),
             // WHICH items, not just how many: a count cannot tell a resolved
-            // thread replaced by a new one from a round that did nothing
-            // Sorted, so equality is set equality.
+            // thread replaced by a new one from a round that did nothing.
             unresolvedThreadKeys: report.openThreadKeys,
             unresolvedThreadVersions: report.openThreadVersions,
             summaryUnaddressedKeys: report.summaryUnaddressedKeys,
             summaryHeldUndispatchedKeys: report.summaryHeldUndispatchedKeys,
             parkedKeys: report.parkedItemKeys,
+            actionableParkKeys: report.actionableParkKeys,
             // The evidence `structuralEscalationDue` above is derived from —
             // published for visibility, the same reason the key sets beside
             // it are. NOT the recurrence result itself: this is only THIS

@@ -14,7 +14,10 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { PROVISIONAL_MARKER } from "../scripts/lib/outcome.ts";
-import { listedThreadStandsOnProvisional } from "../scripts/lib/provisional.ts";
+import {
+  actionableParkKeys,
+  listedThreadStandsOnProvisional,
+} from "../scripts/lib/provisional.ts";
 import { provisionalBody } from "../scripts/provisional-reply.ts";
 import { parkRecord } from "./park-record-fixture.ts";
 import { reversalParkedKeys } from "../scripts/lib/state/decisions.ts";
@@ -617,5 +620,19 @@ describe("re-arming a HITL-parked drive with items unanswered", () => {
     expectSpawnExit(r, 0);
     expect(JSON.parse(r.stdout.trim())).toBe("");
     expect((await decisions(forge)).parked).toHaveLength(1);
+  });
+});
+
+describe("actionableParkKeys", () => {
+  it("keeps the park of a thread that is no longer open", () => {
+    const sets = {
+      keys: new Set(["standalone", "resolved", "open"]),
+      reversals: new Set<string>(),
+    };
+    expect(actionableParkKeys(sets)).toEqual([
+      "open",
+      "resolved",
+      "standalone",
+    ]);
   });
 });

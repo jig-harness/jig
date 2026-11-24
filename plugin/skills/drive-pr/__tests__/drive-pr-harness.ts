@@ -928,9 +928,6 @@ set -euo pipefail
 if [ -n "\${DRIVE_PR_STUB_GH_LOG:-}" ] && [ -z "\${DRIVE_PR_STUB_GH_NESTED:-}" ]; then
   printf '%s\\n' "\${1:-} \${2:-}" >> "$DRIVE_PR_STUB_GH_LOG"
 fi
-if [ -n "\${DRIVE_PR_STUB_GH_TIMES:-}" ] && [ -z "\${DRIVE_PR_STUB_GH_NESTED:-}" ] && [ "\${1:-} \${2:-}" = "pr view" ]; then
-  date +%s%N >> "$DRIVE_PR_STUB_GH_TIMES"
-fi
 export DRIVE_PR_STUB_GH_NESTED=1
 (
   # Model gh's flag parser before any fixture response. A newly misspelled
@@ -1213,6 +1210,16 @@ if [ -n "$rest_pr" ]; then
         rest_doc=1 ;;
     esac
   done
+  # Status evaluation begins with a REST snapshot, not gh pr view. Record
+  # that boundary in this process so cadence tests observe the reads the
+  # implementation makes without a separately scheduled runtime startup.
+  if [ -n "\${DRIVE_PR_STUB_GH_TIMES:-}" ]; then
+    for a in "$@"; do
+      if [ "$a" = "X-Drive-Pr-Caller: snapshot" ]; then
+        perl -MTime::HiRes=time -e 'printf "%.0f\\n", time * 1_000_000_000' >> "$DRIVE_PR_STUB_GH_TIMES"
+      fi
+    done
+  fi
   for a in "$@"; do
     if [ "$a" = "X-Drive-Pr-Caller: snapshot" ] && [ -f "$F/snapshot-unreadable" ]; then
       printf '%s\\n' "$*" >> "$F/snapshot-reads"
@@ -2743,24 +2750,21 @@ export async function park(
   stateDir: string,
   key: string,
   kind: "thread" | "finding",
+  parkClass?: string,
 ) {
-  const proc = Bun.spawn(
-    scriptArgv(join(SCRIPTS, "drive-state.ts"), ...parkArgs(key, kind)),
-    {
-      cwd: fixtureStateTree(stateDir),
-      env: {
-        ...gitCleanEnv(),
-        DRIVE_PR_STATE_DIR: stateDir,
-        DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
-        JIG__dispatch__person: "maintainer",
-      },
-      stdin: new TextEncoder().encode(
-        parkRecord("Did the arbiter escalate it"),
-      ),
-      stdout: "pipe",
-      stderr: "pipe",
+  const args = parkArgs(key, kind, parkClass);
+  const proc = Bun.spawn(scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args), {
+    cwd: fixtureStateTree(stateDir),
+    env: {
+      ...gitCleanEnv(),
+      DRIVE_PR_STATE_DIR: stateDir,
+      DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
+      JIG__dispatch__person: "maintainer",
     },
-  );
+    stdin: Buffer.from(parkRecord("Did the arbiter escalate it", parkClass)),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   await expectSpawnExited(proc, 0);
 }
 

@@ -242,13 +242,9 @@ function isReviewerCheck(check: HeadCheck, rules: ReadyRules): boolean {
 
 /** Latest ordinary checks by name and posting app; unread order retains every possible blocker. */
 function latestChecks(facts: ForgeFacts, rules: ReadyRules): HeadCheck[] {
-  const latestReviewer =
-    rules.reviewerApp === null ? null : reviewerRuns(facts, rules);
   return facts.checks.filter((check) => {
-    // The review witness orders its attempts by id: only the latest attempt
-    // per name blocks, and unread order keeps every attempt.
-    if (isReviewerCheck(check, rules))
-      return latestReviewer === null || latestReviewer.includes(check);
+    // The review witness has its own stricter ordering by attempt id.
+    if (isReviewerCheck(check, rules)) return true;
     return !facts.checks.some(
       (other) =>
         other.name === check.name &&
@@ -297,6 +293,7 @@ function approvedHere(facts: ForgeFacts): boolean {
 function witness(
   facts: MergeFacts,
   rules: ReadyRules,
+  runs: HeadCheck[] | null,
 ): { met: boolean; fact: string; byApp: boolean } {
   if (rules.reviewerApp === null)
     return approvedHere(facts)
@@ -306,7 +303,6 @@ function witness(
           fact: "no reviewer app is named and no person approved this head",
           byApp: false,
         };
-  const runs = reviewerRuns(facts, rules);
   if (
     facts.reviewCarriedFrom !== undefined &&
     facts.verifiedSha === facts.head &&
@@ -360,6 +356,8 @@ interface Read {
   requiredFailingNames: string[];
   /** The names of the failing checks that are not required, partitioned by record so a name two apps share stays on each side it belongs to. */
   optionalFailingNames: string[];
+  /** Whether a required check is still running, the reviewer's own judged by its latest attempt. */
+  requiredPending: boolean;
   /** The forge's merge state, `null` where a merge queue decides instead. */
   state: string | null;
   own: boolean;
@@ -601,8 +599,8 @@ const BLOCKERS: Array<(r: Read) => Row | null> = [
             : `a check failed after the drive converged (${failing.join(", ")}): re-run it, or re-arm the drive`,
         ]
       : null,
-  ({ facts }) =>
-    facts.checks.some((c) => c.required && c.state === "pending")
+  ({ requiredPending }) =>
+    requiredPending
       ? ["stay", waiting("the checks running"), "the checks are still running"]
       : null,
   ({ facts, state }) =>
@@ -698,8 +696,9 @@ function trustOf(facts: MergeFacts, rules: ReadyRules): TrustVerdict | null {
 
 /** What every row and condition reads, worked out once. */
 function readOf(facts: MergeFacts, rules: ReadyRules): Read {
-  facts = { ...facts, checks: latestChecks(facts, rules) };
-  const failingRecords = facts.checks.filter(
+  const checks = latestChecks(facts, rules);
+  const runs = reviewerRuns(facts, rules);
+  const failingRecords = checks.filter(
     (c) => c.state === "failure" && !isReviewerCheck(c, rules),
   );
   // A name two failing records share is told apart by their app when the
@@ -744,13 +743,20 @@ function readOf(facts: MergeFacts, rules: ReadyRules): Read {
   const trusted = trustOf(facts, rules);
   return {
     facts,
-    seen: witness(facts, rules),
+    seen: witness(facts, rules, runs),
     ciHeld:
       rules.ciHoldLabel !== null && facts.labels.includes(rules.ciHoldLabel),
     failing: labelled.map((c) => c.label),
     requiredFailing: requiredFailingNames.length > 0,
     requiredFailingNames,
     optionalFailingNames,
+    // Unread reviewer order cannot establish which pending attempts ended.
+    requiredPending: checks.some(
+      (c) =>
+        c.required &&
+        c.state === "pending" &&
+        (runs === null || !isReviewerCheck(c, rules) || runs.includes(c)),
+    ),
     state: facts.mergeQueue ? null : facts.mergeState,
     own: OWN.has(facts.authorAssociation) || trusted?.met === true,
     trusted,

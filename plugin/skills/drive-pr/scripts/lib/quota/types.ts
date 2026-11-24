@@ -186,6 +186,13 @@ export interface DetectOpts {
    * name fall back to `preexistingSessions` + `cwd` + `since`.
    */
   correlation?: SpawnCorrelation;
+  /**
+   * Called with the adapter's vendor when its detection-time walk was cut
+   * short by either bound and it found no wall: "no wall" is then not a
+   * finding, and the caller says so where a person reads the stop (the
+   * drive's closing report), beside the line the adapter prints.
+   */
+  onScanTruncated?: (vendor: string) => void;
 }
 
 /**
@@ -653,4 +660,18 @@ export interface QuotaAdapter {
     argv: readonly string[],
     env: NodeJS.ProcessEnv,
   ): PreparedSpawn | null;
+}
+
+/**
+ * Say that an adapter's detection-time walk was cut short before it found a
+ * wall: `message` on the driver's output, and `opts.onScanTruncated` for the
+ * caller that carries it to where a person reads the stop.
+ */
+export function reportTruncatedScan(
+  opts: DetectOpts,
+  vendor: string,
+  message: string,
+): void {
+  console.error(message);
+  opts.onScanTruncated?.(vendor);
 }
