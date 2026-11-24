@@ -464,17 +464,30 @@ export function winddownFingerprintsOf(stickyBody: string): Set<string> {
 }
 
 export function parseDeclaredUnanchored(body: string): number {
-  const m = body.match(
-    /(-?\d+)\s+finding\(s\)\s+without\s+a\s+diff-anchorable\s+line/i,
+  // Declarations are protocol prose, not examples. Mask complete inline code
+  // spans without changing line structure so a quoted sample cannot affect the
+  // synthetic-work count.
+  const prose = body.replace(/(`+)(?:[^`]|`(?!\1))*\1/g, (span) =>
+    span.replace(/[^\r\n]/g, " "),
   );
-  if (!m) return 0;
-  const value = Number(m[1]);
-  // A reviewer comment is untrusted input.  This count controls a loop which
-  // creates synthetic findings, so refuse an implausible declaration rather
-  // than allocating until the process is exhausted.
-  if (!Number.isSafeInteger(value) || value < 0 || value > 1000)
-    throw new Error("declared unanchored finding count is invalid");
-  return value;
+  const declarations = [
+    ...prose.matchAll(
+      /([^\s]+)\s+finding\(s\)\s+without\s+a\s+diff-anchorable\s+line/gi,
+    ),
+  ];
+  if (declarations.length === 0) return 0;
+  const values = declarations.map((match) => {
+    const token = match[1] ?? "";
+    if (!/^-?\d+$/.test(token))
+      throw new Error("declared unanchored finding count is invalid");
+    const value = Number(token);
+    if (!Number.isSafeInteger(value) || value < 0 || value > 1000)
+      throw new Error("declared unanchored finding count is invalid");
+    return value;
+  });
+  if (new Set(values).size !== 1)
+    throw new Error("declared unanchored finding counts conflict");
+  return values[0] ?? 0;
 }
 
 export interface BodyFinding {
@@ -1363,6 +1376,14 @@ export function reviewerSticky(
     if (body === null) continue;
     const round = parseReviewRound(body);
     const reviewedSha = reviewedShaIn(body, reviewedShaMarker());
+    // A lower-round candidate cannot affect the selected summary, including
+    // by failing to parse.  Ignore it before consuming untrusted payload.
+    if (
+      round !== null &&
+      highestExplicitRound !== null &&
+      round < highestExplicitRound
+    )
+      continue;
     // A stamp says which head was reviewed, not that this comment supersedes
     // a preceding account of its findings. In particular, a skip notice may
     // deliberately retain the last reviewed SHA.
@@ -1392,16 +1413,6 @@ export function reviewerSticky(
         reviewedShaMarker(),
         skipNoticeMarker(),
       ).skip !== null;
-    // An older explicit round can never replace the selected summary. Reject
-    // it before decoding its payload, since malformed evidence there is not
-    // evidence about the current summary at all.
-    if (
-      !skipOnly &&
-      round !== null &&
-      highestExplicitRound !== null &&
-      round < highestExplicitRound
-    )
-      continue;
     // An auxiliary response never supersedes a finding-bearing summary just
     // because it happens to mention a protocol marker. A newer declared round
     // is also evidence: it is the reviewer's explicit replacement boundary.

@@ -211,6 +211,7 @@ function structuralSkipNotices(body: string, marker: string): string {
       /^[ \t]*$/.test(line.slice(line.indexOf(token) + token.length))
     ) {
       fence = null;
+      continue;
     }
     if (fence !== null || indentation.columns >= 4 || /^ {0,3}>/.test(line)) {
       // The skip notice intentionally retains its blockquoted prose, but a
@@ -279,7 +280,7 @@ export function reviewerStickyIn(
     if (!replacesSticky) {
       // A no-stamp skip can prove its own excluded-path case, but it cannot
       // borrow the reviewed SHA of an earlier comment.
-      if (sticky.sha === "") sticky = { ...sticky, skip };
+      if (skip !== null) sticky = { ...sticky, skip };
       continue;
     }
     if (round !== null)
