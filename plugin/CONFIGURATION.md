@@ -960,9 +960,11 @@ model.
   `routing.stages.<stage>.models.<runtime>.<tier>` take any model the selected
   launch can pass to its runtime, one word with no control characters,
   whitespace, comma, semicolon or equals sign and not beginning with a dash.
-  A `model_tiers` declaration key keeps the older, less restrictive key grammar,
-  so an unused legacy declaration can remain while selected values use the safe
-  operand rule. A declaration key, unlike a model value, may not be `__proto__`:
+  Both `model_tiers` and `family_tiers` declaration keys keep the older key
+  grammar: they may begin with a dash, but may not be empty or contain NUL,
+  whitespace, commas, semicolons or equals signs. This lets an unused legacy
+  declaration remain while selected values use the safe operand rule. A
+  declaration key, unlike a model value, may not be `__proto__`:
   the shared loader rejects that mapping key before routing
   reads it. For a runtime with a list (`claude-code`, `codex`) a name
   outside the list is **refused** until `routing.model_tiers.<runtime>.<model>` (the recommended spelling; the older

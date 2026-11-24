@@ -72,7 +72,7 @@ describe("a model outside the families", () => {
     expect(route.model).toBe(OUTSIDE);
     expect(route.runtime_model).toBe(OUTSIDE);
     expect(rules(config).reported).toContain(
-      `routing.model_tiers.codex."${OUTSIDE}" reads ${OUTSIDE} as a strategic family: the provider's flagship`,
+      `routing.model_tiers.codex."${OUTSIDE}" reads "${OUTSIDE}" as a strategic family: the provider's flagship`,
     );
   });
 
@@ -513,7 +513,7 @@ describe("routing.family_tiers", () => {
     expect([...parsed.reported].sort()).toEqual(
       [
         "routing.model_tiers.codex.sol reads sol as a strategic family: new short",
-        'routing.model_tiers.codex."gpt-6.2-sol" reads gpt-6.2-sol as a strategic family: new release',
+        'routing.model_tiers.codex."gpt-6.2-sol" reads "gpt-6.2-sol" as a strategic family: new release',
       ].sort(),
     );
     expect(parsed.reported.join("\n")).not.toMatch(/old short|old legacy/);

@@ -499,7 +499,7 @@ export function parseModels(
   for (const [runtime, families] of Object.entries(familyTiers))
     for (const [family, { tier, reason, key }] of Object.entries(families))
       reported.push(
-        `routing.${key}.${formatField([runtime])}.${formatField([family])} reads ${family} as a ${tier} family: ${reason}`,
+        `routing.${key}.${formatField([runtime])}.${formatField([family])} reads ${formatField([family])} as a ${tier} family: ${reason}`,
       );
   return { models, stages, reported };
 }
