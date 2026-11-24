@@ -116,6 +116,7 @@ import type { TakeoverPlan } from "./takeover.ts";
 import { standDownOnNewerClaim } from "./takeover-check.ts";
 import { currentIso, currentMs, parseMs } from "../../../../../shared/time.ts";
 import { DRIVE_EXIT } from "./../status/terminal-states.ts";
+import { probeStopOf } from "./../status/probe-stop.ts";
 
 /** Who this driver is, as the ledger names it. */
 export interface LedgerIdentity {
@@ -908,7 +909,9 @@ export function ledgerSettlement(
         ? driverRuntime.stopListingPages
         : null,
       driverRuntime.stopLimitedUntil,
-      driverRuntime.stopProbe?.code === code ? driverRuntime.stopProbe : null,
+      driverRuntime.stopProbe?.code === code
+        ? probeStopOf(driverRuntime.stopProbe)
+        : null,
     );
 
   const recordProjectionLimit = async (

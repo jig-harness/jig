@@ -1,5 +1,9 @@
 import { expect, spyOn, test } from "bun:test";
-import { recordProbeStop } from "../scripts/lib/status/probe-stop.ts";
+import {
+  inProcessProbeOf,
+  probeStopOf,
+  recordProbeStop,
+} from "../scripts/lib/status/probe-stop.ts";
 
 test("a park stop carries the actionable keys the status JSON publishes under work", () => {
   const log = spyOn(console, "error").mockImplementation(() => {});
@@ -43,4 +47,21 @@ test("a park stop keeps every valid parked key, however long or many", () => {
   } finally {
     log.mockRestore();
   }
+});
+
+test("the durable probe form drops the park keys that the in-process probe keeps", () => {
+  const raw = {
+    code: 8,
+    state: "HITL_PARKED",
+    reason: "decisions wait",
+    parkKeys: ["k".repeat(300), "park-1"],
+  };
+  expect(inProcessProbeOf(raw)?.parkKeys).toEqual(raw.parkKeys);
+  const durable = probeStopOf(raw);
+  expect(durable).toEqual({
+    code: 8,
+    state: "HITL_PARKED",
+    reason: "decisions wait",
+  });
+  expect(JSON.stringify(durable)).not.toContain("parkKeys");
 });

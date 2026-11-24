@@ -39,7 +39,20 @@ function safeReason(reason: string): string {
     : `${text.slice(0, REASON_LIMIT - 1)}…`;
 }
 
+/**
+ * The probe as every durable record (the printed line, the events, the
+ * ledger) keeps it: the fixed-size fields only. The park keys are unbounded,
+ * so they stay with the in-process probe (`inProcessProbeOf`).
+ */
 export function probeStopOf(value: unknown): ProbeStop | null {
+  const full = inProcessProbeOf(value);
+  if (full === null) return null;
+  const { parkKeys: _inProcess, ...durable } = full;
+  return durable;
+}
+
+/** The probe with the park keys the stop waits on, for the driver's own stop text. */
+export function inProcessProbeOf(value: unknown): ProbeStop | null {
   if (!matches(PROBE_STOP_SHAPE, value)) return null;
   const { code, state, failure, parkKeys } = value;
   const reason = safeReason(value.reason);
@@ -60,7 +73,7 @@ export function recordProbeStop(
   if (typeof status.reason !== "string") return null;
   const work = status.work as { actionableParkKeys?: unknown } | undefined;
   const actionable = work?.actionableParkKeys;
-  const probe = probeStopOf({
+  const probe = inProcessProbeOf({
     code,
     state: status.state,
     reason: safeReason(status.reason),
@@ -73,8 +86,7 @@ export function recordProbeStop(
   if (probe !== null) {
     // The printed line is read back from bounded launch output, so it carries
     // only the fixed-size fields; the park keys stay with the in-process probe.
-    const { parkKeys: _inProcess, ...line } = probe;
-    console.error(`${PREFIX}${JSON.stringify(line)}`);
+    console.error(`${PREFIX}${JSON.stringify(probeStopOf(probe))}`);
   }
   return probe;
 }
