@@ -337,8 +337,10 @@ assignment edits the layer's `model:` value or configuration setting back to
 the baseline's family alias, together with the declared cost tier beside it
 where the metadata carries one (the check rejects a tier that contradicts the
 model). Where shared routing selects the model, change the row that selects
-the affected layer and check every other consumer of that row; split the row
-first if they need different models. It is an exact reversal only while the alias still
+the affected layer and check every other consumer of that row. A stage override
+can isolate the change only when those consumers run in different stages;
+otherwise split the affected layer into a separately configured selection
+before changing it. It is an exact reversal only while the alias still
 resolves to the measured release. Once the family has moved on, or when the
 measured baseline itself can no longer be used and some other model stands in
 as an operational fallback, the result is a provisional substitution: label

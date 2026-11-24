@@ -1935,8 +1935,9 @@ make, use the entry's term instead.
   its declarations are per runtime and can name a known family spelling or an
   exact model identifier. For one runtime, every surviving declaration of the
   same family or exact identifier — from `routing.model_tiers` or its older
-  spelling `routing.family_tiers` — must agree on its tier; otherwise the
-  plugin's known-family classification applies. The catalog's Scout
+  spelling `routing.family_tiers` — must agree on its tier; conflicting
+  declarations are refused. When neither key declares a listed family or
+  identifier, the plugin's known-family classification applies. The catalog's Scout
   restriction still applies. Not
   from how important the job sounds. *Avoid*: model level (a *maturity level*
   is something else).

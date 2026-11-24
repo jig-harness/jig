@@ -444,7 +444,7 @@ rules, the share a person chose and the share recorded and not applied.
 | `routing.raise.reviews` | `true`, `false` | `true` | `determine_route.ts` |
 | `routing.models.<runtime>.<tier>` | the runtime's family alias, per complexity tier | `claude-code: {simple: sonnet, standard: sonnet, complex: opus}`, `codex: {simple: terra, standard: terra, complex: sol}` | `determine_route.ts`, the configuration loader, `drive-pr`, the dispatcher |
 | `routing.efforts.<runtime>.<effort>` | the runtime's own level name | unchanged | `determine_route.ts` |
-| `routing.family_tiers.<runtime>.<family>` | `{tier, reason}` | none: the tier the known-families list gives | the configuration loader, the audit |
+| `routing.model_tiers.<runtime>.<model>` (or the older `routing.family_tiers.<runtime>.<model>`) | `{tier, reason}` | none: the tier the known-families list gives | the configuration loader, the audit |
 
 **Existing type overrides keep their precedence.** An explicit
 `routing.types.<type>.tier` replaces the type/size table's initial tier,
@@ -469,8 +469,8 @@ a type outside the effective type set, or a type in the set with no
 complete row where the repository renamed it (the
 [work-types rule](work-types.md#configuration)); a tier or effort outside
 the closed lists (`execution` and `strategic` read as `standard` and
-`complex`); an alias outside the known families for a runtime that
-has them; a `routing.models` row in which a stricter complexity tier maps
+`complex`); a model outside a runtime's known families whose M0 tier neither
+`routing.model_tiers` nor `routing.family_tiers` declares; a `routing.models` row in which a stricter complexity tier maps
 to a family of a lower M0 tier (from the list, or from
 `routing.family_tiers`) than a lighter one; a
 `family_tiers` entry with no reason; and, where the repository has a label taxonomy
