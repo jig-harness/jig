@@ -64,7 +64,7 @@ async function failedPass(
 
 test("an unreadable mailbox at the failure report clears the cut-short scan note", async () => {
   const realError = console.error;
-  console.error = () => {};
+  console.error = () => undefined;
   try {
     expect(await failedPass(async () => 1)).toBe(1);
   } finally {
@@ -75,7 +75,7 @@ test("an unreadable mailbox at the failure report clears the cut-short scan note
 
 test("a clear mailbox keeps the cut-short scan note for the failure report", async () => {
   const realError = console.error;
-  console.error = () => {};
+  console.error = () => undefined;
   try {
     await failedPass(async () => "clear");
   } finally {
