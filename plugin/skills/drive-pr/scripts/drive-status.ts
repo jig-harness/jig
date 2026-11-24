@@ -489,7 +489,6 @@ async function main(): Promise<number> {
     );
   }
 
-  await exportPolicyBase(pr);
   // WHY the local head reads as it does, published alongside it. An empty
   // `local` has two unrelated causes — the caller switched the measurement off,
   // or it was attempted and failed — and a consumer that cannot tell them apart
@@ -1548,6 +1547,7 @@ async function main(): Promise<number> {
       continue;
     }
 
+    await exportPolicyBase(pr);
     const code = await evaluate(ctx, report);
     firstEvaluationDone = true;
 

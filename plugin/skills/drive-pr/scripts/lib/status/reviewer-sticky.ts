@@ -60,16 +60,22 @@ export function reviewerStickyBody(
   // A structural marker may follow a heading, but quoted and code examples
   // are not reviewer evidence. Requiring byte zero rejected valid configured
   // summaries; accepting every trimmed line lets an example replace one.
-  let fence: "`" | "~" | null = null;
+  let fence: { character: "`" | "~"; length: number } | null = null;
   const structuralMarker = body.split(/\r?\n/).some((line) => {
-    const trimmed = line.trimStart();
-    const openingFence = trimmed.match(/^(`{3,}|~{3,})/);
-    if (openingFence) {
-      const character = openingFence[1]?.[0] as "`" | "~";
-      fence = fence === character ? null : (fence ?? character);
+    // Fenced blocks are structural only at Markdown's permitted indentation.
+    // Remember their delimiter length: three backticks inside a four-backtick
+    // block are content, not its closing fence.
+    const fenceLine = line.match(/^ {0,3}(`{3,}|~{3,})(?:[ \t].*)?$/);
+    if (fenceLine) {
+      const token = fenceLine[1] ?? "";
+      const character = token[0] as "`" | "~";
+      if (fence === null) fence = { character, length: token.length };
+      else if (fence.character === character && token.length >= fence.length)
+        fence = null;
       return false;
     }
-    if (fence !== null || /^\s{0,3}>/.test(line) || /^(?: {4}|\t)/.test(line))
+    const trimmed = line.trimStart();
+    if (fence !== null || /^ {0,3}>/.test(line) || /^(?: {4}|\t)/.test(line))
       return false;
     return trimmed.startsWith(summaryMarker);
   });

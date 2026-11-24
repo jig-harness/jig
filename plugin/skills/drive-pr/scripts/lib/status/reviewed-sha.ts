@@ -271,7 +271,10 @@ function skipExcludedPathsAt(
   )
     return { reason: "the reviewed policy base could not be resolved" };
   const bound = (process.env.DRIVE_PR_POLICY_BOUND ?? "").trim();
-  const commit = bound === "" ? baseHead : bound;
+  // The refreshed policy base is the policy witness. `baseHead` belongs to
+  // the evaluation snapshot and can lag the fetched target branch.
+  const policyBase = (process.env.DRIVE_PR_POLICY_BASE ?? "").trim();
+  const commit = bound === "" ? policyBase || baseHead : bound;
   const snapshot = readSnapshotAt(
     commit,
     bound === "" ? "pull request base" : "DRIVE_PR_POLICY_BOUND",

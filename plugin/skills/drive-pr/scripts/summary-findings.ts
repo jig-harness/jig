@@ -82,6 +82,7 @@ import { reviewsBy } from "./lib/status/review-object.ts";
 import {
   parseReviewRound,
   reviewerStickyBody,
+  reviewerStickyIn,
   reviewedShaIn,
 } from "./lib/status/reviewer-sticky.ts";
 import {
@@ -1343,13 +1344,23 @@ export function reviewerSticky(
       /<!--\s*ai-review-backlog\s*:/.test(body) ||
       parseBodyFindings(body).length > 0 ||
       parseDeclaredUnanchored(body) > 0;
+    const skipOnly =
+      !carriesEvidence &&
+      reviewerStickyIn(
+        [comment],
+        isReviewerLogin,
+        stickyMarker(),
+        reviewedShaMarker(),
+      ).skip !== null;
     // An auxiliary response never supersedes a finding-bearing summary just
     // because it happens to mention a protocol marker. A newer declared round
     // is also evidence: it is the reviewer's explicit replacement boundary.
     if (
       selected === undefined ||
-      carriesEvidence ||
-      (round !== null && (selectedRound === null || round > selectedRound))
+      (!skipOnly &&
+        round !== null &&
+        (selectedRound === null || round > selectedRound)) ||
+      (!skipOnly && round === selectedRound && carriesEvidence)
     ) {
       selected = comment;
       selectedRound = round;
