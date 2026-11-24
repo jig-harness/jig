@@ -1431,7 +1431,9 @@ function isCleanReplacement(
 ): boolean {
   return (
     !carriesFindingEvidence &&
-    differentReviewedHead(reviewedSha, selectedReviewedSha)
+    reviewedSha !== "" &&
+    (selectedReviewedSha === "" ||
+      differentReviewedHead(reviewedSha, selectedReviewedSha))
   );
 }
 

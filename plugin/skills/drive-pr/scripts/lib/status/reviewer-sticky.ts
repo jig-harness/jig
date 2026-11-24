@@ -243,6 +243,7 @@ export function reviewerStickyIn(
     updatedAt: "",
     skip: null,
   };
+  let highestExplicitRound: number | null = null;
   for (const raw of comments) {
     const body = reviewerStickyBody(raw, reviewerLogin, summaryMarker);
     if (body === null) continue;
@@ -257,24 +258,42 @@ export function reviewerStickyIn(
     // published a review. It must not replace the selected sticky's timestamp.
     // A new reviewed head or a newer explicit review round is a replacement.
     const newerRound =
-      round !== null && (sticky.round === null || round > sticky.round);
+      round !== null &&
+      (highestExplicitRound === null || round > highestExplicitRound);
     // A lower declared round cannot replace the selected review just because
     // it names another head: summary selection rejects that candidate too.
+    const lowerRound =
+      round !== null &&
+      highestExplicitRound !== null &&
+      round < highestExplicitRound;
     const replacesSticky =
       bodySha !== "" &&
       (sticky.sha === "" ||
         newerRound ||
-        (!sameReviewedHead(bodySha, sticky.sha) &&
-          (round === null || sticky.round === null || round >= sticky.round)));
+        (!sameReviewedHead(bodySha, sticky.sha) && !lowerRound));
+    // A full marker can make an earlier abbreviated witness usable, but an
+    // acknowledgement of the same review must not refresh its timestamp.
+    if (
+      !replacesSticky &&
+      bodySha.length > sticky.sha.length &&
+      sameReviewedHead(bodySha, sticky.sha)
+    ) {
+      sticky = { ...sticky, sha: bodySha };
+      continue;
+    }
     // An unstamped comment qualifies only when it carries a skip notice.
     if (!replacesSticky && skip === null) continue;
     // A skip says this comment did not review code. Retain the last affirmative
     // review witness and its timestamp while making the newer skip available
     // to the skipped-head check.
     if (!replacesSticky) {
-      sticky = { ...sticky, skip };
+      // A no-stamp skip can prove its own excluded-path case, but it cannot
+      // borrow the reviewed SHA of an earlier comment.
+      if (sticky.sha === "") sticky = { ...sticky, skip };
       continue;
     }
+    if (round !== null)
+      highestExplicitRound = Math.max(highestExplicitRound ?? round, round);
     sticky = {
       sha: bodySha,
       round,
