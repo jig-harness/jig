@@ -100,3 +100,21 @@ test("the trusted automation adoption opt-out is accepted and reported", () => {
   );
   expect(adopt?.message).toContain("install inputs");
 });
+
+test("the opt-out with adoption and labels off says to start the drive directly, and refusal hides the guidance", () => {
+  const direct = findings(
+    'dispatch:\n  adopt: { enabled: false, trusted_automation: false }\npull_requests:\n  trusted_automation: ["renovate[bot]"]\n',
+  ).find((f) => f.id === "derivation:pull_requests.trusted_automation:adopt");
+  expect(direct?.message).toContain("start the drive directly");
+  expect(direct?.message).not.toContain("labels it drive");
+  const plain = findings(
+    'dispatch:\n  adopt: { enabled: false }\npull_requests:\n  trusted_automation: ["renovate[bot]"]\n',
+  ).find((f) => f.id === "derivation:pull_requests.trusted_automation:adopt");
+  expect(plain?.message).toContain("pickup");
+  const refused = findings(
+    'dispatch:\n  adopt: { enabled: true, trusted_automation: 3 }\npull_requests:\n  trusted_automation: ["renovate[bot]"]\n',
+  ).map((f) => f.id);
+  expect(refused).not.toContain(
+    "derivation:pull_requests.trusted_automation:adopt",
+  );
+});

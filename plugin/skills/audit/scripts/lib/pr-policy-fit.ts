@@ -6,6 +6,7 @@
  */
 import { ghJson } from "../../../../shared/detect.ts";
 import { isRecord } from "../../../../shared/guards.ts";
+import { dispatchSection } from "../../../../dispatch/lib/section.ts";
 import { trustedAutomationOf } from "../../../drive-pr/scripts/lib/trusted-automation.ts";
 import { labelFindings } from "./label-fit.ts";
 import { at, type Finding } from "./schema.ts";
@@ -64,8 +65,10 @@ export async function policyFindings(
  * approval is still the review witness, so the list changes no approval
  * requirement; and when adoption or its trusted-bot rule is off, a
  * listed bot's pull request with no ledger is not adopted by its author;
- * a person's label (where labels are on), a hand-armed drive, or an eligible
- * pickup handoff can still start its first drive.
+ * with only author-based adoption off, a person's label (where labels are
+ * on), a hand-armed drive or an eligible pickup handoff can still start its
+ * first drive; with the explicit opt-out, a handoff or conflict repair is
+ * the only automatic start left.
  */
 export function trustedFit(config: Config): Finding[] {
   if (at(config, "pull_requests.trusted_automation") === undefined) return [];
@@ -88,19 +91,25 @@ export function trustedFit(config: Config): Finding[] {
       message:
         "pull_requests.trusted_automation does not change the approval requirement for merge now without review.reviewer_app: a person's approval is then the witness of every review and also satisfies the author condition",
     });
-  if (at(config, "dispatch.adopt.trusted_automation") === false)
+  const dispatch = dispatchSection(config);
+  if (!dispatch.ok) return findings;
+  const { adopt, labels } = dispatch.value;
+  if (adopt.excludeTrusted === true)
     findings.push({
       id: "derivation:pull_requests.trusted_automation:adopt",
       severity: "info",
-      message:
-        "dispatch.adopt.trusted_automation is false: a listed bot's drive starts only when a person arms it by hand or, where dispatch.labels.enabled is on, labels it drive (or rearm where it stopped in a state a rearm can restart, not a converged head that moved); with labels off, start the drive directly. Review the install inputs (manifests, installer configuration, lockfiles) against a trusted baseline before starting each drive.",
+      message: `dispatch.adopt.trusted_automation is false: a listed bot's drive with no ledger starts only when a person arms it by hand${
+        labels.enabled
+          ? " or labels it drive; the drive label starts the first drive on whatever head the dispatcher reads when it plans the launch, so review the install inputs (manifests, installer configuration, lockfiles) against a trusted baseline at that moment and remove the label if they change. A rearm label restarts only a drive stopped in a state a rearm can restart, on a trusted request bound to that stop, never a converged head that moved"
+          : "; with dispatch.labels.enabled off, start the drive directly after reviewing the install inputs (manifests, installer configuration, lockfiles) against a trusted baseline"
+      }. An eligible pickup handoff or automatic conflict repair may still start a drive; a drive a person stopped stays stopped.`,
     });
-  else if (at(config, "dispatch.adopt.enabled") !== true)
+  else if (!adopt.enabled)
     findings.push({
       id: "derivation:pull_requests.trusted_automation:adopt",
       severity: "info",
       message:
-        "Author-based adoption is off, so a listed bot's pull request with no ledger is not adopted by its author; a person can still label it drive (where dispatch.labels.enabled is on) or arm a drive by hand. A completed process pickup can still start the first drive of its own same-repository pull request, and ledger-backed recovery restarts a stopped drive. Set dispatch.adopt.trusted_automation: false to require a person to start every listed bot's drive, and review its install inputs first.",
+        "Author-based adoption is off, so a listed bot's pull request with no ledger is not adopted by its author; a person can still label it drive (where dispatch.labels.enabled is on) or arm a drive by hand. A completed process pickup can still start the first drive of its own same-repository pull request, and a drive that stopped in an eligible state can restart from its ledger. Set dispatch.adopt.trusted_automation: false to require a person to start every listed bot's drive, and review its install inputs first.",
     });
   return findings;
 }
