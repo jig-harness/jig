@@ -694,7 +694,15 @@ describe("required checks and reviewer attempts", () => {
       { ...ci, id: 21, app: "ci-a", required: true, state: "failure" },
       { ...ci, id: 22, app: "ci-a", required: false, state: "failure" },
       { ...ci, name: "lint", id: null, app: null, state: "failure" },
-      { ...ci, name: "lint", id: null, app: null, state: "failure" },
+      (() => {
+        const { id: _omitted, ...noId } = {
+          ...ci,
+          name: "lint",
+          app: null,
+          state: "failure" as const,
+        };
+        return noId as HeadCheck;
+      })(),
     ];
     const r = readiness(f, RULES);
     expect(r.failing).toEqual([
