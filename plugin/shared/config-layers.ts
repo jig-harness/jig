@@ -319,16 +319,26 @@ export function repositoryConfigPath(
  * (`do_item.agents.title_keywords."node.js"`), so the path reads back
  * unambiguously with `parseField`.
  */
+const escapeDisplayControls = (value: string): string =>
+  value.replace(
+    /[\p{Cc}\p{Bidi_Control}]/gu,
+    (character) =>
+      `\\u${character.codePointAt(0)?.toString(16).padStart(4, "0")}`,
+  );
+
+/** A value for a diagnostic, with invisible controls escaped but ordinary text unchanged. */
+export function formatDisplayValue(value: string): string {
+  return /[\p{Cc}\p{Bidi_Control}]/u.test(value)
+    ? escapeDisplayControls(JSON.stringify(value))
+    : value;
+}
+
 export function formatField(path: readonly string[]): string {
   return path
     .map((key) =>
       /^[A-Za-z0-9_-]+$/.test(key)
         ? key
-        : JSON.stringify(key).replace(
-            /\p{Cc}/gu,
-            (character) =>
-              `\\u${character.codePointAt(0)?.toString(16).padStart(4, "0")}`,
-          ),
+        : escapeDisplayControls(JSON.stringify(key)),
     )
     .join(".");
 }

@@ -522,9 +522,11 @@ test("field paths round-trip keys that hold dots", () => {
   expect(parseField("a.b")).toEqual(["a", "b"]);
 });
 
-test("field paths escape C1 control characters", () => {
-  const path = ["routing", "model_tiers", "model\u0080name"];
-  expect(formatField(path)).toBe('routing.model_tiers."model\\u0080name"');
+test("field paths escape control and bidirectional characters", () => {
+  const path = ["routing", "model_tiers", "model\u0080\u202Ename"];
+  expect(formatField(path)).toBe(
+    'routing.model_tiers."model\\u0080\\u202ename"',
+  );
   expect(parseField(formatField(path))).toEqual(path);
 });
 

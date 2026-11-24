@@ -94,6 +94,13 @@ describe("a model outside the families", () => {
     ).toThrow(`routing.model_tiers.claude-code."${OUTSIDE}"`);
   });
 
+  it("escapes controls in an undeclared selected model", () => {
+    const selected = "outside\u202Emodel";
+    expect(() =>
+      rules({ routing: { models: { codex: { complex: selected } } } }),
+    ).toThrow('"outside\\u202emodel" is not a model codex knows');
+  });
+
   it("keeps a declared outside model available to route derivation", () => {
     const config = {
       routing: {
@@ -147,7 +154,7 @@ describe("a model outside the families", () => {
   });
 
   it("escapes controls in an unused declaration's audit report", () => {
-    const declared = "unused\u0080model";
+    const declared = "unused\u0080\u202Emodel";
     const reported = rules({
       routing: {
         model_tiers: {
@@ -156,7 +163,7 @@ describe("a model outside the families", () => {
       },
     }).reported.join("\n");
     expect(reported).toContain(
-      '"unused\\u0080model" reads "unused\\u0080model"',
+      '"unused\\u0080\\u202emodel" reads "unused\\u0080\\u202emodel"',
     );
     expect(reported).not.toContain(declared);
   });

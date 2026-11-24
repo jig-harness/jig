@@ -31,7 +31,10 @@
  * one the highest layer that sets a cell wins (`modelAlias`).
  */
 
-import { formatField } from "../../../../shared/config-layers.ts";
+import {
+  formatDisplayValue,
+  formatField,
+} from "../../../../shared/config-layers.ts";
 import {
   familiesOf,
   familyOf,
@@ -321,7 +324,7 @@ function familyTier(
   );
   if (family?.tier === "scout" || own === "scout")
     throw new RoutingError(
-      `${field}: ${name} is a Scout family, which M0 keeps read-only, so it is never a pickup's route and no routing.model_tiers or routing.family_tiers entry changes that (ADR-0009); an implementer may still hand it simple sub-steps`,
+      `${field}: ${formatDisplayValue(name)} is a Scout family, which M0 keeps read-only, so it is never a pickup's route and no routing.model_tiers or routing.family_tiers entry changes that (ADR-0009); an implementer may still hand it simple sub-steps`,
     );
   return own ?? family?.tier;
 }
@@ -336,7 +339,7 @@ function refuseUnlisted(
   const known = familiesOf(runtime);
   if (known === undefined || placed) return;
   throw new RoutingError(
-    `${field}: ${name} is not a model ${runtime} knows (${known.families.map((f) => f.alias).join(", ")}); name one of those, or say which M0 tier ${name} is by setting routing.model_tiers.${formatField([runtime])}.${formatField([name])} to { tier: ${M0_TIERS.join(" | ")}, reason }`,
+    `${field}: ${formatDisplayValue(name)} is not a model ${runtime} knows (${known.families.map((f) => f.alias).join(", ")}); name one of those, or say which M0 tier ${formatDisplayValue(name)} is by setting routing.model_tiers.${formatField([runtime])}.${formatField([name])} to { tier: ${M0_TIERS.join(" | ")}, reason }`,
   );
 }
 
@@ -353,7 +356,7 @@ function refuseCheaperStricter(
       if (low === undefined || high === undefined) return;
       if (M0_TIERS.indexOf(high) < M0_TIERS.indexOf(low))
         throw new RoutingError(
-          `${at(stricter)}: the ${stricter} tier runs on ${row[stricter]} (M0 ${high}), a lower M0 tier than the ${lighter} tier's ${row[lighter]} (M0 ${low}); a stricter complexity tier never runs on a cheaper family`,
+          `${at(stricter)}: the ${stricter} tier runs on ${formatDisplayValue(row[stricter] ?? "")} (M0 ${high}), a lower M0 tier than the ${lighter} tier's ${formatDisplayValue(row[lighter] ?? "")} (M0 ${low}); a stricter complexity tier never runs on a cheaper family`,
         );
     });
   });
@@ -379,7 +382,7 @@ function checkRow(
   refuseCheaperStricter(row, m0, at);
   return TIERS.filter((_, i) => m0[i] === "judgment").map(
     (tier) =>
-      `${at(tier)} runs the ${tier} tier on ${row[tier]}, a Judgment family no default names`,
+      `${at(tier)} runs the ${tier} tier on ${formatDisplayValue(row[tier] ?? "")}, a Judgment family no default names`,
   );
 }
 
