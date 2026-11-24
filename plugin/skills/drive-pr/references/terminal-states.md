@@ -279,8 +279,8 @@ all or none: one unanswered park of any other class that still waits after
 the settlement above (a resolved thread's park a dispatcher re-arm settled
 does not), any place an answer could be that the re-arm could not read, a dispute or an answer that does not
 settle an item, or a condition note without an answer leaves every item
-parked, the `escalated` ones too. Nothing else is unparked until all of them
-are settled.
+parked, the `escalated` ones too. Once every item is answered, resolved or
+eligible for provisional handling, the re-arm unparks the whole set together.
 
 ### The final status re-read
 
