@@ -16,15 +16,71 @@ const markdownText = (value: string, startsLine: boolean) => {
   const prefixed = startsLine ? value : `x${value}`;
   const rendered = prefixed
     .replace(/^[ \t]+/gm, "")
-    .replace(/[\\`*_[\]<>&#~]/g, "\\$&")
+    .replace(/[\\`*_[\]<>|&#~]/g, "\\$&")
     .replace(/^([-+=])/gm, "\\$1")
     .replace(/^(\d{1,9})([.)])/gm, "$1\\$2");
   return startsLine ? rendered : rendered.slice(1);
 };
 
 /** Every GFM bare-autolink form, rendered as source text rather than a link. */
-const BARE_AUTOLINK =
-  /\b(?:(?:https?|ftp):\/\/[^\s<>()]+|(?:www\.)[^\s<>()]+|(?:mailto|xmpp):[^\s<>()]+|[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9_-]+(?:\.[a-z0-9_-]+)+)/gi;
+const URL_AUTOLINK =
+  /\b(?:(?:https?|ftp):\/\/[^\s<>()]+|(?:www\.)[^\s<>()]+|(?:mailto|xmpp):[^\s<>()]+)/gi;
+const EMAIL_LOCAL = /[a-z0-9.!#$%&'*+/=?^_`{|}~-]/i;
+const EMAIL_DOMAIN = /[a-z0-9_-]/i;
+
+type Autolink = { index: number; value: string };
+
+const emailStart = (value: string, at: number) => {
+  let start = at;
+  while (start > 0 && EMAIL_LOCAL.test(value[start - 1] ?? "")) start--;
+  return start;
+};
+
+const emailEnd = (value: string, at: number): number | null => {
+  let end = at + 1;
+  while (end < value.length && EMAIL_DOMAIN.test(value[end] ?? "")) end++;
+  if (end === at + 1) return null;
+  const suffix = value.slice(end).match(/^(?:\.[a-z0-9_-]+)+/i)?.[0];
+  return suffix === undefined ? null : end + suffix.length;
+};
+
+/** Find email candidates from their `@`, avoiding a backtracking scan of prose. */
+const emailAutolinks = (value: string): Autolink[] => {
+  const found: Autolink[] = [];
+  for (
+    let at = value.indexOf("@");
+    at !== -1;
+    at = value.indexOf("@", at + 1)
+  ) {
+    const start = emailStart(value, at);
+    const end = emailEnd(value, at);
+    if (start < at && end !== null)
+      found.push({ index: start, value: value.slice(start, end) });
+  }
+  return found;
+};
+
+const bareAutolinks = (value: string): Autolink[] => {
+  const found = [
+    ...[...value.matchAll(URL_AUTOLINK)].map((match) => ({
+      index: match.index ?? 0,
+      value: match[0],
+    })),
+    ...emailAutolinks(value),
+  ];
+  return found
+    .sort(
+      (left, right) =>
+        left.index - right.index || right.value.length - left.value.length,
+    )
+    .filter((match, index, matches) => {
+      const previous = matches[index - 1];
+      return (
+        previous === undefined ||
+        match.index >= previous.index + previous.value.length
+      );
+    });
+};
 
 const trimAutolinkPunctuation = (value: string) => {
   let end = value.length;
@@ -41,9 +97,9 @@ const trimAutolinkPunctuation = (value: string) => {
 export const lit = (value: string) => {
   let at = 0;
   let rendered = "";
-  for (const match of value.matchAll(BARE_AUTOLINK)) {
-    const start = match.index ?? 0;
-    const target = trimAutolinkPunctuation(match[0]);
+  for (const match of bareAutolinks(value)) {
+    const start = match.index;
+    const target = trimAutolinkPunctuation(match.value);
     rendered += markdownText(
       value.slice(at, start),
       at === 0 || value[at - 1] === "\n",
@@ -80,10 +136,10 @@ export const href = (url: string) =>
  */
 export const code = (value: string) => {
   const text = value.replace(/\s+/g, " ").trim();
-  const longestBacktickRun = Math.max(
-    0,
-    ...[...text.matchAll(/`+/g)].map((match) => match[0].length),
-  );
+  let longestBacktickRun = 0;
+  for (const match of text.matchAll(/`+/g))
+    longestBacktickRun = Math.max(longestBacktickRun, match[0].length);
   const fence = "`".repeat(longestBacktickRun + 1);
-  return `${fence}${text}${fence}`;
+  const padding = text.startsWith("`") || text.endsWith("`") ? " " : "";
+  return `${fence}${padding}${text}${padding}${fence}`;
 };

@@ -15,6 +15,23 @@ test("table cells protect pipes inside literal autolinks", () => {
   expect(cell("https://example.org/a|b")).toBe("`https://example.org/a\\|b`");
 });
 
+test("literal Markdown preserves pipes outside table cells", () => {
+  expect(lit("| A |\n| --- |\n| B |")).toBe(
+    "\\| A \\|\n\\| --- \\|\n\\| B \\|",
+  );
+});
+
 test("code fences preserve backticks in source text", () => {
   expect(code("https://example.org/a`b")).toBe("``https://example.org/a`b``");
+  expect(code("`edge")).toBe("`` `edge ``");
+  expect(code("edge`")).toBe("`` edge` ``");
+});
+
+test("code fences handle long backtick runs without spreading their matches", () => {
+  expect(code("`".repeat(150_000))).toHaveLength(450_004);
+});
+
+test("literal Markdown scans non-email prose in linear time", () => {
+  const input = "a-".repeat(30_000);
+  expect(lit(input)).toBe(input);
 });
