@@ -63,10 +63,3 @@ ask` and the drive's merge-ready announcement, never from the pull
   window, with no hold, is adopted and driven to convergence while healthy,
   and again when its head moves, whether or not `dispatch.adopt.authors`
   names the bot.
-
-### Changed
-
-- The placement table now treats a failing required check as a failure that
-  overrides a clean merge state, names required failures first and lists
-  other failing checks apart. These changes apply
-  to every pull request, not only trusted automation's.

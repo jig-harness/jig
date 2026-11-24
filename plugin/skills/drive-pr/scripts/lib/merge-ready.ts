@@ -349,14 +349,7 @@ interface Read {
   facts: MergeFacts;
   seen: ReturnType<typeof witness>;
   ciHeld: boolean;
-  failing: string[];
-  /** Whether a required check other than the reviewer's failed on the head. */
-  requiredFailing: boolean;
-  /** The names of those required failures. */
-  requiredFailingNames: string[];
-  /** The names of the failing checks that are not required, partitioned by record so a name two apps share stays on each side it belongs to. */
-  optionalFailingNames: string[];
-  /** Whether a required check is still running, the reviewer's own judged by its latest attempt. */
+  failing: HeadCheck[];
   requiredPending: boolean;
   /** The forge's merge state, `null` where a merge queue decides instead. */
   state: string | null;
@@ -578,25 +571,17 @@ const BLOCKERS: Array<(r: Read) => Row | null> = [
       `changes were requested${by}: that reviewer re-reviews, or the drive is re-armed to address them`,
     ];
   },
-  ({
-    failing,
-    state,
-    requiredFailing,
-    requiredFailingNames,
-    optionalFailingNames,
-  }) =>
+  ({ failing, state }) =>
     failing.length > 0 &&
     (state === null ||
       state === "BLOCKED" ||
       state === "UNSTABLE" ||
       // A stale CLEAN merge state cannot override a current required failure.
-      requiredFailing)
+      failing.some((c) => c.required))
       ? [
           "needs-you",
           person("re-run-check"),
-          requiredFailing
-            ? `a required check failed after the drive converged (${requiredFailingNames.join(", ")})${optionalFailingNames.length > 0 ? `; other failing checks: ${optionalFailingNames.join(", ")}` : ""}: re-run it, or re-arm the drive`
-            : `a check failed after the drive converged (${failing.join(", ")}): re-run it, or re-arm the drive`,
+          `a check failed after the drive converged (${failing.map((c) => c.name).join(", ")}): re-run it, or re-arm the drive`,
         ]
       : null,
   ({ requiredPending }) =>
@@ -698,58 +683,15 @@ function trustOf(facts: MergeFacts, rules: ReadyRules): TrustVerdict | null {
 function readOf(facts: MergeFacts, rules: ReadyRules): Read {
   const checks = latestChecks(facts, rules);
   const runs = reviewerRuns(facts, rules);
-  const failingRecords = checks.filter(
-    (c) => c.state === "failure" && !isReviewerCheck(c, rules),
-  );
-  // A name two failing records share is told apart by their app when the
-  // apps differ, and by run id (or an explicit ambiguity label) when they
-  // do not, so no two entries in the list read alike.
-  const rendered = failingRecords.map((c) => {
-    const same = failingRecords.filter((o) => o !== c && o.name === c.name);
-    if (same.length === 0) return { required: c.required, label: c.name };
-    const crossApp = c.app !== null && same.some((o) => o.app !== c.app);
-    const sameApp = same.some((o) => o.app === c.app);
-    const app = crossApp && c.app !== null ? c.app : null;
-    const tail = sameApp
-      ? c.id != null
-        ? `run ${c.id}`
-        : "ambiguous run"
-      : null;
-    const parts = [app, tail].filter((x) => x !== null);
-    return {
-      required: c.required,
-      label: parts.length > 0 ? `${c.name} (${parts.join(", ")})` : c.name,
-    };
-  });
-  // Records that still render alike (no id tells them apart) are listed once
-  // with their count, so a list never shows two identical entries.
-  const counts = new Map<string, number>();
-  for (const r of rendered) {
-    const key = `${r.required}\0${r.label}`;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  const labelled: Array<{ required: boolean; label: string }> = [];
-  for (const [key, n] of counts) {
-    const required = key.startsWith("true");
-    const label = key.slice(key.indexOf("\0") + 1);
-    labelled.push({ required, label: n > 1 ? `${label} (x${n})` : label });
-  }
-  const requiredFailingNames = labelled
-    .filter((c) => c.required)
-    .map((c) => c.label);
-  const optionalFailingNames = labelled
-    .filter((c) => !c.required)
-    .map((c) => c.label);
   const trusted = trustOf(facts, rules);
   return {
     facts,
     seen: witness(facts, rules, runs),
     ciHeld:
       rules.ciHoldLabel !== null && facts.labels.includes(rules.ciHoldLabel),
-    failing: labelled.map((c) => c.label),
-    requiredFailing: requiredFailingNames.length > 0,
-    requiredFailingNames,
-    optionalFailingNames,
+    failing: checks.filter(
+      (c) => c.state === "failure" && !isReviewerCheck(c, rules),
+    ),
     // Unread reviewer order cannot establish which pending attempts ended.
     requiredPending: checks.some(
       (c) =>
@@ -777,7 +719,7 @@ export function readiness(facts: MergeFacts, rules: ReadyRules): Readiness {
     waitsOn,
     ...built,
     conditions: CONDITIONS.map((condition) => condition(r)),
-    failing: r.failing,
+    failing: r.failing.map((c) => c.name),
     requested: facts.requested,
   };
 }

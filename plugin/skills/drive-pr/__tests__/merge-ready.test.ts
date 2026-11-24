@@ -7,7 +7,6 @@ import { describe, expect, it } from "bun:test";
 import { parseAnswer } from "../scripts/lib/merge-facts.ts";
 import {
   checkPattern,
-  type HeadCheck,
   type MergeFacts,
   mergeCommand,
   type ReadyRules,
@@ -651,91 +650,6 @@ describe("required checks and reviewer attempts", () => {
       );
       expect(readiness(f, RULES).place).toBe("stay");
     }
-  });
-  it("ignores an earlier required reviewer attempt the later attempt replaced", () => {
-    const f = facts({ mergeState: "BLOCKED" });
-    const [review, ci] = f.checks as [HeadCheck, HeadCheck];
-    f.checks = [
-      { ...review, id: 1, required: true, state: "pending" },
-      { ...review, id: 2, required: true, state: "success" },
-      ci,
-    ];
-    const r = readiness(f, RULES);
-    expect([r.place, r.waitsOn]).toEqual([
-      "needs-you",
-      { kind: "person", act: "open-pr" },
-    ]);
-  });
-  it("lets an optional failure of another app's check with a reviewer check's name not override CLEAN", () => {
-    const f = facts({ mergeState: "CLEAN" });
-    const [review, ci] = f.checks as [HeadCheck, HeadCheck];
-    f.checks = [
-      { ...review, id: 1, required: true, state: "failure" },
-      { ...review, id: 2, required: true, state: "success" },
-      {
-        ...ci,
-        name: review.name,
-        app: "other-ci",
-        required: false,
-        state: "failure",
-      },
-    ];
-    const r = readiness(f, RULES);
-    expect([r.place, r.lane]).toEqual(["ready", "merge-now"]);
-  });
-  it("names the required failures, not the optional ones, when they override CLEAN", () => {
-    const f = facts({ mergeState: "CLEAN" });
-    const [review, ci] = f.checks as [HeadCheck, HeadCheck];
-    f.checks = [
-      review,
-      { ...ci, name: "lint", required: false, state: "failure" },
-      { ...ci, required: true, state: "failure" },
-    ];
-    const r = readiness(f, RULES);
-    expect(r.place).toBe("needs-you");
-    expect(r.says).toBe(
-      "a required check failed after the drive converged (test); other failing checks: lint: re-run it, or re-arm the drive",
-    );
-    expect(r.failing).toEqual(["lint", "test"]);
-  });
-  it("keeps a failing optional check that shares its name with a required one", () => {
-    const f = facts({ mergeState: "CLEAN" });
-    const [review, ci] = f.checks as [HeadCheck, HeadCheck];
-    f.checks = [
-      review,
-      { ...ci, id: 11, app: "ci-a", required: true, state: "failure" },
-      { ...ci, id: 12, app: "ci-b", required: false, state: "failure" },
-    ];
-    const r = readiness(f, RULES);
-    expect(r.says).toBe(
-      `a required check failed after the drive converged (${ci.name} (ci-a)); other failing checks: ${ci.name} (ci-b): re-run it, or re-arm the drive`,
-    );
-    expect(r.failing).toEqual([`${ci.name} (ci-a)`, `${ci.name} (ci-b)`]);
-  });
-  it("tells same-app collisions apart by run id, and unidentified ones by an ambiguity label", () => {
-    const f = facts({ mergeState: "CLEAN" });
-    const [review, ci] = f.checks as [HeadCheck, HeadCheck];
-    f.checks = [
-      review,
-      { ...ci, id: 21, app: "ci-a", required: true, state: "failure" },
-      { ...ci, id: 22, app: "ci-a", required: false, state: "failure" },
-      { ...ci, name: "lint", id: null, app: null, state: "failure" },
-      (() => {
-        const { id: _omitted, ...noId } = {
-          ...ci,
-          name: "lint",
-          app: null,
-          state: "failure" as const,
-        };
-        return noId;
-      })(),
-    ];
-    const r = readiness(f, RULES);
-    expect(r.failing).toEqual([
-      `${ci.name} (run 21)`,
-      `${ci.name} (run 22)`,
-      "lint (ambiguous run) (x2)",
-    ]);
   });
   it("does not let an optional pending check hide an approval request", () => {
     const f = facts({
