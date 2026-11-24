@@ -702,13 +702,26 @@ function readOf(facts: MergeFacts, rules: ReadyRules): Read {
   const failingRecords = facts.checks.filter(
     (c) => c.state === "failure" && !isReviewerCheck(c, rules),
   );
-  const labelled = failingRecords.map((c) => ({
-    required: c.required,
-    label:
-      c.app !== null && failingRecords.some((o) => o !== c && o.name === c.name)
-        ? `${c.name} (${c.app})`
-        : c.name,
-  }));
+  // A name two failing records share is told apart by their app when the
+  // apps differ, and by run id (or an explicit ambiguity label) when they
+  // do not, so no two entries in the list read alike.
+  const labelled = failingRecords.map((c) => {
+    const same = failingRecords.filter((o) => o !== c && o.name === c.name);
+    if (same.length === 0) return { required: c.required, label: c.name };
+    const crossApp = c.app !== null && same.some((o) => o.app !== c.app);
+    const sameApp = same.some((o) => o.app === c.app);
+    const app = crossApp && c.app !== null ? c.app : null;
+    const tail = sameApp
+      ? c.id !== null
+        ? `run ${c.id}`
+        : "ambiguous run"
+      : null;
+    const parts = [app, tail].filter((x) => x !== null);
+    return {
+      required: c.required,
+      label: parts.length > 0 ? `${c.name} (${parts.join(", ")})` : c.name,
+    };
+  });
   const requiredFailingNames = labelled
     .filter((c) => c.required)
     .map((c) => c.label);

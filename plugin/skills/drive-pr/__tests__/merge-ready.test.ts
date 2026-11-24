@@ -670,6 +670,7 @@ describe("required checks and reviewer attempts", () => {
     expect(r.says).toBe(
       "a required check failed after the drive converged (test); other failing checks: lint: re-run it, or re-arm the drive",
     );
+    expect(r.failing).toEqual(["lint", "test"]);
   });
   it("keeps a failing optional check that shares its name with a required one", () => {
     const f = facts({ mergeState: "CLEAN" });
@@ -683,6 +684,25 @@ describe("required checks and reviewer attempts", () => {
     expect(r.says).toBe(
       `a required check failed after the drive converged (${ci.name} (ci-a)); other failing checks: ${ci.name} (ci-b): re-run it, or re-arm the drive`,
     );
+    expect(r.failing).toEqual([`${ci.name} (ci-a)`, `${ci.name} (ci-b)`]);
+  });
+  it("tells same-app collisions apart by run id, and unidentified ones by an ambiguity label", () => {
+    const f = facts({ mergeState: "CLEAN" });
+    const [review, ci] = f.checks as [HeadCheck, HeadCheck];
+    f.checks = [
+      review,
+      { ...ci, id: 21, app: "ci-a", required: true, state: "failure" },
+      { ...ci, id: 22, app: "ci-a", required: false, state: "failure" },
+      { ...ci, name: "lint", id: null, app: null, state: "failure" },
+      { ...ci, name: "lint", id: null, app: null, state: "failure" },
+    ];
+    const r = readiness(f, RULES);
+    expect(r.failing).toEqual([
+      `${ci.name} (run 21)`,
+      `${ci.name} (run 22)`,
+      "lint (ambiguous run)",
+      "lint (ambiguous run)",
+    ]);
   });
   it("does not let an optional pending check hide an approval request", () => {
     const f = facts({

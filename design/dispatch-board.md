@@ -161,15 +161,15 @@ Ready to merge, lane **merge now**, when all of these hold at the tick:
    `pull_requests.trusted_automation` lists, whose head is in the
    repository, whose commits are all the bot's own or a listed
    committer's (each signed for its account unless the entry says
-   `signed: false`), whose changed files are all within the entry's paths (a renamed or
-   copied file's original path counts too),
+   `signed: false`), whose changed files are all within the entry's paths (the original path of a file the forge reports as renamed or
+   copied counts too),
    and, where the entry names update types, whose whole change is
    classified: every changed file is a manifest or a recognized lockfile
    whose edit is of a listed type (a lockfile-only change can qualify
    without a manifest; a grouped minor-plus-patch change needs both
    listed; a recognized lockfile may accompany a manifest update and needs
-   `lockfile` only where lockfiles alone changed; a rename or copy into a
-   recognized lockfile name passes only from another recognized lockfile name), and an unsupported file or an unclassifiable manifest edit
+   `lockfile` only where lockfiles alone changed; a rename or copy the forge reports into a
+   recognized lockfile name passes only from another recognized lockfile name; a copy the forge lists as a plain addition is judged on its destination alone), and an unsupported file or an unclassifiable manifest edit
    withholds the exception even where the path policy allows it. The
    exception applies only where the repository names a reviewer app: with
    none, a person's approval is the review witness and the commits and
@@ -504,7 +504,7 @@ forwards. The moves a person meets:
 | Driven → Ready to merge           | the drive converged, the review is witnessed on its head and the forge allows the merge                                                                                                |
 | Ready to merge → Coming or Driven | the base came to conflict, or its head moved past the verified head: the dispatcher re-drives it                                                                                       |
 | Ready to merge → Coming           | another pull request merged and this one is now behind its base                                                                                                                        |
-| Ready to merge → Needs you        | a check failed after convergence, a reviewer requested changes or opened a thread, the CI hold label was added, the forge blocks the merge, it became a draft, or its re-drive stopped |
+| Ready to merge → Needs you        | a check failure that blocks readiness under the placement table after convergence, a reviewer requested changes or opened a thread, the CI hold label was added, the forge blocks the merge, it became a draft, or its re-drive stopped |
 | Approve first → Merge now         | a requested reviewer approved                                                                                                                                                          |
 | Ready to merge → Merged           | a person merged it                                                                                                                                                                     |
 | Driven → Needs you                | the drive parked or stopped                                                                                                                                                            |
