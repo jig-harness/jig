@@ -284,7 +284,9 @@ removal in step 13):
   a sibling update or the revision alone.
 - Before delegating filing, record a pending filing entry for the task, with
   a unique marker the issue body will carry and the tracker the filing
-  targets, both persisted with the entry. Every retry reuses the recorded
+  targets, both persisted with the entry. Before every write and every
+  recovery read, the filing session confirms its effective tracker
+  destination is the recorded one and refuses otherwise. Every retry reuses the recorded
   tracker and marker; changing the tracker needs an explicit decision from
   the person before anything is written. On return, recover the key from the
   filing session's durable result or by searching that tracker for the marker
@@ -308,10 +310,15 @@ removal in step 13):
   older than the revision it has applied. The keeper retains an applied record
   (kind, target, originating decision, revision) with the plan itself,
   removals included. Revision order is judged per originating decision and
-  target; a track's recorded removal also names the decision revision it
-  followed, and before any delivery that could recreate that track (a
-  decision update naming it) the keeper checks that removal and rejects a
-  delivery of an older revision, while an unrelated owed update for another
+  target, and only among updates that set decision state; an issue key is a
+  filing fact, never rejected as stale, and is reconciled onto the entry
+  whether or not the task is still approved. A track's recorded removal
+  names its originating decision and the revision it followed, and the
+  track carries a generation that each removal and each authorised
+  recreation advances. After a removal the keeper rejects every delivery
+  that would recreate the track, from any decision, up to and including the
+  recorded revision for that decision, and recreates it only on the
+  person's explicit authorisation; an unrelated owed update for another
   target is unaffected. It acknowledges a repeat of an already applied
   update without applying it again.
 
@@ -338,7 +345,8 @@ evidence of a pickup underway (step 10), or by a verified outcome for the
 matching work showing it ran, where the outcome identifies this pickup
 (not a superseded one for the same issue) and establishes the milestone the
 dependent needs. The thread read does not expose a launch ID or session
-evidence, so it alone cannot do this when several launches exist for the
+evidence, so it alone cannot do this, even when it lists one launch (that
+entry may be an earlier pickup or only wrapper admission), and never when several launches exist for the
 issue: inspect the per-launch record (`plugin/dispatch/lib/launches.ts`,
 which carries the launch ID and session result), and where it is
 unreadable leave the milestone unconfirmed. A milestone is wrapper admission or session start; an earlier
