@@ -197,6 +197,37 @@ describe("drive.ts loop control", () => {
     DIAGNOSING_DRIVE_TIMEOUT,
   );
 
+  it(
+    "hands back the park of a valid receipt when the diagnosing pass exits nonzero",
+    async () => {
+      // The pass exits 0 but changes nothing, so the drive re-gates onto the
+      // identical red verdict. Budget 1 grants one ordinary repair before diagnosis.
+      const record = join(
+        mkdtempSync(join(tmpdir(), "diagnosis-park-")),
+        "record.json",
+      );
+      writeFileSync(
+        record,
+        parkRecord(
+          "File the recurring CI cause as a tracker issue",
+          "human-decision",
+        ),
+      );
+      const r = await diagnoseOnRed(
+        diagnoseOnly(
+          `"${join(SCRIPTS, "drive-state.ts")}" park 999 --key ${FILING_KEY} --kind finding --class human-decision < "${record}" && printf '%s\\n' '{"diagnosis":"the local gate ran no tests","parked":"${FILING_KEY}"}' > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"; exit 3`,
+        ),
+      );
+      expect(r.stderr).toContain("Running CI-repair pass 1/1");
+      expect(r.stderr).toContain("diagnosing now");
+      expect(r.stderr).toContain(
+        "no issue filed (parked for a person). the local gate ran no tests (pass exit 3; no replacement head pushed)",
+      );
+      expectSpawnExit({ ...r, stdout: null }, 8);
+    },
+    DIAGNOSING_DRIVE_TIMEOUT,
+  );
+
   it("hands back a diagnosis that names an open rules park older than the reservation", async () => {
     const { dir, stateDir } = writeFixture({ threads: [] });
     await park(stateDir, "ratchet-rule", "finding", "rules");

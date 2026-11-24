@@ -23,6 +23,22 @@ const PARK_TAG = /^\[park ("(?:[^"\\]|\\.)*")\] /;
 export const parkTag = (key: string): string =>
   `[park ${JSON.stringify(key)}] `;
 
+const PARK_TAG_LIMIT = 300;
+
+/**
+ * Whether `key` comes back unchanged from a stored diagnosis: the telemetry
+ * bound redacts and truncates the detail, so a key it would alter (an
+ * email-shaped one, or one whose escaped tag is long) cannot be told apart
+ * from another park once recorded.
+ */
+export function parkKeySurvivesStorage(key: string): boolean {
+  const tag = parkTag(key);
+  return (
+    tag.length <= PARK_TAG_LIMIT &&
+    splitParkTag(boundedCiDetail(`${tag}x`)).key === key
+  );
+}
+
 /** A recorded diagnosis text split into the park it named, when it named one, and its prose. */
 export function splitParkTag(text: string): {
   key: string | null;

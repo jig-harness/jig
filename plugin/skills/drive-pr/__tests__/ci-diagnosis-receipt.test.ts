@@ -106,6 +106,14 @@ describe("readDiagnosis", () => {
     expect(read({ diagnosis: "done", parked: "a\nb" })).toBeNull();
   });
 
+  it("refuses a park key the stored diagnosis would alter", () => {
+    expect(read({ diagnosis: "done", parked: "ask a@b.example" })).toBeNull();
+    expect(
+      read({ diagnosis: "done", parked: "\u0001".repeat(150) }),
+    ).toBeNull();
+    expect(read({ diagnosis: "done", parked: FILING })).not.toBeNull();
+  });
+
   it("refuses an empty diagnosis and a pushed head that is no commit", () => {
     expect(read({ diagnosis: "  ", issue: "#42" })).toBeNull();
     expect(

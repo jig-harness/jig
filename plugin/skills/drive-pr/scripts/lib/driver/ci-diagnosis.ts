@@ -14,6 +14,7 @@ import {
   diagnosisSkippedPrefix,
   diagnosisStartedPrefix,
   lastDiagnosisAt,
+  parkKeySurvivesStorage,
   parkTag,
   splitParkTag,
 } from "../state/ci-actions.ts";
@@ -47,7 +48,8 @@ function isParkKey(value: unknown): value is string {
     typeof value === "string" &&
     value !== "" &&
     value.length <= PARK_KEY_CHARS &&
-    !/[\n\r]/.test(value)
+    !/[\n\r]/.test(value) &&
+    parkKeySurvivesStorage(value)
   );
 }
 
@@ -372,6 +374,15 @@ async function settleDiagnosis(
   if (result.code === 5) return 5;
   const undiagnosed = await settleUndiagnosed(pr, head, result.code, receipt);
   if (undiagnosed !== null || !("text" in receipt)) return undiagnosed ?? 1;
+  if (result.code !== 0 && receipt.parked && receipt.pushedHead === undefined) {
+    // The decision the receipt names stays open: hand it back, not a failure.
+    const recorded = await reportOutcome(
+      pr,
+      head,
+      `${receipt.text} (pass exit ${result.code}; no replacement head pushed)`,
+    );
+    return recorded ? DRIVE_EXIT.HITL_PARKED : 1;
+  }
   if (result.code !== 0)
     return await stopWithDiagnosis(
       pr,
