@@ -370,7 +370,11 @@ describe("the reading skills", () => {
     expect(field("do_item.post_merge_state")?.values).toEqual([
       ...POST_MERGE_STATES,
     ]);
-    expect(field("drive.pass_model")?.pattern).toBe(PASS_MODEL_PATTERN.source);
+    const passModelPattern = field("drive.pass_model")?.pattern;
+    expect(passModelPattern).toBeDefined();
+    const schemaPassModel = new RegExp(passModelPattern as string);
+    for (const value of ["sonnet", "-sonnet", "has space", "has\u001bescape"])
+      expect(schemaPassModel.test(value)).toBe(PASS_MODEL_PATTERN.test(value));
     expect(field("ci.repair_skill")?.pattern).toBe(SKILL_NAME_PATTERN.source);
     expect(field("drive.pass_args")?.items).toEqual({
       type: "string",

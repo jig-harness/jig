@@ -47,6 +47,9 @@ const RUNTIME_NAME = /^[a-z][a-z0-9_-]*$/;
  */
 export const MODEL_TOKEN_PATTERN = /^(?!-)[^\p{Cc}\s,;=]+$/u;
 
+/** A declared model name, which need not itself be an argv operand. */
+export const DECLARATION_TOKEN_PATTERN = /^[^\p{Cc}\s,;=]+$/u;
+
 export function oneOf<T extends string>(
   value: unknown,
   allowed: readonly T[],
@@ -74,6 +77,19 @@ export function token(value: unknown, field: string, what: string): string {
   if (typeof value !== "string" || !MODEL_TOKEN_PATTERN.test(value))
     throw new RoutingError(
       `${field} must be ${what}: one word that does not start with a dash or contain control characters, whitespace, a comma, semicolon or equals sign`,
+    );
+  return value;
+}
+
+/** Read a declaration key without applying the selected-model argv boundary. */
+export function declarationToken(
+  value: unknown,
+  field: string,
+  what: string,
+): string {
+  if (typeof value !== "string" || !DECLARATION_TOKEN_PATTERN.test(value))
+    throw new RoutingError(
+      `${field} must be ${what}: one word that contains no control characters, whitespace, comma, semicolon or equals sign`,
     );
   return value;
 }

@@ -145,6 +145,25 @@ describe("a model outside the families", () => {
       }),
     ).toThrow(`routing.model_tiers.codex."${OUTSIDE}".reason must say why`);
   });
+
+  it("keeps an unused legacy declaration from changing a selected model route", () => {
+    expect(
+      parseRoutingModels({
+        routing: {
+          models: { codex: { complex: OUTSIDE } },
+          model_tiers: {
+            codex: {
+              "-retired": {
+                tier: "strategic",
+                reason: "a retained legacy key",
+              },
+              [OUTSIDE]: { tier: "strategic", reason: "the selected model" },
+            },
+          },
+        },
+      }).codex?.complex,
+    ).toBe(OUTSIDE);
+  });
 });
 
 describe("the host and the repository layers", () => {

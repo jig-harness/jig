@@ -970,7 +970,7 @@ model.
   and the checks below apply to a name once its tier is declared. For a
   runtime that takes the alias itself (`claude-code`), a cataloged release ID
   (the pinned spelling of a known family) is accepted for its compatible CLI
-  launch when `model_tiers` declares it. A delegated Agent-tool invocation is
+  launch without `model_tiers`. A delegated Agent-tool invocation is
   stricter: its open `model` field accepts only a family alias, so an exact
   identifier is refused before delegation rather than silently falling back.
   Codex also has a list of aliases but its CLI accepts the release ID the family

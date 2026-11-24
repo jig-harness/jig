@@ -40,6 +40,7 @@ import {
   type M0Tier,
 } from "../../../../shared/model-families.ts";
 import {
+  declarationToken,
   LEGACY_TIERS,
   mapping,
   oneOf,
@@ -173,7 +174,7 @@ function parseTierEntries(raw: unknown, key: TierKey): FamilyTiers {
     const row: Record<string, FamilyTier> = Object.create(null);
     for (const [family, value] of Object.entries(families)) {
       const field = `${at}.${formatField([family])}`;
-      token(family, field, "a model identifier or family alias");
+      declarationToken(family, field, "a model identifier or family alias");
       const fields = mapping(value, field, "be a mapping of tier and reason");
       refuseUnknownKeys(fields, FAMILY_TIER_FIELDS, field);
       const tier = oneOf(fields.tier, M0_TIERS, `${field}.tier`);
