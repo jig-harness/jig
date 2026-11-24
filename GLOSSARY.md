@@ -1913,6 +1913,8 @@ make, use the entry's term instead.
   not to use it ("not for X; use Y instead"). Only the description is read
   before a skill is chosen, so a negative trigger elsewhere cannot prevent a
   wrong choice.
+- **NUL** — the zero byte (`U+0000`), which command-line arguments and many
+  text formats cannot represent safely.
 - **Exact / judgment section label** — a bold label opening a section of a
   *skill*: **exact** means run the named command as written, **judgment**
   means reach the stated outcome by the means that fit. Not yet a rule

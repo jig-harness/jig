@@ -41,7 +41,7 @@ export function tierNamed(value: unknown): Tier | undefined {
 /** A runtime name, as `routing.models` and `routing.efforts` key it. */
 const RUNTIME_NAME = /^[a-z][a-z0-9_-]*$/;
 /** A name a runtime takes: one token, so the route record needs no escaping. */
-const TOKEN = /^[^\s,;=\0]+$/;
+const TOKEN = /^(?!-)[^\s,;=\0]+$/;
 
 export function oneOf<T extends string>(
   value: unknown,
@@ -69,7 +69,7 @@ export function refuseUnknownKeys(
 export function token(value: unknown, field: string, what: string): string {
   if (typeof value !== "string" || !TOKEN.test(value))
     throw new RoutingError(
-      `${field} must be ${what}: one word, with no space, comma, semicolon or equals sign`,
+      `${field} must be ${what}: one word that does not start with a dash or contain whitespace, a comma, semicolon, equals sign or NUL`,
     );
   return value;
 }

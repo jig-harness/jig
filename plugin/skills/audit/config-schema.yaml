@@ -711,7 +711,7 @@ fields:
     read_by: [drive-pr]
   drive.pass_model:
     type: string
-    pattern: "^[A-Za-z0-9][A-Za-z0-9._:/@[\\]-]*$"
+    pattern: "^(?!-)[^\\s,;=\\0]+$"
     default: sonnet
     since: 0.102.0
     read_by: [drive-pr, do-item]

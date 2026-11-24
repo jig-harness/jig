@@ -754,8 +754,11 @@ implementation. Skip this check for issues about the repository's own code.
    not forwarded, and the status message says so. `determine_route.ts` accepts
    provider model identifiers in shared routing for compatible CLI launches.
    Before forwarding to a delegated runtime that accepts family aliases only,
-   validate the model it will actually receive; use that runtime's alias or
-   leave the delegated model unpinned. Before forwarding, resolve
+   first resolve the delegated agent's effective definition, then validate the
+   model it will actually receive. A pinned definition keeps its pin. If an
+   open field cannot accept the selected exact identifier, do not silently
+   substitute an alias: leave that field unpinned and report the selected
+   identifier as unapplied in the delegation and fix-loop status. Before forwarding, resolve
    the delegated agent's definition: a model or effort it pins is kept, and
    only the fields it leaves open are forwarded; when no single effective
    definition can be found, or a scope that might hold one cannot be read,
