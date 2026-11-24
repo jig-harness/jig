@@ -584,25 +584,24 @@ describe("drive-status.ts terminal states", () => {
     expect(r.state).toBe("AWAITING_REVIEWER");
     expect(r.stderr).toContain("; waiting");
     const polls = readFileSync(calls, "utf8").match(/^pr view$/gm) ?? [];
-    // This fixture normally performs two top-level PR reads for each
-    // evaluation. A deadline can interrupt only the final evaluation after
-    // its first read, so count the observable reads rather than requiring
-    // pairs. The 1s → 2s → 3s capped cadence makes at most six evaluations;
-    // a loaded runner may fit fewer, so the count has a loose lower bound.
+    // An AWAITING_REVIEWER evaluation returns after its opening PR snapshot.
+    // Only a terminal result takes the second, still-on-head snapshot, so each
+    // observed read marks one complete evaluation and an odd count is ordinary.
+    // The 1s → 2s → 3s capped cadence makes at most six evaluations; a loaded
+    // runner may fit fewer, so the count has a loose lower bound.
     // Fixed one-second polling would make about eleven evaluations.
     expect(polls.length).toBeGreaterThanOrEqual(4);
     expect(polls.length).toBeLessThanOrEqual(12);
-    // Read when each evaluation started (two reads each). A timer never fires
-    // early, so each observed gap is at least its wait whatever the runner's
-    // load; only lower bounds are asserted, and only for the gaps a loaded
-    // runner fitted. This smoke test checks the wiring; StatusPollPacing's own
-    // tests, with an injected clock, pin the cadence itself.
+    // Each observed read starts one evaluation. A timer never fires early, so
+    // each observed gap is at least its wait whatever the runner's load; only
+    // lower bounds are asserted, and only for the gaps a loaded runner fitted.
+    // This smoke test checks the wiring; StatusPollPacing's own tests, with an
+    // injected clock, pin the cadence itself.
     const stamps = readFileSync(times, "utf8")
       .trim()
       .split("\n")
       .map((l) => Number(BigInt(l) / 1_000_000n));
-    const starts = stamps.filter((_, i) => i % 2 === 0);
-    const gaps = starts.slice(1).map((t, i) => t - (starts[i] ?? t));
+    const gaps = stamps.slice(1).map((t, i) => t - (stamps[i] ?? t));
     expect(gaps.length).toBeGreaterThanOrEqual(1);
     // The last gap is exempt: the final wait is shortened to leave the
     // deadline margin for the closing evaluation, so it can be under its wait.
