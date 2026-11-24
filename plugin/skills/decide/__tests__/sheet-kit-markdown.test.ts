@@ -74,3 +74,12 @@ test("literal Markdown leaves long non-email prose unchanged", () => {
   const nearMisses = "a.b-c@".repeat(5_000);
   expect(lit(nearMisses)).toBe(`\`${nearMisses}\``);
 });
+
+test("lit keeps standalone mentions literal and trims many closing parentheses in linear time", () => {
+  expect(lit("Ask @maintainer")).toBe("Ask `@maintainer`");
+  expect(lit("(see @org/team)")).toBe("(see `@org/team`)");
+  expect(lit("a@b")).not.toContain("`");
+  const started = performance.now();
+  lit(`https://example.org/${")".repeat(50000)}`);
+  expect(performance.now() - started).toBeLessThan(500);
+});

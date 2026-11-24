@@ -383,6 +383,8 @@ describe("the reading skills", () => {
       "has=equals",
       "has\u001bescape",
       "has\u0085control",
+      "has\u202Ebidi",
+      "has\u2066isolate",
     ])
       expect(schemaPassModel.test(value)).toBe(PASS_MODEL_PATTERN.test(value));
     expect(field("ci.repair_skill")?.pattern).toBe(SKILL_NAME_PATTERN.source);

@@ -24,13 +24,14 @@ const markdownText = (value: string, startsLine: boolean) => {
 
 /**
  * A whitespace-delimited word that GFM's autolink extension could link: it
- * holds an email `@`, a URL scheme or `www.`. GFM starts a bare autolink after
+ * holds an email `@`, a mention `@name`, a URL scheme or `www.`. GFM starts a bare autolink after
  * whitespace or one of `*_~(`, and an email's local part may include dots,
  * slashes and underscores, so the whole word is the unit of protection rather
  * than a pattern for each form. Words never overlap, so no candidate can be
  * dropped or repeated.
  */
-const LINKABLE_WORD = /@[^\s@]*[^\s@.]\.[^\s@]|:\/\/|www\.|mailto:|xmpp:/i;
+const LINKABLE_WORD =
+  /@[^\s@]*[^\s@.]\.[^\s@]|(?<![\w@])@\w|:\/\/|www\.|mailto:|xmpp:/i;
 const TRAILING_PUNCTUATION = ".,;:!?\"'\u2019\u201D)]}>";
 
 type Autolink = { index: number; value: string };
@@ -61,11 +62,19 @@ const bareAutolinks = (value: string): Autolink[] => {
 /** Sentence punctuation and closing quotes stay outside the code span. */
 const trimAutolinkPunctuation = (value: string) => {
   let end = value.length;
-  const count = (ch: string) => value.slice(0, end).split(ch).length - 1;
+  let open = 0;
+  let close = 0;
+  for (const ch of value) {
+    if (ch === "(") open++;
+    else if (ch === ")") close++;
+  }
   while (end > 0) {
     const last = value[end - 1] ?? "";
     if (!TRAILING_PUNCTUATION.includes(last)) break;
-    if (last === ")" && count(")") <= count("(")) break;
+    if (last === ")") {
+      if (close <= open) break;
+      close--;
+    }
     end--;
   }
   return end === 0 ? value : value.slice(0, end);
