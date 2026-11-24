@@ -562,7 +562,6 @@ describe("drive-status.ts terminal states", () => {
       reviewedSha: null,
       checkRuns: [{ ...REVIEWER_RUN, status: "in_progress", conclusion: null }],
     });
-    const calls = join(dir, "polls.log");
     const times = join(dir, "poll-times.log");
     const r = await probeIn(
       dir,
@@ -573,7 +572,6 @@ describe("drive-status.ts terminal states", () => {
         once: false,
         env: {
           JIG_GH_CACHE: "off",
-          DRIVE_PR_STUB_GH_LOG: calls,
           DRIVE_PR_STUB_GH_TIMES: times,
           DRIVE_PR_STATUS_MIN_INTERVAL: "1",
           JIG__REVIEW__REVIEWER_POLL_MAX_SECONDS: "3",
@@ -583,15 +581,12 @@ describe("drive-status.ts terminal states", () => {
     expectSpawnExit({ ...r, stdout: JSON.stringify(r.json) }, 4);
     expect(r.state).toBe("AWAITING_REVIEWER");
     expect(r.stderr).toContain("; waiting");
-    const polls = readFileSync(calls, "utf8").match(/^pr view$/gm) ?? [];
     // An AWAITING_REVIEWER evaluation returns after its opening PR snapshot.
     // Only a terminal result takes the second, still-on-head snapshot, so each
     // observed read marks one complete evaluation and an odd count is ordinary.
     // The 1s → 2s → 3s capped cadence makes at most six evaluations; a loaded
     // runner may fit fewer, so the count has a loose lower bound.
     // Fixed one-second polling would make about eleven evaluations.
-    expect(polls.length).toBeGreaterThanOrEqual(4);
-    expect(polls.length).toBeLessThanOrEqual(12);
     // Each observed read starts one evaluation. A timer never fires early, so
     // each observed gap is at least its wait whatever the runner's load; only
     // lower bounds are asserted, and only for the gaps a loaded runner fitted.
@@ -601,6 +596,8 @@ describe("drive-status.ts terminal states", () => {
       .trim()
       .split("\n")
       .map((l) => Number(BigInt(l) / 1_000_000n));
+    expect(stamps.length).toBeGreaterThanOrEqual(4);
+    expect(stamps.length).toBeLessThanOrEqual(12);
     const gaps = stamps.slice(1).map((t, i) => t - (stamps[i] ?? t));
     expect(gaps.length).toBeGreaterThanOrEqual(1);
     // The last gap is exempt: the final wait is shortened to leave the
