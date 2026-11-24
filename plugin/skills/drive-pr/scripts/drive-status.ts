@@ -6,6 +6,7 @@ import {
 } from "../../../shared/consumer.ts";
 import { definedFields } from "../../../shared/defined-fields.ts";
 import { pullUrlMismatch, pullUrlParts } from "./lib/status/pr-url.ts";
+import { exportPolicyBase } from "./lib/driver/policy-base.ts";
 /**
  * Decide, mechanically, which state a PR-review drive is in — and in particular
  * refuse to say "converged" on any evidence weaker than "the finding-posting
@@ -362,6 +363,11 @@ function unreadAdvisory<Drift>(drift: Drift | null) {
   };
 }
 
+/** Refresh the reviewed base and any stacked integration bound for this PR. */
+async function refreshPolicyContext(pr: string): Promise<void> {
+  await exportPolicyBase(pr);
+}
+
 async function main(): Promise<number> {
   let pr = "";
   let json = false;
@@ -487,6 +493,11 @@ async function main(): Promise<number> {
       "Acting here would edit and resolve threads on a different pull request.",
     );
   }
+
+  // Standalone probes need the same reviewed policy context as a driver.
+  // A failed refresh leaves the policy base empty, so skip exclusions fail
+  // closed instead of inheriting an unreviewed stacked layer.
+  await refreshPolicyContext(pr);
 
   // WHY the local head reads as it does, published alongside it. An empty
   // `local` has two unrelated causes — the caller switched the measurement off,

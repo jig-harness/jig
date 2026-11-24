@@ -1607,23 +1607,23 @@ describe("summary-findings marker overrides", () => {
            defaultSticky: m.STICKY_MARKER,
            defaultSha: m.SHA_MARKER,
            sticky: o.stickyMarker(),
-           parsed: m.reviewedShaFrom('<!-- custom-sha: abc1234 -->'),
+           parsed: m.reviewedShaFrom('<!-- custom+sha: abc1234 -->'),
            selected: m.reviewerSticky([
              { id: 1, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n- custom-marker finding' },
              { id: 2, user: { login: 'reviewer[bot]' }, body: '<!-- ai-code-review -->\\n- default-marker finding' },
            ], false)?.id,
            unstampedSelected: m.reviewerSticky([
-             { id: 3, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom-sha: abc1234 -->' },
+             { id: 3, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->' },
              { id: 4, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n- unanchored finding' },
            ], false)?.id,
-           latestStamp: m.reviewedShaFrom('<!-- custom-sha: abc1234 -->\\n<!-- custom-sha: def5678 -->'),
+           latestStamp: m.reviewedShaFrom('<!-- custom+sha: abc1234 -->\\n<!-- custom+sha: def5678 -->'),
          }));`,
       ],
       {
         env: {
           ...process.env,
           DRIVE_PR_STICKY_MARKER: "<!-- other-review -->",
-          DRIVE_PR_SHA_MARKER: "custom-sha",
+          DRIVE_PR_SHA_MARKER: "custom+sha",
           DRIVE_PR_REVIEWER_APP: "reviewer",
         },
         stdout: "pipe",

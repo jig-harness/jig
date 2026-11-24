@@ -219,13 +219,19 @@ function at(
 
 describe("drive-status.ts over a head the reviewer skipped", () => {
   it.each([
-    ["all changed paths excluded", ["feature.txt"], "neutral", 3, "CONVERGED"],
+    [
+      "all changed paths excluded",
+      ["feature.txt"],
+      "neutral",
+      22,
+      "REVIEW_SKIPPED",
+    ],
     [
       "all changed paths excluded despite a skipped check",
       ["feature.txt"],
       "skipped",
-      3,
-      "CONVERGED",
+      22,
+      "REVIEW_SKIPPED",
     ],
     ["no configured exclusions", null, "neutral", 22, "REVIEW_SKIPPED"],
     [
@@ -254,13 +260,7 @@ describe("drive-status.ts over a head the reviewer skipped", () => {
       expectSpawnExit(result, exit);
       expect(result.state).toBe(state);
       expect(result.reason).toContain(repo.merged);
-      if (state === "CONVERGED") {
-        expect(result.reviewer.reviewedSha).toBe(repo.merged);
-        expect(result.reviewer.reviewedShaSource).toBe("skip-notice");
-        expect(result.reason).toContain("nothing to review");
-      } else {
-        expect(result.reason).toContain("skip notice");
-      }
+      expect(result.reason).toContain("skip notice");
     },
   );
 
@@ -278,8 +278,8 @@ describe("drive-status.ts over a head the reviewer skipped", () => {
         "<!-- ai-code-review -->\nAcknowledged.",
       );
     });
-    expectSpawnExit(result, 3);
-    expect(result.reviewer.reviewedShaSource).toBe("skip-notice");
+    expectSpawnExit(result, 22);
+    expect(result.reason).toContain("policy base could not be resolved");
   });
 
   it("stops when equally good merge bases give different diffs", async () => {
@@ -323,7 +323,7 @@ describe("drive-status.ts over a head the reviewer skipped", () => {
     );
     expectSpawnExit(result, 22);
     expect(result.state).toBe("REVIEW_SKIPPED");
-    expect(result.reason).toContain("multiple merge bases");
+    expect(result.reason).toContain("policy base could not be resolved");
   });
 
   it("does not trust exclusions introduced by the skipped head", async () => {

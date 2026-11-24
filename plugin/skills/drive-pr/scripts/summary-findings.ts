@@ -65,6 +65,7 @@ import {
   reviewerApp,
   reviewerEvidence,
   reviewerExpected,
+  skipNoticeMarker,
   stickyMarker,
 } from "./lib/overlay.ts";
 import { ghCall } from "./lib/proc.ts";
@@ -84,6 +85,7 @@ import {
   reviewerStickyBody,
   reviewedShaIn,
 } from "./lib/status/reviewer-sticky.ts";
+import { skipNoticeIn } from "./lib/status/skip-notice.ts";
 import {
   headerOf,
   SEVERITY_FIELD,
@@ -1331,12 +1333,20 @@ export function reviewerSticky(
   if (configuredOnly && !reviewerExpected()) return undefined;
   // Summary discovery deliberately differs from status evidence: a genuine
   // unstamped sticky can carry findings while status uses its check-run
-  // fallback. Select the newest structural sticky, never an auxiliary reply.
+  // fallback. A marker-prefixed acknowledgement must not erase a preceding
+  // finding-bearing summary merely because it is newer.
   let selected: IssueComment | undefined;
   for (const comment of comments) {
     const body = reviewerStickyBody(comment, isReviewerLogin, stickyMarker());
     if (body === null) continue;
-    selected = comment;
+    const carriesEvidence =
+      reviewedShaFrom(body) !== undefined ||
+      skipNoticeIn(body, skipNoticeMarker()) !== null ||
+      body.includes("ai-review-backlog") ||
+      parseBodyFindings(body).length > 0;
+    const acknowledgement = /\backnowledged\b/i.test(body);
+    if (selected === undefined || carriesEvidence || !acknowledgement)
+      selected = comment;
   }
   return selected;
 }

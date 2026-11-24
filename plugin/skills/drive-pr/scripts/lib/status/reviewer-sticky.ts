@@ -40,7 +40,7 @@ function lastStamp(body: string, markerRe: RegExp): string {
 /** The last reviewed-SHA stamp in one sticky body under the configured marker. */
 export function reviewedShaIn(body: string, shaMarker: string): string {
   const markerRe = new RegExp(
-    `<!--\\s*${shaMarker.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}:\\s*([0-9a-f]{7,40})\\s*-->`,
+    `<!--\\s*${shaMarker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:\\s*([0-9a-f]{7,40})\\s*-->`,
     "g",
   );
   return lastStamp(body, markerRe);
