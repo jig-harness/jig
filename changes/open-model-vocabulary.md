@@ -14,3 +14,4 @@ Declare a model's tier with the new `routing.model_tiers` key, and choose a sepa
 
 - For a runtime with a list of known families, a model identifier that the catalog does not recognize — unlike a listed family alias or release identifier — and neither declaration key classifies is still refused. The message now names the key to set (`routing.model_tiers.<runtime>.<model>`) instead of `routing.family_tiers`.
 - `routing.family_tiers` is kept as the older spelling of `routing.model_tiers`: a configuration that sets only it routes exactly as before. One model declared under both with different tiers is refused.
+- A Claude Code implementer route accepts only that runtime's family aliases. Use a Codex CLI launch stage for a declared exact model identifier.

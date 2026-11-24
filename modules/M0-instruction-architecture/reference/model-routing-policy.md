@@ -304,7 +304,7 @@ can be searched for and audited:
 |---------|----------------------------|
 | Agent | `model:` in the agent's metadata, checked and rendered into the roster |
 | Skill that pins a model | `model:` in that skill's own metadata |
-| Pass inside a skill | an explicit model setting in that skill's configuration |
+| Judgment pass inside a skill | an explicit model setting in that skill's configuration |
 
 Shared routing is not a pin declaration point: its `routing.model_tiers`,
 `routing.models`, and stage rows classify and select runtime models. It may
@@ -348,11 +348,10 @@ the affected layer and check tier ordering across every affected effective
 row, including inherited rows and other cells in the same stage; consumers in
 the same stage can already be separated by runtime or complexity-tier cells. A
 stage override can isolate the change only when the affected launch reads that
-stage row. Consumers in different stages are one way to isolate the change;
-consumers in the same stage are already isolated when they resolve different
-runtime or complexity-tier cells. Split the affected layer into a separately
-configured selection only when consumers that must stay on different models
-resolve to the same cell. It
+stage row. Consumers in different stages, or consumers in the same stage that
+resolve different runtime or complexity-tier cells, are already isolated. Split
+the affected layer into a separately configured selection only when consumers
+that must stay on different models resolve to the same cell. It
 is an exact reversal only while the alias still
 resolves to the measured release. Once the family has moved on, or when the
 measured baseline itself can no longer be used and some other model stands in

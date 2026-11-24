@@ -87,7 +87,8 @@ where a repository configures it for a tier, and the audit reports each
 such mapping
 ([ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md)). The
 tier is never a model id. Model identifiers appear only in routing
-configuration and its classification keys, both of which the loader checks.
+configuration and its classification keys, both of which the loader checks; a
+launch can also receive a one-run model choice or a skill pass model.
 
 ### Complexity tiers
 

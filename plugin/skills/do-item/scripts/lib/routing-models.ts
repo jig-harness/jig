@@ -319,6 +319,10 @@ function familyTier(
     field,
     family !== undefined || own !== undefined,
   );
+  if (familiesOf(runtime)?.takesAlias && byAlias === undefined)
+    throw new RoutingError(
+      `${field}: ${name} is not a ${runtime} family alias, and this launch accepts aliases only`,
+    );
   if (family?.tier === "scout" || own === "scout")
     throw new RoutingError(
       `${field}: ${name} is a Scout family, which M0 keeps read-only, so it is never a pickup's route and no routing.model_tiers or routing.family_tiers entry changes that (ADR-0009); an implementer may still hand it simple sub-steps`,

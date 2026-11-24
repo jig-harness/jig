@@ -957,8 +957,9 @@ names the model a tier runs on for the host, a repository and a stage
 model.
 
 - **Naming a model.** `routing.models.<runtime>.<tier>` and
-  `routing.stages.<stage>.models.<runtime>.<tier>` take any model the runtime
-  accepts, one word with no whitespace, comma, semicolon or equals sign (the same
+  `routing.stages.<stage>.models.<runtime>.<tier>` take any model the selected
+  launch can pass to its runtime, one word with no whitespace, comma, semicolon
+  or equals sign (the same
   holds for a `model_tiers` key). A declaration key, unlike a model value, may
   not be `__proto__`: the shared loader rejects that mapping key before routing
   reads it. For a runtime with a list (`claude-code`, `codex`) a name
@@ -970,16 +971,17 @@ model.
   runtime that takes the alias itself (`claude-code`), a cataloged release ID
   (the pinned spelling of a known family) is still refused as a route even
   when `model_tiers` declares it, since it would freeze the pin: use the
-  family alias. Codex also has a list of aliases but is given the release ID
-  the family names, so its cataloged IDs are accepted as written. The same
+  family alias. Codex also has a list of aliases but its CLI accepts the release
+  ID the family names, so its cataloged IDs are accepted as written. The same
   holds in both tables. A run's environment variable segment allows only letters,
   digits and single underscores, and is lowercased, so a model ID with a dot,
   a slash, a capital letter or a double underscore, or the runtime
   `claude-code`, cannot be a leaf override; set the parent key to a
   flow-style mapping instead. The model must also be declared when its
   runtime has a list of families, for example
-  `JIG__ROUTING__MODELS='{claude-code: {complex: my/model-1.2}}'` with
-  `JIG__ROUTING__MODEL_TIERS='{claude-code: {my/model-1.2: {tier: strategic, reason: "pinned for this host"}}}'`.
+  `JIG__ROUTING__STAGES='{steward: {models: {codex: {complex: my/model-1.2}}}}'`
+  with
+  `JIG__ROUTING__MODEL_TIERS='{codex: {my/model-1.2: {tier: strategic, reason: "pinned for this host"}}}'`.
 - **Layers.** A host sets any of these keys in its [user file](#configuration-layers)
   and a repository in `.config/jig.yaml`; the layers merge cell by cell before
   the loader reads them, so the repository's value for a cell replaces the
@@ -999,8 +1001,8 @@ model.
   a leaf variable leaves the file layers' other cells in place, but a variable
   that sets a parent key to a non-mapping (`JIG__ROUTING__MODELS=null`) replaces
   everything below it, and the loader refuses a `null` only when it is the value
-  that survives the merge. Those three paths, `routing.model_tiers`,
-  `routing.stages` and a stage's `models` map, have dedicated null messages
+  that survives the merge. The paths `routing.model_tiers`, `routing.stages`
+  and a stage's `models` map have dedicated null messages
   (`routing.models` accepts a null and restores the default rows); a null
   deeper down, such as a stage, a runtime's row or a tier's cell, fails the
   mapping or model-token check that field requires. A higher layer can replace
@@ -2614,7 +2616,7 @@ routing:                                 # absent: routes derived and printed, n
     reviews: true
   models:
     claude-code: { simple: sonnet, standard: sonnet, complex: opus }
-    codex: { complex: astra }
+    codex: { complex: sol }
   model_tiers:
     codex: { gpt-house: { tier: strategic, reason: "our gateway's flagship" } }
   family_tiers:                          # the older spelling, read as model_tiers entries
