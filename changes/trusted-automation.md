@@ -30,7 +30,10 @@ release: minor
   `packageManager` can change their effect. For every entry, a bare login
   included, a lockfile added, removed, moved or copied can change the
   lockfile a directory selects, its installer and the install
-  configuration, so the operator compares those before and after. Two-space and one-tab layouts are
+  configuration, so the operator compares those before and after. An in-place
+  manifest edit such as `packageManager` can switch the installer alone, and a
+  newly selected lockfile can be unchanged in the pull request, so the
+  operator reads its contents. Two-space and one-tab layouts are
   supported; a layout whose root dependency section opener reads as nested
   (such as four-space indentation), or unchanged context outside the
   patch grammar (such as an inline array), withholds the exception, which
