@@ -364,12 +364,14 @@ describe("a model id and its family alias", () => {
     },
   };
 
-  it("refuses a Claude release id, which would freeze the pin", () => {
-    expect(() =>
-      rules({
-        routing: { models: { "claude-code": { complex: "claude-opus-5-5" } } },
-      }),
-    ).toThrow(/takes the family alias opus/);
+  it("accepts a Claude release id in shared routing but refuses it for Agent delegation", () => {
+    const config = {
+      routing: { models: { "claude-code": { complex: "claude-opus-5-5" } } },
+    };
+    expect(() => rules(config)).not.toThrow();
+    expect(() => deriveRoute(facts({ type: "spike" }), rules(config))).toThrow(
+      /is not a family alias that the delegated claude-code agent accepts/,
+    );
   });
 
   it("reads a Codex model id as the family it names", () => {

@@ -356,6 +356,11 @@ export function effectivePass(
   flag: string | undefined,
   configured: () => PassModel = configuredPassModel,
   codex: () => CodexPassModel = configuredCodexModel,
+  resolve: (value: string, where: string, runtime?: string) => PassModel = (
+    value,
+    where,
+    runtime = PASS_RUNTIME,
+  ) => resolveModelValue(value, where, readOptionalOverlay, runtime),
 ): EffectivePass {
   const first = argv[0];
   if (first === undefined)
@@ -367,18 +372,13 @@ export function effectivePass(
     );
   if (vendor === "codex") {
     if (flag === undefined) return codexPass(argv, codex);
-    const chosen = resolveModelValue(
-      flag,
-      "--pass-model",
-      readOptionalOverlay,
-      CODEX_RUNTIME,
-    );
+    const chosen = resolve(flag, "--pass-model", CODEX_RUNTIME);
     return { argv: withCodexModel(argv, chosen.model), ...chosen };
   }
   if (vendor !== "claude") return registeredPass(argv, flag);
   const own = modelOption(argv);
   if (flag !== undefined) {
-    const chosen = resolveModelValue(flag, "--pass-model");
+    const chosen = resolve(flag, "--pass-model");
     const replaced = own === null || own.value === chosen.model ? null : own;
     return {
       argv: withModel(argv, chosen.model),

@@ -74,7 +74,7 @@ describe("resolveModelValue", () => {
     );
   });
 
-  it("resolves a classified Claude model for the CLI pass launch", () => {
+  it("keeps a classified Claude model in the complete CLI pass argv", () => {
     const routing = () => ({
       routing: {
         models: { "claude-code": { complex: "claude-provider-model" } },
@@ -88,9 +88,14 @@ describe("resolveModelValue", () => {
         },
       },
     });
-    expect(resolveModelValue("complex", "--pass-model", routing).model).toBe(
-      "claude-provider-model",
-    );
+    const resolve = (value: string, where: string, runtime?: string) =>
+      resolveModelValue(value, where, routing, runtime);
+    expect(
+      effectivePass(PASS, "complex", () => SONNET, undefined, resolve),
+    ).toMatchObject({
+      argv: ["claude", "--model", "claude-provider-model", ...PASS.slice(1)],
+      model: "claude-provider-model",
+    });
   });
 
   it("gives a Codex tier or family alias as the model the family names", () => {

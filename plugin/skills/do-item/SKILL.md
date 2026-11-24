@@ -751,7 +751,10 @@ implementation. Skip this check for issues about the repository's own code.
    the subagent's model and `runtime_effort` as its effort, field by field
    where the harness's subagent tool takes it, and the fix loop after the
    review delegates with the same values; a field the tool does not take is
-   not forwarded, and the status message says so. Before forwarding, resolve
+   not forwarded, and the status message says so. `determine_route.ts` accepts
+   provider model identifiers in shared routing for compatible CLI launches,
+   but refuses one for a delegated runtime that accepts family aliases only;
+   use that runtime's alias or leave the delegated model unpinned. Before forwarding, resolve
    the delegated agent's definition: a model or effort it pins is kept, and
    only the fields it leaves open are forwarded; when no single effective
    definition can be found, or a scope that might hold one cannot be read,
