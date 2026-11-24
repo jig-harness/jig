@@ -223,10 +223,11 @@ active now and already satisfies the handoff; an earlier launch of the same
 issue does not count. For a dispatcher start that is a pickup launch record or
 assignment record tied to the issue; a tracker state someone set by hand
 (assigned, in progress) is not proof. For a configured work-start
-procedure it is that mechanism's own receipt or status read. A rejected
-start is blocked; one whose confirmation cannot be read is unconfirmed:
-record it so and recheck the same issue on return (step 11) before deciding
-on a retry. Wait
+procedure it is that mechanism's own receipt or status read. Only a
+rejection verified to have come before anything was written is blocked. Any
+failure that could follow a write (a refused result whose confirmation read
+threw, a timeout) is unconfirmed: record it so and recheck the same issue on
+return (step 11) before deciding on a retry. Wait
 when pickup is pending (it happens on a later tick). When an accepted pickup
 claimed the item and then stalled, follow the recovery the status reports, or
 surface the blocker, keeping the issue key. When the assignment landed but the issue is still outside the
@@ -240,10 +241,18 @@ filing succeeds, whatever the launch outcome.
 
 ### 11. Pick up the state on every return
 
-Each time the person returns, recheck any start still unconfirmed with the operator's pickup
-thread read for that issue (the ordinary status can report a claim from
-tracker membership alone), keeping the start unconfirmed when that source
-cannot be read, then read the state of started work through
+Each time the person returns, recheck any start still unconfirmed against
+the source of the mechanism that sent the request: a dispatcher start through
+the operator's pickup thread read for that issue (the ordinary status can
+report a claim from tracker membership alone), any other work-start
+procedure through its own receipt or status read. Read it with the settings
+the send used (the default branch's tracker, identity and dispatch states),
+not a worktree's own. The thread shows nothing for an item outside the
+dispatch states, so a missing entry is no evidence the request failed: also
+read the item's current assignee, state and trusted assignment history
+directly, and retry only when that read shows the request did not land.
+Keep the start unconfirmed whenever a source cannot be read. Then read the
+state of started work through
 `/jig:operator` in a fresh session when the `jig` command is available.
 Otherwise, query the configured tracker or delivery mechanism read-only and
 mark unavailable evidence explicitly. Bring any parked question back with a
