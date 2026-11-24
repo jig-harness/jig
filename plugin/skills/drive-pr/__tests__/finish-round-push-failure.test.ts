@@ -163,17 +163,6 @@ describe("the push output's tail", () => {
     expect(out).toContain("error: failed to push some refs");
   });
 
-  it("drops the kept lines through the close of a quote the dropped part left open", () => {
-    const tail = outputTail();
-    const enc = new TextEncoder();
-    tail.observe(enc.encode('password="first\n'));
-    tail.observe(enc.encode("filler line\n".repeat(30 * 1024)));
-    tail.observe(enc.encode('LATERSECRET"\nnext line\n'));
-    const out = tail.text();
-    expect(out).not.toContain("LATERSECRET");
-    expect(out).toContain("next line");
-  });
-
   it("masks the continuation of a quoted value that spans lines", () => {
     const tail = outputTail();
     tail.observe(Buffer.from('password="first\n'));
@@ -183,10 +172,19 @@ describe("the push output's tail", () => {
     expect(out).toContain("next line");
   });
 
-  it("does not read an escaped quote in the dropped part as a closing quote", () => {
+  it.each([
+    [
+      "drops the kept lines through the close of a quote the dropped part left open",
+      'password="first\n',
+    ],
+    [
+      "does not read an escaped quote in the dropped part as a closing quote",
+      'password="first \\"\n',
+    ],
+  ])("%s", (_name, head) => {
     const tail = outputTail();
     const enc = new TextEncoder();
-    tail.observe(enc.encode('password="first \\"\n'));
+    tail.observe(enc.encode(head));
     tail.observe(enc.encode("filler line\n".repeat(30 * 1024)));
     tail.observe(enc.encode('LATERSECRET"\nnext line\n'));
     const out = tail.text();
