@@ -705,14 +705,14 @@ function readOf(facts: MergeFacts, rules: ReadyRules): Read {
   // A name two failing records share is told apart by their app when the
   // apps differ, and by run id (or an explicit ambiguity label) when they
   // do not, so no two entries in the list read alike.
-  const labelled = failingRecords.map((c) => {
+  const rendered = failingRecords.map((c) => {
     const same = failingRecords.filter((o) => o !== c && o.name === c.name);
     if (same.length === 0) return { required: c.required, label: c.name };
     const crossApp = c.app !== null && same.some((o) => o.app !== c.app);
     const sameApp = same.some((o) => o.app === c.app);
     const app = crossApp && c.app !== null ? c.app : null;
     const tail = sameApp
-      ? c.id !== null
+      ? c.id != null
         ? `run ${c.id}`
         : "ambiguous run"
       : null;
@@ -722,6 +722,19 @@ function readOf(facts: MergeFacts, rules: ReadyRules): Read {
       label: parts.length > 0 ? `${c.name} (${parts.join(", ")})` : c.name,
     };
   });
+  // Records that still render alike (no id tells them apart) are listed once
+  // with their count, so a list never shows two identical entries.
+  const counts = new Map<string, number>();
+  for (const r of rendered) {
+    const key = `${r.required}\0${r.label}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const labelled: Array<{ required: boolean; label: string }> = [];
+  for (const [key, n] of counts) {
+    const required = key.startsWith("true");
+    const label = key.slice(key.indexOf("\0") + 1);
+    labelled.push({ required, label: n > 1 ? `${label} (x${n})` : label });
+  }
   const requiredFailingNames = labelled
     .filter((c) => c.required)
     .map((c) => c.label);

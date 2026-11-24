@@ -700,8 +700,7 @@ describe("required checks and reviewer attempts", () => {
     expect(r.failing).toEqual([
       `${ci.name} (run 21)`,
       `${ci.name} (run 22)`,
-      "lint (ambiguous run)",
-      "lint (ambiguous run)",
+      "lint (ambiguous run) (x2)",
     ]);
   });
   it("does not let an optional pending check hide an approval request", () => {

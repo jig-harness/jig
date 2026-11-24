@@ -11,7 +11,7 @@ release: minor
   repository, every commit is the bot's own or a listed committer's, each signed for
   the account it names unless the entry says `signed: false`, every changed file is within the entry's paths (by default
   `package.json` and the JavaScript lockfiles), and, where the entry sets
-  `update_types`, its manifest diff shows an allowed update type. Any fact
+  `update_types`, every edit is covered by the allowed types, including eligible lockfile-only changes. Any fact
   that does not read withholds the exception, and the card's fact names
   the rule. The list is read from the default branch by the board, `jig
 ask` and the drive's merge-ready announcement, never from the pull
@@ -28,6 +28,5 @@ ask` and the drive's merge-ready announcement, never from the pull
 
 - The placement table now treats a failing required check as a failure that
   overrides a clean merge state, names required failures first and lists
-  other failing checks apart, and no longer lets a pending required check
-  hold a card in a merge queue when approval is owed. These changes apply
+  other failing checks apart. These changes apply
   to every pull request, not only trusted automation's.
