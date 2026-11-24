@@ -850,12 +850,12 @@ model.
   on its own, so it can flag that file's `null` where a higher runtime layer
   masks it and the loader accepts the merged result. A `null` only in the host
   file is outside both checks. A segment that ends in an underscore immediately before a `__`
-  separator cannot be addressed by a variable: `JIG__ROUTING__MODEL_TIERS__CODEX__MODEL_`
+  separator cannot be addressed by a variable, whether it is a model or a runtime
+  name. An underscore inside a segment (`my_model`) works in either position. For a
+  model, `JIG__ROUTING__MODEL_TIERS__CODEX__MODEL_`
   addresses the key `model_` and can take the whole `{tier, reason}` mapping,
-  while appending `__TIER` addresses `model._tier` instead. This applies to a
-  runtime name ending in `_` as well. An underscore inside a segment (`my_model`)
-  works in either position; set an affected model's whole entry as a mapping.
-  A runtime name that ends in `_` has the same problem one level up: `CUSTOM___MODEL`
+  while appending `__TIER` addresses `model._tier` instead; set an affected model's
+  whole entry as a mapping. For a runtime name `CUSTOM___MODEL`
   splits into `custom` and `_model`, so set `JIG__ROUTING__MODEL_TIERS__CUSTOM_` to the
   whole runtime mapping, with the model entries inside it. Likewise set such a runtime's
   whole row under `routing.models` or a stage's `models` table as one mapping.

@@ -238,6 +238,34 @@ describe("the host and the repository layers", () => {
     );
   });
 
+  it("keeps the environment's declaration and drops the host's after a repository null", () => {
+    writeFileSync(
+      join(home, "jig.yaml"),
+      `routing:
+  model_tiers:
+    codex:
+      gpt-house: { tier: execution, reason: "the house model" }
+`,
+    );
+    writeFileSync(
+      join(repo, ".config", "jig.yaml"),
+      "routing:\n  model_tiers: null\n",
+    );
+    const config = loadLayeredConfig(repo, {
+      JIG_HOME: home,
+      JIG__ROUTING__MODEL_TIERS__CODEX__OTHER_HOUSE__TIER: "execution",
+      JIG__ROUTING__MODEL_TIERS__CODEX__OTHER_HOUSE__REASON: "from the run",
+    }).values;
+    const tiers = (
+      (config.routing as Record<string, unknown>).model_tiers as Record<
+        string,
+        Record<string, unknown>
+      >
+    ).codex as Record<string, unknown>;
+    expect(Object.keys(tiers)).toEqual(["other_house"]);
+    expect(() => parseRoutingModels(config)).not.toThrow();
+  });
+
   it("lets a run's environment win over both files", () => {
     layered(HOST, null);
     const config = loadLayeredConfig(repo, {
