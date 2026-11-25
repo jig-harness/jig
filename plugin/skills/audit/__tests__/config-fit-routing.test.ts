@@ -294,13 +294,18 @@ test("a routing declaration with invisible characters reaches the JSON report es
     '    codex: {complex: "outside\\u2800model"}',
     "  model_tiers:",
     "    codex:",
-    '      "outside\\u2800model": {tier: strategic, reason: "keep\\u2800this"}',
+    '      "outside\\u2800model": {tier: strategic, reason: "keep\\u2800this\\uD800"}',
     "",
   ].join("\n");
-  const messages = findings(config)
-    .map((f) => f.message)
-    .join("\n");
+  const all = findings(config);
+  const messages = all.map((f) => f.message).join("\n");
   expect(messages).not.toContain("⠀");
   expect(messages).not.toMatch(/[\uD800-\uDFFF]/);
   expect(messages).toContain("\\u2800");
+  const declaration = all.filter((f) => f.id === "report:routing.models");
+  expect(declaration).toHaveLength(1);
+  expect(declaration[0]?.severity).toBe("info");
+  expect(declaration[0]?.message).toBe(
+    'routing.model_tiers.codex."outside\\u2800model" reads "outside\\u2800model" as a strategic family: "keep\\u2800this\\ud800"',
+  );
 });

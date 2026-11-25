@@ -108,9 +108,29 @@ describe("a model outside the families", () => {
       expect(() =>
         rules({ routing: { models: { codex: { complex: selected } } } }),
       ).toThrow("routing.models.codex.complex must be a model");
+    const emoji = "model\u{1F600}";
+    const declared = {
+      routing: {
+        models: { codex: { complex: emoji } },
+        model_tiers: {
+          codex: { [emoji]: { tier: "strategic", reason: "a valid pair" } },
+        },
+      },
+    };
+    expect(parseRoutingModels(declared).codex?.complex).toBe(emoji);
+    expect(() => rules(declared)).not.toThrow();
+  });
+
+  it("refuses an unpaired surrogate in a model_tiers key but keeps the family_tiers grammar", () => {
+    const entry = { tier: "strategic", reason: "declared" };
     expect(() =>
-      rules({ routing: { models: { codex: { complex: "model\u{1F600}" } } } }),
-    ).not.toThrow("must be a model");
+      rules({ routing: { model_tiers: { codex: { "model\uD800": entry } } } }),
+    ).toThrow("unpaired surrogate");
+    expect(() =>
+      rules({
+        routing: { family_tiers: { codex: { "legacy\uD800": entry } } },
+      }),
+    ).not.toThrow();
   });
 
   it("reports non-string selected models without coercing configuration values", () => {

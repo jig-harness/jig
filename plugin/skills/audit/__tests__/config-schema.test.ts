@@ -383,6 +383,10 @@ describe("the reading skills", () => {
       "has=equals",
       "模型",
       "\u{10400}-model",
+      "model\uD800",
+      "model\uDC00",
+      "\uD800\uD800\uDC00",
+      "\uDC00\uD800\uDC00",
       "has\u2003em",
       ...[
         0x00a0, 0x1680, 0x2000, 0x2007, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000,

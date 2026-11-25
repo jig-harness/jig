@@ -55,6 +55,9 @@ export const MODEL_TOKEN_PATTERN =
 /** A declared model name, which need not itself be an argv operand. */
 export const DECLARATION_TOKEN_PATTERN = /^[^\p{Cs}\s,;=\0]+$/u;
 
+/** The declaration grammar `routing.family_tiers` has always had: surrogates are not refused. */
+export const LEGACY_DECLARATION_TOKEN_PATTERN = /^[^\s,;=\0]+$/;
+
 export function oneOf<T extends string>(
   value: unknown,
   allowed: readonly T[],
@@ -91,10 +94,14 @@ export function declarationToken(
   value: unknown,
   field: string,
   what: string,
+  legacy = false,
 ): string {
-  if (typeof value !== "string" || !DECLARATION_TOKEN_PATTERN.test(value))
+  const pattern = legacy
+    ? LEGACY_DECLARATION_TOKEN_PATTERN
+    : DECLARATION_TOKEN_PATTERN;
+  if (typeof value !== "string" || !pattern.test(value))
     throw new RoutingError(
-      `${field} must be ${what}: one word that contains no NUL, whitespace, comma, semicolon or equals sign`,
+      `${field} must be ${what}: one word that contains no NUL${legacy ? "" : ", unpaired surrogate"}, whitespace, comma, semicolon or equals sign`,
     );
   return value;
 }
