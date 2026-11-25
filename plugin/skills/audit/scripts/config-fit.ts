@@ -2293,7 +2293,14 @@ export function render(report: FitReport): string {
   lines.push(`Forge: ${report.forge}.`, "");
   const facts = Object.entries(report.facts);
   if (facts.length > 0) {
-    lines.push("## Facts", "", ...facts.map(([k, v]) => `- ${k}: ${v}`), "");
+    lines.push(
+      "## Facts",
+      "",
+      ...facts.map(
+        ([k, v]) => `- ${k}: ${lit(String(v).replace(/\s*\n\s*/g, " "))}`,
+      ),
+      "",
+    );
   }
   for (const [severity, title] of SECTIONS) {
     const rows = report.findings.filter((f) => f.severity === severity);

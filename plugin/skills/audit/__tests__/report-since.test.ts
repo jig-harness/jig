@@ -11,11 +11,21 @@ import { noProfile, priorRecord, reportInput } from "./report-fixtures.ts";
 describe("the Markdown copy, since the last audit", () => {
   test("lists the criteria still open within the target, and only counts those beyond it", () => {
     const text = renderReportMarkdown(reportInput({ prior: priorRecord() }));
-    expect(text).toContain(
-      readFileSync(
-        new URL("./fixtures/report/prior-changes.md", import.meta.url),
-        "utf8",
-      ).trimEnd(),
+    // The fixture holds the historical changes; rows added after its audit
+    // are checked against the live catalog in report-markdown.test.ts.
+    const historicalChanges = (markdown: string) =>
+      markdown
+        .replace(/### What changed \(\d+\)/, "### What changed")
+        .split("\n")
+        .filter((line) => !line.endsWith("| Added by Jig |"))
+        .join("\n");
+    expect(historicalChanges(text)).toContain(
+      historicalChanges(
+        readFileSync(
+          new URL("./fixtures/report/prior-changes.md", import.meta.url),
+          "utf8",
+        ).trimEnd(),
+      ),
     );
     const none = renderReportMarkdown(
       reportInput({ prior: priorRecord(), source: noProfile }),

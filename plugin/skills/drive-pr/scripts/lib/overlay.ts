@@ -428,7 +428,7 @@ export function ciRepairRoundsSetting(): number | undefined {
 /** The model each pass runs on when neither `--pass-model` nor `drive.pass_model` names one: Claude Code's alias for the latest Sonnet. */
 export const DEFAULT_PASS_MODEL = "sonnet";
 
-/** A model as a pass command takes it: one dash-free word (id, alias or routing tier), the routing model-token grammar. */
+/** A model as a pass command takes it: one word without a leading dash (id, alias or routing tier), the routing model-token grammar. */
 export const PASS_MODEL_PATTERN = MODEL_TOKEN_PATTERN;
 
 /** `drive.pass_model`: the model, alias or routing tier each pass runs on; `undefined` when not configured. */
