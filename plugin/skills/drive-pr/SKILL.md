@@ -2158,8 +2158,10 @@ publishes no findings, including any partial output.
 
 Both enumerations report open work. An entry is informational when the sticky marks it
 `blocking: false` or `reason: "winddown-deferred"`, or explicitly marks its
-Beyond this PR backlog section non-blocking. An explicit `blocking: true`
-or a fresh body bullet with the same fingerprint takes precedence. The report lists skipped entries under `ignoredBacklog`
+Beyond this PR backlog section non-blocking **and the rendered bullet identifies
+that exact backlog fingerprint**. An explicit `blocking: true` or a fresh body
+bullet with the same fingerprint takes precedence. Abbreviated or ambiguous
+renderings remain blocking. The report lists skipped entries under `ignoredBacklog`
 and status JSON lists their fingerprints under `work.summaryIgnoredBacklogKeys`.
 These entries need no answer. Body bullets, unaccounted slots and backlog
 entries without an explicit non-blocking disposition still count as work.

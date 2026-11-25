@@ -2167,11 +2167,11 @@ describe("summary-findings parsing", () => {
     const r = classify(input);
     expect(r.ignoredBacklog.map((entry) => entry.fingerprint)).toEqual([
       "entry-flag",
+      sectionFingerprint,
     ]);
     expect(
       r.unaddressed.map(({ fingerprint, source }) => [fingerprint, source]),
     ).toEqual([
-      [sectionFingerprint, "backlog"],
       ["keep-blocking", "backlog"],
       [fingerprint, "body"],
     ]);
@@ -2180,7 +2180,7 @@ describe("summary-findings parsing", () => {
       stickyBody: input.stickyBody.replace("4 finding(s)", "3 finding(s)"),
     });
     expect(
-      countMismatch.unaddressed.map((entry) => entry.fingerprint),
+      countMismatch.ignoredBacklog.map((entry) => entry.fingerprint),
     ).toContain(sectionFingerprint);
   });
   it("honors a Beyond this PR disposition when it renders every backlog entry", () => {
@@ -2308,10 +2308,12 @@ describe("summary-findings parsing", () => {
       anchoredKeys: [],
       addressedFingerprints: new Set(),
     });
-    expect(r.ignoredBacklog).toEqual([]);
-    expect(r.unaddressed.map((entry) => entry.fingerprint)).toEqual(
-      entries.map((entry) => entry.fingerprint),
-    );
+    expect(r.ignoredBacklog.map((entry) => entry.fingerprint)).toEqual([
+      entries[0]?.fingerprint,
+    ]);
+    expect(r.unaddressed.map((entry) => entry.fingerprint)).toEqual([
+      entries[1]?.fingerprint,
+    ]);
   });
   it("does not let a matching Beyond this PR count suppress a different backlog entry", () => {
     const renderedPath = "rendered.ts";
@@ -2349,9 +2351,10 @@ describe("summary-findings parsing", () => {
       anchoredKeys: [],
       addressedFingerprints: new Set(),
     });
-    expect(r.ignoredBacklog).toEqual([]);
-    expect(r.unaddressed.map((finding) => finding.fingerprint)).toEqual([
+    expect(r.ignoredBacklog.map((finding) => finding.fingerprint)).toEqual([
       rendered.fingerprint,
+    ]);
+    expect(r.unaddressed.map((finding) => finding.fingerprint)).toEqual([
       hidden.fingerprint,
     ]);
   });
@@ -2383,6 +2386,7 @@ describe("summary-findings parsing", () => {
     expect(r.findings.map((finding) => finding.source)).toEqual([
       "backlog",
       "body",
+      "unaccounted",
     ]);
     expect(r.ignoredBacklog).toHaveLength(1);
   });
@@ -2512,19 +2516,18 @@ describe("summary-findings parsing", () => {
     const r = classify({
       pr: 1,
       stickyCommentId: 9,
-      // 2 backlog entries, no unanchored bullet (the one body bullet IS
-      // anchored), declared 4 → 2 classified, 2 unaccounted slots.
+      // The declaration counts summary bullets, not backlog entries. Its only
+      // body bullet is anchored, so declared 4 leaves four unaccounted slots.
       stickyBody: stickyBody({ backlog: "blocking-only", unanchored: 4 }),
       anchoredKeys: [".claude/agents/review-arbiter.md:31"],
       addressedFingerprints: new Set(),
       reviewedSha: HEAD,
     });
     const slots = r.findings.filter((f) => f.source === "unaccounted");
-    expect(slots).toHaveLength(2);
-    // Both slots quote the same, correct classified count — not 0 (bodyOnly),
-    // and not a number that drifts as the loop pushes.
+    expect(slots).toHaveLength(4);
+    // Each slot reports the body-derived count, never the unrelated backlog.
     for (const s of slots) {
-      expect(s.text).toContain("only 2 could be classified");
+      expect(s.text).toContain("only 0 could be classified");
     }
   });
   it("scopes unaccounted slot keys to the reviewed HEAD, not the sticky id", () => {

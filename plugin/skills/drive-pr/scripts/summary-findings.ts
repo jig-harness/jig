@@ -466,7 +466,13 @@ export interface BodyFinding {
  * would otherwise be counted twice.
  */
 export function parseBodyFindings(body: string): BodyFinding[] {
-  const head = body.split("<details")[0] ?? "";
+  // A reviewer can use other collapsed sections before or after its backlog.
+  // Exclude only the named backlog itself; summary bullets elsewhere still
+  // describe fresh work.
+  const head = body.replace(
+    /<details><summary>🗂️ <b>Beyond this PR<\/b>[\s\S]*?<\/details>/g,
+    "",
+  );
   const out: BodyFinding[] = [];
   for (const line of head.split("\n")) {
     const m = line.match(/^[-*]\s+`([^`]+)`\s+[—–-]\s+(.*)$/);
@@ -688,13 +694,6 @@ function partitionBacklog(
       (backlogFingerprints.get(entry.fingerprint) ?? 0) + 1,
     );
   }
-  const sectionCoversBacklog =
-    Number(section?.[1]) === backlog.length &&
-    rendered.length === backlog.length &&
-    [...backlog].every((entry) => {
-      const fingerprintCount = renderedFingerprints.get(entry.fingerprint);
-      return fingerprintCount === 1;
-    });
   const freshFingerprints = new Set(
     bullets.map((f) => fingerprintOf(f.path, f.line, f.text)),
   );
@@ -705,7 +704,9 @@ function partitionBacklog(
       entry.blocking !== true &&
       (entry.blocking === false ||
         entry.reason === "winddown-deferred" ||
-        sectionCoversBacklog);
+        (section !== null &&
+          renderedFingerprints.get(entry.fingerprint) === 1 &&
+          backlogFingerprints.get(entry.fingerprint) === 1));
     if (!informational) blockingBacklog.push(entry);
     // A fresh body bullet takes precedence over a carry-forward disposition.
     else if (!freshFingerprints.has(entry.fingerprint))
@@ -856,7 +857,9 @@ export function classify(input: ClassifyInput): SummaryReport {
   // The declaration describes findings in the summary above the backlog.
   // Blocking backlog entries can account for slots as well. Informational
   // carry-forwards belong to a separate cohort and cannot explain a shortfall.
-  const classified = findings.length;
+  // The declaration is about unanchored summary bullets, not separately
+  // carried backlog entries. A backlog finding must not consume its slot.
+  const classified = bodyOnly.length;
   const shortfall = Math.max(0, declared - classified);
   // Scoped to the reviewed HEAD, not to the sticky comment id. The sticky is
   // upserted, so its id is stable across every round — keying a slot on it means

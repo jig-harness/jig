@@ -21,7 +21,8 @@ pre-commit:
     # The generated-file inventory's commit-time twin for the Jig Protocol
     # (M2): when a staged file is among the chapters' sources (the protocol
     # entry of .config/change-areas.yaml), regenerate the chapters and stage
-    # each one the generator changed, so the commit carries them.
+    # every planned generated output, so the commit carries them even when an
+    # older index entry is the only stale copy.
     protocol:
       glob:
         - "tools/protocol/**"

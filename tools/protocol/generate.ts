@@ -8,7 +8,8 @@
  * chapter's title, status line and generated sections in place between their
  * markers, leaving the prose alone; the index page's list of chapters; and
  * each chapter's data file under `plugin/protocol/data/`. `--stage` also
- * stages each file it changed, for the pre-commit hook.
+ * stages every planned generated output, so an index-stale output is refreshed
+ * for the pre-commit hook even when the working tree already has its bytes.
  *
  * `--check` writes nothing. It fails, naming each file and section that
  * differs and the command that fixes it (data files are compared as parsed
@@ -142,7 +143,7 @@ export function generate(options: GenerateOptions): GenerateResult {
 }
 
 /**
- * Stage the files a write changed, in the index the running commit uses: the
+ * Stage every planned output in the index the running commit uses: the
  * environment is passed on whole, since a pre-commit hook's git names that
  * index in it.
  */
