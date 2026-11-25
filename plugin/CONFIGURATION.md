@@ -489,8 +489,10 @@ built-in lockfile table, or a generator the operator finds and records for a
 derived path, with its working directory, against the base's configuration and
 the staged configuration both. Also review the Git hooks a merge or commit
 runs, and the obligation commands and the validation plan or gate that
-validation runs. After a regeneration, review the resulting lockfile and
-effective tree before the drive installs.
+validation runs. A drive does not pause between a regeneration and the install that follows
+it during validation. To review a regenerated lockfile and the effective tree
+before anything installs, resolve the conflict and regenerate yourself, push,
+and only then start the drive.
 
 Restart a stopped drive by the procedure for its stop (answer every parked
 decision; for a usage-limit stop, follow "Picking up a stopped drive" in the drive-pr skill: a pass that
