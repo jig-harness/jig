@@ -178,9 +178,9 @@ function documentedFields(): Map<string, string[] | null> {
     "utf8",
   ).split("\n")) {
     if (line.startsWith("#")) {
-      // The triage and fleet-health files are separate files with their own fields.
+      // The triage and fleet-health files and the hub's settings file are separate files with their own fields.
       skip =
-        /^### The |^## (What is derived|Environment variables|Complete example)/.test(
+        /^### The |^## (What is derived|Environment variables|Complete example|The hub's settings file)/.test(
           line,
         );
       continue;

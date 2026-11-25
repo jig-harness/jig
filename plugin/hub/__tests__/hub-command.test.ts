@@ -27,5 +27,17 @@ test("jig lists hub among its commands", () => {
 });
 
 test("jig hub refuses an argument it does not know", () => {
-  expectSpawnExit(run("hub", "serve"), 2);
+  expectSpawnExit(run("hub", "sever"), 2);
+  expectSpawnExit(run("hub", "serve", "--port", "1"), 2);
+});
+
+test("jig hub serve refuses a settings file it cannot read", () => {
+  const result = run(
+    "hub",
+    "serve",
+    "--settings",
+    "/nonexistent/settings.yaml",
+  );
+  expectSpawnExit(result, 1);
+  expect(result.stderr.toString()).toContain("cannot read the hub's settings");
 });

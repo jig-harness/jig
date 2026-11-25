@@ -4,8 +4,8 @@ type: adr
 status: draft
 description: "Herdr stays the first runtime for workspace lifecycle; the dispatcher, which starts the execution line's stages unattended, is built for Orca first, and other runtimes come through the same session runtime interface"
 lifecycle: permanent
-version: "1.1"
-last_updated: 2026-11-13
+version: "1.2"
+last_updated: 2026-11-25
 owner: maintainers
 decision_date: 2026-10-30
 supersedes: ~
@@ -149,3 +149,15 @@ through the runtime; every worktree whose pull request merged was collected
 or kept with a reason; and a person attached to a run and took one over
 without Orca. The pull request that then makes the process runtime the
 default records that week's log and adds a dated amendment here.
+
+### 2026-11-25 — a hub on the same machine gives the dispatcher no route (v1.2)
+
+Touches the Consequences. A host may run the optional
+[hub](../../design/control-plane.md) beside its dispatcher. The dispatcher
+gains no inbound route from it: the hub's listeners (`/v1/` on loopback and
+the private network, `/webhooks/` through a tunnel, the feed through a
+private-network front) serve the hub alone, and the dispatcher stays a
+timer-run tick that only calls out. The hub runs under an OS user of its
+own, never the dispatcher's (`jig install hub` refuses that user), so a
+session the dispatcher starts reads neither the hub's settings nor its
+database ([plugin/hub/README.md](../../plugin/hub/README.md)).
