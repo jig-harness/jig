@@ -22,11 +22,12 @@
  * the last end, doubling with each; at its cap the drive is a person's
  * (`needs-person`), notified once for the head or the ledger facts, and not
  * launched again until they change or a person's rearm request launches it.
- * A record of any other kind, a new head or moved ledger facts ends the run,
- * so the count starts again and normal recovery proceeds.
+ * A record of any other kind, a launch a person's rearm request made, a new
+ * head or moved ledger facts ends the run, so the count starts again and
+ * normal recovery proceeds. A takeover killed by a signal counts as failed.
  */
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
-import { isoFromMs, parseMs } from "../../shared/time.ts";
+import { currentMs, isoFromMs, parseMs } from "../../shared/time.ts";
 import { driveHold, drivesOf, factsOf } from "./actions/drive-hold.ts";
 import { prHeadOf } from "./failed-rearms.ts";
 import type { ReadRecord } from "./launches.ts";
@@ -64,15 +65,27 @@ function endCode(r: ReadRecord): number | null {
 
 /** When the backoff after `count` such ends, the last at `last`, ends. */
 function notBefore(last: ReadRecord, count: number, baseMs: number): string {
-  const at = last.state.kind === "ended" ? parseMs(last.state.exit.at) : NaN;
-  const from = Number.isFinite(at) ? at : 0;
+  const ended = last.state.kind === "ended" ? parseMs(last.state.exit.at) : NaN;
+  const created = parseMs(last.record.createdAt);
+  // An end time that does not read is not an ended backoff: count from the launch, else from now.
+  const from = Number.isFinite(ended)
+    ? ended
+    : Number.isFinite(created)
+      ? created
+      : currentMs();
   return isoFromMs(from + baseMs * 2 ** Math.max(count - 1, 0));
+}
+
+/** Whether a person's rearm request launched it: such a launch starts the count again. */
+function fromRequest(r: ReadRecord): boolean {
+  return r.record.rearmRequestId != null;
 }
 
 /** A re-arm that stopped `NOT_SETTLED` at `head`. */
 function notSettledAt(head: string): (r: ReadRecord) => boolean {
   return (r) =>
     r.record.action === "rearm" &&
+    !fromRequest(r) &&
     endCode(r) === DRIVE_EXIT.NOT_SETTLED &&
     prHeadOf(r.record.heads) === head;
 }
@@ -81,7 +94,9 @@ function notSettledAt(head: string): (r: ReadRecord) => boolean {
 function takeoverFailedOn(facts: string): (r: ReadRecord) => boolean {
   return (r) =>
     r.record.action === "takeover" &&
-    failedTakeoverExit(endCode(r)) &&
+    r.state.kind === "ended" &&
+    failedTakeoverExit(r.state.exit.code, r.state.exit.signal) &&
+    !fromRequest(r) &&
     !endedOnWall(r) &&
     sameFacts(r.record.facts, facts);
 }
@@ -133,7 +148,7 @@ export function settleRepeatedNotSettled(
       return {
         ...pr,
         class: "needs-person",
-        why: `stopped ${DRIVE_EXIT.NOT_SETTLED} (not judgeable yet) again after ${run.length} re-arms in a row at the same pull request head ${short} (launch records ${ids(run)}): waiting on this head has not settled it (a required check that completed SKIPPED or a cancelled check leaves no fresh exact-head witness), so it is not re-armed again until its head changes; a person re-runs the required checks on this head and re-arms it, or pushes a commit (see the drive's handoff)`,
+        why: `stopped ${DRIVE_EXIT.NOT_SETTLED} (not judgeable yet) again after ${run.length} re-arms in a row at the same pull request head ${short} (launch records ${ids(run)}): waiting on this head has not settled it (for example, a required check that completed skipped or was cancelled leaves no fresh exact-head witness), so it is not re-armed again until its head changes; a person re-runs the required checks on this head and re-arms it, or pushes a commit (see the drive's handoff)`,
         evidence,
       };
     const until = notBefore(last, run.length, NOT_SETTLED_BACKOFF_MS);
@@ -166,7 +181,10 @@ export function settleFailedTakeovers(
     const run = trailing(drivesOf(pr, own), takeoverFailedOn(factsOf(pr)));
     const last = run[0];
     if (last === undefined) return pr;
-    const exit = endCode(last);
+    const exit =
+      last.state.kind === "ended"
+        ? (last.state.exit.code ?? last.state.exit.signal)
+        : null;
     const evidence = {
       ...pr.evidence,
       failedTakeovers: run.length,

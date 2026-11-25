@@ -23,7 +23,10 @@ const ANSWERED_ELSEWHERE: ReadonlySet<number> = new Set([
   ...DRIVER_REFUSAL_EXITS,
 ]);
 
-/** Whether a takeover that ended `code` failed in a way no other rule answers, so it counts toward `FAILED_TAKEOVERS`. */
-export function failedTakeoverExit(code: number | null): boolean {
-  return code !== null && !ANSWERED_ELSEWHERE.has(code);
+/** Whether a takeover that ended `code`, or on `signal` with no code, failed in a way no other rule answers, so it counts toward `FAILED_TAKEOVERS`. */
+export function failedTakeoverExit(
+  code: number | null,
+  signal: string | null,
+): boolean {
+  return code === null ? signal !== null : !ANSWERED_ELSEWHERE.has(code);
 }

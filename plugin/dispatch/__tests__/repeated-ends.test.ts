@@ -302,6 +302,60 @@ describe("takeovers of this host's silent driver that keep failing on one set of
   });
 });
 
+describe("what starts the count again or still counts", () => {
+  it("a re-arm a person's rearm request made starts the count again", () => {
+    const records = Array.from({ length: NOT_SETTLED_REARMS }, (_, i) =>
+      notSettledRearm(i + 1, 200 - i * 60),
+    );
+    const asked = records.at(-1) as ReadRecord;
+    asked.record.rearmRequestId = 42;
+    const [pr] = settleRepeatedNotSettled(
+      [notSettled(NOT_SETTLED_REARMS + 1)],
+      records,
+    );
+    expect(pr?.class).toBe("re-armable");
+    expect(pr?.retryAfter).toBeUndefined();
+  });
+
+  it("a takeover killed by a signal counts as failed", () => {
+    const killed = takeovers(FAILED_TAKEOVERS).map((r) => ({
+      ...r,
+      state: {
+        ...r.state,
+        exit: { at: minutesAgo(1), code: null, signal: "SIGKILL" },
+      },
+    })) as ReadRecord[];
+    const [pr] = settleFailedTakeovers([silent()], [owner(), ...killed]);
+    expect(pr?.class).toBe("needs-person");
+    expect(pr?.evidence.takeoverExit).toBe("SIGKILL");
+  });
+
+  it("an end time that does not read backs off from the launch, not the epoch", () => {
+    const run = notSettledRearm(1, 5);
+    const unread = {
+      ...run,
+      state: {
+        ...run.state,
+        exit: { at: "not a time", code: NOT_SETTLED, signal: null },
+      },
+    } as ReadRecord;
+    const [pr] = settleRepeatedNotSettled([notSettled(2)], [unread]);
+    expect(retryWaiting(pr as DrivenPr, currentMs())).not.toBeNull();
+  });
+
+  it("a running launch that started the driver does not hide the capped takeovers from a person", () => {
+    const started = owner();
+    const alive = {
+      ...started,
+      state: { kind: "alive", process: claim(started.record.createdAt) },
+    } as ReadRecord;
+    const records = [alive, ...takeovers(FAILED_TAKEOVERS)];
+    const [pr] = settleOwnDrives([silent()], records, new Map(), "h");
+    expect(pr?.class).toBe("needs-person");
+    expect(driveHold(pr as DrivenPr, records).kind).toBe("none");
+  });
+});
+
 describe("launch record retention", () => {
   it("keeps a drive's run of failed ends, up to the cap", () => {
     const records = [

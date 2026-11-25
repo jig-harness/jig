@@ -88,11 +88,11 @@ export function latestUsageRefusals(records: ReadRecord[]): Set<string> {
 
 /** Whether a drive record ended the way `repeated-ends.ts` counts: a re-arm at recorded heads that stopped `NOT_SETTLED`, or a takeover that failed on an exit no other rule answers. */
 function repeatedEnd(r: ReadRecord): boolean {
-  if (r.state.kind !== "ended") return false;
-  const code = r.state.exit.code;
+  if (r.state.kind !== "ended" || r.record.rearmRequestId != null) return false;
+  const { code, signal } = r.state.exit;
   return r.record.action === "rearm"
     ? code === DRIVE_EXIT.NOT_SETTLED && r.record.heads != null
-    : r.record.action === "takeover" && failedTakeoverExit(code);
+    : r.record.action === "takeover" && failedTakeoverExit(code, signal);
 }
 
 /**
