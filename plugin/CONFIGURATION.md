@@ -540,9 +540,12 @@ round budget). What needs a restart depends on how the drive ended:
   which case the convergence holds. When the ledger still shows the old head,
   the pull request stays `stale`, which under the opt-out waits for a manual
   restart.
-- Any other moved head, or a new conflict, is a new stop to restart, or a
-  ledger recovery when the ledger reading shows the prior convergence no
-  longer settles the pull request.
+- Any other moved head is a new stop to restart, or a ledger recovery when
+  the ledger reading shows the prior convergence no longer settles the pull
+  request. A new conflict on a converged drive is not a stop the ledger
+  records: the ledger still says `CONVERGED` and the drive reads `stale`, so
+  re-drive it by hand as above; only a drive that actually stopped with
+  `PR_CONFLICTING` is a stop to restart.
 
 An entry
 without `update_types` skips manifest classification, so such an edit can
