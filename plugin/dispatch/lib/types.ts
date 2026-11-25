@@ -367,6 +367,8 @@ export interface Unplaced {
   target: string;
   record: RecordName;
   reason: string;
+  /** Set only for a notification channel's own fault, which says nothing about whether this repository's causes were observed. */
+  channelFault?: true;
   /** For an item the tracker listing returned: its title and link, which the line and the outcome log show beside its key. */
   title?: string;
   url?: string | null;
@@ -605,6 +607,13 @@ export interface NotifyOutcome {
   channel?: string;
 }
 
+/** A notification channel that began sending on this host this tick, and how many standing causes it was recorded as knowing without sending them. */
+export interface ChannelStart {
+  channel: string;
+  /** The causes that already stood across every repository of the tick; the first repository's report holds the entry, and later ones add to it. */
+  causes: number;
+}
+
 /** What `--apply` did with the repository's notices workspace once its notifications were sent. */
 export interface RetireOutcome {
   workspace: string;
@@ -815,6 +824,8 @@ export interface RepoReport {
   preflight?: PreflightHold[];
   /** What `--apply` notified, where the machine file enables `notify`; empty otherwise. */
   notifications: NotifyOutcome[];
+  /** The notification channels that began sending on this host this tick, told once: on the first repository the channel was started at. Absent when none began. */
+  channelStarts?: ChannelStart[];
   /** What `--apply` did with the repository's notices workspace, where the machine file enables `notify` and one is open. */
   noticesWorkspace?: RetireOutcome;
   /** What `--apply` had the session runtime end of what ended runs left; absent when none left anything. */

@@ -15,6 +15,7 @@ import type {
   LabelWrite,
   EndRunOutcome,
   LaunchOutcome,
+  ChannelStart,
   NotifyOutcome,
   PrOpenMove,
   ReleaseOutcome,
@@ -74,6 +75,11 @@ function steerLine(s: SteerOutcome): string {
   return `  ${s.outcome.padEnd(10)} steer  ${s.target} (record ${s.record}, wall ${s.episode}): ${s.detail}`;
 }
 
+/** A notification channel that began sending this tick, from the causes that already stood. */
+export function channelStartLine(c: ChannelStart): string {
+  return `  started  notification channel ${c.channel} from ${c.causes} standing cause${c.causes === 1 ? "" : "s"}, recorded without sending`;
+}
+
 /** What `--apply` launched, nudged and notified. */
 function outcomeLines(r: RepoReport): string[] {
   // A receipt written before notifications or nudges were sent has none.
@@ -86,6 +92,7 @@ function outcomeLines(r: RepoReport): string[] {
       .map((m) => moveLine(m, "")),
     ...(r.steers ?? []).map(steerLine),
     ...(r.endedRuns ?? []).map(endedRunLine),
+    ...(r.channelStarts ?? []).map(channelStartLine),
     ...notified.map(noticeLine),
     ...(r.noticesWorkspace === undefined
       ? []
