@@ -515,13 +515,17 @@ round budget). What needs a restart depends on how the drive ended:
   enabled, from an apply tick of that host's dispatcher that reads the forge
   successfully; it skips disputed and out-of-scope pull requests. Check that
   scope before waiting for a refresh. The refresh also needs the stopped
-  ledger's generation to be above any claim on the pull request, and the
+  ledger's generation to be above every takeover claim in the ledger snapshot
+  (launch records and merge-ready announcements are not generation blockers), and the
   merge-ready announcement to succeed, so a pull request with another Ready
   blocker (one outside the merge-now and approve-first lanes) falls back. When
   the pull request is held or busy, release the hold or wait for the busy
-  drive; when mergeability reads `UNKNOWN` or cannot be read, recheck it, and
-  follow the restart rules below only on a confirmed `CONFLICTING` result,
-  which is a new stop and not a wait.
+  drive; when mergeability reads `UNKNOWN` or cannot be read, recheck it. A
+  `CONFLICTING` result is a new stop, not a wait: restart by the conflict
+  procedure once the ledger reading identifies the head and base, since a drive
+  whose head or base cannot be identified stays `unplaced` (recheck it). A
+  `MERGEABLE` head that differs from the verified head reads `stale`: when the
+  refresh has fallen back, restart it by hand as the next bullet says.
   Until the refresh records the convergence the head is stale, and
   dispatch can withhold a re-drive while verification of the new head is
   pending. A refresh that is still unresolved (verification pending, a held
