@@ -35,14 +35,17 @@ import {
   type JsonValue,
   readInFlightRead,
   readJob,
+  readJobSchedules,
   releaseInFlightRead,
+  removeJobSchedule,
   saveJobProgress,
+  saveJobSchedule,
   takeInFlightRead,
   takeJobLease,
   trimExpired,
 } from "../core/operations.ts";
 import type { StorageOperation } from "../core/storage.ts";
-import { inFlightReads, jobLeases } from "./schema.ts";
+import { inFlightReads, jobLeases, jobSchedules } from "./schema.ts";
 
 /** A synchronous SQLite database through Drizzle, as every adapter opens one. */
 export type HubDatabase = BaseSQLiteDatabase<"sync", unknown>;
@@ -408,6 +411,72 @@ const readJobImpl = implement(readJob, (db, partition, { job }) => {
   });
 });
 
+/** The condition that picks `job`'s schedule row in `partition`. */
+function scheduleKey(partition: string, job: string) {
+  return and(eq(jobSchedules.partition, partition), eq(jobSchedules.job, job));
+}
+
+const saveJobScheduleImpl = implement(
+  saveJobSchedule,
+  (db, partition, { job, nextRunAt, everyMs, now }) => {
+    if (!isTime(now) || !isTime(nextRunAt))
+      return refuse(
+        saveJobSchedule.name,
+        "now and nextRunAt must be whole milliseconds",
+      );
+    if (everyMs !== null && (!isTime(everyMs) || everyMs <= 0))
+      return refuse(
+        saveJobSchedule.name,
+        "everyMs must be null or whole milliseconds above 0",
+      );
+    const save = db
+      .insert(jobSchedules)
+      .values({ partition, job, nextRunAt, everyMs, updatedAt: now })
+      .onConflictDoUpdate({
+        target: [jobSchedules.partition, jobSchedules.job],
+        set: { nextRunAt, everyMs, updatedAt: now },
+      })
+      .prepare();
+    return ok({
+      statements: [save],
+      run: () => {
+        save.run();
+        return { saved: true } as const;
+      },
+    });
+  },
+);
+
+const readJobSchedulesImpl = implement(readJobSchedules, (db, partition) => {
+  const read = db
+    .select({
+      job: jobSchedules.job,
+      nextRunAt: jobSchedules.nextRunAt,
+      everyMs: jobSchedules.everyMs,
+      updatedAt: jobSchedules.updatedAt,
+    })
+    .from(jobSchedules)
+    .where(eq(jobSchedules.partition, partition))
+    .orderBy(jobSchedules.job)
+    .prepare();
+  return ok({ statements: [read], run: () => read.all() });
+});
+
+const removeJobScheduleImpl = implement(
+  removeJobSchedule,
+  (db, partition, { job }) => {
+    const remove = db
+      .delete(jobSchedules)
+      .where(scheduleKey(partition, job))
+      .returning({ job: jobSchedules.job })
+      .prepare();
+    return ok({
+      statements: [remove],
+      run: () => ({ removed: remove.all().length > 0 }),
+    });
+  },
+);
+
 /**
  * The tables a retention rule may trim, and the time columns it may trim
  * them by: each the second column of an index that starts with the
@@ -486,6 +555,9 @@ export const IMPLEMENTATIONS: ReadonlyMap<
       saveJobProgressImpl,
       finishJobImpl,
       readJobImpl,
+      saveJobScheduleImpl,
+      readJobSchedulesImpl,
+      removeJobScheduleImpl,
       trimExpiredImpl,
     ] as unknown as Implementation<unknown, unknown>[]
   ).map((implementation) => [implementation.op.name, implementation]),

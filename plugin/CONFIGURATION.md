@@ -2292,6 +2292,27 @@ exit `5` and its `RATE-LIMITED until <time>` line keep their meaning, and
 a failure that exited `1` before now exits `6` to `11` when a call to the
 tracker caused it.
 
+## The hub's settings file
+
+The optional [hub](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) reads its own settings from
+`$JIG_HOME/hub/settings.yaml` (default `~/.jig/hub/settings.yaml`) of the
+hub's OS user, or the file `jig hub serve --settings` names; a repository
+cannot set it. `jig hub serve`, `jig install hub` and `jig doctor hub` read
+it. The file must be mode 0600 and owned by the hub's user, and its
+database directory mode 0700: the hub refuses to start, and `jig doctor hub`
+fails, otherwise. An unknown key is refused.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `user` | `jig-hub` | The OS user the hub runs as; `jig install hub` runs only as this user, never as root or the dispatcher's user |
+| `database` | `~/.jig/hub/data` | The database directory, holding `hub.sqlite` |
+| `host.listen` | `[127.0.0.1:7461]` | Where `/v1/` listens: loopback or private-network addresses, `host:port` or `[v6]:port`; never `0.0.0.0`, `::`, a link-local (`fe80::/10`) or a public address |
+| `webhooks.listen` | `127.0.0.1:7462` | Where the webhook listener listens, the address a tunnel forwards `/webhooks/` to; the same ranges |
+| `feed.socket`, `feed.group` | `~/.jig/hub-feed/feed.sock`, none | The feed's Unix socket and the front's group: the socket's directory is mode 0700 and the socket 0600, or with a group the directory is 0710 with that group and the socket 0666 inside it |
+| `feed.listen`, `feed.secret` | none | Instead of the socket: a loopback address, and the secret of at least 32 characters the front sends in `x-jig-front-secret` |
+
+[plugin/hub/README.md](hub/README.md) says how to set the hub up.
+
 ## Priorities
 
 Two files declare priorities, neither of them in `.config/jig.yaml`: a
