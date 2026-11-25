@@ -469,10 +469,14 @@ export function parseBodyFindings(body: string): BodyFinding[] {
   // A reviewer can use other collapsed sections before or after its backlog.
   // Exclude only the named backlog itself; summary bullets elsewhere still
   // describe fresh work.
-  const head = body.replace(
-    /<details><summary>🗂️ <b>Beyond this PR<\/b>[\s\S]*?<\/details>/g,
-    "",
-  );
+  const head = body
+    // Examples in a diagnostic or another collapsed section are prose, not
+    // findings.  Only actual Markdown bullets participate in the summary.
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(
+      /<details><summary>🗂️ <b>Beyond this PR<\/b>[\s\S]*?<\/details>/g,
+      "",
+    );
   const out: BodyFinding[] = [];
   for (const line of head.split("\n")) {
     const m = line.match(/^[-*]\s+`([^`]+)`\s+[—–-]\s+(.*)$/);
@@ -664,7 +668,10 @@ export function anchorKey(path: string, line: number | null): string {
 function partitionBacklog(
   stickyBody: string,
   bullets: readonly BodyFinding[],
-): { blockingBacklog: BacklogEntry[]; ignoredBacklog: BacklogEntry[] } {
+): {
+  blockingBacklog: BacklogEntry[];
+  ignoredBacklog: BacklogEntry[];
+} {
   const backlog = decodeBacklog(stickyBody);
   // The declared disposition applies only to the entries rendered in this
   // section. A count alone cannot establish that: a different blocking entry
@@ -712,7 +719,10 @@ function partitionBacklog(
     else if (!freshFingerprints.has(entry.fingerprint))
       ignoredBacklog.push(entry);
   }
-  return { blockingBacklog, ignoredBacklog };
+  return {
+    blockingBacklog,
+    ignoredBacklog,
+  };
 }
 
 export function classify(input: ClassifyInput): SummaryReport {
@@ -859,7 +869,9 @@ export function classify(input: ClassifyInput): SummaryReport {
   // carry-forwards belong to a separate cohort and cannot explain a shortfall.
   // The declaration is about unanchored summary bullets, not separately
   // carried backlog entries. A backlog finding must not consume its slot.
-  const classified = bodyOnly.length;
+  const classified = new Set(
+    bodyOnly.map((f) => fingerprintOf(f.path, f.line, f.text)),
+  ).size;
   const shortfall = Math.max(0, declared - classified);
   // Scoped to the reviewed HEAD, not to the sticky comment id. The sticky is
   // upserted, so its id is stable across every round — keying a slot on it means

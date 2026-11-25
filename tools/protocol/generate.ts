@@ -204,6 +204,18 @@ function reportWrite(
   return result.findings.length ? 1 : 0;
 }
 
+/** Refuse to stage a generated file that also carries an unstaged hand edit. */
+export function hasUnstagedOutput(
+  root: string,
+  files: readonly string[],
+): boolean {
+  if (!files.length) return false;
+  return (
+    Bun.spawnSync(["git", "-C", root, "diff", "--quiet", "--", ...files])
+      .exitCode === 1
+  );
+}
+
 /** A check's verdict: a finding fails it, an unread merge base could not check. */
 function reportCheck(result: GenerateResult): number {
   if (result.unreadable !== null) {
@@ -224,6 +236,20 @@ function main(args: string[]): number {
     return 2;
   }
   const root = join(import.meta.dir, "..", "..");
+  // `git add` stages a whole file. Refusing before rendering is the only safe
+  // answer when a mixed generated/prose chapter has unstaged prose.
+  if (
+    command.stage &&
+    hasUnstagedOutput(
+      root,
+      planOutputs(root, CHAPTERS).outputs.map((o) => o.path),
+    )
+  ) {
+    console.error(
+      "protocol: refusing --stage because a generated output has unstaged edits",
+    );
+    return 2;
+  }
   const result = generate({
     root,
     check: command.check,
