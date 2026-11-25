@@ -1,0 +1,12 @@
+# The hub's container image: the installed plugin copy on Bun, running
+# `jig hub serve`. `jig install hub` builds it locally from the installed
+# release (podman, else docker) and never pushes it; the resident job runs
+# it with the settings file mounted read-only at /run/jig-hub/settings.yaml
+# and the database directory mounted read-write at its own path.
+ARG BUN_VERSION=1.4.4
+FROM docker.io/oven/bun:${BUN_VERSION}-slim
+COPY . /opt/jig/plugin
+# The run names the hub's own uid and gid (--user); this is the default.
+USER 65534:65534
+ENTRYPOINT ["bun", "/opt/jig/plugin/jig.ts"]
+CMD ["hub", "serve", "--settings", "/run/jig-hub/settings.yaml"]
