@@ -404,6 +404,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.309.3] - 2026-11-25
+
+### Fixed
+
+- The structural-churn brake uses the driver's base-branch policy snapshot when GitHub still reports an older base commit, so the drive can evaluate the round.
+
 ## [0.309.2] - 2026-11-25
 
 ### Security
@@ -11115,7 +11121,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.309.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.309.3...HEAD
+[0.309.3]: https://github.com/jig-harness/jig/compare/v0.309.2...v0.309.3
 [0.309.2]: https://github.com/jig-harness/jig/compare/v0.309.1...v0.309.2
 [0.309.1]: https://github.com/jig-harness/jig/compare/v0.309.0...v0.309.1
 [0.309.0]: https://github.com/jig-harness/jig/compare/v0.308.3...v0.309.0
