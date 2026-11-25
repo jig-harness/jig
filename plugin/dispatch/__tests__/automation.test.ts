@@ -42,6 +42,9 @@ ${dispatch}
 `;
 
 const LABELS = config("  labels: { enabled: true }");
+const MANUAL_TRUSTED = `${config(
+  "  labels: { enabled: true }\n  adopt: { enabled: true, trusted_automation: false }",
+)}pull_requests:\n  trusted_automation: ["renovate[bot]"]\n`;
 const ADOPT = config(
   '  labels: { enabled: true }\n  adopt:\n    enabled: true\n    authors: [drive-bot, "ops-bot[bot]"]',
 );
@@ -214,6 +217,44 @@ describe("jig dispatch drives an automation pull request only while it needs wor
     expect(why(24)).toContain("2 review threads unresolved");
   }, 60_000);
 
+  it.each([
+    ["adoption on", MANUAL_TRUSTED],
+    [
+      "adoption off",
+      `${config(
+        "  labels: { enabled: true }\n  adopt: { enabled: false, trusted_automation: false }",
+      )}pull_requests:\n  trusted_automation: ["renovate[bot]"]\n`,
+    ],
+  ])(
+    "requires a manual rearm when a listed bot's head moves under the opt-out (%s)",
+    async (_name, text) => {
+      const w = fixture(text);
+      w.setPrs("open", [
+        by(40, "app/renovate", FAILING),
+        labeled(by(41, "app/renovate", FAILING), "jig:rearm"),
+        by(42, "drive-bot", FAILING),
+      ]);
+      for (const n of [40, 41, 42])
+        w.setComments(n, [
+          ledgerComment(
+            n * 100 + 1,
+            stoppedLedger(n, 0, {
+              verifiedSha: "b".repeat(40),
+            }),
+          ),
+        ]);
+
+      const r = await tick(w);
+      expect(rearms(r)).toEqual(["PR #42"]);
+      expect(r.repos[0]?.quiet).toContainEqual(
+        expect.objectContaining({
+          target: "PR #40",
+          why: expect.stringContaining("dispatch.adopt.trusted_automation"),
+        }),
+      );
+    },
+  );
+
   it("re-drives a converged automation pull request whose head moved only while it needs work, or on a person's rearm", async () => {
     const w = fixture(LABELS);
     const sync = (n: number, extra: object = {}) =>
@@ -303,15 +344,27 @@ describe("an automation pull request with no trouble observed", () => {
   });
 
   it("blocks a pending launch's replay through a park, unless a person asked for it", async () => {
-    const { idleBlocksStart } = await import("../lib/automation.ts");
+    const { automationStartBlock } = await import("../lib/automation.ts");
     const pr = (cls: string, evidence: object) =>
       ({
         class: cls,
         evidence: { automationIdle: true, ...evidence },
       }) as never;
-    expect(idleBlocksStart(pr("parked", {}))).toBe(false);
-    expect(idleBlocksStart(pr("parked", {}), true)).toBe(true);
-    expect(idleBlocksStart(pr("parked", { rearm: true }), true)).toBe(false);
-    expect(idleBlocksStart(pr("unarmed", {}), true)).toBe(false);
+    expect(automationStartBlock(pr("parked", {}))).toBeNull();
+    expect(automationStartBlock(pr("parked", {}), true)).not.toBeNull();
+    expect(
+      automationStartBlock(pr("parked", { rearm: true }), true),
+    ).toBeNull();
+    expect(automationStartBlock(pr("unarmed", {}), true)).toBeNull();
+    const protectedDrive = { automationIdle: false, trustedDriveManual: true };
+    expect(automationStartBlock(pr("parked", protectedDrive), true)).toContain(
+      "dispatch.adopt.trusted_automation",
+    );
+    expect(
+      automationStartBlock(
+        pr("parked", { ...protectedDrive, rearm: true }),
+        true,
+      ),
+    ).toBeNull();
   });
 });

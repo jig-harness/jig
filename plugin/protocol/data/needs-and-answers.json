@@ -1118,6 +1118,22 @@
     },
     {
       "kind": "class",
+      "name": "structural-churn",
+      "type": null,
+      "carried": null,
+      "written": null,
+      "step": null,
+      "value": null,
+      "unit": null,
+      "act": "Decide",
+      "class": null,
+      "options": null,
+      "option": null,
+      "reversible": null,
+      "meaning": "The drive's own park: the same files keep drawing non-blocking findings round after round, or a file returned to an earlier content; choose how the pull request goes on."
+    },
+    {
+      "kind": "class",
       "name": "followup-recovery",
       "type": null,
       "carried": null,

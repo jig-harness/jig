@@ -187,11 +187,23 @@ finding remains, the drive awaits review. Parked-only work stops at
 `HITL_PARKED` instead. A skipped reviewer check without a current-head notice
 awaits review before those work-state outcomes apply.
 
+When the poll budget expires before the next iteration or pull-request read,
+the probe returns exit `4` and reports how long it waited. When a sent request
+fails and the probe stops on that read, the reason keeps the failure detail.
+The dispatcher retries a probe read stop once per pull-request head. A
+second read stop on that head goes to a person.
+
+
 Jig ships no reviewer that implements this protocol. The defaults in the
 table above are configuration: a repository changes them to match its own
 reviewer's check run, comment marker and commit stamp
 ([fields](../../CONFIGURATION.md#review),
 [AI reviewers](../../EXTENDING.md#ai-reviewers)).
+
+The drive reports explicitly non-blocking wind-down backlog entries in its
+status JSON. Those entries need no reply and do not block convergence.
+When a round answers several summary findings, it posts their outcomes and
+reasons in one PR comment, with a marker for each finding.
 
 A reviewer that submits the forge's own pull-request reviews instead
 (`review.reviewer_evidence: review_object`) is read from two other
@@ -423,26 +435,27 @@ Each is an environment variable read by the drive (and, where noted, a flag on
 `drive.ts`). The defaults suit most repositories; raise a deadline when a
 legitimate step keeps hitting it, rather than removing it.
 
-| Variable                          | What it bounds                                                                                                                                                                                                                                                                                                                                                                                                           | Default                            |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------- |
-| `DRIVE_PR_CI_REPAIR_ROUNDS`       | CI-repair passes per head and failing check after final CI comes back red (`0`: no repair passes), for one run; the repository sets its own in `drive.ci_repair_rounds`, which this overrides. Each safe workflow gets a free failed-job retry first unless `ci.rerun_failed_once: false`                                                                                                                                | `drive.ci_repair_rounds`, else `2` |
-| `DRIVE_PR_CI_INFRA_RERUNS`        | Integer from 0 through 100; otherwise the default. Re-runs, per head, of final checks that all failed on the infrastructure, before the head is moved instead                                                                                                                                                                                                                                                            | `2`                                |
-| `DRIVE_PR_CI_INFRA_HEAD_MOVES`    | Integer from 0 through 100; otherwise the default. Head moves (a base merge, or an empty commit) per drive to run such checks again, before the drive stops with [`CI_INFRA_PERSISTED`](../../protocol/drive-exits.md)                                                                                                                                                                                                   | `2`                                |
-| `DRIVE_PR_RATE_LIMIT_WAIT`        | Whole seconds, at most 86400 (a day); otherwise the default. How far off a reset of the forge's spent rate limit the drive waits for during attach, between rounds or during the converged CI watch before it stops with [`FORGE_RATE_LIMITED`](../../protocol/drive-exits.md), which the dispatcher re-drives after the reset                                                                                           | `1800`                             |
-| `DRIVE_PR_CONFLICT_REPAIR_ROUNDS` | Conflict-resolution passes when the PR conflicts with its base and nothing else is left (`0`: stop at once)                                                                                                                                                                                                                                                                                                              | `1`                                |
-| `DRIVE_PR_FINAL_CI_WITNESS_POLLS` | Elapsed wait for required checks on the final commit, in ten-second units, independent of observation count (`0`: wait forever)                                                                                                                                                                                                                                                                                          | `180` (30 minutes)                 |
-| `DRIVE_PR_RELEASE_PROOF_ATTEMPTS` | Consecutive unreadable proof or recovery reads while the CI-hold removal's `releasing` record remains (`0`: stop on the first); the record remains for a later drive to reconcile                                                                                                                                                                                                                                        | `3`                                |
-| `DRIVE_PR_CONVERGED_CI_MINUTES`   | How long a drive that stopped `CONVERGED` watches the verified head's CI after its `converged` label write, which can start runs on it, before it parks `converged-ci` (`0`: write the label and watch nothing)                                                                                                                                                                                                          | `30`                               |
-| `DRIVE_PR_FINAL_REGATE_LIMIT`     | Re-gates in a row on one commit when the converged round's final status re-read disagrees with the round's own read, before the drive stops with exit `1` (`0`: stop on the first)                                                                                                                                                                                                                                       | `3`                                |
-| `DRIVE_PR_STALL_ROUNDS`           | Consecutive rounds that change nothing before the drive stops with [`STALLED`](../../protocol/drive-exits.md) (`0`: off)                                                                                                                                                                                                                                                                                                 | `2`                                |
-| `DRIVE_PR_PASS_TIMEOUT`           | One round's agent pass, in seconds; also `bun "<skill-dir>/scripts/drive.ts" --pass-timeout` (`0`: off)                                                                                                                                                                                                                                                                                                                  | `5400` (90 minutes)                |
-| `DRIVE_PR_ARM_CONFIRM_SEC`        | How long `arm-drive.ts` waits for a drive it started in a terminal tab to be listed                                                                                                                                                                                                                                                                                                                                      | `45`                               |
-| `DRIVE_PR_QUOTA_MAX_SLEEP_SEC`    | The longest usage-limit reset the drive sleeps through rather than stopping with [`QUOTA_PARKED`](../../protocol/drive-exits.md)                                                                                                                                                                                                                                                                                         | `21600` (6 hours)                  |
-| `DRIVE_PR_PAUSE_MAX_SEC`          | How long a mailbox `pause` may last before [`MAILBOX_PAUSE_TIMEOUT`](../../protocol/drive-exits.md)                                                                                                                                                                                                                                                                                                                      | `1800` (30 minutes)                |
-| `DRIVE_PR_PUSH_TIMEOUT`           | One `git push`, pre-push hooks included, in seconds                                                                                                                                                                                                                                                                                                                                                                      | `3600`                             |
-| `DRIVE_PR_HELPER_TIMEOUT`         | One helper script the drive spawns, in seconds                                                                                                                                                                                                                                                                                                                                                                           | `120`                              |
-| `GH_CALL_TIMEOUT`                 | One `gh` call, in seconds; one page of a head's check-runs listing, whose whole read may take four times this before the drive stops with [`CHECK_RUNS_UNREADABLE`](../../protocol/drive-exits.md); with `JIG_FORGE_BUDGET=off`, a fresh listing or a fallback whole read is paged by `gh` itself, under that same whole-read bound and with no page bound; a listing read through the cache still goes a page at a time | `30`                               |
-| `DRIVE_PR_STALL_MIN`              | Minutes without progress before `bun "<skill-dir>/scripts/drives.ts" --doctor` calls a live drive wedged (never below the default)                                                                                                                                                                                                                                                                                       | `240`                              |
+| Variable | What it bounds | Default |
+|----------|----------------|---------|
+| `DRIVE_PR_CI_REPAIR_ROUNDS` | CI-repair passes per head and failing check after final CI comes back red (`0`: no repair passes), for one run; the repository sets its own in `drive.ci_repair_rounds`, which this overrides. Each safe workflow gets a free failed-job retry first unless `ci.rerun_failed_once: false` | `drive.ci_repair_rounds`, else `2` |
+| `DRIVE_PR_CI_INFRA_RERUNS` | Integer from 0 through 100; otherwise the default. Re-runs, per head, of final checks that all failed on the infrastructure, before the head is moved instead | `2` |
+| `DRIVE_PR_CI_INFRA_HEAD_MOVES` | Integer from 0 through 100; otherwise the default. Head moves (a base merge, or an empty commit) per drive to run such checks again, before the drive stops with [`CI_INFRA_PERSISTED`](../../protocol/drive-exits.md) | `2` |
+| `DRIVE_PR_RATE_LIMIT_WAIT` | Whole seconds, at most 86400 (a day); otherwise the default. How far off a reset of the forge's spent rate limit the drive waits for during attach, between rounds or during the converged CI watch before it stops with [`FORGE_RATE_LIMITED`](../../protocol/drive-exits.md), which the dispatcher re-drives after the reset | `1800` |
+| `DRIVE_PR_CONFLICT_REPAIR_ROUNDS` | Conflict-resolution passes when the PR conflicts with its base and nothing else is left (`0`: stop at once) | `1` |
+| `DRIVE_PR_FINAL_CI_WITNESS_POLLS` | Elapsed wait for required checks on the final commit, in ten-second units, independent of observation count (`0`: wait forever) | `180` (30 minutes) |
+| `DRIVE_PR_RELEASE_PROOF_ATTEMPTS` | Consecutive unreadable proof or recovery reads while the CI-hold removal's `releasing` record remains (`0`: stop on the first); the record remains for a later drive to reconcile | `3` |
+| `DRIVE_PR_CONVERGED_CI_MINUTES` | How long a drive that stopped `CONVERGED` watches the verified head's CI after its `converged` label write, which can start runs on it, before it parks `converged-ci` (`0`: write the label and watch nothing) | `30` |
+| `DRIVE_PR_FINAL_REGATE_LIMIT` | Re-gates in a row on one commit when the converged round's final status re-read disagrees with the round's own read, before the drive stops with exit `1` (`0`: stop on the first) | `3` |
+| `DRIVE_PR_CHURN_ROUNDS` | Consecutive rounds of non-blocking findings on one file, rewritten each round, before the drive parks itself under `structural-churn` (`0`: off, oscillation included); the repository sets its own in `drive.churn_rounds`, which this overrides for one run. See [the structural-churn park](#the-structural-churn-park) | `drive.churn_rounds`, else `4` |
+| `DRIVE_PR_STALL_ROUNDS` | Consecutive rounds that change nothing before the drive stops with [`STALLED`](../../protocol/drive-exits.md) (`0`: off) | `2` |
+| `DRIVE_PR_PASS_TIMEOUT` | One round's agent pass, in seconds; also `bun "<skill-dir>/scripts/drive.ts" --pass-timeout` (`0`: off) | `5400` (90 minutes) |
+| `DRIVE_PR_ARM_CONFIRM_SEC` | How long `arm-drive.ts` waits for a drive it started in a terminal tab to be listed | `45` |
+| `DRIVE_PR_QUOTA_MAX_SLEEP_SEC` | The longest usage-limit reset the drive sleeps through rather than stopping with [`QUOTA_PARKED`](../../protocol/drive-exits.md) | `21600` (6 hours) |
+| `DRIVE_PR_PAUSE_MAX_SEC` | How long a mailbox `pause` may last before [`MAILBOX_PAUSE_TIMEOUT`](../../protocol/drive-exits.md) | `1800` (30 minutes) |
+| `DRIVE_PR_PUSH_TIMEOUT` | One `git push`, pre-push hooks included, in seconds | `3600` |
+| `DRIVE_PR_HELPER_TIMEOUT` | One helper script the drive spawns, in seconds | `120` |
+| `GH_CALL_TIMEOUT` | One `gh` call, in seconds; one page of a head's check-runs listing, whose whole read may take four times this before the drive stops with [`CHECK_RUNS_UNREADABLE`](../../protocol/drive-exits.md); with `JIG_FORGE_BUDGET=off`, a fresh listing or a fallback whole read is paged by `gh` itself, under that same whole-read bound and with no page bound; a listing read through the cache still goes a page at a time | `30` |
+| `DRIVE_PR_STALL_MIN` | Minutes without progress before `bun "<skill-dir>/scripts/drives.ts" --doctor` calls a live drive wedged (never below the default) | `240` |
 
 The remaining `DRIVE_PR_*` variables (lock and lease timing, and the ones
 `drive.ts` sets for its own passes) are documented where they act, in
@@ -739,7 +752,8 @@ rearm` asks the dispatcher for such a re-arm; the steward's and the tick's
   re-drives never pass it, so an unconverging drive is never renewed without
   someone reading its handoff.
 - **HITL-parked ([`HITL_PARKED`](../../protocol/drive-exits.md)).** Only decisions the repository's
-  human-in-the-loop registry reserves are parked, each under its class, and
+  human-in-the-loop registry reserves are parked, and the drive's own
+  [structural-churn park](#the-structural-churn-park), each under its class, and
   the stop prints each in full: the question, the options with what each
   changes and costs, the recommendation, the steps you must take and what the
   drive already did. The doctor names the questions in its `NEEDS_HUMAN`
@@ -946,6 +960,33 @@ before pushing it through `finish-round.ts`. Log classification keeps each
 failed job tied to its workflow run and rejects unplaced negative evidence.
 An empty recovery commit must retain the reviewed parent and tree; a changed
 head or tree stops its direct push and needs a validated review round.
+
+### The structural-churn park
+
+A drive can keep pushing while converging on nothing: each round fixes a
+wording or style finding on the same file and the next review finds another
+there, or a later round puts back what an earlier one replaced. `STALLED`
+does not see this, since the head keeps moving. So each round the drive
+records which files its live findings named, whether any was `high` or
+`blocker`, and each file's content at the head, and before a round's pass it
+parks itself, with [`HITL_PARKED`](../../protocol/drive-exits.md), when:
+
+- the same file drew findings in each of the last `drive.churn_rounds`
+  consecutive rounds (4 by default), none of them `high` or `blocker`, and
+  was rewritten between each; a round with a `high` or `blocker` finding
+  never counts; or
+- a file returned to an earlier content after a different one in between
+  (A, B, A), whatever the findings' severity.
+
+The park's decision, under the `structural-churn` class, names the files and
+the rounds and offers **Ship as is and defer the rest** (recommended),
+**Constrain the scope** (your note names what stays) and **Continue
+driving** (the count restarts after the parked round). Nothing is deferred
+until you choose. While the park stands the drive runs no round, even with
+findings open; a pull request that conflicts with its base still stops
+[`PR_CONFLICTING`](../../protocol/drive-exits.md) first, so the conflict is
+repaired while the decision waits. The class is kept whatever `autonomy.park_classes` lists;
+`drive.churn_rounds: 0` turns the brake off.
 
 ### Recovering a stranded CI hold
 

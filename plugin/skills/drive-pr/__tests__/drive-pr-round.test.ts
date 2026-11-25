@@ -1628,7 +1628,7 @@ describe("summary-findings marker overrides", () => {
            ], false)?.id,
            declaredSelected: m.reviewerSticky([
              { id: 7, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->' },
-             { id: 8, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n1 finding(s) without a diff-anchorable line' },
+             { id: 8, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n> 1 finding(s) without a diff-anchorable line' },
            ], false)?.id,
            newerRoundSelected: m.reviewerSticky([
              { id: 9, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- ai-review-round: 1 -->\\n- \`a.ts\` — finding' },
@@ -1731,8 +1731,8 @@ describe("summary-findings marker overrides", () => {
              { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- ai-review-round: 3 -->\\n<!-- ai-review-skip-notice -->\\n\`def5678\` skipped\\n<!-- /ai-review-skip-notice -->', updated_at: '2026-11-24T11:00:00Z' },
              { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 2 -->', updated_at: '2026-11-24T12:00:00Z' },
            ], (login) => login === 'reviewer[bot]', '<!-- other-review -->', 'custom+sha'),
-           declaredNegative: (() => { try { m.parseDeclaredUnanchored('-1.0 findings without a diff-anchorable line'); return false; } catch { return true; } })(),
-           declaredConflict: (() => { try { m.parseDeclaredUnanchored('0 findings without a diff-anchorable line\\n4 findings without a diff-anchorable line'); return false; } catch { return true; } })(),
+           declaredNegative: (() => { try { m.parseDeclaredUnanchored('> -1.0 findings without a diff-anchorable line'); return false; } catch { return true; } })(),
+           declaredConflict: (() => { try { m.parseDeclaredUnanchored('> 0 findings without a diff-anchorable line\\n> 4 findings without a diff-anchorable line'); return false; } catch { return true; } })(),
          }));`,
       ],
       {

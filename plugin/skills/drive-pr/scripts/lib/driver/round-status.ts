@@ -1,4 +1,5 @@
 /** Read the live round report and preview conflicts from positively measured dry-run evidence. */
+import { announcePolicyBase } from "./policy-base.ts";
 import type { DriveRoundContext } from "./round-context.ts";
 
 import {
@@ -27,14 +28,19 @@ async function previewConflictingRound(
   const parkedThreads = num(work.parkedThreads);
   const summaryUnaddressed = num(work.summaryUnaddressed);
   const parkedSummaryFindings = num(work.parkedSummaryFindings);
+  const churnParked =
+    Array.isArray(work.churnParkKeys) && work.churnParkKeys.length > 0;
   if (
     merge.mergeable === "CONFLICTING" &&
     unresolvedThreads !== null &&
     parkedThreads !== null &&
     summaryUnaddressed !== null &&
     parkedSummaryFindings !== null &&
-    unresolvedThreads - parkedThreads <= 0 &&
-    summaryUnaddressed - parkedSummaryFindings <= 0
+    // The drive's own churn park holds whatever work is live, and a
+    // conflict is still reported first, so the preview matches it.
+    (churnParked ||
+      (unresolvedThreads - parkedThreads <= 0 &&
+        summaryUnaddressed - parkedSummaryFindings <= 0))
   ) {
     const base = String(
       (status.base as Record<string, unknown> | undefined)?.refName ?? "",
@@ -58,7 +64,7 @@ async function previewConflictingRound(
       );
     } else {
       console.error(
-        `PR #${context.pr} conflicts with its base and has nothing left to work — stopping.`,
+        `PR #${context.pr} conflicts with its base and has nothing left that the drive can work — stopping.`,
       );
       console.error(reasonLine);
       console.error(
@@ -88,6 +94,8 @@ export async function readRoundStatus(
     context.inheritedHead === ""
       ? []
       : ["--inherited-head", context.inheritedHead];
+  // Refresh the base branch policy before the gate evaluates the round.
+  await announcePolicyBase(context.pr);
   const statusRes = await run(
     tsArgv(driveStatus, [
       context.pr,

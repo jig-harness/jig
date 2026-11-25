@@ -74,8 +74,10 @@ export const DEFAULT_LEVEL: AutonomyLevel = "attended";
  * The decision classes a drive may park on when a repository sets no
  * `autonomy.park_classes`: the rows of the human-in-the-loop registry
  * template, then `escalated` (a product or stakeholder call the review
- * arbiter or `decide` escalates) and `human-decision` (a value the pull
- * request records as a person's decision, or a rule in a human-decided span).
+ * arbiter or `decide` escalates), `human-decision` (a value the pull
+ * request records as a person's decision, or a rule in a human-decided span)
+ * and `structural-churn` (the drive's own brake on rounds that do not
+ * converge).
  */
 export const DEFAULT_PARK_CLASSES: readonly string[] = [
   "ready",
@@ -93,14 +95,21 @@ export const DEFAULT_PARK_CLASSES: readonly string[] = [
   "copy",
   "escalated",
   "human-decision",
+  "structural-churn",
 ];
 
 /**
  * The classes kept whatever a repository lists: the two the review arbiter
- * emits, and `human-thread`, which a person's reversal of a provisional
- * decision is parked under.
+ * emits, `human-thread`, which a person's reversal of a provisional
+ * decision is parked under, and `structural-churn`, the drive's own brake,
+ * which must be able to park whatever the repository lists.
  */
-const KEPT_CLASSES = ["escalated", "human-decision", "human-thread"] as const;
+export const KEPT_CLASSES = [
+  "escalated",
+  "human-decision",
+  "human-thread",
+  "structural-churn",
+] as const;
 
 /** A class name: lower-case words joined by hyphens. */
 const CLASS_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;

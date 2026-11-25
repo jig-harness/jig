@@ -73,7 +73,7 @@ const KEYS = [
   "epic_width",
   "overlap",
 ];
-const ADOPT_KEYS = ["enabled", "authors", "within"];
+const ADOPT_KEYS = ["enabled", "authors", "within", "trusted_automation"];
 /** `adopt.within`'s default: a week. */
 const DEFAULT_ADOPT_WITHIN_MS = 168 * 3_600_000;
 
@@ -253,6 +253,11 @@ function adoptRule(value: unknown): Checked<AdoptRule> {
   if (refused !== null) return refused;
   if (raw.enabled !== undefined && typeof raw.enabled !== "boolean")
     return invalid("dispatch.adopt.enabled must be true or false");
+  if (
+    raw.trusted_automation !== undefined &&
+    typeof raw.trusted_automation !== "boolean"
+  )
+    return invalid("dispatch.adopt.trusted_automation must be true or false");
   const logins = authors(raw.authors);
   if (!logins.ok) return logins;
   const withinMs = wait(raw.within, "adopt.within", DEFAULT_ADOPT_WITHIN_MS);
@@ -261,6 +266,7 @@ function adoptRule(value: unknown): Checked<AdoptRule> {
     enabled: raw.enabled === true,
     authors: logins.value,
     withinMs: withinMs.value,
+    ...(raw.trusted_automation === false ? { excludeTrusted: true } : {}),
   });
 }
 
@@ -481,6 +487,8 @@ export function dispatchSection(
   if (refused !== null) return refused;
   const rules = labelsAndAdopt(section);
   if (!rules.ok) return rules;
+  const adopt = withTrusted(rules.value.adopt, values);
+  if (!adopt.ok) return adopt;
   const parsed = trackerOf(values);
   if (!parsed.ok) return parsed;
   const tracker = parsed.value;
@@ -515,22 +523,27 @@ export function dispatchSection(
       reviewerFailureThreshold.value,
     ),
     labels: rules.value.labels,
-    adopt: withTrusted(rules.value.adopt, values),
+    adopt: adopt.value,
   });
 }
 
 /**
  * The adoption rule with the bots `pull_requests.trusted_automation` names.
- * A list that does not read names none here: the board then reports why on
- * each of the bots' cards, and no section is refused for it.
+ * Without the opt-out, an unreadable list names none and the board reports
+ * why on the bots' cards. With the opt-out, the dispatcher must know which
+ * bots to exclude before it can start their drives.
  */
 function withTrusted(
   adopt: AdoptRule,
   values: Record<string, unknown>,
-): AdoptRule {
+): Checked<AdoptRule> {
   const list = trustedAutomationOf(values);
-  if (!list.ok || list.value.length === 0) return adopt;
-  return { ...adopt, trusted: list.value.map((e) => e.login) };
+  if (!list.ok)
+    return adopt.excludeTrusted === true
+      ? invalid(list.failure.reason)
+      : ok(adopt);
+  if (list.value.length === 0) return ok(adopt);
+  return ok({ ...adopt, trusted: list.value.map((e) => e.login) });
 }
 
 /**

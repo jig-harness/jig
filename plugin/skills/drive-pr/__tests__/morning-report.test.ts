@@ -260,7 +260,7 @@ describe("drives.ts --report", () => {
     );
     expect(text).toContain("REVERSED by lead");
     expect(text).toContain(
-      "HITL_PARKED: only the parked decisions below remain",
+      "HITL_PARKED: the parked decisions below hold the drive",
     );
     expect(text).toContain("class copy");
     expect(text).toContain("deferred, not yet filed:");

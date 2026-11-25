@@ -26,6 +26,9 @@ import {
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
 
+import { join } from "node:path";
+import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { SCRIPTS } from "./drive-pr-harness.ts";
 import { createStatusEscalationFixtures } from "./drive-pr-status-escalation-fixtures.ts";
 
 useDrivePrSuite();
@@ -432,11 +435,11 @@ describe("drive-status.ts structuralEscalationDue", () => {
   // Same argument, for a held SUMMARY finding — no thread, so the exclusion
   // has to key on the fingerprint `answer-summary-finding.ts` will eventually
   // post against, not a thread id. The fixture's two backlog findings both
-  // anchor `AGENTS.md` (see `backlogJson` above), so both are held here —
+  // anchor `AGENTS.md` (see the sticky fixture), so both are held here —
   // otherwise the sibling, still-unaddressed finding on the same path would
   // keep it in the list and the assertion would prove nothing about the fix.
   it("a held summary finding stays excluded until a later drive review round", async () => {
-    const round1 = writeFixture({ backlog: true });
+    const round1 = writeFixture({ backlog: "blocking-only" });
     await probeIn(round1.dir, round1.stateDir, HEAD);
     await hold(round1.stateDir, "b9a7a18089043564", "finding");
     await hold(round1.stateDir, "c773d9fdb7974e6d", "finding");
@@ -473,11 +476,11 @@ describe("drive-status.ts structuralEscalationDue", () => {
   });
 
   it("counts a held summary finding re-emitted on a later reviewed head, even with --once", async () => {
-    const first = writeFixture({ backlog: true });
+    const first = writeFixture({ backlog: "blocking-only" });
     await probeIn(first.dir, first.stateDir, HEAD);
     for (const key of ["b9a7a18089043564", "c773d9fdb7974e6d"])
       await hold(first.stateDir, key, "finding");
-    const next = writeFixture({ backlog: true, head: PREV });
+    const next = writeFixture({ backlog: "blocking-only", head: PREV });
     const r = await probeIn(next.dir, first.stateDir, PREV);
     expect(
       (r.json.work as Record<string, unknown>).unresolvedThreadPaths,
@@ -759,5 +762,61 @@ describe("drive-status.ts structuralEscalationDue", () => {
         }),
       ).toBe(false);
     });
+  });
+});
+
+describe("record-paths withdrawal bound to the judged facts", () => {
+  const { driveState } = createStatusEscalationFixtures();
+  const withdraw = async (stateDir: string, body: object) => {
+    const proc = Bun.spawn(
+      scriptArgv(
+        join(SCRIPTS, "drive-state.ts"),
+        "record-paths",
+        "999",
+        "--stdin-json",
+      ),
+      {
+        env: { ...process.env, DRIVE_PR_STATE_DIR: stateDir },
+        stdin: new Blob([JSON.stringify(body)]),
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const err = await new Response(proc.stderr).text();
+    await proc.exited;
+    if (proc.exitCode !== 0) console.error(err);
+    return proc.exitCode;
+  };
+
+  it("keeps a replacement measurement of the same round, strips the judged one", async () => {
+    const { stateDir } = writeFixture({
+      threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
+    });
+    await driveState(stateDir, ["bump-round", "999", "--head", HEAD]);
+    const id = "a".repeat(40);
+    const other = "b".repeat(40);
+    const read = async () =>
+      JSON.parse((await driveState(stateDir, ["round-paths", "999"])).stdout);
+    expect(
+      await withdraw(stateDir, {
+        paths: ["a.ts"],
+        severe: false,
+        blobs: { "a.ts": id },
+        round: 1,
+      }),
+    ).toBe(0);
+    // A delayed withdrawal of facts another gate replaced writes nothing.
+    await withdraw(stateDir, {
+      paths: ["a.ts"],
+      round: 1,
+      judged: { severe: false, blobs: { "a.ts": other } },
+    });
+    expect((await read())[0].blobs).toEqual({ "a.ts": id });
+    await withdraw(stateDir, {
+      paths: ["a.ts"],
+      round: 1,
+      judged: { severe: false, blobs: { "a.ts": id } },
+    });
+    expect((await read())[0].blobs).toBeUndefined();
   });
 });

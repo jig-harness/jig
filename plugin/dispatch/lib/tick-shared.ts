@@ -19,6 +19,10 @@ import {
 import { forgeShared } from "../../shared/records/shared-forge.ts";
 import { settleNoCauseStops } from "./no-cause-stops.ts";
 import { settleFailedRearms, withRearmHeads } from "./failed-rearms.ts";
+import {
+  settleFailedTakeovers,
+  settleRepeatedNotSettled,
+} from "./repeated-ends.ts";
 import { releaseRoutineMarkers } from "./routine-reruns.ts";
 import { releaseWaitMarkers } from "./followup-waits.ts";
 import {
@@ -264,7 +268,10 @@ export async function readDriveClaims(
  * claims are read beside it: a re-drive already made for the change it shows
  * now is a person's (by this host's records, then by another host's claims),
  * so is a re-arm that failed at the heads and ledger facts it shows now, a
- * silent driver already taken over on its facts is notified, what is left
+ * silent driver already taken over on its facts is notified, re-arms that
+ * keep stopping `NOT_SETTLED` on one head and takeovers of this host's driver
+ * that keep failing on one set of ledger facts back off and then are a
+ * person's (`repeated-ends.ts`), what is left
  * is bounded by the pull request's recovery budget, and a launch the drive
  * refused as a usage error on its facts is a person's.
  */
@@ -295,18 +302,15 @@ export function settleOwnDrives(
     claims,
     host,
   );
-  return settleNoCauseStops(
-    settleFailedRearms(
-      settleUsageRefusals(
-        settleSharedConflictStops(
-          settleConflictStops(placed, own),
-          claims,
-          host,
-        ),
-        own,
-      ),
+  const failed = settleFailedRearms(
+    settleUsageRefusals(
+      settleSharedConflictStops(settleConflictStops(placed, own), claims, host),
       own,
     ),
+    own,
+  );
+  return settleNoCauseStops(
+    settleFailedTakeovers(settleRepeatedNotSettled(failed, own), own),
     own,
     claims,
     currentMs(),

@@ -297,11 +297,18 @@ import {
   type StatusReport,
 } from "./lib/status/evaluate.ts";
 import { takeInheritedHead } from "./lib/status/inherited-head.ts";
+import { churnRoundsSetting, runChurnBrake } from "./lib/status/churn-brake.ts";
+import { readRoundBlobs } from "./lib/status/round-blobs.ts";
+import { normalizeRoundPaths } from "./lib/state/round-paths.ts";
 import { setProbeFailure } from "./lib/status/probe-stop.ts";
 // `report.state` and the emitted/returned exit code for these two
 // out-of-band states are derived from ONE lookup — see
 // `outOfBand()`'s own doc comment for the pairing-drift bug this closes.
-import { forgeRateLimited, outOfBand } from "./lib/status/terminal-states.ts";
+import {
+  forgeRateLimited,
+  outOfBand,
+  terminal,
+} from "./lib/status/terminal-states.ts";
 import {
   WaitingEvaluationCache,
   waitingChecksMaxAgeMs,
@@ -633,13 +640,13 @@ async function main(): Promise<number> {
       );
     }
   }
-  const startedMs = currentMs();
+  const deadline = currentMs() + timeout * 1000;
   let firstEvaluationDone = false;
   const ctx = {
     ...definedFields({ waitingCache }),
     budgetLeftSec: (): number | undefined =>
       firstEvaluationDone
-        ? Math.ceil((startedMs + timeout * 1000 - currentMs()) / 1000)
+        ? Math.ceil((deadline - currentMs()) / 1000)
         : undefined,
     pr,
     owner,
@@ -778,18 +785,16 @@ async function main(): Promise<number> {
    *   consecutive-round chain on evidence nobody gathered, which silences the
    *   signal rather than merely failing to arm it.
    *
-   *   BEST-EFFORT. A failed write costs a deferred signal on an advisory field,
-   *   never a verdict; the round bump above already hard-stops on the durable
-   *   state being unwritable, so this cannot be the first place that fault is
-   *   discovered. "Best-effort" means the failure does not block the round, not
-   *   that it is invisible: `bump-round` hard-stopping on the SAME class of
-   *   fault does not prove THIS write succeeded — it is a separate call, with
-   *   its own lease and timeout window, and a report reaching
-   *   `structuralEscalationDue` afterwards reads whatever durable state already
-   *   had, silently stale by exactly this round's missing entry. So a non-zero
-   *   exit here is reported on stderr — not escalated to a state or exit-code
-   *   change, which would turn an advisory field into a gate over a network
-   *   call.
+   *   REPORTED, NOT THROWN. It returns whether the write landed (`true` when
+   *   none was owed). For `structuralEscalationDue` a failed write only
+   *   defers an advisory signal: the report reads whatever durable state
+   *   already had, stale by exactly this round's missing entry, and the
+   *   failure is said on stderr. The structural-churn brake cannot judge on
+   *   that window, since the missing round could be the one that trips it,
+   *   so with the brake on case 0 ends the gate `INDETERMINATE` instead
+   *   (`lib/status/churn-brake.ts`). `bump-round` hard-stopping on the same
+   *   class of fault does not prove THIS write succeeded: it is a separate
+   *   call, with its own lease and timeout window.
    *
    *   `record-paths`'s OWN stderr is PASSED THROUGH, not discarded — the same
    *   convention `parked-keys` above uses, and for the same reason: a
@@ -801,25 +806,60 @@ async function main(): Promise<number> {
    *   repeated file sorted outside the retained 200 paths silently vanish
    *   from the recurrence signal with nothing anywhere saying so.
    */
-  async function recordRoundPaths(): Promise<void> {
-    if (noCount) return;
+  async function recordRoundPaths(): Promise<boolean> {
+    if (noCount) return true;
     const paths = report.openThreadPaths;
-    if (paths === null) return;
-    // `--stdin` rather than one `--path` argument per path: a round with
+    if (paths === null) return true;
+    // On stdin rather than one `--path` argument per path: a round with
     // enough long paths can push the child's argv past the ~32KB Windows
     // command-line limit, silently failing to record this round's anchors.
-    const args = ["record-paths", pr, "--stdin"];
+    // The JSON form carries the structural-churn brake's facts too.
+    // The brake's setting first: with the brake off no file content is read,
+    // and only the paths the writer retains are measured.
+    const setting = churnRoundsSetting();
+    const brakeOn = !setting.ok || setting.value > 0;
+    // A round the replied-thread sweep did not reconcile carries no facts, so
+    // the brake never counts it toward a streak or a return.
+    // Nor does a head the reviewer has not reviewed: its findings predate the
+    // head (a conflicting PR keeps them workable), so file contents read at
+    // this head would pass an unrelated rewrite off as a round of review.
+    const withFacts =
+      brakeOn && sweepReconciled && report.reviewedSha === report.apiHead;
+    const read = withFacts
+      ? await readRoundBlobs(
+          report.apiHead,
+          normalizeRoundPaths(paths),
+          ctx.helperTimeoutSec,
+        )
+      : { blobs: {}, failed: false };
+    const blobs = read.blobs;
+    const args = ["record-paths", pr, "--stdin-json"];
     const r = await run(tsArgv(ctx.driveStateScript, args), {
       stdout: "ignore",
       stderr: "inherit",
       timeoutSec: ctx.helperTimeoutSec,
-      stdin: paths.length > 0 ? `${paths.join("\n")}\n` : "",
+      stdin: JSON.stringify({
+        paths,
+        blobs,
+        ...(!withFacts || read.failed || report.roundSevere === null
+          ? {}
+          : { severe: report.roundSevere }),
+      }),
     });
     if (r.code !== 0) {
       process.stderr.write(
-        `drive-status: could not record this round's finding anchors for #${pr} (record-paths exited ${r.code}) — structuralEscalationDue is reporting the previous round's durable state, not this one\n`,
+        `drive-status: could not record this round's finding anchors for #${pr} (record-paths exited ${r.code}) — structuralEscalationDue is reporting the previous round's durable state, not this one, and the structural-churn brake cannot judge this round\n`,
       );
     }
+    // A failed blob batch leaves the round without facts and, with the brake
+    // on, ends the gate: the round could be the one that completes a streak.
+    if (r.code === 0 && read.failed) {
+      process.stderr.write(
+        `drive-status: the structural-churn brake has no file contents for #${pr}'s round, so it cannot judge it\n`,
+      );
+      return false;
+    }
+    return r.code === 0;
   }
 
   /**
@@ -1006,9 +1046,11 @@ async function main(): Promise<number> {
             unresolvedThreadKeys: report.openThreadKeys,
             unresolvedThreadVersions: report.openThreadVersions,
             summaryUnaddressedKeys: report.summaryUnaddressedKeys,
+            summaryIgnoredBacklogKeys: report.summaryIgnoredBacklogKeys,
             summaryHeldUndispatchedKeys: report.summaryHeldUndispatchedKeys,
             parkedKeys: report.parkedItemKeys,
             actionableParkKeys: report.actionableParkKeys,
+            churnParkKeys: report.churnParkKeys,
             // The evidence `structuralEscalationDue` above is derived from —
             // published for visibility, the same reason the key sets beside
             // it are. NOT the recurrence result itself: this is only THIS
@@ -1155,7 +1197,6 @@ async function main(): Promise<number> {
   // might clear. A read that positively says the PR is finished is a different
   // matter: it will not clear, and `evaluate()` is about to return PR_NOT_OPEN
   // for it anyway.
-  const deadline = currentMs() + timeout * 1000;
   /** Remaining wall-clock time for work or waits after the first evaluation. */
   const budgetLeftMs = (): number => deadline - currentMs();
   /** Whether another `--interval` sleep fits inside `--timeout`; every waiting site stops on it. */
@@ -1282,54 +1323,27 @@ async function main(): Promise<number> {
     return code;
   }
 
+  async function stopForPollBudget(reason: string): Promise<number> {
+    setProbeFailure(report);
+    const code = terminal(
+      report,
+      "POLL_BUDGET_SPENT",
+      `${reason} (gave up after ${timeout}s)`,
+    );
+    await emit(code, false);
+    return code;
+  }
+
   let iterations = 0;
 
   for (;;) {
-    /** The caller's `--timeout` is gone. Read once per iteration. */
+    // The first evaluation is owed even if startup used the poll window.
+    // Later iterations and their reconciliation work need time left.
     const spent = budgetLeftMs() <= 0;
-
-    // NO SPAWN EVER STARTS ON A SPENT BUDGET. The ONE exemption is the FIRST
-    // `evaluate()`, and it is deliberately that narrow.
-    //
-    // Getting the scope of that exemption right took several attempts, so the
-    // two wrong shapes are worth keeping written down. First the guard sat
-    // inside `if (!sweepSettled)`, which covered that block's spawns and
-    // nothing else — a settled sweep skipped it and `evaluate()` began past the
-    // deadline anyway. Then it moved here but exempted the whole first
-    // ITERATION, which still let a spent budget start a liveness read and a
-    // reconciliation subprocess, so `--timeout` could be consumed entirely by
-    // work that is not the promised evaluation and `evaluate()` would then run
-    // on top of it.
-    //
-    // The distinction that resolves it: the evaluation is what the caller is
-    // PROMISED (`--once` promises exactly one, so a `--timeout` shorter than
-    // this process's own startup must still yield a verdict rather than an
-    // INDETERMINATE reporting that nothing was attempted). The sweep is not —
-    // skipping it costs a deferral to the next pass entry, which is a cost
-    // this loop already accepts everywhere else, and an unreconciled pass
-    // still cannot report a drive-ending verdict because the guard at the
-    // bottom withholds every one of them on `!sweepReconciled`. So on a spent
-    // budget the sweep is what gives way, and the evaluation is what survives.
-    //
-    // Reachable by more than one path, which is why it is a loop-top guard
-    // rather than a check bolted to whichever site was last reported: `case 1`
-    // and `case 4` both sleep and `continue`, and the skip-retraction
-    // `continue`s without sleeping at all — a sleep is permitted whenever a
-    // full interval fits, so an iteration can legitimately begin with the
-    // budget at zero.
-    //
-    // `degrade()` rather than a bare return: an iteration stopped here may not
-    // have completed reconciliation, so it must not judge (the rule at the
-    // bottom of this loop), and `degrade` reports the retry class, charges the
-    // error budget, and — with the deadline gone — stops on its own
-    // `intervalFits()` check rather than looping.
-    if (iterations > 0 && spent) {
-      const stop = await degrade(
-        `#${pr}'s ${timeout}s budget was spent before this iteration could reconcile and judge, so it will not judge unreconciled`,
+    if (iterations > 0 && spent)
+      return stopForPollBudget(
+        "poll budget was spent before the next iteration",
       );
-      if (stop !== null) return stop;
-      continue;
-    }
     iterations += 1;
 
     // `!spent` applies on EVERY iteration, the first included — that is the
@@ -1357,17 +1371,14 @@ async function main(): Promise<number> {
       // — so on a gate asked for 30s this one read could spend the whole
       // budget on its own and then hand the sweep below a spent one.
       //
-      // Through the shared chokepoints rather than a raw `run(['gh', …])`:
-      // this skill has a guardrail test asserting every outbound `gh` call
-      // routes through `ghCall`, and taking the shortcut here traded this
-      // finding for that guard (it went red, which is what the test is for).
-      // `readPrState` is one of those chokepoints and carries the same clamp.
+      // The read checks its remaining budget again before sending, including
+      // when it runs out between the loop guard and this call.
       //
       // A conditional REST read, not `gh pr view`: the state alone
       // is all this probe asks for, so an unchanged PR answers `304` and spends
       // nothing from the GraphQL bucket a handful of parallel drives exhaust.
       const live = await readPrState(pr, {
-        timeoutSec: Math.max(1, Math.ceil(budgetLeftMs() / 1000)),
+        timeoutSec: Math.max(0, Math.ceil(budgetLeftMs() / 1000)),
         caller: "sweep",
       });
       // An EXPLICIT closed set, in both directions. `OPEN` sweeps; `CLOSED` and
@@ -1377,18 +1388,21 @@ async function main(): Promise<number> {
       // terminal state let an unrecognised value skip the sweep and then permit
       // a verdict that ends the drive. `readPrState` only ever returns one of
       // the three.
-      if (!live.ok) {
+      if (!live.ok && !live.budgetSpent) {
+        const diagnostic =
+          live.failure === undefined
+            ? live.reason
+            : `${live.failure.code}: ${live.reason}`;
         const stop = await degrade(
           // Named as the transient failure it is: a failed or unrecognised
           // read is the retry class, since neither is a confirmed finished PR.
-          `cannot read PR #${pr}'s state (${live.reason}) — a transient failure — to decide whether the replied-thread reconciliation sweep may run — refusing to judge this round, since a verdict that does not re-arm would strand the sweep for good`,
+          `cannot read PR #${pr}'s state (${diagnostic}) — a transient failure — to decide whether the replied-thread reconciliation sweep may run — refusing to judge this round, since a verdict that does not re-arm would strand the sweep for good`,
           "read",
         );
         if (stop !== null) return stop;
         continue;
       }
-      const liveState = live.state;
-      if (liveState !== "OPEN") {
+      if (live.ok && live.state !== "OPEN") {
         sweepSettled = true;
         skippedAsFinished = true;
         // Positively finished, so there is nothing to reconcile and
@@ -1398,9 +1412,9 @@ async function main(): Promise<number> {
         // read can be contradicted by the evaluation a moment later, and the
         // check just below the evaluation retracts the skip when it is.
         console.error(
-          `drive-status.ts: skipping the replied-thread reconciliation sweep for #${pr} — it is ${liveState}, and a finished pull request stops the round before it spends anything`,
+          `drive-status.ts: skipping the replied-thread reconciliation sweep for #${pr} — it is ${live.state}, and a finished pull request stops the round before it spends anything`,
         );
-      } else if (budgetLeftMs() <= 0) {
+      } else if (!live.ok || budgetLeftMs() <= 0) {
         // THE LIVENESS READ JUST SPENT THE BUDGET. Re-read it rather than
         // trusting the answer from the top of the iteration: the read above
         // is an outbound call, so an iteration that began with budget can
@@ -1519,33 +1533,12 @@ async function main(): Promise<number> {
       }
     }
 
-    // RE-READ THE BUDGET AFTER RECONCILIATION, because the block above can
-    // have consumed it: the liveness read carries its own `GH_CALL_TIMEOUT`
-    // and the sweep is clamped to whatever was left, so an iteration that
-    // began with budget can arrive here with none. The loop-top check is a
-    // stale answer by this point.
-    //
-    // Bounded to iterations PAST the first, and that boundary is the same
-    // promise as above: the caller is owed one `evaluate()`, so iteration 1
-    // proceeds on a spent budget by contract. Every later iteration is owed
-    // nothing, so a budget the sweep just exhausted stops the invocation here
-    // rather than adding a whole evaluation on top of the overrun.
-    //
-    // What this deliberately does NOT claim: that `--timeout` bounds the
-    // invocation's total wall clock. It cannot, and no check here could make
-    // it — the promised first evaluation is unbounded by it by construction,
-    // and `evaluate()` is not deadline-aware, so "reserving" budget for it
-    // would be a number with nothing reading it. What bounds that evaluation
-    // is its own per-call deadlines (`GH_CALL_TIMEOUT`,
-    // `$DRIVE_PR_HELPER_TIMEOUT`), which is exactly what SKILL.md § Deadlines
-    // says `--timeout` does and does not cover.
-    if (iterations > 1 && budgetLeftMs() <= 0) {
-      const stop = await degrade(
-        `#${pr}'s ${timeout}s budget was spent by the replied-thread reconciliation sweep, so this iteration will not add an evaluation on top of the overrun`,
+    // Reconciliation can consume the rest of the poll window. Only the
+    // first evaluation can still start on its own per-call deadlines.
+    if (iterations > 1 && budgetLeftMs() <= 0)
+      return stopForPollBudget(
+        "poll budget was spent before status evaluation",
       );
-      if (stop !== null) return stop;
-      continue;
-    }
 
     // Resolve policy in the driven clone.  A pass may be launched from a
     // dispatcher directory, while its skip proof is deliberately evaluated
@@ -1553,6 +1546,8 @@ async function main(): Promise<number> {
     await exportPolicyBase(pr, process.env.DRIVE_PR_WORKTREE);
     const code = await evaluate(ctx, report);
     firstEvaluationDone = true;
+    if (report.state === "POLL_BUDGET_SPENT")
+      return stopForPollBudget(report.reason);
 
     // RETRACT a skip the evaluation just contradicted. The liveness read said
     // the PR was finished, so the sweep was skipped as pointless; the
@@ -1848,8 +1843,18 @@ async function main(): Promise<number> {
           }
         }
         // This round's finding anchors, filed against the round the bump above
-        // just counted. Best-effort and advisory; see the function.
-        await recordRoundPaths();
+        // just counted; see the function for what a failed write costs.
+        const recorded = await recordRoundPaths();
+        // The structural-churn brake: park before the pass when the recorded
+        // rounds churn, and stop when this round's evidence did not land
+        // (`lib/status/churn-brake.ts`); never on a re-read.
+        const braked = noCount
+          ? null
+          : await runChurnBrake(ctx, report, recorded, sweepReconciled);
+        if (braked !== null) {
+          await emit(braked);
+          return braked;
+        }
         // `--bump-attempt`: record this PASS before `emit` computes
         // `reflectDue`, so the field it reports is never one pass stale. This
         // is what the flag exists for — see its own doc comment above for the

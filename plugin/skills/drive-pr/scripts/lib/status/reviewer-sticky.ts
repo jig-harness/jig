@@ -247,7 +247,8 @@ export function reviewerStickyBody(
         /^\s*(\S+\s+findings?(?:\(s\))?\s+without\s+a\s+diff-anchorable\s+line)\s*[.!]?\s*$/i.exec(
           content,
         );
-      if (declaration !== null) structural.push(declaration[1] as string);
+      if (declaration !== null)
+        structural.push(`> ${declaration[1] as string}`);
       continue;
     }
     quotedFence = null;

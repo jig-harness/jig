@@ -193,7 +193,7 @@ export function checkedRecords(
   return ok(value as StewardRecord[]);
 }
 
-/** A human stop or a registry park never becomes a steward retry. */
+/** A drive reserved for a person or parked by the registry never becomes a steward retry. */
 export function rearmableBySteward(pr: DrivenPr, held: boolean): boolean {
   return (
     !held &&
@@ -202,6 +202,7 @@ export function rearmableBySteward(pr: DrivenPr, held: boolean): boolean {
     pr.evidence.exit !== 0 &&
     pr.evidence.stopped !== true &&
     pr.evidence.manualStop !== true &&
+    pr.evidence.trustedDriveManual !== true &&
     pr.evidence.parked !== true &&
     !pr.waiting?.length
   );

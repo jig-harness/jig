@@ -20,12 +20,13 @@
  * | stopped `CI_INFRA_PERSISTED` (`23`) | stale, once per stop after a backoff (`infra-backoff.ts`); needs-person past its re-drives |
  * | stopped `CHECK_RUNS_UNREADABLE` (`25`) | stale, once per head commit, naming the pages read; a second such stop on the head is a person's, as a systematic read failure |
  * | stopped `FORGE_RATE_LIMITED` (`24`) | stale, once per stop from the forge limit's reset (`forge-limit-redrive.ts`) |
+ * | stopped `INDETERMINATE` (`1`) with a status probe read failure | stale, once per head commit, naming the failed read; a second such stop on the head is a person's, as a systematic read failure |
  * | stopped `INDETERMINATE` (`1`), the pull request conflicting with its base | stale, once per head and base head |
  * | stopped `CONVERGED` at the verified head and mergeable, `PR_NOT_OPEN` (`5`), `TAKEN_OVER` (`20`) | done |
  * | stopped with an explicit person's-stop record, `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`) | stopped-by-person |
  * | stopped with no exit and no person's-stop record | re-armable (stopped-unknown once its recovery budget is spent) |
  * | stopped `HITL_PARKED` (`8`), every parked item answered | re-armable |
- * | stopped `QUOTA_PARKED` (`16`), `NOT_SETTLED` (`4`) | re-armable |
+ * | stopped `QUOTA_PARKED` (`16`), `NOT_SETTLED` (`4`), including a spent poll budget | re-armable (`NOT_SETTLED` re-arms that stop the same way on one head back off, then are a person's: `repeated-ends.ts`) |
  * | stopped `WORKTREE_UNCLEAN` (`12`), head known and not yet recovered | stale: settle original tree once per head |
  * | stopped `HITL_PARKED`, an item unanswered, the pull request conflicting with its base | stale |
  * | stopped `HITL_PARKED`, an item unanswered | parked |
@@ -63,8 +64,9 @@
  * drive could not resolve, such as two requirements that contradict each
  * other, is that person's decision too.
  *
- * A stall, an unreadable check-runs listing (`CHECK_RUNS_UNREADABLE`), or a
- * CI stop without a diagnosis on the current head, is eligible for recovery.
+ * A stall, an unreadable check-runs listing (`CHECK_RUNS_UNREADABLE`), a
+ * status probe read failure or a CI stop without a diagnosis on the current
+ * head is eligible for recovery.
  * Its change is its head commit and its exit, so it is re-driven once for
  * each; once this machine or another host re-drove that change and the ledger
  * still stopped the same way, it is a person's (`settleConflictStops`). A
@@ -77,8 +79,8 @@
  * restarts from a pass killed at its deadline, is re-driven the same way,
  * once per head commit, by a fresh pass, in the tree it stopped in when its
  * stop measured work left there, since the killed passes' work stays there.
- * One that stopped `INDETERMINATE` (`1`) while its pull request conflicts
- * with its base is re-driven once per pair of its head and its base branch's
+ * One that stopped `INDETERMINATE` (`1`) for another reason while its pull request
+ * conflicts with its base is re-driven once per pair of its head and its base branch's
  * head, the change a stop on a conflict is keyed on, so the drive's
  * conflict-resolve round runs once for it; its base branch's head is read
  * for it, and while the forge still computes its mergeability it is
@@ -164,7 +166,11 @@ import type {
   WaitingPark,
 } from "../types.ts";
 import { parseMs } from "../../../shared/time.ts";
-import { readsBaseHead, stopEvidence } from "./ledger-stop-evidence.ts";
+import {
+  boundToTree,
+  readsBaseHead,
+  stopEvidence,
+} from "./ledger-stop-evidence.ts";
 import { readFacts } from "./ledger-facts.ts";
 import { undecided } from "./ledger-undecided.ts";
 import { pushFailedStallClass } from "./push-failed-stall.ts";
@@ -172,6 +178,7 @@ import {
   conflictNote,
   probeEvidence,
   rearmTree,
+  stoppedOnProbeRead,
   withProbeReason,
 } from "./ledger-probe.ts";
 
@@ -399,7 +406,12 @@ function mechanicalStopClass(
   exit: number,
   forge: PrFacts,
 ): Classified | null {
-  const stop = MECHANICAL_STOPS.get(exit);
+  const stop = stoppedOnProbeRead(ledger)
+    ? {
+        kind: "probe-read" as const,
+        words: "the status probe could not read the forge",
+      }
+    : MECHANICAL_STOPS.get(exit);
   if (stop === undefined) return null;
   const pushFailed = pushFailedStallClass(ledger, exit, forge);
   if (pushFailed !== null) return pushFailed;
@@ -437,23 +449,6 @@ function mechanicalStopClass(
       ...(tree === null ? {} : { tree }),
     },
   };
-}
-
-/**
- * Whether a mechanical stop's re-drive must run in the tree it stopped in: a
- * stall or listing stop that left work there or never measured it, and a pass
- * deadline whose stop measured work left. A deadline stop that never measured comes from a
- * driver that did not record it, so it re-drives on any account.
- */
-function boundToTree(
-  kind: NonNullable<StaleCause["mechanicalStop"]>,
-  exit: number,
-  last: ReturnType<typeof lastStopEvent>,
-): boolean {
-  const own = last === undefined || last.cause === String(exit);
-  if (kind === "stall" || kind === "check-runs")
-    return own && last?.leftWork !== false;
-  return kind === "deadline" && own && last?.leftWork === true;
 }
 
 /** Why a stop the exit table (`exitClass`) places by its exit alone reads as its class, for the exits that say more than a person's stop. */
@@ -551,7 +546,8 @@ function ledgerEvidence(
     ...stopEvidence(
       ledger,
       forge,
-      MECHANICAL_STOPS.has(ledger.driver.exit ?? Number.NaN),
+      MECHANICAL_STOPS.has(ledger.driver.exit ?? Number.NaN) ||
+        stoppedOnProbeRead(ledger),
     ),
     driverActor: ledger.driver.actor,
     driverClone: ledger.driver.clone,
@@ -649,10 +645,9 @@ function exitClass(
   if (exit === DRIVE_EXIT.HITL_PARKED) return parkClass(park, forge);
   if (exit === DRIVE_EXIT.CONVERGED) return convergedClass(ledger, forge);
   if (exit === DRIVE_EXIT.PR_CONFLICTING) return conflictStopClass(forge);
-  const failed = exit === FAILED ? failedConflictClass(forge) : null;
   return (
-    failed ??
-    mechanicalStopClass(ledger, exit, forge) ?? {
+    mechanicalStopClass(ledger, exit, forge) ??
+    (exit === FAILED ? failedConflictClass(forge) : null) ?? {
       class: stopClass(exit).class,
       why:
         EXIT_WHY[exit]?.(ledger) ??
