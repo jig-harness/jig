@@ -110,8 +110,6 @@ it("sends nothing on a channel whose start state cannot be read, and says so", a
   );
   expect(calls).toEqual([]);
   expect(r.channelStarts).toBeUndefined();
-  // Another repository of the tick must not write the host's start over this one's unread state.
-  expect(state.channelStartFailed?.has("phone")).toBe(true);
   expect(
     r.unplaced.some((u) => u.reason.includes("start state could not be read")),
   ).toBe(true);

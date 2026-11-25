@@ -101,10 +101,8 @@ export interface ApplyState {
   noticesOpened?: number;
   /** The notification channels this tick has reported unreachable, so a host's fault is reported once a tick, not once a repository. */
   channelFaults?: Set<string>;
-  /** The notification channels this tick started from the causes that already stood, by name, so every repository of the tick starts them alike and the receipt tells it once (`notify.ts`). */
+  /** The notification channels this tick started from the causes that already stood, by name, so the receipt tells it once however many repositories start them (`notify.ts`). */
   channelStarts?: Map<string, ChannelStart>;
-  /** The channels whose start left a repository's records incomplete this tick, so their start row is not written (`notify.ts`). */
-  channelStartFailed?: Set<string>;
   /** The follow-up workspaces this tick has opened so far, within `followup_opens_per_tick`, outside `opened` (`followup-lane.ts`). */
   followupOpened?: number;
   /** When the tick began (its invocation, not its act phase), for its overall deadline. */

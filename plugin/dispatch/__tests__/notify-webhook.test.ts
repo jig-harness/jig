@@ -137,8 +137,8 @@ function host(runtime: "orca" | "process") {
   const outlets = () => noticeOutlets(config, { JIG_TEST_PHONE_URL: hook.url });
   const repo: RepoTarget = { path: root, slug: SLUG, defaultBranch: "main" };
   const ledgerFailures: string[] = [];
-  // The channel has already begun sending on this host; one that has not starts from what stands (notify-channel-start.test.ts).
-  markChannelStarted("phone", "2026-01-01T00:00:00.000Z", root);
+  // The channel has already begun sending on this repository; one that has not starts from what stands (notify-channel-start.test.ts).
+  markChannelStarted("phone", SLUG, "2026-01-01T00:00:00.000Z", root);
   const book = () =>
     actionBook(SLUG, FAILURE_DEFAULTS, (r) => ledgerFailures.push(r), root);
   return { root, hook, config, outlets, repo, book, ledgerFailures };

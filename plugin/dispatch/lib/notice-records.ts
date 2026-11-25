@@ -23,12 +23,13 @@
  * releases it on every channel.
  *
  * A channel's first send on this host starts it from the causes that
- * already stand (`channelStarted`, `markChannelStarted`): one row under the
- * key `channel started`, at no repository, is the record that the channel
- * has begun on this host, so that a channel which has sent nothing yet is not
- * mistaken for a new one when its first cause appears. A record of a send
- * at any repository says the same; the silent records of a start that did
- * not complete do not. A channel's records and that row go together.
+ * already stand (`channelStarted`, `markChannelStarted`): one row per
+ * repository under the key `channel started <repository>`, at no repository,
+ * is the record that the channel has begun on that repository, so that a
+ * channel which has sent nothing yet there is not mistaken for a new one
+ * when its first cause appears. A record of a send at the repository says the
+ * same; the silent records of a start that did not complete do not. A
+ * channel's records and those rows go together.
  */
 import type { Database } from "bun:sqlite";
 import { insertRow, type LogRow } from "./log.ts";
@@ -56,25 +57,30 @@ function noticeKeyOf(channel: string, stored: string): string {
 /** The stored workspace of a record that only says a cause was known when its channel started: nothing was sent, so it is no send's history. */
 export const SILENT_START = "channel start";
 
-/** The stored key of the row that records a channel's start on this host, at no repository: no notice's key reads like it, since a notice's key starts with a repository's `owner/name` or with `host `. */
-function startedKey(channel: string): string {
-  return recordKey(channel, "channel started");
+/** The stored key of the row that records a channel's start on one repository, at no repository: no notice's key reads like it, since a notice's key starts with a repository's `owner/name` or with `host `. */
+function startedKey(channel: string, repo: string): string {
+  return recordKey(channel, `channel started ${repo}`);
 }
 
-/** Whether `channel` has begun on this host: its start row, or a record of a send it holds at any repository (one an earlier release wrote). A silent record of an incomplete start is no send. */
-export function channelStarted(channel: string, root: string): boolean {
+/** Whether `channel` has begun on `repo`: its start row there, or a record of a send it holds there (one an earlier release wrote). The silent records of a start that did not complete are no send. */
+export function channelStarted(
+  channel: string,
+  repo: string,
+  root: string,
+): boolean {
   return (
     stateDb(root)
       .query(
-        "SELECT 1 AS found FROM notices WHERE channel = ?1 AND ((repo = '' AND key = ?2) OR (repo <> '' AND workspace <> ?3)) LIMIT 1",
+        "SELECT 1 AS found FROM notices WHERE channel = ?1 AND ((repo = '' AND key = ?2) OR (repo = ?3 AND workspace <> ?4)) LIMIT 1",
       )
-      .get(channel, startedKey(channel), SILENT_START) !== null
+      .get(channel, startedKey(channel, repo), repo, SILENT_START) !== null
   );
 }
 
-/** Record that `channel` has begun on this host; the row stays, and the record's key never meets a notice's. */
+/** Record that `channel` has begun on `repo`; the row stays, and the record's key never meets a notice's. */
 export function markChannelStarted(
   channel: string,
+  repo: string,
   at: string,
   root: string,
 ): void {
@@ -83,14 +89,7 @@ export function markChannelStarted(
       `INSERT INTO notices (repo, key, target, workspace, at, lasting, channel)
        VALUES ('', ?, '', '', ?, 1, ?) ON CONFLICT (repo, key) DO NOTHING`,
     )
-    .run(startedKey(channel), at, channel);
-}
-
-/** Take back `channel`'s start row, so the next tick that can send starts it again. */
-export function unmarkChannelStarted(channel: string, root: string): void {
-  stateDb(root)
-    .query("DELETE FROM notices WHERE repo = '' AND key = ?")
-    .run(startedKey(channel));
+    .run(startedKey(channel, repo), at, channel);
 }
 
 /** The failure ledger's key of a delivery of the notice keyed `key` on `channel`. */

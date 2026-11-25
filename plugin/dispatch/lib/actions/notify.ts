@@ -29,11 +29,13 @@
  *   log (`log.ts`) in the same transaction as the first suppression record
  *   written for it, timed at that record and keyed by the same facts; a
  *   cause about a stage this machine launched has its ended row instead.
- * - **A channel new to the host starts from what stands.** The first tick
- *   that can send through a channel with no record on this host does not
- *   send the causes that already stand, one message each: it records them
- *   as known (`startFrom`), without sending, on every repository of that
- *   tick (the start is the host's, one row), and says once on the receipt how many (`channelStarts`). Only a
+ * - **A channel new to a repository starts from what stands.** The first
+ *   tick that can send through a channel with no record at a repository does
+ *   not send the causes that already stand there, one message each: it
+ *   records them as known (`startFrom`), without sending. The start is the
+ *   repository's own row, written once its records are in, so a repository
+ *   reached on a later tick starts silently too; the receipt says once how
+ *   many causes the tick started from (`channelStarts`). Only a
  *   cause that appears or changes afterwards is sent, and the causes
  *   recorded this way follow the usual rules: repeated on
  *   `dispatch.renotify_after` while they stand, dropped when they leave. A
@@ -79,7 +81,6 @@ import {
 import { holderRecordStands } from "../holder-notices.ts";
 import {
   channelStarted,
-  unmarkChannelStarted,
   dropSuppressions,
   ledgerKey,
   markChannelStarted,
@@ -602,7 +603,7 @@ function dueOn(
   isCard: boolean,
 ): Cause[] {
   const name = channel.name;
-  const starting = !isCard && startingChannel(name, scope, state);
+  const starting = !isCard && startingChannel(name, scope);
   // A start state that could not be read is no start and no proof of one: send nothing until a tick reads it.
   if (starting === undefined) return [];
   const due = dueThere(name, scope, starting);
@@ -624,35 +625,33 @@ function dueOn(
   return [];
 }
 
-/** Whether `channel` has yet to begin on this host, or started this tick and so starts alike on every repository of it; `undefined` when the start state cannot be read, reported on the receipt. */
+/** Whether `channel` has yet to begin on this repository; `undefined` when the start state cannot be read, reported on the receipt. A repository the channel already holds send records for gets its start row now. */
 function startingChannel(
   channel: string,
-  { root, report }: SendScope,
-  state: ApplyState,
+  { repo, root, report }: SendScope,
 ): boolean | undefined {
-  if (state.channelStarts?.has(channel) === true) return true;
   try {
-    return !channelStarted(channel, root);
+    if (!channelStarted(channel, repo.slug, root)) return true;
+    markChannelStarted(channel, repo.slug, currentIso(), root);
+    return false;
   } catch (error) {
-    // A repository left unstarted keeps the host's start from being written by another repository of this tick.
-    state.channelStartFailed ??= new Set();
-    state.channelStartFailed.add(channel);
     report.unplaced.push({
       target: `the ${channel} notification channel`,
       record: "runtime",
-      reason: `its start state could not be read, so nothing is sent on it until a later tick reads it: ${failureText(error)}`,
+      reason: `its start state could not be read or written, so nothing is sent on it until a later tick reads it: ${failureText(error)}`,
     });
   }
   return undefined;
 }
 
 /**
- * Start `channel` from the causes that already stand: record each as known
- * without sending it, so only a cause that appears or changes afterwards is
- * sent, and tell the receipt once how many. The channel's start row, one for the host, goes in
- * after a repository's records, and only while every record of the tick is
- * in, so a tick that fails part way starts it again. The records are silent: they
- * are no send's history.
+ * Start `channel` on this repository from the causes that already stand:
+ * record each as known without sending it, so only a cause that appears or
+ * changes afterwards is sent, and tell the receipt once how many. The
+ * repository's start row goes in after its records, and only while every
+ * record is in and the tick read this repository's records whole, so a tick
+ * that fails part way starts it again. The records are silent: they are no
+ * send's history.
  */
 function startFrom(
   channel: string,
@@ -667,7 +666,7 @@ function startFrom(
     state.channelStarts.set(channel, start);
     scope.report.channelStarts = [...(scope.report.channelStarts ?? []), start];
   }
-  let complete = true;
+  let complete = scope.report.records.every((r) => r.ok);
   for (const c of due) {
     if (!recordSent(channel, c, "", scope, true)) {
       complete = false;
@@ -680,18 +679,13 @@ function startFrom(
         c,
         "suppressed",
         null,
-        `recorded as known without sending: the ${channel} channel started this tick from the causes that already stood`,
+        `recorded as known without sending: the ${channel} channel started on this repository this tick from the causes that already stood`,
       ),
     );
   }
-  state.channelStartFailed ??= new Set();
+  if (!complete) return [];
   try {
-    if (!complete) {
-      // One repository's records are incomplete, so the host's start is: take back a row an earlier repository of the tick wrote.
-      state.channelStartFailed.add(channel);
-      unmarkChannelStarted(channel, scope.root);
-    } else if (!state.channelStartFailed.has(channel))
-      markChannelStarted(channel, currentIso(), scope.root);
+    markChannelStarted(channel, scope.repo.slug, currentIso(), scope.root);
   } catch (error) {
     outcomeLogFailed(
       scope.report,
