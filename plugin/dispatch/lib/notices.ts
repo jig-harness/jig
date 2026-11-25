@@ -333,6 +333,8 @@ export function stopNotice(slug: string, pr: DrivenPr): Notice {
     };
   if (pr.class === "silent")
     return { ...silentText(slug, pr), ...driveFields(slug, pr) };
+  if (typeof pr.evidence.failedTakeover === "string")
+    return { ...failedTakeoverNotice(slug, pr), ...driveFields(slug, pr) };
   if (typeof pr.evidence.failedRearm === "string")
     return failedRearmNotice(slug, pr);
   if (typeof pr.evidence.reviewerFailureHead === "string")
@@ -489,6 +491,23 @@ function usageRefusalNotice(slug: string, pr: DrivenPr): Notice {
     [
       `PR #${pr.number} (${pr.title}): drive.ts refused the command line launch record ${record} gave it, on the drive ledger as it still is, so the dispatcher does not launch it again until the ledger moves. drive.ts said: ${String(pr.evidence.usageMessage)}`,
       `Settle what it names, then run \`/jig:drive-pr ${pr.number}\` in the workspace that drove it (named below while it is open) to re-arm it, or stop it.`,
+      pr.url,
+    ],
+  );
+}
+
+/**
+ * A silent drive whose takeovers kept failing on the ledger facts it still
+ * shows (`repeated-ends.ts`), keyed by those facts, so it is sent once until
+ * the ledger moves.
+ */
+function failedTakeoverNotice(slug: string, pr: DrivenPr): Notice {
+  const e = pr.evidence;
+  return notice(
+    `${slug} PR #${pr.number} takeovers failed, ledger generation ${generation(pr)}, heartbeat ${String(e.heartbeat ?? "unknown")}`,
+    [
+      `PR #${pr.number} (${pr.title}): ${String(e.failedTakeovers)} takeovers of its silent driver in a row ended without moving its drive ledger, the last ${String(e.takeoverExit)} (launch record ${String(e.failedTakeover)}), so the dispatcher does not take it over again until the ledger moves. ${pr.why}.`,
+      `Read the takeover's output and the drive's handoff, \`.context/pr-drive-${pr.number}.md\` in the workspace that drove it (named below while it is open), settle the driver, then run \`/jig:drive-pr ${pr.number}\` there to re-arm it, or stop it.`,
       pr.url,
     ],
   );
