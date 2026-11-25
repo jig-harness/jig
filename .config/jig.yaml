@@ -136,10 +136,12 @@ pull_requests:
   # One pull request per change against main; a person merges.
   stacking: none
 drive:
-  # Rounds a drive may spend before it stops unconverged. Jig's pull requests
-  # are large and the AI reviewer keeps finding things in them, so the
-  # built-in 10 is too tight.
-  max_rounds: 30
+  # Rounds a drive may spend before it stops unconverged. Late rounds on
+  # Jig's pull requests mostly rework wording and prose; the structural-churn
+  # brake (drive.churn_rounds, default 4) and the decline ladder in
+  # .config/review-triage.yaml park or decline that churn, so a budget of 12
+  # hands a drive that still has not converged to a person sooner.
+  max_rounds: 12
   # The same catalog selects CI jobs (.github/workflows/gates.yml).
   change_areas_catalog: .config/change-areas.yaml
   # Review and drive use Jig's wrapper to validate its catalog extensions.
