@@ -100,10 +100,13 @@ function blobsProblem(blobs: unknown, paths: readonly string[]): string | null {
  * "severe"?: bool, "blobs"?: {path: id}, "round"?: n}`, or the problem that makes the
  * text not one, so the command refuses it rather than storing a guess.
  */
-export function parseRoundInput(
-  text: string,
-):
-  | { paths: string[]; facts: RoundFacts; round?: number }
+export function parseRoundInput(text: string):
+  | {
+      paths: string[];
+      facts: RoundFacts;
+      round?: number;
+      judged?: RoundFacts;
+    }
   | { problem: string } {
   let value: unknown;
   try {
@@ -117,8 +120,17 @@ export function parseRoundInput(
   const problem = inputProblem(value);
   if (problem !== null) return { problem };
   const { severe, blobs } = value as RoundFacts;
+  const judged = value.judged;
+  if (judged !== undefined) {
+    if (!isRecord(judged)) return { problem: "judged must be an object" };
+    if (judged.severe !== undefined && typeof judged.severe !== "boolean")
+      return { problem: "judged.severe must be true or false" };
+    if (judged.blobs !== undefined && !isRecord(judged.blobs))
+      return { problem: "judged.blobs must map each path to an object id" };
+  }
   return {
     paths: value.paths as string[],
+    ...(judged === undefined ? {} : { judged: judged as RoundFacts }),
     ...(value.round === undefined ? {} : { round: value.round as number }),
     facts: {
       ...(severe === undefined ? {} : { severe }),

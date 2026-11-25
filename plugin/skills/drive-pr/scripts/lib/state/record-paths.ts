@@ -27,9 +27,12 @@ interface RecordPathsArgs {
   stdinJson: boolean;
 }
 
-async function readInput(
-  a: RecordPathsArgs,
-): Promise<{ paths: string[]; facts: RoundFacts; round?: number }> {
+async function readInput(a: RecordPathsArgs): Promise<{
+  paths: string[];
+  facts: RoundFacts;
+  round?: number;
+  judged?: RoundFacts;
+}> {
   if (!a.stdinJson)
     return {
       paths: a.stdin ? (await readStdinAll()).split("\n") : a.paths,
@@ -82,7 +85,12 @@ export async function recordPathsCommand(
       `record-paths: #${pr} has not counted a round yet (rounds=0) — run drive-status.ts (which bumps first) or drive-state.ts bump-round/bump-attempt before recording anchors`,
     );
   }
-  const { paths: raw, facts, round: expectedRound } = await readInput(a);
+  const {
+    paths: raw,
+    facts,
+    round: expectedRound,
+    judged,
+  } = await readInput(a);
   // The cap `foldRoundPaths` applies is silent by construction — sort,
   // then slice — so a round with genuinely more distinct anchor paths
   // than the cap loses the overflow with nothing in the stored state
@@ -101,11 +109,20 @@ export async function recordPathsCommand(
   // round, the entry it meant to replace is already gone, and writing now
   // would overwrite the newer observation with the older one.
   let stale = false;
+  // A write that names the facts it judged strips only an entry still
+  // carrying exactly those: a replacement measurement of the same round
+  // (a retry on the same head) is another gate's evidence and stays.
+  const sameFacts = (e: RoundPaths): boolean =>
+    judged === undefined ||
+    (e.severe === judged.severe &&
+      JSON.stringify(Object.entries(e.blobs ?? {}).sort()) ===
+        JSON.stringify(Object.entries(judged.blobs ?? {}).sort()));
   const hasFacts = (s: { roundPaths: readonly RoundPaths[] }): boolean =>
     s.roundPaths.some(
       (e) =>
         e.round === expectedRound &&
-        (e.severe !== undefined || e.blobs !== undefined),
+        (e.severe !== undefined || e.blobs !== undefined) &&
+        sameFacts(e),
     );
   if (
     expectedRound !== undefined &&
@@ -119,6 +136,14 @@ export async function recordPathsCommand(
   }
   await store.update((s) => {
     stale = expectedRound !== undefined && s.rounds !== expectedRound;
+    // The same round, but another gate's measurement stands: keep it.
+    if (
+      judged !== undefined &&
+      expectedRound !== undefined &&
+      !stale &&
+      s.roundPaths.some((e) => e.round === expectedRound && !sameFacts(e))
+    )
+      return s;
     // A later round was counted: keep its entry, and strip the judged
     // round's facts so a later gate cannot park on evidence the recheck
     // rejected.
@@ -126,7 +151,7 @@ export async function recordPathsCommand(
       return {
         ...s,
         roundPaths: s.roundPaths.map((e) => {
-          if (e.round !== expectedRound) return e;
+          if (e.round !== expectedRound || !sameFacts(e)) return e;
           const { severe: _s, blobs: _b, ...rest } = e;
           return rest;
         }),

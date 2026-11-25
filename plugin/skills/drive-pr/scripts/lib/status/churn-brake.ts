@@ -238,11 +238,16 @@ async function withdrawEvidence(
   ctx: BrakeContext,
   report: BrakeReport,
   round: number,
+  judged?: { severe?: boolean; blobs?: Record<string, string> },
 ): Promise<number | null> {
   const withdrawn = await run(
     tsArgv(ctx.driveStateScript, ["record-paths", ctx.pr, "--stdin-json"]),
     {
-      stdin: JSON.stringify({ paths: report.openThreadPaths ?? [], round }),
+      stdin: JSON.stringify({
+        paths: report.openThreadPaths ?? [],
+        round,
+        ...(judged === undefined ? {} : { judged }),
+      }),
       stdout: "ignore",
       stderr: "pipe",
       timeoutSec: ctx.helperTimeoutSec,
@@ -311,6 +316,15 @@ export async function runChurnBrake(
       `${describeTrip(trip)}, but the replied-thread reconciliation sweep did not complete on #${ctx.pr}, so the ${CHURN_CLASS} park is withheld; the drive stops here, so re-arm it for a counting pass`,
     );
   const round = state.value.rounds;
+  const judgedEntry = state.value.roundPaths?.find((e) => e.round === round);
+  const judgedFacts = {
+    ...(judgedEntry?.severe === undefined
+      ? {}
+      : { severe: judgedEntry.severe }),
+    ...(judgedEntry?.blobs === undefined
+      ? {}
+      : { blobs: { ...judgedEntry.blobs } }),
+  };
   // The verdict above was reached before the blob and state reads: park only
   // while the reviewed head and base are still the pull request's.
   if (ctx.owner !== undefined && ctx.repo !== undefined) {
@@ -325,7 +339,12 @@ export async function runChurnBrake(
     if (!now.ok) {
       // The PR may have moved: the evidence the verdict rested on is
       // uncertified, so it is withdrawn as for a confirmed change.
-      const failedCode = await withdrawEvidence(ctx, report, round);
+      const failedCode = await withdrawEvidence(
+        ctx,
+        report,
+        round,
+        judgedFacts,
+      );
       return indeterminate(
         report,
         `${describeTrip(trip)}, but #${ctx.pr}'s head and base could not be re-read before the park (${now.reason}); ${failedCode === null ? "round " + round + "'s evidence was withdrawn" : "round " + round + "'s evidence could not be withdrawn (record-paths exited " + failedCode + ")"}; re-arm the drive`,
@@ -341,7 +360,12 @@ export async function runChurnBrake(
     ) {
       // The verdict is withheld, so the facts it rested on must not stay
       // durable: a later gate would judge an entry nothing certified.
-      const failedCode = await withdrawEvidence(ctx, report, round);
+      const failedCode = await withdrawEvidence(
+        ctx,
+        report,
+        round,
+        judgedFacts,
+      );
       if (failedCode !== null)
         return indeterminate(
           report,
