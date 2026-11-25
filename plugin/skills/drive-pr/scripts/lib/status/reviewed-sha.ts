@@ -95,6 +95,20 @@ function localGit(
   });
 }
 
+/**
+ * Whether a skip notice's head names `apiHead`. An abbreviation Git cannot
+ * resolve is unverified evidence, not proof of another commit: it names the
+ * head when it is a prefix of it.
+ */
+async function noticeNamesHead(
+  noticeHead: string,
+  apiHead: string,
+): Promise<boolean> {
+  const resolved = await resolveMarkerSha(noticeHead);
+  if (resolved !== "") return resolved === apiHead;
+  return apiHead.startsWith(noticeHead.toLowerCase());
+}
+
 /** What stops the evaluation at this gate; `null` lets it go on. */
 export interface ReviewedShaStop {
   state: "STALE_REVIEW" | "REVIEW_SKIPPED" | "INDETERMINATE";
@@ -134,10 +148,7 @@ export async function reviewedShaGate(
   if (markerFull === report.apiHead) {
     // A stamp and a skip notice that both name this head contradict each
     // other: neither shows which one the reviewer meant, so fail closed.
-    if (
-      skip !== null &&
-      (await resolveMarkerSha(skip.head)) === report.apiHead
-    ) {
+    if (skip !== null && (await noticeNamesHead(skip.head, report.apiHead))) {
       return {
         state: "STALE_REVIEW",
         reason: `${reviewerLabel()} recorded reviewing the PR head ${report.apiHead} and also a skip notice naming it ("${skip.text}") — contradictory evidence, so no review of this head is taken as proven. Have this head reviewed again, then re-arm`,

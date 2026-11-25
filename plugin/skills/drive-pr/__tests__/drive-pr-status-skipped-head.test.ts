@@ -9,7 +9,8 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
@@ -653,6 +654,22 @@ describe("drive-status.ts over a head the reviewer skipped", () => {
     const without = await gate(repo.dir, fixture, null);
     expect(without.state).not.toBe("STALE_REVIEW");
     const r = await gate(repo.dir, fixture, skipNotice(repo.merged));
+    expectSpawnExit(r, 4);
+    expect(r.state).toBe("STALE_REVIEW");
+    expect(r.reason).toContain("contradictory");
+  });
+
+  it("fails closed when an unresolvable abbreviated notice is a prefix of the stamped head", async () => {
+    const repo = pullRequestRepo("skipped-prefix-unresolvable");
+    const fixture = { ...at(repo, repo.merged), reviewedSha: repo.merged };
+    const r = await gate(
+      repo.dir,
+      fixture,
+      skipNotice(repo.merged.slice(0, 12)),
+      {
+        DRIVE_PR_WORKTREE: mkdtempSync(join(tmpdir(), "jig-no-git-")),
+      },
+    );
     expectSpawnExit(r, 4);
     expect(r.state).toBe("STALE_REVIEW");
     expect(r.reason).toContain("contradictory");
