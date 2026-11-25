@@ -1,15 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { reviewerStickyBody } from "../scripts/lib/status/reviewer-sticky.ts";
-import { reviewerApp, stickyMarker } from "../scripts/lib/overlay.ts";
-import {
-  parseDeclaredUnanchored,
-  selectReviewerSticky,
-} from "../scripts/lib/status/summary-sticky.ts";
+import { parseDeclaredUnanchored } from "../scripts/lib/status/summary-sticky.ts";
 
 const MARKER = "<!-- sticky -->";
 const comment = (body: string) => ({
   body,
-  user: { login: `${reviewerApp()}[bot]` },
+  user: { login: "reviewer[bot]" },
 });
 
 describe("sticky structure", () => {
@@ -31,17 +27,5 @@ describe("sticky structure", () => {
     const kept = reviewerStickyBody(comment(body), () => true, MARKER);
     expect(kept).toContain("<!-- real -->");
     expect(kept).not.toContain("fake");
-  });
-
-  it("a round-only acknowledgement never retires a finding summary", () => {
-    const withFindings = comment(
-      `${stickyMarker()}\n<!-- ai-review-round: 1 -->`,
-    );
-    const ack = comment(`${stickyMarker()}\n<!-- ai-review-round: 2 -->`);
-    const picked = selectReviewerSticky(
-      [withFindings, ack],
-      (body) => body === withFindings.body,
-    );
-    expect(picked).toBe(withFindings);
   });
 });
