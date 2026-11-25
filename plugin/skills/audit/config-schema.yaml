@@ -1211,14 +1211,14 @@ fields:
     type: map
     values_type: { type: map, values_type: { type: map } }
     read_by: [do-item, drive-pr, dispatch]
-    since: next
+    since: 0.311.0
   routing.stages:
     type: map
     values_type:
       type: map
       values_type: { type: map, values_type: { type: map, values_type: string } }
     read_by: [do-item, dispatch]
-    since: next
+    since: 0.311.0
   routing.efforts:
     type: map
     values_type: { type: map, values_type: string }

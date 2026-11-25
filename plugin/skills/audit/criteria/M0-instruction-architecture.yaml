@@ -158,7 +158,7 @@ criteria:
       - "each Judgment-tier assignment records its A/B comparison beside the layer's own declaration: the Strategic baseline and planned comparison before measurement, then the exact measured model and result; each decision layer selected onto a Judgment model through shared routing has the same layer-specific evidence, while an implementation consumer that may edit code is not Judgment-only merely because shared routing selects a Judgment family for it"
       - "a shared routing row alone is not evidence of admission or a baseline"
       - "a repository with no Judgment-tier metadata pin, skill Judgment-pass setting or shared-routing Judgment selection meets it (expected-absent)"
-    since: next
+    since: 0.311.0
 
   - id: runtime-capabilities-name-fallbacks
     level: standard

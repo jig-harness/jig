@@ -290,6 +290,20 @@
         }
       ],
       "retracts": []
+    },
+    {
+      "version": "0.311.0",
+      "actions": [
+        {
+          "id": "0.311.0#d1f7b422",
+          "strength": "required",
+          "levels": ["machine", "configuration"],
+          "description": "`routing.family_tiers` is kept as the older spelling of `routing.model_tiers`: a configuration that sets only it keeps its tier classification and precedence, applied under the new selection rules, which accept model identifiers that were refused before (a cataloged release identifier such as `claude-opus-5-5` can now be selected). One model declared under both with different tiers is refused. A `routing.family_tiers` key keeps its older grammar, a lone surrogate or NUL included, and `routing.efforts` names keep theirs; `routing.model_tiers` keys and selected models refuse it. **Breaking:** A selected model identifier that was accepted before can now fail: one that starts with a dash (such as `-preview`), or holds a control or bidirectional character, is refused as a selected model, even where `routing.family_tiers` still accepts the same string as a declaration key.",
+          "instruction": "Replace each affected `routing.models` or `routing.stages` selection, in the repository file, host user file or `JIG__ROUTING__…` override, with a valid identifier at the intended tier. Declare it in `routing.model_tiers` only if the catalog does not know it; then follow the [routing rules](plugin/CONFIGURATION.md#the-open-model-vocabulary).",
+          "hints": []
+        }
+      ],
+      "retracts": []
     }
   ]
 }
