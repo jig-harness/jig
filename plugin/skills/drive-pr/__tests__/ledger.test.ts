@@ -786,6 +786,20 @@ describe("seeding", () => {
     });
   });
 
+  it("clears the structural-churn acknowledgment with the round history it was positioned in", () => {
+    const local: DriveState = {
+      ...freshState(999),
+      rounds: 7,
+      churnAckRound: 6,
+      roundPaths: [{ round: 6, paths: ["src/parser.ts"], severe: false }],
+    };
+    const seeded = seedFromLedger(local, ledger());
+    if ("error" in seeded) throw new Error(seeded.error);
+    expect(seeded.state.rounds).toBe(3);
+    expect(seeded.state.churnAckRound).toBeUndefined();
+    expect("churnAckRound" in seeded.state).toBe(false);
+  });
+
   it("keeps this clone's round records when the ledger's rounds are not behind them", () => {
     const local: DriveState = {
       ...freshState(999),

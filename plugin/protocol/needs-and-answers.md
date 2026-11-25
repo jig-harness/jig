@@ -225,6 +225,7 @@ human-in-the-loop registry) asks a person to decide.
 | `rules` | `Authorize` | Change the rules the agents follow: instructions and scaffolding. |
 | `reviewer-posture` | `Authorize` | Promote an automated reviewer to blocking, or waive a failing advisory check. |
 | `human-thread` | `Reply` | A person's review thread an agent may not overrule on its own, or a person's reversal of a provisional decision. |
+| `structural-churn` | `Decide` | The drive's own park: the same files keep drawing non-blocking findings round after round, or a file returned to an earlier content; choose how the pull request goes on. |
 | `followup-recovery` | `Decide` | The dispatcher's framing: how a follow-up that failed or whose claim went stale goes on. |
 | `pickup-recovery` | `Decide` | The dispatcher's framing: how a pickup that stalled, stopped on a question or ended without moving its item goes on. |
 | `checkout-recovery` | `Decide` | The dispatcher's framing: how a checkout another tree holds is freed for a launch. |

@@ -84,6 +84,8 @@ import {
 } from "./inherited-head.ts";
 import { resolveMarkerSha, reviewedShaGate, skipNote } from "./reviewed-sha.ts";
 import { readHeldEvidence, isFindingHoldCurrent } from "./held-evidence.ts";
+import { roundEvidence } from "./round-evidence.ts";
+import { churnParkReason } from "./churn-brake.ts";
 import {
   incompleteReviewReason,
   judgeReviewObject,
@@ -164,6 +166,8 @@ export interface StatusReport extends CiReport {
   parkedItemKeys: string[] | null;
   /** The parked keys a `HITL_PARKED` stop waits on; `null` when not measured. */
   actionableParkKeys: string[] | null;
+  /** The parks of the brake's own decision class, as the drive state classes them. */
+  churnParkKeys: string[] | null;
   /**
    * WHICH FILES this round's open findings anchor to — threads AND
    * summary-only findings both, sorted, de-duplicated, `null` when nothing
@@ -190,6 +194,11 @@ export interface StatusReport extends CiReport {
    * evidence.
    */
   openThreadPaths: string[] | null;
+  /**
+   * Whether those same live findings included a `high` or `blocker` one;
+   * `null` when nothing enumerated them (`round-evidence.ts`).
+   */
+  roundSevere: boolean | null;
 }
 
 export interface EvaluateContext {
@@ -241,7 +250,9 @@ export function emptyReport(): StatusReport {
     summaryHeldUndispatchedKeys: null,
     parkedItemKeys: null,
     actionableParkKeys: null,
+    churnParkKeys: null,
     openThreadPaths: null,
+    roundSevere: null,
     ci: "",
     failingCheckNames: null,
     failingCheckRunNames: null,
@@ -1093,38 +1104,20 @@ async function evaluateFresh(
     return latestCommentUrl(t) === heldUrl;
   };
 
-  // Set semantics, matching what `normalizeRoundPaths` will store: three
-  // findings on one file in one round is one file. Non-string and empty
-  // `path`s are dropped rather than stringified — a PR-level thread has
-  // `path: null`, and `"null"` is not a file; an `unaccounted` summary
-  // finding has `path: '(unknown)'`, a sentinel that names no file either
-  // and is excluded on the same basis.
-  //
-  // `.trim()` below is used ONLY to detect a whitespace-only path — the
-  // filter's own predicate — never to transform the stored identity. Two
-  // legitimate, distinct repository paths can differ only by leading or
-  // trailing whitespace (`a.ts` vs ` a.ts`), and trimming both into the stored
-  // set would alias them to the same recurrence key, arming
-  // `structuralEscalationDue` on findings from two different files. The exact
-  // GitHub path is the identity that survives into the set.
-  report.openThreadPaths = [
-    ...new Set([
-      ...threads
-        .filter((t) => !parkedKeys.has(String(t.threadId)))
-        .filter((t) => !isThreadHoldCurrent(t))
-        .filter((t) => !isLeftOpenThread(t))
-        .filter((t) => !provisionalKeys.has(String(t.threadId)))
-        .map((t) => (t as { path?: unknown }).path)
-        .filter((p): p is string => typeof p === "string" && p.trim() !== ""),
-      ...summaryLive
-        .filter((f) => !isFindingHoldCurrent(heldEvidence, f.fingerprint))
-        .map((f) => f.path)
-        .filter(
-          (p): p is string =>
-            typeof p === "string" && p.trim() !== "" && p !== "(unknown)",
-        ),
-    ]),
-  ].sort();
+  // The round's evidence for `structuralEscalationDue` and the
+  // structural-churn brake, read over the live findings only.
+  const evidence = roundEvidence(
+    threads
+      .filter((t) => !parkedKeys.has(String(t.threadId)))
+      .filter((t) => !isThreadHoldCurrent(t))
+      .filter((t) => !isLeftOpenThread(t))
+      .filter((t) => !provisionalKeys.has(String(t.threadId))),
+    summaryLive.filter(
+      (f) => !isFindingHoldCurrent(heldEvidence, f.fingerprint),
+    ),
+  );
+  report.openThreadPaths = evidence.paths;
+  report.roundSevere = evidence.severe;
 
   const liveThreads =
     report.threadsOpen - report.threadsParked - provisionalKeys.size;
@@ -1132,6 +1125,27 @@ async function evaluateFresh(
 
   // Over unpushed inherited commits only a conflict stops; else push them.
   const liveWork = Math.max(liveThreads, 0) + Math.max(liveSummary, 0);
+  const conflictsWith = `PR #${ctx.pr} conflicts with its base (mergeable=${report.mergeable}${report.mergeStateStatus !== "" ? `, mergeStateStatus=${report.mergeStateStatus}` : ""})`;
+  const mergeBase = `Merge ${report.baseRefName !== "" ? report.baseRefName : "the base branch"} into this one, push, and re-run; nothing here becomes judgeable with time`;
+  // The drive's own structural-churn park holds whatever work is live:
+  // re-arming without answering it must not run the rounds it stopped. A
+  // conflict is still reported first, as for any park, so conflict repair
+  // runs while the decision waits.
+  report.churnParkKeys = [...parked.selfParked].sort((a, b) =>
+    a.localeCompare(b),
+  );
+  const braked = churnParkReason(parked.selfParked);
+  if (braked !== null) {
+    const rc = await stillOnHead();
+    if (rc !== 0) return rc;
+    return conflicting
+      ? terminal(
+          report,
+          "PR_CONFLICTING",
+          `${conflictsWith} and ${braked} (${liveWork} live item(s) held on ${report.apiHead}). ${mergeBase}`,
+        )
+      : terminal(report, "HITL_PARKED", `${braked} — answer it, then re-arm`);
+  }
   if (mayEndWithoutWork(liveWork, sync, conflicting)) {
     // Resolve a conflict before handing back the parked decisions.
     // The conflict reason also names any parked review findings.
@@ -1141,7 +1155,7 @@ async function evaluateFresh(
       return terminal(
         report,
         "PR_CONFLICTING",
-        `PR #${ctx.pr} conflicts with its base (mergeable=${report.mergeable}${report.mergeStateStatus !== "" ? `, mergeStateStatus=${report.mergeStateStatus}` : ""}) and has no workable findings on ${report.apiHead} (${report.threadsParked} parked thread(s), ${summaryParked} parked summary finding(s)${standaloneNote}). Merge ${report.baseRefName !== "" ? report.baseRefName : "the base branch"} into this one, push, and re-run; nothing here becomes judgeable with time`,
+        `${conflictsWith} and has no workable findings on ${report.apiHead} (${report.threadsParked} parked thread(s), ${summaryParked} parked summary finding(s)${standaloneNote}). ${mergeBase}`,
       );
     }
     if (

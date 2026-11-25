@@ -4,8 +4,8 @@ type: adr
 status: approved
 description: "Deferred review findings enter the backlog in batches linked to their origin, person-only tails move to one standing list, and completed epic scope leaves the plan"
 lifecycle: permanent
-version: "1.0"
-last_updated: 2026-11-15
+version: "1.1"
+last_updated: 2026-11-25
 owner: maintainers
 decision_date: 2026-11-15
 supersedes: ~
@@ -59,9 +59,19 @@ change note and the released changelog.
 separate work kind. Adopting repositories may instead mark a container with
 an epic flag while retaining its work type.
 
-Jig's own repository does not arm the decline ladder, which remains a
-documented practice for adopting teams. This decision authorizes no amnesty
-pass and no backfill of existing follow-ups.
+**Jig arms a calibrated decline ladder.** Jig's own repository keeps
+[`.config/review-triage.yaml`](../../.config/review-triage.yaml), so late
+review rounds stop fixing wording and prose. Rounds 1 to 3 fix every finding
+the triage rubric accepts. From round 4 a finding is still fixed when it is
+`high` or `blocker`, or when the pull request's own earlier fix caused it;
+rounds 4 to 6 also keep correctness, data-integrity, security and compliance
+findings, and round 7 on keeps data-integrity and security ones. Every
+other finding is declined: `wont-fix` when the work is not owed, and
+`deferred` when it is, through the deferral batching above, so declined
+work that is owed still reaches the backlog linked to its origin. A finding
+whose severity or self-inflicted measurement is unknown is not judged by the
+ladder. This decision authorizes no amnesty pass and no backfill of existing
+follow-ups.
 
 ## Alternatives considered
 
@@ -75,6 +85,10 @@ pass and no backfill of existing follow-ups.
   list keeps that check visible after the epic closes.
 - **Cap or forgive deferrals in bulk.** Not adopted: batching limits issue
   growth without discarding findings or choosing an arbitrary cap.
+- **Leave the ladder off on Jig, a practice for adopting teams only.**
+  Rejected: with every accepted finding fixed in every round, Jig's own
+  drives ran dozens of rounds on wording and prose. The ladder keeps the
+  findings that matter late and defers the owed rest.
 
 ## Consequences
 
@@ -85,6 +99,10 @@ pass and no backfill of existing follow-ups.
 - One open issue per batch gives later findings an existing destination.
 - A person's remaining checks stay visible without keeping delivered scope
   on the active plan.
+- From the later rounds, Jig's calibrated decline ladder lets a finding
+  outside the retained categories and not caused by the pull request itself
+  be declined, and the owed findings it declines still reach the backlog.
+  Severity and category still admit what must be fixed in the pull request.
 
 ### Costs
 
@@ -93,6 +111,8 @@ pass and no backfill of existing follow-ups.
 - Closure must preserve links and move tails before closing; counts alone
   still do not authorize closure.
 - The person-checks list needs an owner and a configured destination.
+- The ladder's bands need retuning as the reviewer changes: a declined
+  finding that later ships as a defect means a band declines too much.
 
 ## Implementation
 

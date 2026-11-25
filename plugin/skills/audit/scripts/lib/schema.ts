@@ -59,6 +59,7 @@ export interface Field {
   values?: string[];
   min?: number;
   max?: number;
+  excluded?: number[];
   pattern?: string;
   nullable?: boolean;
   allow_empty?: boolean;
@@ -104,6 +105,7 @@ const FIELD_KEYS = new Set([
   "values",
   "min",
   "max",
+  "excluded",
   "pattern",
   "nullable",
   "allow_empty",
@@ -234,6 +236,22 @@ const ENTRY_CHECKS: ((entry: Entry) => string | null)[] = [
   (e) =>
     e.max !== undefined && typeof e.max !== "number"
       ? "max must be a number"
+      : null,
+  (e) =>
+    e.excluded !== undefined &&
+    (e.type !== "integer" ||
+      !Array.isArray(e.excluded) ||
+      !e.excluded.every((n) => Number.isSafeInteger(n)))
+      ? "excluded must be a list of whole numbers on an integer"
+      : null,
+  (e) =>
+    Array.isArray(e.excluded) &&
+    e.excluded.some(
+      (n) =>
+        (typeof e.min === "number" && n < e.min) ||
+        (typeof e.max === "number" && n > e.max),
+    )
+      ? "excluded must lie within min and max"
       : null,
   (e) => patternProblem(e.type, e.pattern),
   (e) =>
@@ -478,6 +496,9 @@ function integerProblem(value: unknown, field?: Field): string | null {
     name: "a whole number",
     accepts: Number.isSafeInteger,
   });
+  const holes = field?.excluded ?? [];
+  if (bound === null && typeof value === "number" && holes.includes(value))
+    return `must not be ${holes.join(" or ")}`;
   return bound === null ? null : `must be ${[bound, ...words].join(" or ")}`;
 }
 

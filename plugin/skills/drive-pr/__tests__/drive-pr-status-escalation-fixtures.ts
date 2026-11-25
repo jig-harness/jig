@@ -8,11 +8,13 @@ export function createStatusEscalationFixtures() {
   async function driveState(
     stateDir: string,
     args: string[],
+    cwd?: string,
   ): Promise<{ stdout: string; exitCode: number }> {
     const proc = Bun.spawn(
       scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args),
       {
         env: { ...process.env, DRIVE_PR_STATE_DIR: stateDir },
+        ...(cwd === undefined ? {} : { cwd }),
         stdin: "ignore",
         stdout: "pipe",
         stderr: "pipe",
