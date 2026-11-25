@@ -170,7 +170,8 @@ export function reviewedShaFrom(body: string): string | undefined {
  * the bare fingerprint. See `collectAddressed` for why the two are not
  * interchangeable, and for what the round bounds.
  */
-export const ADDRESSED_MARKER = "drive-pr-addressed";
+import { ADDRESSED_MARKER } from "../../../shared/summary-answer-blocks.ts";
+export { ADDRESSED_MARKER };
 
 /**
  * How many further reviewer rounds a `winddown-deferred` marker keeps

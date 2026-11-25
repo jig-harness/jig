@@ -6,6 +6,10 @@
  * these entries (`plugin/protocol/`).
  */
 import { plain, type RecordKind } from "./registry-kind.ts";
+import {
+  ADDRESSED_MARKER,
+  SUMMARY_ANSWER_MARKER,
+} from "../summary-answer-blocks.ts";
 
 /** A pull request's number: the key of a record about one pull request. */
 const PR_NUMBER = /^[1-9]\d*$/;
@@ -100,7 +104,7 @@ export const FORGE: RecordKind[] = [
     medium: "forge",
     owner: `${DRIVE}answer-summary-finding.ts`,
     at: "a comment on the pull request answering a summary finding",
-    markers: ["drive-pr-addressed", "drive-pr-summary-answer"],
+    markers: [ADDRESSED_MARKER, SUMMARY_ANSWER_MARKER],
     version: 0,
     meaning:
       "The drive's answer to a review finding the reviewer could not anchor to a line of the diff. A round groups its answers in one comment, with a distinct outcome, reason and fingerprint marker for each finding. Trusted markers let a retry skip delivered answers.",

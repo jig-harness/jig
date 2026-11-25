@@ -58,6 +58,8 @@ export interface GenerateResult {
   unreadable: string | null;
   /** The files a write changed, relative to the root. */
   written: string[];
+  /** Every generated output, relative to the root. */
+  outputs: string[];
   /** The merge base a check compared with. */
   comparedWith: string | null;
 }
@@ -86,11 +88,12 @@ export function generate(options: GenerateOptions): GenerateResult {
   const chapters = options.chapters ?? CHAPTERS;
   const { root } = options;
   const plan = planOutputs(root, chapters);
+  const outputs = plan.outputs.map((output) => output.path);
   const findings = [...plan.findings];
   const written: string[] = [];
   if (!options.check) {
     written.push(...writeOutputs(root, plan.outputs));
-    return { findings, unreadable: null, written, comparedWith: null };
+    return { findings, unreadable: null, written, outputs, comparedWith: null };
   }
   for (const output of plan.outputs)
     for (const part of staleness(root, output))
@@ -103,10 +106,22 @@ export function generate(options: GenerateOptions): GenerateResult {
   findings.push(...heldFindings(root, chapters));
   const base = mergeBase(root, options.base ?? null, options.env);
   if (!base.ok)
-    return { findings, unreadable: base.reason, written, comparedWith: null };
+    return {
+      findings,
+      unreadable: base.reason,
+      written,
+      outputs,
+      comparedWith: null,
+    };
   const atBase = baseData(root, base.commit);
   if (!atBase.ok)
-    return { findings, unreadable: atBase.reason, written, comparedWith: null };
+    return {
+      findings,
+      unreadable: atBase.reason,
+      written,
+      outputs,
+      comparedWith: null,
+    };
   findings.push(
     ...atBase.findings,
     ...compareWithBase({
@@ -121,6 +136,7 @@ export function generate(options: GenerateOptions): GenerateResult {
     findings,
     unreadable: null,
     written,
+    outputs,
     comparedWith: `${base.commit.slice(0, 12)} (the merge base with ${base.ref})`,
   };
 }
@@ -180,7 +196,10 @@ function reportWrite(
   staging: boolean,
 ): number {
   for (const file of result.written) console.log(`protocol: wrote ${file}`);
-  if (staging && stage(root, result.written) !== 0) return 2;
+  // The index can hold an older generated output even where the working tree
+  // already matches the rendered value. Stage the complete output set so a
+  // source-only commit cannot leave that stale index entry behind.
+  if (staging && stage(root, result.outputs) !== 0) return 2;
   return result.findings.length ? 1 : 0;
 }
 

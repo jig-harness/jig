@@ -69,6 +69,7 @@ pre-commit:
         - "plugin/shared/records/not-records.ts"
         - "plugin/shared/records/envelope.ts"
         - "plugin/shared/reply-markers.ts"
+        - "plugin/shared/summary-answer-blocks.ts"
         - "plugin/shared/records/followup-values.ts"
         - "plugin/shared/records/writer.ts"
         - "plugin/shared/errors.ts"
