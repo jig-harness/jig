@@ -8,6 +8,7 @@ import type { AccountIdentity } from "./../identity.ts";
 import type { InfraRecovery } from "./infra-recovery.ts";
 import type { CiAttempts } from "./ci-attempts.ts";
 import type { RoundFinish } from "../state/round-finish.ts";
+import type { CircuitLimits } from "./circuit-breaker.ts";
 
 export interface DriveRoundContext {
   /** A requested worktree settlement is pending until a review pass succeeds. */
@@ -75,6 +76,8 @@ export interface DriveRoundContext {
   maxRoundsN: number;
   /** The passes allowed on one head (`rearm-budget.ts`). */
   maxAttemptsN: number;
+  /** The round ceiling and wall-clock cap the budget read checks (`circuit-breaker.ts`). */
+  circuit?: CircuitLimits;
   /** This round spent the last head or the last pass on a head the budget allows: no further attempt remains after it. */
   budgetAtLimit: boolean;
   /** `drive.pass_deadline_retries`, read once at the start of the drive. */

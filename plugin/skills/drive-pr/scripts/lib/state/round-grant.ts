@@ -73,10 +73,17 @@ export interface RearmGrant {
  * before the one the drive resumes on plus `base`, so the resumed head is
  * the first of `base` more. A stop on either counter grants both: the heads
  * as above and a fresh count of passes on the resumed head.
+ *
+ * `limit` is the round limit the drive stopped on: the budget, or the round
+ * ceiling when that is lower (`circuit-breaker.ts`). A grant is only ever
+ * enforced under the ceiling, so it never reaches past it.
  */
-export function rearmGrant(spent: SpentRounds, base: number): RearmGrant {
-  const stopped =
-    spent.rounds >= base + spent.granted || spent.attempts >= base;
+export function rearmGrant(
+  spent: SpentRounds,
+  base: number,
+  limit = base + spent.granted,
+): RearmGrant {
+  const stopped = spent.rounds >= limit || spent.attempts >= base;
   if (!stopped) return { granted: spent.granted, resetAttempts: false };
   return {
     granted: Math.max(

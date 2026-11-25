@@ -26,6 +26,9 @@ drive:
   # A stand-in plan command: the round-plan probes write their stub at this
   # path inside each scratch repository.
   validation_plan_command: bun tools/change-areas/resolve.ts --files - --format json
+  # The round budget suites seed and spend more rounds than the default
+  # round ceiling; the ceiling's own suite sets it per case.
+  max_total_rounds: 50
 ci:
   # The suite exercises the label hold: workflows skip their expensive jobs
   # while the label is present and run them in full when it is removed.

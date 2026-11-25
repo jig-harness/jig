@@ -55,6 +55,11 @@ import {
 } from "../../drive-pr/scripts/lib/overlay.ts";
 import { DEFAULT_REVIEWER_POLL_MAX_SECONDS } from "../../drive-pr/scripts/lib/status/reviewer-poll.ts";
 import {
+  DEFAULT_MAX_TOTAL_ROUNDS,
+  MAX_TOTAL_ROUNDS_BOUND,
+  MIN_WALL_CLOCK_HOURS,
+} from "../../drive-pr/scripts/lib/circuit-settings.ts";
+import {
   CODEX_PASS_ARG_PATTERN,
   codexPassArgsProblem,
   DEFAULT_CODEX_PASS_ARGS,
@@ -503,6 +508,7 @@ describe("the reading skills", () => {
       "pull_requests.branch_name": policy.branchName,
       "pull_requests.issue_link": policy.issueLink,
       "drive.max_rounds": DEFAULT_MAX_ROUNDS,
+      "drive.max_total_rounds": DEFAULT_MAX_TOTAL_ROUNDS,
       "drive.status_poll.waiting_share": statusPolling.waitingShare,
       "drive.status_poll.max_interval_seconds":
         statusPolling.maxIntervalSeconds,
@@ -609,6 +615,23 @@ describe("the reading skills", () => {
     expect(problems(2 ** 53)).toEqual([
       "drive.max_rounds must be a whole number ≥ 1",
     ]);
+  });
+
+  test("bound the round ceiling and the wall-clock cap as the drive reads them", () => {
+    expect(field("drive.max_total_rounds")?.min).toBe(1);
+    expect(field("drive.max_total_rounds")?.max).toBe(MAX_TOTAL_ROUNDS_BOUND);
+    expect(field("drive.max_wall_clock_hours")?.min).toBe(MIN_WALL_CLOCK_HOURS);
+    const problems = (drive: Record<string, unknown>) =>
+      checkConfig({ drive }, schema).map((f) => f.message);
+    expect(
+      problems({ max_total_rounds: 50, max_wall_clock_hours: 0.1 }),
+    ).toEqual([]);
+    expect(problems({ max_total_rounds: 51 }).join()).toContain(
+      "drive.max_total_rounds",
+    );
+    expect(problems({ max_wall_clock_hours: 0 }).join()).toContain(
+      "drive.max_wall_clock_hours",
+    );
   });
 
   test("reject the drive.pass_args words the reading skill refuses, and accept the rest", () => {

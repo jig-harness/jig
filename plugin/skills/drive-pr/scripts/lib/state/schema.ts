@@ -38,6 +38,7 @@ import { isGitSha } from "../cli.ts";
 import { isFixDependentOutcome, isOutcome, type Outcome } from "../outcome.ts";
 import { isActorId } from "./actor.ts";
 import type { DrivenBranch } from "./driven-branch.ts";
+import type { CircuitBreakerState } from "./circuit-breaker.ts";
 import { isAccountHash } from "../identity.ts";
 import type { TakeoverRecord } from "./takeover.ts";
 import { type ParkedItem, isParkedItem } from "./park-frame.ts";
@@ -222,11 +223,10 @@ export type CiHoldState =
  * and `held` were the identical construct and would have kept the dual-shape
  * path alive on their own.
  *
- * An older file is now rejected by `isUsableState`, which surfaces as the
- * explicit refusal in `store.read()` — never truncated, never silently
- * migrated. Recovering one is a deliberate `drive-state.ts reset`.
+ * An older file is rejected by `isUsableState` (`store.read()` refuses it, never
+ * truncated or silently migrated); recovering one is a `drive-state.ts reset`.
  */
-export interface DriveState {
+export interface DriveState extends CircuitBreakerState {
   pr: number;
   rounds: number;
   lastCountedHead: string;

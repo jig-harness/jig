@@ -94,6 +94,7 @@ import {
 } from "./resolution-receipt.ts";
 import { decisionAnswerLines } from "./park-frame.ts";
 import { parseMs } from "../../../../../shared/time.ts";
+import * as circuit from "./circuit-breaker.ts";
 
 export const LEDGER_MARKER = "<!-- drive-pr-ledger -->";
 export const CLAIM_MARKER = "<!-- drive-pr-takeover-claim -->";
@@ -130,7 +131,7 @@ import {
   TAKEOVER_PAYLOAD_SHAPE,
 } from "../../../../../shared/records/forge-claim-shapes.ts";
 
-export interface Ledger {
+export interface Ledger extends circuit.LedgerCircuit {
   ledgerVersion: number;
   /** Monotonic: every write is one past the highest the writer has seen. */
   generation: number;
@@ -161,11 +162,7 @@ export interface Ledger {
   events?: DriveEvent[];
   /** Optional CI telemetry; it never changes the meaning of control events. */
   ciActions?: CiAction[];
-  /**
-   * The review arbiter's rulings (`rulings.ts`), so a drive recovered in
-   * another clone parks under the same boundary. Absent in a ledger written
-   * before they were carried, which seeds none over the local ones.
-   */
+  /** The review arbiter's rulings (`rulings.ts`), so a drive recovered in another clone parks under the same boundary; absent in an older ledger, which seeds none over the local ones. */
   rulings?: ArbiterRuling[];
   /** The resolution receipts of the parks re-arms unparked (`resolution-receipt.ts`); absent in a ledger written before them. */
   resolvedParks?: ResolutionReceipt[];
@@ -211,6 +208,7 @@ export function ledgerFromState(
     attemptsHead: s.attemptsHead,
     deadlineRetries: s.deadlineRetries ?? 0,
     ...(s.roundsGranted ? { roundsGranted: s.roundsGranted } : {}),
+    ...circuit.circuitLedgerFields(s),
     phase: s.phase,
     lastCountedHead: s.lastCountedHead,
     verifiedSha: s.verifiedSha,
@@ -589,6 +587,7 @@ export function parseLedger(body: string): ParsedLedger | null {
     !/^[a-f0-9]{40}$/.test(ledger.reviewCarriedFrom)
   )
     delete ledger.reviewCarriedFrom;
+  for (const f of circuit.malformedLedgerCircuit(read.fields)) delete ledger[f];
   const { probe, ...driver } = ledger.driver;
   const clean = probeStopOf(probe);
   ledger.driver =
@@ -1012,10 +1011,10 @@ export function seedFromLedger(
       : {}),
     ledgerGeneration: l.generation,
   };
-  // The ledger is the history being resumed: an absent grant means none,
-  // whatever this clone's older state held.
+  // The ledger is the history being resumed: an absent grant means none.
   if (l.roundsGranted === undefined) delete state.roundsGranted;
   else state.roundsGranted = l.roundsGranted;
+  circuit.seedCircuit(state, l);
   if (!isUsableState(state, local.pr))
     return {
       error: `the ledger (generation ${l.generation}) does not describe a usable drive state`,

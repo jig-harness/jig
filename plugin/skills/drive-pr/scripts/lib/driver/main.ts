@@ -599,8 +599,14 @@ async function drive(ctx: DriveContext): Promise<number> {
   const probeFlags = dryRun ? ["--no-count", "--once"] : [];
 
   // The budget the rounds enforce: the base plus what a re-arm granted, and
-  // under `--rearm-budget` another grant when the counters spent it.
-  const budget = await roundBudget(pr, maxRoundsN, options.rearmBudget, dryRun);
+  // under `--rearm-budget` another grant when the counters spent it, held to
+  // the round ceiling; a re-arm that finds the ceiling spent stops here.
+  const budget = await roundBudget(pr, maxRoundsN, {
+    rearm: options.rearmBudget,
+    pastCeiling: options.pastCeiling,
+    dryRun,
+  });
+  if (typeof budget === "number") return await settlement.done(budget);
   await announceRoundBudget(pr, budget.rounds, handoffAt);
 
   await capturePickup(pr, dryRun, diag);
@@ -615,6 +621,7 @@ async function drive(ctx: DriveContext): Promise<number> {
     held,
     maxRoundsN: budget.rounds,
     maxAttemptsN: budget.attempts,
+    circuit: budget.circuit,
     forward,
     probeFlags,
     markReadyPolicy,

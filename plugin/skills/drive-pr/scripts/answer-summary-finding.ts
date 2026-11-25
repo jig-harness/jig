@@ -88,8 +88,11 @@
  * gate here: a fix-dependent marker stops being honoured once the reviewer's
  * own review passes the head it names (`collectAddressed` in
  * `summary-findings.ts`), so a wrong answer survives at most the one head of
- * the `at`-position grace — or `WINDDOWN_EXEMPTION_ROUNDS` for a
- * winddown-deferred backlog entry — and is then re-asked.
+ * the `at`-position grace and is then re-asked. A non-blocking
+ * winddown-deferred backlog entry is the exception: the reviewer forwards it
+ * without re-judging it, so its answer stands on every later round, and a
+ * regression the reviewer judges to block comes back outside that set
+ * (`blocking: true`, a body bullet or a thread) and is asked again.
  *
  * That is a bound on intermediate rounds only, and deliberately not claimed as
  * more. At the head a drive CONVERGES on, no later

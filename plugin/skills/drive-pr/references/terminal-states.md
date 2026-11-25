@@ -622,7 +622,26 @@ quiet stop that reads like success. The budget is `--max-rounds` plus the
 rounds a re-arm granted (`roundsGranted`, `lib/state/round-grant.ts`): a
 drive started with `--rearm-budget` on a spent budget is granted one more,
 past the rounds it spent, once per such re-arm, so a re-armed drive stays
-bounded.
+bounded. Above both sits the round ceiling (`drive.max_total_rounds`, default
+8, at most 50): the distinct reviewed heads of the pull request across every
+launch, re-arm and takeover, which no grant reaches past
+(`lib/driver/circuit-breaker.ts`). The round check that counts a head past it,
+a re-arm that finds it spent, or the optional wall-clock cap
+(`drive.max_wall_clock_hours`, measured from `firstDrivenAt`) stops the drive
+with [`HITL_PARKED`](../../../protocol/drive-exits.md) on a `round-ceiling`
+decision; if the park cannot be recorded the drive stops with `MAX_ROUNDS`
+instead. Only a person's override (`--past-ceiling`, or the park's
+**Allow one more budget** answer) raises it, by one `--max-rounds` block.
+
+**The divergence stop parks rounds that create work as fast as they settle
+it.** At each ROUND_READY gate the driver compares the open thread and
+summary-finding keys with the previous gate's (`openFindings` in the drive
+state): keys newly open are the round's `newFindings`, keys no longer open its
+`fixedFindings`, kept for the last four rounds in `roundFindings`. A gate
+whose keys did not move records nothing. Two diverging rounds in a row
+(`newFindings ≥ fixedFindings` and `newFindings ≥ 1`) with a finding still
+open park `divergence-stop` ([`HITL_PARKED`](../../../protocol/drive-exits.md));
+any answer to it clears the count.
 
 **A second, earlier guard catches the spin `--max-rounds` only bounds**: the
 stall stop ([`STALLED`](../../../protocol/drive-exits.md)). Each ROUND_READY gate fingerprints the observable
@@ -1803,7 +1822,10 @@ Related orderings, all enforced rather than documented:
   shares their fingerprint. The summary JSON exposes skipped entries in
   `ignoredBacklog`, and status exposes their fingerprints in
   `work.summaryIgnoredBacklogKeys`. They require no replies and do not block
-  convergence.
+  convergence. An answer already given to a non-blocking `winddown-deferred`
+  entry stands on every later round, however many pass; the entry returns as
+  work only when the reviewer emits it as blocking, as a body bullet or as a
+  thread.
 - A round groups its held summary answers in one comment, keeping each
   finding's outcome, reason and fingerprint marker. Delivery retries respect
   trusted markers already on the PR. Markers for fix-dependent outcomes

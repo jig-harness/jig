@@ -294,9 +294,8 @@ export interface Fixture {
     outcome?: "accepted" | "moot";
     /**
      * The `#<round>` suffix a real answer stamps. Omitted writes a roundless
-     * marker (the shape a roundless sticky produces); supplying one far enough
-     * behind the sticky's own round is how a probe models a marker whose
-     * winddown exemption has LAPSED — present on the PR, but no longer live.
+     * marker (the shape a roundless sticky produces); one behind the sticky's
+     * own round models an answer posted in an earlier round.
      */
     round?: number;
   }>;

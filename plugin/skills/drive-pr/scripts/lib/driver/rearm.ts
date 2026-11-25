@@ -64,6 +64,7 @@ import { grantCancellation } from "./../cancelled-recovery-state.ts";
 import { swallow } from "../../../../../shared/errors.ts";
 
 import { parkAnswers } from "./park-answers.ts";
+import { applyCircuitAnswers } from "./circuit-breaker.ts";
 import { laggingAnswerPublication } from "./answer-publication.ts";
 
 import { pinsEmptyPassArgs } from "./../pass-args.ts";
@@ -366,6 +367,7 @@ export async function admitAnsweredParks(
     return dryRun ? "" : rearmNotice(carried, file);
   const fresh = [...found.verdicts, ...found.resolved];
   if (dryRun) {
+    await applyCircuitAnswers(pr, found.verdicts, true);
     console.error(
       `(dry-run) re-arm would unpark ${fresh.length} settled item(s) and hand any answers to the first round.`,
     );
@@ -434,12 +436,14 @@ export async function admitAnsweredParks(
  * once-per-head re-run spent and park the same question again. Answers an
  * earlier arm unparked are granted again too, so a stop between the unpark
  * and the grant loses nothing; the grant names its answers, so they count
- * once.
+ * once. The circuit breaker's parks are answered here too
+ * (`circuit-breaker.ts`).
  */
 async function grantAnsweredRerun(
   pr: string,
   verdicts: readonly PendingVerdict[],
 ): Promise<void> {
+  await applyCircuitAnswers(pr, verdicts, false);
   for (const verdict of verdicts.filter(answerGrantsRerun)) {
     const head = answeredHead(verdict);
     if (head === null) continue;

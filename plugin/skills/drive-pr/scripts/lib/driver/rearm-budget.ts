@@ -1,9 +1,12 @@
 /**
  * The round budget a drive enforces: `--max-rounds` (or `drive.max_rounds`)
- * plus the rounds a re-arm granted (`lib/state/round-grant.ts`). A drive
- * started with `--rearm-budget` whose durable counters have spent that
- * budget grants one more first, so a re-arm of a `MAX_ROUNDS` stop runs
- * passes instead of stopping on its first check.
+ * plus the rounds a re-arm granted (`lib/state/round-grant.ts`), capped by
+ * the pull request's round ceiling (`circuit-breaker.ts`). A drive started
+ * with `--rearm-budget` whose durable counters have spent that budget grants
+ * one more first, so a re-arm of a `MAX_ROUNDS` stop runs passes instead of
+ * stopping on its first check; a re-arm that finds the ceiling spent parks
+ * `round-ceiling` instead, unless a person's override (`--past-ceiling`, or
+ * the park's override answer) raises the ceiling by one block.
  */
 import { fail, isDigits } from "./../cli.ts";
 import { ghCall, helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
@@ -12,6 +15,22 @@ import { isRecord } from "../../../../../shared/guards.ts";
 import { rearmGrant, type SpentRounds } from "./../state/round-grant.ts";
 import { HANDOFF_TELLS_REFUSED } from "./../state/ledger-mirror.ts";
 import { driveState } from "./paths.ts";
+import {
+  type CircuitLimits,
+  drivenHours,
+  pastCeilingAnswered,
+  readCircuitSettings,
+  recordFirstDriven,
+  stopAtCeiling,
+  storeRaise,
+  wallClockReached,
+} from "./circuit-breaker.ts";
+import {
+  atRoundCeiling,
+  raisedCeiling,
+  raisedWallClock,
+  roundCeiling,
+} from "./../state/circuit-breaker.ts";
 
 /** A whole number a stored state holds, or `null`. */
 function count(v: unknown): number | null {
@@ -68,7 +87,10 @@ async function headCountedFor(
 }
 
 /** The durable counters, read the way `readRoundBudget` reads them; an unreadable one stops the drive. */
-async function spentRounds(pr: string, rearm: boolean): Promise<SpentRounds> {
+async function spentRounds(
+  pr: string,
+  rearm: boolean,
+): Promise<SpentRounds & { raised: number; raisedHours: number }> {
   const opts: RunOpts = {
     stderr: "inherit",
     timeoutSec: helperTimeoutSeconds(),
@@ -80,12 +102,16 @@ async function spentRounds(pr: string, rearm: boolean): Promise<SpentRounds> {
   const roundsRaw = rounds.stdout.trim();
   const stored = count(rec.attempts);
   const granted = count(rec.roundsGranted ?? 0);
+  const raised = count(rec.ceilingRaised ?? 0);
+  const raisedHours = rec.wallClockRaisedHours ?? 0;
   if (
     rounds.code !== 0 ||
     !isDigits(roundsRaw) ||
     !isRecord(state) ||
     stored === null ||
-    granted === null
+    granted === null ||
+    raised === null ||
+    typeof raisedHours !== "number"
   )
     return fail(
       1,
@@ -107,6 +133,8 @@ async function spentRounds(pr: string, rearm: boolean): Promise<SpentRounds> {
     granted,
     headCounted,
     headKnown: head !== null || !rearm,
+    raised,
+    raisedHours,
   };
 }
 
@@ -140,24 +168,55 @@ export interface RoundLimits {
   rounds: number;
   /** Passes on one head: the base. */
   attempts: number;
+  /** The round ceiling and wall-clock cap the rounds check. */
+  circuit: CircuitLimits;
+}
+
+/** How this launch was asked to treat a spent budget. */
+export interface BudgetLaunch {
+  /** `--rearm-budget`: grant one more budget once the counters spent it. */
+  rearm: boolean;
+  /** `--past-ceiling`: a person's override of a spent round ceiling. */
+  pastCeiling: boolean;
+  dryRun: boolean;
 }
 
 /**
- * The budget this drive enforces. With `rearm`, a spent budget is extended
- * by `base` rounds, recorded durably (except on a dry run, which only says
- * what it would grant), published to the drive ledger so a takeover keeps it,
- * and announced.
+ * The budget this drive enforces, or the exit it stops with when a re-arm
+ * finds the round ceiling spent without a person's override. With `rearm`,
+ * a spent budget is extended by `base` rounds, recorded durably (except on a
+ * dry run, which only says what it would grant), published to the drive
+ * ledger so a takeover keeps it, and announced; the budget enforced never
+ * reaches past the ceiling. A person's override raises the ceiling (and a
+ * spent wall-clock cap) first, and implies the re-arm.
  */
 export async function roundBudget(
   pr: string,
   base: number,
-  rearm: boolean,
-  dryRun: boolean,
-): Promise<RoundLimits> {
+  launch: BudgetLaunch,
+): Promise<RoundLimits | number> {
+  const { dryRun } = launch;
+  const settings = readCircuitSettings();
+  const override = launch.pastCeiling || pastCeilingAnswered();
+  const rearm = launch.rearm || override;
   const spent = await spentRounds(pr, rearm);
+  const firstDrivenAt = await recordFirstDriven(pr, dryRun);
+  const circuitAt = (raised: number, raisedHours: number): CircuitLimits => ({
+    pr,
+    maxTotal: settings.maxTotal,
+    raised,
+    ceiling: roundCeiling(settings.maxTotal.value, raised),
+    wallClock: settings.wallClock,
+    raisedHours,
+    firstDrivenAt,
+    block: base,
+  });
+  const stoppedAt = circuitAt(spent.raised, spent.raisedHours);
+  let circuit = stoppedAt;
   const limits = (granted: number) => ({
-    rounds: base + granted,
+    rounds: Math.min(base + granted, circuit.ceiling),
     attempts: base,
+    circuit,
   });
   if (!rearm) {
     // A plain restart relies on what an earlier re-arm stored (a grant, or an
@@ -168,7 +227,39 @@ export async function roundBudget(
     if (!dryRun) await publishGrant(pr, spent.granted > 0);
     return limits(spent.granted);
   }
-  const grant = rearmGrant(spent, base);
+  const atCeiling = atRoundCeiling(spent, stoppedAt.ceiling);
+  if (atCeiling || wallClockReached(stoppedAt)) {
+    const cause = atCeiling ? "rounds" : "wall-clock";
+    const before = spent.rounds - (spent.headCounted ? 1 : 0);
+    if (!override) {
+      console.error(
+        `re-arm: PR #${pr} has spent its ${atCeiling ? `round ceiling of ${stoppedAt.ceiling}` : "wall-clock cap"}; a re-arm grants nothing past it without a person's override (--past-ceiling, or the round-ceiling park's override answer).`,
+      );
+      return await stopAtCeiling(stoppedAt, cause, before, dryRun);
+    }
+    if (spent.headKnown === false)
+      return fail(
+        1,
+        `drive.ts: cannot read the head of PR #${pr}, so the override's ceiling cannot be fixed; re-arm again`,
+      );
+    circuit = circuitAt(
+      raisedCeiling(spent, settings.maxTotal.value, spent.raised, base),
+      raisedWallClock(
+        settings.wallClock?.value ?? null,
+        spent.raisedHours,
+        drivenHours(stoppedAt),
+      ),
+    );
+    if (!dryRun) await storeRaise(pr, circuit.raised, circuit.raisedHours);
+    console.error(
+      `re-arm: a person's override raised PR #${pr}'s round ceiling to ${circuit.ceiling} (${circuit.raised} added to ${settings.maxTotal.value})${settings.wallClock === null ? "" : ` and its wall-clock cap to ${Math.round((settings.wallClock.value + circuit.raisedHours) * 10) / 10}h`}${dryRun ? " [dry run: not recorded]" : ""}`,
+    );
+  }
+  const grant = rearmGrant(
+    spent,
+    base,
+    Math.min(base + spent.granted, stoppedAt.ceiling),
+  );
   if (grant.granted === spent.granted && !grant.resetAttempts) {
     // A grant applied by an earlier launch whose publication failed is
     // published again before this drive relies on it.
@@ -182,8 +273,8 @@ export async function roundBudget(
       1,
       `drive.ts: cannot read the head of PR #${pr}, so the re-arm's round grant cannot be fixed; re-arm again`,
     );
-  const was = base + spent.granted;
-  const budget = base + grant.granted;
+  const was = Math.min(base + spent.granted, stoppedAt.ceiling);
+  const budget = limits(grant.granted).rounds;
   if (dryRun) {
     console.error(
       `re-arm: PR #${pr} has spent its round budget of ${was}; a re-arm would grant ${base} more rounds (budget ${budget}) [dry run: not recorded]`,
@@ -207,7 +298,7 @@ export async function roundBudget(
     );
   await publishGrant(pr);
   console.error(
-    `re-arm: PR #${pr} had spent its round budget of ${was}; the budget is now ${budget} heads (${base} more, counting the head it resumes on) and ${base} passes on a head, and the drive stops on MAX_ROUNDS again when it spends them`,
+    `re-arm: PR #${pr} had spent its round budget of ${was}; the budget is now ${budget} heads (${budget === base + grant.granted ? `${base} more, counting the head it resumes on` : `held to the round ceiling of ${circuit.ceiling}`}) and ${base} passes on a head, and the drive stops on MAX_ROUNDS again when it spends them`,
   );
   return limits(grant.granted);
 }

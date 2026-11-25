@@ -116,7 +116,9 @@ the drive reads best-effort and replaces with the default when mistyped.
 | `ci.advisory_checks` | Exact check names that need a person's judgment when they are the only failures on a converged head. Parks once under `reviewer-posture` with Fix the finding (one repair attempt), Waive it (a recorded judgment), or Leave it to me. Mixed failures target the other checks. Read from the base branch, bounded by the integration branch for a stack. Has no effect when `autonomy.park_classes` omits `reviewer-posture`; the configuration check warns. A waiver never bypasses required-check freshness or certification | `[]` |
 | `ci.repair_skill` | The skill a CI-repair pass loads before it repairs, such as the repository's own skill for a CI service that reports as commit statuses; the pass is told it in `DRIVE_PR_ROUND_REPAIR_SKILL`. Such a pass reads a failing status's log with `fix-ci`, through `ci.log_command`, which runs in a copy of the default branch's files, not the pull request's checkout ([CONFIGURATION.md](../../CONFIGURATION.md#ci)) | Unset: the pass repairs with [`/jig:fix-ci`](../fix-ci/SKILL.md)'s procedure |
 | `pull_requests.mark_ready` | When the drive marks a draft Ready: a round number N (after round N completes), `converged` (only when the draft-reviewing reviewer has nothing left), or `never`. A draft that converges before round N is marked at convergence | `1`: after the first completed round |
-| `drive.max_rounds` | Whole number ≥ 1: how many rounds a drive runs before it stops unconverged ([`MAX_ROUNDS`](../../protocol/drive-exits.md)). `--max-rounds N` overrides it for one run; a re-arm after a `MAX_ROUNDS` stop grants one more budget of this size ([below](#picking-up-a-stopped-drive)); a malformed value stops the drive with [`INDETERMINATE`](../../protocol/drive-exits.md) unless the flag names the budget | `10` |
+| `drive.max_rounds` | Whole number ≥ 1: how many rounds a drive runs before it stops unconverged ([`MAX_ROUNDS`](../../protocol/drive-exits.md)). `--max-rounds N` overrides it for one run; a re-arm after a `MAX_ROUNDS` stop grants one more budget of this size, within the round ceiling ([below](#picking-up-a-stopped-drive)); a malformed value stops the drive with [`INDETERMINATE`](../../protocol/drive-exits.md) unless the flag names the budget | `10` |
+| `drive.max_total_rounds` | Whole number from 1 to 50: the pull request's round ceiling, the most distinct reviewed heads it may spend across every launch, re-arm and takeover ([§ The round ceiling and the divergence stop](#the-round-ceiling-and-the-divergence-stop)); a malformed value stops the drive with [`INDETERMINATE`](../../protocol/drive-exits.md) | `8` |
+| `drive.max_wall_clock_hours` | Number of hours, at least `0.1`: how long a pull request may be driven from its first launch, never reset by a re-arm or takeover; reaching it parks the drive as the round ceiling does | No cap |
 | `drive.pass_deadline_retries` | Whole number ≥ 0: how many passes killed at their deadline one drive restarts from before it stops with [`PASS_DEADLINE`](../../protocol/drive-exits.md) ([restarts](#a-stopped-drive-restarts-itself)); a malformed value stops the drive with [`INDETERMINATE`](../../protocol/drive-exits.md) | `2` |
 | `drive.escape_baseline_doc` | Path, relative to the repository root, to the document recording the human-judged defect-escape baseline (`## Baseline window: <from> → <to>` headings, each followed by an `**Escape rate: <n> of <total> ...**` line). The loop-cost reports print its latest figure next to their speed numbers | `docs/review-loop-baseline.md`; a missing document reads as "unmeasured" |
 | `fleet_health.config` | Path, relative to the repository root or absolute, to the fleet-health settings file that `fleet-health.ts` and the per-round fleet-health warnings read ([format](../../CONFIGURATION.md#the-fleet-health-file)) | `.config/fleet-health.yaml` |
@@ -569,7 +571,7 @@ Unless arming is set to `print`, a pickup running under the process runtime gets
 the pull request to the dispatcher, which admits its first drive after
 the pickup ends.
 
-A tab outlives the session and shows the passes as they run, and the session that armed it ends without a drive running beside it. Once the drive ends with nothing for a person (converged, merged or closed, taken over, re-armable, stopped or paused by a person, or refused because another driver holds the pull request) the tab closes itself; a park or a failure keeps it open for you, and arming the pull request again closes that earlier tab if nothing is running in it. What the tab showed stays in the driver log, the ledger and the pass's session transcript. It is a fresh login shell of yours: `bun`, the agent's command (`claude` or `codex`) and the account or profile the drive uses come from that shell, not from the session. Since that shell does not inherit the session's `JIG_LAUNCH`, a dispatched session's tab carries its launch as `JIG_DISPATCHED_FROM`, which the driver hands to every pass, so a gate command that runs less in dispatched sessions (Jig's own `gates.dispatch_fast`) treats those passes as dispatched; a drive armed outside any dispatched session carries no launch record and keeps the full gates. The script waits for `drives.ts` to list the new drive (`DRIVE_PR_ARM_CONFIRM_SEC`, 45 seconds by default), and opens no tab while a drive already holds the pull request; under `auto`, a drive it does not see in time is started in the background instead, and one the tab did start meets the second on its lock ([the lock or lease refusal](../../protocol/drive-exits.md)). A Windows host opens no tab, since Orca's tab there can run `cmd.exe` or PowerShell and the command is quoted for a POSIX shell. `--mode` overrides the setting for one arm, `--pass-model` the pass model and `--pass-args` the extra pass arguments (both forwarded to `drive.ts`, so the driver log names them), and `--max-rounds`, `--keep-draft`, `--handoff-at` and `--rearm-budget` pass through to `drive.ts`. A failure answers with the same JSON, `status: failed` and its `reason`. The command is the pass command of the agent tool the session runs in: a Codex session arms Codex's, in a tab where it can open one and otherwise through its managed command tool (`exec_command`, then `write_stdin` with the returned session handle). If the host exposes no managed background tool, print the command and report the limitation. Keep the session alive while the driver runs if the host terminates children on session exit; use a terminal tab for a drive that must outlive it. `--pass-model` works for either vendor; `--pass-args` remains Claude Code's and is refused for Codex. A session of any other tool, or a human checkpoint the run has no clearance for, gets the command only.
+A tab outlives the session and shows the passes as they run, and the session that armed it ends without a drive running beside it. Once the drive ends with nothing for a person (converged, merged or closed, taken over, re-armable, stopped or paused by a person, or refused because another driver holds the pull request) the tab closes itself; a park or a failure keeps it open for you, and arming the pull request again closes that earlier tab if nothing is running in it. What the tab showed stays in the driver log, the ledger and the pass's session transcript. It is a fresh login shell of yours: `bun`, the agent's command (`claude` or `codex`) and the account or profile the drive uses come from that shell, not from the session. Since that shell does not inherit the session's `JIG_LAUNCH`, a dispatched session's tab carries its launch as `JIG_DISPATCHED_FROM`, which the driver hands to every pass, so a gate command that runs less in dispatched sessions (Jig's own `gates.dispatch_fast`) treats those passes as dispatched; a drive armed outside any dispatched session carries no launch record and keeps the full gates. The script waits for `drives.ts` to list the new drive (`DRIVE_PR_ARM_CONFIRM_SEC`, 45 seconds by default), and opens no tab while a drive already holds the pull request; under `auto`, a drive it does not see in time is started in the background instead, and one the tab did start meets the second on its lock ([the lock or lease refusal](../../protocol/drive-exits.md)). A Windows host opens no tab, since Orca's tab there can run `cmd.exe` or PowerShell and the command is quoted for a POSIX shell. `--mode` overrides the setting for one arm, `--pass-model` the pass model and `--pass-args` the extra pass arguments (both forwarded to `drive.ts`, so the driver log names them), and `--max-rounds`, `--keep-draft`, `--handoff-at`, `--rearm-budget` and `--past-ceiling` pass through to `drive.ts`. A failure answers with the same JSON, `status: failed` and its `reason`. The command is the pass command of the agent tool the session runs in: a Codex session arms Codex's, in a tab where it can open one and otherwise through its managed command tool (`exec_command`, then `write_stdin` with the returned session handle). If the host exposes no managed background tool, print the command and report the limitation. Keep the session alive while the driver runs if the host terminates children on session exit; use a terminal tab for a drive that must outlive it. `--pass-model` works for either vendor; `--pass-args` remains Claude Code's and is refused for Codex. A session of any other tool, or a human checkpoint the run has no clearance for, gets the command only.
 
 ### Which working tree drives it
 
@@ -733,7 +735,8 @@ mechanical state rather than on anyone's judgement:
   open first. A re-arm with `--rearm-budget` grants one more round budget:
   `drive.max_rounds` (or `--max-rounds`) more distinct heads, counting the
   head the drive resumes on, and a fresh count of passes on that head, still
-  bounded by the same number. The grant is kept in the drive state and
+  bounded by the same number, and never past the pull request's round
+  ceiling ([below](#the-round-ceiling-and-the-divergence-stop)). The grant is kept in the drive state and
   published to the ledger, so a later restart or a takeover keeps it, and it
   is never renewed without another re-arm: the drive stops on `MAX_ROUNDS`
   again once it spends it. A plain re-arm keeps the spent budget and stops
@@ -865,6 +868,45 @@ cannot read the pull request's comments when it starts refuses with [`INDETERMIN
 rather than risk driving beside another clone. This holds only once every
 driver of the pull request runs a version of the plugin that reads the
 ledger.
+
+### The round ceiling and the divergence stop
+
+Three limits stop a drive that keeps spending rounds without converging, and
+hand the pull request to a person with a framed decision
+([`HITL_PARKED`](../../protocol/drive-exits.md)) instead of another budget:
+
+- **The round ceiling** (`drive.max_total_rounds`, 8 by default, at most 50).
+  It counts the distinct reviewed heads of the pull request across every
+  launch, re-arm and takeover. A drive enforces the smaller of its round
+  budget and the ceiling, and a re-arm's grant never reaches past it: a
+  re-arm that finds the ceiling spent parks at once. The park, keyed
+  `round-ceiling`, states the rounds spent, the hours since the first launch,
+  the ceiling and where it was set, and that automatic re-arming is refused.
+- **The wall-clock cap** (`drive.max_wall_clock_hours`, no cap by default).
+  It measures the hours since the pull request was first driven, a moment the
+  drive state records once and a re-arm or takeover never resets. Reaching it
+  parks the same `round-ceiling` decision, naming the cap. A cap on reviewer
+  cost is not supported: the drive state records no reviewer cost.
+- **The divergence stop.** At each round's gate the drive compares the open
+  review threads and summary findings with the previous gate's: the ones not
+  open before are the round's new findings, the ones no longer open its fixed
+  findings. A round diverges when it raised at least one finding and no fewer
+  than it fixed. After two diverging rounds in a row with a finding still
+  open, the drive parks `divergence-stop`, listing the counts of its last
+  rounds. A round whose findings did not move counts neither way (the stall
+  stop judges no progress), and rounds whose findings decrease never park.
+  The counts of the last four rounds are kept in the drive state.
+
+Only you raise a spent ceiling. Answer the `round-ceiling` decision with
+**Allow one more budget** and re-arm (`jig send drive@<repo> <PR> answer
+round-ceiling --choose "Allow one more budget"`, then `rearm`), or arm the
+drive with `--past-ceiling` (`bun "<skill-dir>/scripts/arm-drive.ts" <PR>
+--past-ceiling`). Either raises the ceiling by one `drive.max_rounds` block,
+and a spent wall-clock cap by one more cap from then, kept in the drive state
+and its ledger so a takeover keeps it, and grants the round budget to match.
+The dispatcher's re-drives never pass `--past-ceiling`. Any answer to
+`divergence-stop` starts its count again; answer **Continue driving** and
+re-arm to drive on.
 
 ### The morning report
 
