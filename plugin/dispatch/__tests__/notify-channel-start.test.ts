@@ -289,6 +289,25 @@ describe("a channel new to the host", () => {
     expect(phone.calls).toEqual([]);
   });
 
+  it("starts despite another channel's own fault on the report", async () => {
+    const h = host();
+    const phone = fakeChannel("phone");
+    const faulty = report(h.repo, causes(2));
+    faulty.unplaced.push({
+      target: "the other notification channel",
+      record: "runtime",
+      reason: "its address is unset",
+    });
+    await applyNotices(
+      h.state(),
+      h.repo,
+      faulty,
+      { ok: true, source: "test", workspaces: [h.workspace] },
+      { branch: null, lingerMs: HOUR, renotifyAfterMs: 0, channels: [phone] },
+    );
+    expect(channelStarted("phone", SLUG, h.root)).toBe(true);
+  });
+
   it("counts the silent records of an incomplete start as no start", async () => {
     const h = host();
     stateDb(h.root)

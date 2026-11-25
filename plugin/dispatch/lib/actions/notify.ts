@@ -660,14 +660,23 @@ function startFrom(
   due: readonly Cause[],
 ): Cause[] {
   let causes = 0;
+  const repeats: Cause[] = [];
+  // Causes an earlier, incomplete start already recorded silently belong to this start's total.
+  const earlierSilent = readSuppressions(channel, scope.repo.slug, scope.root);
+  for (const c of scope.causes)
+    if (earlierSilent.get(c.notice.key)?.workspace === SILENT_START) causes++;
   // A target the tick could not observe may hold a standing cause it never saw, so the start waits for a tick that sees it.
   let complete =
     scope.report.records.every((r) => r.ok) &&
-    scope.report.unplaced.length === 0 &&
+    // A channel's own fault (`runtime`) says nothing about this repository's causes.
+    scope.report.unplaced.every((u) => u.record === "runtime") &&
     (scope.report.withheld ?? []).length === 0;
   for (const c of due) {
     // A repeat refers to a real delivery, possibly at another repository: it stays due, never rewritten as silent.
-    if (repeatedAt.has(c)) continue;
+    if (repeatedAt.has(c)) {
+      repeats.push(c);
+      continue;
+    }
     if (!recordSent(channel, c, "", scope, true)) {
       complete = false;
       continue;
@@ -683,7 +692,7 @@ function startFrom(
       ),
     );
   }
-  if (!complete) return [];
+  if (!complete) return repeats;
   try {
     markChannelStarted(channel, scope.repo.slug, currentIso(), scope.root);
   } catch (error) {
@@ -692,7 +701,7 @@ function startFrom(
       `the start of the ${channel} channel`,
       error,
     );
-    return [];
+    return repeats;
   }
   // The receipt tells a start only once its marker is durable.
   state.channelStarts ??= new Map();
@@ -703,7 +712,7 @@ function startFrom(
     scope.report.channelStarts = [...(scope.report.channelStarts ?? []), start];
   }
   start.causes += causes;
-  return [];
+  return repeats;
 }
 
 /** The causes due on `channel`: new there, or due again; the rest reported suppressed. */
