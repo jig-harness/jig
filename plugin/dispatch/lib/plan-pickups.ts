@@ -220,8 +220,8 @@ const waitingSiblings = new WeakMap<PickupPlan, WaitingSibling[]>();
  * A claimed sibling of a whole-batch question waits quietly only while the
  * anchor's own plan raised that question; the answer is the anchor's to
  * settle. When the anchor is carried by an open pull request and so cannot
- * show it, the anchor still owns the surfaced need: answering it releases
- * the entire batch. Otherwise (the anchor was released) the sibling is
+ * show it, the anchor still owns the surfaced need: answering it settles
+ * the entire batch without releasing the carried claim. Otherwise (the anchor was released) the sibling is
  * planned as any claimed item.
  */
 function settleBatchSiblings(plan: PickupPlan): void {
@@ -237,8 +237,8 @@ function settleBatchSiblings(plan: PickupPlan): void {
     );
     if (!shows && carried) {
       // The anchor's pull request carries it, so a sibling must surface the
-      // decision. Keep the anchor as its target: releaseRecord recognizes
-      // that target and settles the whole batch.
+      // decision. Keep the anchor as its target so its answer settles the
+      // whole batch without releasing the carried claim.
       const anchor =
         w.input.claimed?.find((item) => item.key === w.anchor) ?? w.item;
       const asked = questionAsked(
@@ -252,7 +252,7 @@ function settleBatchSiblings(plan: PickupPlan): void {
         plan.quiet.push({
           target: w.item.key,
           class: "pickup-ended",
-          why: `waits on the question its batch's pass asked on ${w.anchor}, which names no member; the answer releases the anchor and the members the pass never claimed, and this member keeps its claim (launch record ${w.record.record.id})`,
+          why: `waits on the question its batch's pass asked on ${w.anchor}, which names no member; the answer settles the batch while its carried anchor keeps its claim (launch record ${w.record.record.id})`,
         });
         continue;
       }
@@ -268,7 +268,7 @@ function settleBatchSiblings(plan: PickupPlan): void {
     plan.quiet.push({
       target: w.item.key,
       class: "pickup-ended",
-      why: `waits on the question its batch's pass asked on ${w.anchor}, which names no member; the answer releases the anchor and the members the pass never claimed, and this member keeps its claim (launch record ${w.record.record.id})`,
+      why: `waits on the question its batch's pass asked on ${w.anchor}, which names no member; the answer settles the batch while its carried anchor keeps its claim (launch record ${w.record.record.id})`,
     });
   }
 }

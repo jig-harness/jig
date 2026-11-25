@@ -10,8 +10,9 @@ release: patch
   no need raised for them, whether or not the pass claimed any member; hosts
   holding members this way release them on the first tick after the upgrade.
   A question that names no member is one need on the batch's anchor, the other
-  members wait on it with no need of their own, and answering it releases
-  every member the pass never claimed.
+  members wait on it with no need of their own. When an open pull request
+  carries the anchor, answering it settles the batch without releasing that
+  carried claim; an unreadable pull-request link refuses the release.
 - **Dispatch:** a batch whose pass stopped on a fault of its host keeps its
   members held while the host's health check fails, even when the stop's text
   names a member, and a legacy record that cannot say which member it claimed

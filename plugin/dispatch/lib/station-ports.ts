@@ -280,21 +280,38 @@ function settleCarriedBatchRecord(
     return `launch record ${id} is not a pickup of ${inputs.repo.slug}`;
   if (!wholeBatchQuestion(ended) || record.item !== item) return undefined;
   const members = record.batchItems?.map((member) => member.key) ?? [];
-  const settled = members.filter((member) => !pickupClaimed(record, member));
+  // This answers the batch question, not the carried claim.  Keeping the
+  // claim is what prevents a second session from taking the anchor, while
+  // recording every member as settled prevents the same question resurfacing
+  // on the next planning tick.
+  const settled = members;
   record.releasedItems = [
     ...new Set([...(record.releasedItems ?? []), ...settled]),
   ];
+  record.released = true;
   writeRecord(record, root);
   return null;
 }
 
-/** Why an open pull request stops a release of `item`, or that none can be told; `null` when none carries it. */
-function carryFault(inputs: StationInputs, item: string): string | null {
-  const carried = inputs.links?.prsOf(item) ?? null;
-  if (carried === null)
-    return `whether an open pull request carries ${item} cannot be told this tick`;
+/** Whether an open pull request carries `item`; an unreadable link is never carriage. */
+function carryFault(
+  inputs: StationInputs,
+  item: string,
+):
+  | { kind: "carried"; reason: string }
+  | { kind: "unreadable"; reason: string }
+  | null {
+  const carried = inputs.links?.prsOf(item);
+  if (carried === undefined || carried === null)
+    return {
+      kind: "unreadable",
+      reason: `whether an open pull request carries ${item} cannot be told this tick`,
+    };
   return carried.length > 0
-    ? `open pull request ${carried.map((p) => `#${p.number}`).join(", ")} carries ${item}`
+    ? {
+        kind: "carried",
+        reason: `open pull request ${carried.map((p) => `#${p.number}`).join(", ")} carries ${item}`,
+      }
     : null;
 }
 
@@ -341,16 +358,17 @@ async function releasePickup(
     );
   const carriedBy = carryFault(inputs, item);
   if (carriedBy !== null) {
+    if (carriedBy.kind === "unreadable") return refused(carriedBy.reason);
     const settled =
       recordId === null
         ? undefined
         : settleCarriedBatchRecord(inputs, item, recordId);
     if (settled === null)
       return ok(
-        `${carriedBy}; kept its carried claim and released the whole-batch question's unclaimed members`,
+        `${carriedBy.reason}; kept its carried claim and settled the whole-batch question`,
       );
     if (settled !== undefined) return refused(settled);
-    return refused(carriedBy);
+    return refused(carriedBy.reason);
   }
   const held = await sessionHolds(inputs, (w) => w.items.includes(item), item);
   if (held !== null) return refused(held);

@@ -200,8 +200,10 @@ describe("the steps on a person's answer", () => {
       expect(result.ok).toBe(true);
       expect(i.moved).toEqual([]);
       expect(readEnded(record.id, root)?.record.releasedItems).toEqual([
+        "#513",
         "#514",
       ]);
+      expect(readEnded(record.id, root)?.record.released).toBe(true);
     } finally {
       closeStateDb(root);
       rmSync(root, { recursive: true, force: true });
