@@ -327,7 +327,8 @@ async function uninstallHub(
       console.error(written.failure.reason);
       return 1;
     }
-    const runtime = probes.runtime();
+    // Only a hub this user installed has a container to stop.
+    const runtime = existsSync(installRecordPath()) ? probes.runtime() : null;
     if (runtime !== null) await run(stopCommand(runtime), { timeoutSec: 30 });
     rmSync(installRecordPath(), { force: true });
     console.log(`Removed: ${written.value}. The database stays.`);

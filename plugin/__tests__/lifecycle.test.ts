@@ -57,6 +57,7 @@ test.skipIf(onWindows).each(SCHEDULERS)(
         installed: false,
         detail: expect.stringContaining("no machine file"),
       },
+      { component: "hub", installed: false },
     ]);
   },
 );
@@ -68,7 +69,9 @@ test.skipIf(onWindows).each(SCHEDULERS)(
     m.writeDispatchFile();
     const installed = m.jig(["install", "--yes"]);
     expectSpawnExit(installed, 0);
-    expect(installed.stdout.toString()).not.toContain("skipped");
+    // The hub is opted in by name, as its own OS user, never by a bare install.
+    expect(installed.stdout.toString()).not.toContain("dispatch: skipped");
+    expect(installed.stdout.toString()).toContain("hub: skipped");
     expect(m.hasJob("jig-gc")).toBe(true);
     expect(m.hasJob("jig-dispatch")).toBe(true);
     const status = m.jig(["status", "dispatch", "--json"]);
