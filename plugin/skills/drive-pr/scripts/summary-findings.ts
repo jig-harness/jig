@@ -668,9 +668,8 @@ function partitionBacklog(
   );
   const rendered = section ? parseBodyFindings(section[2] ?? "") : [];
   // A fingerprint is authoritative whenever the renderer preserves the full
-  // text. The renderer is also allowed to abbreviate its backlog bullets; a
-  // unique anchor then identifies the one entry it can describe. Never use an
-  // anchor that names multiple entries: it is a location, not an identity.
+  // text. An abbreviated backlog bullet cannot establish which backlog entry
+  // it represents: an implicitly blocking entry can share its unique anchor.
   const renderedFingerprints = new Map<string, number>();
   for (const finding of rendered) {
     const fingerprint = fingerprintOf(finding.path, finding.line, finding.text);
@@ -680,28 +679,18 @@ function partitionBacklog(
     );
   }
   const backlogFingerprints = new Map<string, number>();
-  const renderedAnchors = new Map<string, number>();
-  const backlogAnchors = new Map<string, number>();
-  for (const finding of rendered) {
-    const key = anchorKey(finding.path, finding.line);
-    renderedAnchors.set(key, (renderedAnchors.get(key) ?? 0) + 1);
-  }
   for (const entry of backlog) {
     backlogFingerprints.set(
       entry.fingerprint,
       (backlogFingerprints.get(entry.fingerprint) ?? 0) + 1,
     );
-    const key = anchorKey(entry.path, entry.line);
-    backlogAnchors.set(key, (backlogAnchors.get(key) ?? 0) + 1);
   }
   const sectionCoversBacklog =
     Number(section?.[1]) === backlog.length &&
     rendered.length === backlog.length &&
     [...backlog].every((entry) => {
       const fingerprintCount = renderedFingerprints.get(entry.fingerprint);
-      if (fingerprintCount === 1) return true;
-      const key = anchorKey(entry.path, entry.line);
-      return backlogAnchors.get(key) === 1 && renderedAnchors.get(key) === 1;
+      return fingerprintCount === 1;
     });
   const freshFingerprints = new Set(
     bullets.map((f) => fingerprintOf(f.path, f.line, f.text)),
