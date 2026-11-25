@@ -1650,7 +1650,11 @@ describe("summary-findings marker overrides", () => {
              { id: 19, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n- \`a.ts\` — finding' },
              { id: 20, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\nacknowledged' },
            ], false)?.id,
-           stickyTimestamp: s.reviewerStickyIn([
+           trailingProseDeclaration: (() => { const b = s.reviewerStickyBody({ user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n> 2 findings without a diff-anchorable line (see the summary below).' }, (login) => login === 'reviewer[bot]', '<!-- other-review -->'); return m.parseDeclaredUnanchored(b ?? ''); })(),
+          inPlaceSkipKeepsStamp: s.reviewerStickyIn([
+            { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 2 -->\\n<!-- ai-review-skip-notice -->\\n\`def5678\` skipped\\n<!-- /ai-review-skip-notice -->', updated_at: '2026-11-24T11:00:00Z' },
+          ], (login) => login === 'reviewer[bot]', '<!-- other-review -->', 'custom+sha'),
+          stickyTimestamp: s.reviewerStickyIn([
              { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 1 -->', updated_at: '2026-11-24T10:00:00Z' },
              { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 1 -->\\nacknowledged', updated_at: '2026-11-24T11:00:00Z' },
            ], (login) => login === 'reviewer[bot]', '<!-- other-review -->', 'custom+sha').updatedAt,
@@ -1839,6 +1843,9 @@ describe("summary-findings marker overrides", () => {
       unreadable,
     );
     expect(got.validSupersedesMalformed).toBe(32);
+    expect(got.trailingProseDeclaration).toBe(2);
+    expect(got.inPlaceSkipKeepsStamp.sha).toBe("abc1234");
+    expect(got.inPlaceSkipKeepsStamp.skip).not.toBeNull();
     expect(got.quotedDeclarationBody).toEqual({ sha: undefined, declared: 2 });
     expect(got.quotedFencedDeclaration).toBe(0);
     expect(got.foreignSkipDoesNotSetWatermark).toMatchObject({

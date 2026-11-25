@@ -209,8 +209,8 @@ export function reviewerStickyBody(
     }
     if (fence !== null || indentation.columns >= 4) continue;
     // Finding-count declarations are intentionally rendered as blockquotes by
-    // the reviewer. Only the declaration itself survives, and only as a
-    // whole quoted prose line outside quoted code: the rest of a quoted line,
+    // the reviewer. Only the declaration's recognised prefix survives, and
+    // only from a quoted prose line outside quoted code: trailing prose,
     // quoted fences and quoted protocol markers are untrusted example text.
     if (/^ {0,3}>/.test(line)) {
       const content = line.replace(/^ {0,3}>[ \t]?/, "");
@@ -244,7 +244,7 @@ export function reviewerStickyBody(
       }
       if (quotedIndent.columns >= 4) continue;
       const declaration =
-        /^\s*(\S+\s+findings?(?:\(s\))?\s+without\s+a\s+diff-anchorable\s+line)\s*[.!]?\s*$/i.exec(
+        /^\s*(\S+\s+findings?(?:\(s\))?\s+without\s+a\s+diff-anchorable\s+line)\b/i.exec(
           content,
         );
       if (declaration !== null)
@@ -378,6 +378,20 @@ export function reviewerStickyIn(
       // A skip without its own review stamp cannot borrow the selected
       // witness's stamp. A lower-round stamped skip cannot update it either:
       // both pieces of evidence must remain from the same comment.
+      if (skip !== null && bodySha !== "" && sticky.sha === "" && !lowerRound) {
+        // One comment carrying both its own stamp and a skip notice (the
+        // reviewer updated its only sticky in place): both witnesses come
+        // from that comment, so the identical-diff comparison can run.
+        if (round !== null)
+          highestExplicitRound = Math.max(highestExplicitRound ?? round, round);
+        sticky = {
+          sha: bodySha,
+          round,
+          updatedAt: String((raw as Record<string, unknown>).updated_at ?? ""),
+          skip,
+        };
+        continue;
+      }
       if (
         skip !== null &&
         ((bodySha === "" && sticky.sha === "") ||
