@@ -330,6 +330,45 @@ describe("summary-findings parsing", () => {
     expect(parseDeclaredUnanchored(body)).toBe(1);
   });
 
+  it("keeps fence scope at its Markdown container", () => {
+    const body = [
+      "  ```markdown",
+      "  - `example.ts:1` — a fenced decoy",
+      "```",
+      "- `live.ts:3` — a live finding",
+      "> 1 finding(s) without a diff-anchorable line",
+    ].join("\n");
+    expect(parseBodyFindings(body)).toEqual([
+      { path: "live.ts", line: 3, text: "a live finding" },
+    ]);
+    expect(parseDeclaredUnanchored(body)).toBe(1);
+  });
+
+  it("does not let an over-indented delimiter close a top-level fence", () => {
+    const body = [
+      "```markdown",
+      "    ```",
+      "    > 0 finding(s) without a diff-anchorable line",
+      "```",
+      "- `live.ts:3` — a live finding",
+      "> 1 finding(s) without a diff-anchorable line",
+    ].join("\n");
+    expect(parseBodyFindings(body)).toEqual([
+      { path: "live.ts", line: 3, text: "a live finding" },
+    ]);
+    expect(parseDeclaredUnanchored(body)).toBe(1);
+  });
+
+  it("keeps paragraph continuations and ignores mixed-whitespace code blocks", () => {
+    const body = [
+      " \t> 0 finding(s) without a diff-anchorable line",
+      "",
+      "paragraph",
+      "    > 1 finding(s) without a diff-anchorable line",
+    ].join("\n");
+    expect(parseDeclaredUnanchored(body)).toBe(1);
+  });
+
   it("extracts severity from the bullet", () => {
     expect(jigSeverity("🟡 **medium** (high confidence)")).toBe("medium");
     expect(jigSeverity("no severity here")).toBe("unknown");

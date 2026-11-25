@@ -465,13 +465,19 @@ export interface BodyFinding {
  * nested fence, or an unclosed fence change the surrounding summary. Keep
  * line breaks so the line-oriented finding parser cannot join two live bullets.
  */
-type MarkdownFence = { char: string; length: number; indent: number };
+type MarkdownFence = { char: string; length: number; containerIndent: number };
 
-function fenceOf(match: RegExpMatchArray): MarkdownFence {
+function fenceOf(
+  match: RegExpMatchArray,
+  containerIndent: number,
+): MarkdownFence {
   return {
-    char: match[2]?.[0] ?? "`",
-    length: match[2]?.length ?? 0,
-    indent: match[1]?.length ?? 0,
+    char: match[3]?.[0] ?? "`",
+    length: match[3]?.length ?? 0,
+    // Leading indentation on a top-level fence is not a container. A list's
+    // marker and following whitespace are: its content column scopes this
+    // fence, and an outer sibling ends an unclosed one.
+    containerIndent,
   };
 }
 
@@ -481,44 +487,83 @@ function closesFence(
 ): boolean {
   return (
     match !== null &&
-    (match[1]?.length ?? 0) >= fence.indent &&
-    match[2]?.[0] === fence.char &&
-    (match[2]?.length ?? 0) >= fence.length &&
-    !(match[3] ?? "").trim()
+    columnsOf(match[1] ?? "") - fence.containerIndent <= 3 &&
+    match[3]?.[0] === fence.char &&
+    (match[3]?.length ?? 0) >= fence.length &&
+    /^[ \t]*$/.test(match[4] ?? "")
   );
 }
 
 function opensFence(match: RegExpMatchArray | null): match is RegExpMatchArray {
   return (
     match !== null &&
-    (match[1]?.length ?? 0) <= 3 &&
-    !(match[2]?.[0] === "`" && (match[3] ?? "").includes("`"))
+    columnsOf(match[2] ?? "") <= 3 &&
+    !(match[3]?.[0] === "`" && (match[4] ?? "").includes("`"))
   );
+}
+
+function columnsOf(whitespace: string): number {
+  let column = 0;
+  for (const char of whitespace)
+    column = char === "\t" ? column + 4 - (column % 4) : column + 1;
+  return column;
 }
 
 function withoutFencedExamples(body: string): string {
   let fence: MarkdownFence | null = null;
+  let indentedCode = false;
+  let previousBlank = true;
+  let listContainerIndent: number | null = null;
   return body
     .split(/\r?\n/)
     .map((line) => {
-      // A top-level fence has at most three spaces before its delimiter.
-      // Closing a fence in a list can carry the list's indentation as well,
-      // so its indentation is checked against the opener below.
-      const match = line.match(/^( *)(`{3,}|~{3,})(.*)$/);
+      // The second capture is a list marker's content prefix. Delimiters are
+      // measured from that container, not from the document's left edge.
+      const match = line.match(
+        /^(\s*)(?:(?:[-+*]|\d+[.)])([ \t]+))?(`{3,}|~{3,})(.*)$/,
+      );
+      const lineIndent = columnsOf(line.match(/^[ \t]*/)?.[0] ?? "");
+      const listPrefix = line.match(/^[ \t]*(?:[-+*]|\d+[.)])[ \t]+/)?.[0];
+      if (listPrefix !== undefined) listContainerIndent = columnsOf(listPrefix);
+      else if (
+        listContainerIndent !== null &&
+        line.trim() !== "" &&
+        lineIndent < listContainerIndent
+      )
+        listContainerIndent = null;
       if (fence !== null) {
-        if (closesFence(match, fence)) fence = null;
+        // A list-contained fence cannot consume the next outer block merely
+        // because its closer was omitted. Process that boundary afresh.
+        const indent = columnsOf(
+          match?.[1] ?? line.match(/^[ \t]*/)?.[0] ?? "",
+        );
+        if (indent < fence.containerIndent) fence = null;
+        else {
+          if (closesFence(match, fence)) fence = null;
+          previousBlank = false;
+          return "";
+        }
+      }
+      const indent = columnsOf(line.match(/^[ \t]*/)?.[0] ?? "");
+      // Indented code starts only where Markdown can start a new block; a
+      // four-column paragraph continuation remains live prose.
+      if (indent >= 4 && (previousBlank || indentedCode)) {
+        indentedCode = true;
+        previousBlank = false;
         return "";
       }
-      // A backtick run with a backtick in its info string is an inline span,
-      // not a CommonMark fence opener.
       if (opensFence(match)) {
-        fence = fenceOf(match);
+        fence = fenceOf(
+          match,
+          listContainerIndent !== null && lineIndent >= listContainerIndent
+            ? listContainerIndent
+            : 0,
+        );
+        previousBlank = false;
         return "";
       }
-      // Four spaces (or a tab) introduce an indented code block. Dropping the
-      // whole line prevents sample bullets and declared counts in examples
-      // from becoming live review work.
-      if (/^(?: {4}|\t)/.test(line)) return "";
+      indentedCode = false;
+      previousBlank = line.trim() === "";
       return line;
     })
     .join("\n");
