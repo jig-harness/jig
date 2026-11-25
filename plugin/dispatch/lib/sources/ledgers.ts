@@ -26,7 +26,7 @@
  * | stopped with an explicit person's-stop record, `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`) | stopped-by-person |
  * | stopped with no exit and no person's-stop record | re-armable (stopped-unknown once its recovery budget is spent) |
  * | stopped `HITL_PARKED` (`8`), every parked item answered | re-armable |
- * | stopped `QUOTA_PARKED` (`16`), `NOT_SETTLED` (`4`), including a spent poll budget | re-armable |
+ * | stopped `QUOTA_PARKED` (`16`), `NOT_SETTLED` (`4`), including a spent poll budget | re-armable (`NOT_SETTLED` re-arms that stop the same way on one head back off, then are a person's: `repeated-ends.ts`) |
  * | stopped `WORKTREE_UNCLEAN` (`12`), head known and not yet recovered | stale: settle original tree once per head |
  * | stopped `HITL_PARKED`, an item unanswered, the pull request conflicting with its base | stale |
  * | stopped `HITL_PARKED`, an item unanswered | parked |

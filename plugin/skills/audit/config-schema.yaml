@@ -16,6 +16,7 @@
 #             enum (a list's `items`); integer: words allowed besides a number
 #   min       integer, number: the least allowed number
 #   max       integer, number: the greatest allowed number
+#   excluded  integer: whole numbers inside min..max that are refused
 #   pattern   string, command, path: a regular expression the value must
 #             match; also allowed in a nested type spec of one of those types
 #             (a list's `items`), applying to each entry; refused on any other
@@ -687,6 +688,14 @@ fields:
     min: 1
     default: 10
     since: 0.33.0
+    read_by: [drive-pr]
+  drive.churn_rounds:
+    type: integer
+    min: 0
+    max: 12
+    excluded: [1]
+    default: 4
+    since: 0.309.0
     read_by: [drive-pr]
   drive.pass_deadline_retries:
     type: integer

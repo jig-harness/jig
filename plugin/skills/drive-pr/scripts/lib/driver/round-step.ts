@@ -66,7 +66,7 @@ async function stopHitlParked(
   // act on, and burns turns until something external stops it.
   // Only these remain: the drive worked everything they do not block.
   console.error(
-    "HITL-parked — only the decisions below remain, and each is a person's; not re-arming.",
+    "HITL-parked — the decisions below wait for a person (on their thread, or as a pull-request comment `answer <key>: …`); not re-arming.",
   );
   const get = await run(tsArgv(driveState, ["get", context.pr]), {
     stderr: "ignore",
@@ -378,6 +378,25 @@ function parkedCancelled(status: Record<string, unknown>): boolean {
 }
 
 /**
+ * Whether the parked set holds a structural-churn park and no cancelled-CI
+ * one. The gate reports the churn parks by their recorded decision class, so
+ * an ordinary park whose key merely looks alike is not the brake's.
+ */
+function parkedChurnOnly(status: Record<string, unknown>): boolean {
+  const work = status.work as
+    | { parkedKeys?: unknown; churnParkKeys?: unknown }
+    | undefined;
+  const keys = work?.parkedKeys;
+  const churn = work?.churnParkKeys;
+  return (
+    Array.isArray(keys) &&
+    Array.isArray(churn) &&
+    !keys.includes(CANCELLED_CI_KEY) &&
+    churn.some((k) => typeof k === "string" && keys.includes(k))
+  );
+}
+
+/**
  * Recover initial cancellation before spending a pass that cannot push; clear
  * resolved parks before convergence. A timed-out job is left to the final
  * CI's repair, but a re-run of another cancellation that is still going is
@@ -402,6 +421,9 @@ export async function recoverBeforePass(
     (code === 3 && String(status.ci ?? "").startsWith("failing:"))
   )
     return null;
+  // A structural-churn park goes to the terminal handler first; the recovery
+  // runs only for a gate that holds the cancelled-CI park itself.
+  if (code === 8 && parkedChurnOnly(status)) return null;
   const head = String((status.head as { api?: string } | undefined)?.api ?? "");
   if (head === "") return null;
   const recovery = await recover(context.pr, head);

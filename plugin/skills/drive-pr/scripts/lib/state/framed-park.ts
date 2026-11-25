@@ -185,10 +185,15 @@ interface ParkArgs {
   paths: string[];
 }
 
-/** `park`: validate the class and the record, then record the item. */
+/**
+ * `park`: validate the class and the record, then record the item. `also`
+ * changes the state in the same update that records the park, for a writer
+ * whose park and its own bookkeeping must land together (`churn-park.ts`).
+ */
 export async function framedPark(
   store: StateStore,
   a: ParkArgs,
+  also: (s: DriveState) => DriveState = (s) => s,
 ): Promise<number> {
   if (a.key === "")
     fail(2, "park requires --key (a thread node id or finding fingerprint)");
@@ -250,7 +255,7 @@ export async function framedPark(
       unreadablePolicy,
     );
     if (refusal !== null) fail(2, `park: ${refusal}.`);
-    const next = parkedWith(s, a, decision, person);
+    const next = also(parkedWith(s, a, decision, person));
     const admission = parkAdmissionProblem(next, decision, capacity);
     if (admission !== null) fail(2, `park: ${admission}`);
     return next;

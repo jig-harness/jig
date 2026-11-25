@@ -27,6 +27,7 @@ import { fail } from "./cli.ts";
 import { isProvisionalReply, qualifyingOutcome } from "./outcome.ts";
 import { run, tsArgv } from "./proc.ts";
 import type { UnattendedDecision } from "./state/decisions.ts";
+import { CHURN_CLASS } from "./state/churn.ts";
 import { parseMs } from "../../../../shared/time.ts";
 
 /** A comment as `list-unresolved-threads.ts` emits it, as far as this reads it. */
@@ -151,11 +152,14 @@ const lines = (text: string): string[] =>
 type ParkedSets = {
   keys: Set<string>;
   reversals: Set<string>;
+  /** The drive's own structural-churn parks, which hold even live work. */
+  selfParked: Set<string>;
 };
 
 /**
- * The round gate's parked keys, and those of them that hold a reversed
- * provisional decision; `null` when either could not be read, which the
+ * The round gate's parked keys, those of them that hold a reversed
+ * provisional decision, and the drive's own structural-churn parks; `null`
+ * when any could not be read, which the
  * gate takes as INDETERMINATE: an unreadable parked set would re-arm work a
  * person parked. drive-state's stderr is passed through; each read is
  * bounded by the helper deadline, and a fired deadline reads as unreadable.
@@ -165,8 +169,8 @@ export async function readParkedSets(ctx: {
   pr: string;
   helperTimeoutSec: number;
 }): Promise<ParkedSets | null> {
-  const read = (cmd: string) =>
-    run(tsArgv(ctx.driveStateScript, [cmd, ctx.pr]), {
+  const read = (cmd: string, ...args: string[]) =>
+    run(tsArgv(ctx.driveStateScript, [cmd, ctx.pr, ...args]), {
       stderr: "inherit",
       timeoutSec: ctx.helperTimeoutSec,
     });
@@ -174,9 +178,12 @@ export async function readParkedSets(ctx: {
   if (all.code !== 0) return null;
   const reversals = await read("reversal-parked-keys");
   if (reversals.code !== 0) return null;
+  const self = await read("class-parked-keys", "--class", CHURN_CLASS);
+  if (self.code !== 0) return null;
   return {
     keys: new Set(lines(all.stdout)),
     reversals: new Set(lines(reversals.stdout)),
+    selfParked: new Set(lines(self.stdout)),
   };
 }
 

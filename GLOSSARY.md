@@ -1538,6 +1538,15 @@ make, use the entry's term instead.
   A **standalone park** names no review thread or summary finding, such as a
   CI repair's decision on whether to loosen a rule; it holds the drive for a
   person like any other park.
+- **Structural churn** — a *PR drive loop* spending rounds without
+  converging while its head keeps moving: one file draws non-blocking
+  findings round after round and each fix rewrites it again, or a file
+  returns to content an earlier round replaced (A, B, A). The drive's
+  **structural-churn brake** parks it under the `structural-churn`
+  *decision class* when either happens, so a person chooses whether to ship
+  as is, narrow the change or keep driving; a round with a `high` or
+  `blocker` finding never counts toward the same-file streak
+  ([drive-pr](plugin/skills/drive-pr/README.md#the-structural-churn-park)).
 - **Session-framed decision, dispatcher-framed decision** — the *framed
   decision* a need on the dispatcher's line carries when it is not a
   *park*. A **session-framed decision** is the one a dispatched follow-up's

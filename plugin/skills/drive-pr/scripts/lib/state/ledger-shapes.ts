@@ -236,6 +236,10 @@ export const LEDGER_PAYLOAD_FIELDS = {
   ciActions: s.optional(s.array(ciAction, { maxItems: 10 })),
   rulings: s.optional(s.array(ruling)),
   resolvedParks: s.optional(s.array(receipt)),
+  // Published unrestricted on v1, as the stable ledger accepted unknown keys
+  // before these fields existed; the reader checks both (`ledger-churn.ts`).
+  roundPaths: s.optional(s.unknown()),
+  churnAckRound: s.optional(s.unknown()),
   driver: LEDGER_DRIVER_SHAPE,
   narrative: texts,
   cut: texts,
