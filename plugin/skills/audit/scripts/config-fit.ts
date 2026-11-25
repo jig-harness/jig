@@ -2287,31 +2287,51 @@ const SECTIONS: [Finding["severity"], string][] = [
   ["info", "Information"],
 ];
 
+const FACT_NAMED_ESCAPES: Record<string, string> = {
+  "\n": "\\n",
+  "\r": "\\r",
+  "\t": "\\t",
+  "\b": "\\b",
+  "\f": "\\f",
+};
+
 /**
- * A fact on one line: the declared value is shown as written, and any control,
- * line-break or bidirectional character is escaped visibly (one linear pass),
- * so a value that differs only by such a character still reads differently.
+ * A fact on one line, shown as written. One linear pass escapes, visibly,
+ * every control, format (bidirectional and zero-width included), line and
+ * paragraph separator character wherever it stands, and any whitespace at
+ * either edge. A value that needed an escape, or starts with a quote, is
+ * quoted with its backslashes and quotes escaped JSON-style, so no two
+ * distinct values render alike.
  */
 function factText(value: string): string {
-  const shown = formatDisplayValue(value);
-  if (shown !== value) return shown;
-  // A value with edge whitespace (a no-break or zero-width space included) or
-  // a leading quote is quoted, its edge whitespace escaped visibly, so it
-  // cannot read like its trimmed or already-quoted twin.
-  const blank = /[\s\uFEFF\u200B]/;
-  let start = 0;
+  const start = /^\s*/.exec(value)![0].length;
   let end = value.length;
-  while (start < end && blank.test(value[start]!)) start++;
-  while (end > start && blank.test(value[end - 1]!)) end--;
-  if (start === 0 && end === value.length && !value.startsWith('"'))
-    return value;
-  const esc = (c: string) =>
-    `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`;
-  const edged =
-    [...value.slice(0, start)].map(esc).join("") +
-    value.slice(start, end).replaceAll("\\", "\\\\").replaceAll('"', '\\"') +
-    [...value.slice(end)].map(esc).join("");
-  return `"${edged}"`;
+  while (end > start && /\s/.test(value[end - 1]!)) end--;
+  let out = "";
+  let index = 0;
+  let escaped = value.startsWith('"');
+  for (const char of value) {
+    const hidden = factCharHidden(char, index < start || index >= end);
+    index += char.length;
+    escaped ||= hidden;
+    out += escapeFactChar(char, hidden);
+  }
+  return escaped ? `"${out}"` : value;
+}
+
+/** Whether a fact's character is invisible, or whitespace at an edge. */
+function factCharHidden(char: string, edge: boolean): boolean {
+  return edge || /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(char);
+}
+
+/** One character of a quoted fact: `\uXXXX` when hidden, JSON-style otherwise. */
+function escapeFactChar(char: string, hidden: boolean): string {
+  if (!hidden) return char === "\\" || char === '"' ? `\\${char}` : char;
+  const code = char.codePointAt(0)!.toString(16);
+  return (
+    FACT_NAMED_ESCAPES[char] ??
+    (code.length > 4 ? `\\u{${code}}` : `\\u${code.padStart(4, "0")}`)
+  );
 }
 
 export function render(report: FitReport): string {

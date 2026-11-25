@@ -224,10 +224,18 @@ test("the Markdown rendering keeps a fact on one line and escapes controls", () 
     declined: [],
     suggestions: [],
   };
-  const fact = (value: string) =>
-    render({ ...base, facts: { integration_branch: value } })
-      .split("\n")
-      .find((l) => l.startsWith("- integration_branch:"));
+  // The whole Facts section, so a stray extra or duplicated line fails too.
+  const fact = (value: string) => {
+    const lines = render({
+      ...base,
+      facts: { integration_branch: value },
+    }).split("\n");
+    const from = lines.indexOf("## Facts");
+    const rest = lines.slice(from + 2);
+    const section = rest.slice(0, rest.indexOf(""));
+    expect(section).toHaveLength(1);
+    return section[0];
+  };
   expect(fact("a\rb\u202Ec")).toBe('- integration_branch: "a\\\\rb\\\\u202ec"');
   expect(fact("main\r")).toBe('- integration_branch: "main\\\\r"');
   expect(fact("main\t")).toBe('- integration_branch: "main\\\\t"');
@@ -243,6 +251,20 @@ test("the Markdown rendering keeps a fact on one line and escapes controls", () 
   expect(fact("main\r")).not.toBe(fact("main\\r"));
   expect(fact("main\\r")).toBe("- integration_branch: main\\\\r");
   expect(fact("main")).not.toBe(fact('"main"'));
+  expect(fact("\u200Bmain\r")).toBe(
+    '- integration_branch: "\\\\u200bmain\\\\r"',
+  );
+  expect(fact("main\u200B\r")).toBe(
+    '- integration_branch: "main\\\\u200b\\\\r"',
+  );
+  expect(fact("\u2060main")).toBe('- integration_branch: "\\\\u2060main"');
+  expect(fact("ma\u200Bin")).toBe('- integration_branch: "ma\\\\u200bin"');
+  expect(fact("ma\u200Bin")).not.toBe(fact("main"));
+  expect(fact("a\u{E0001}b")).toBe('- integration_branch: "a\\\\u{e0001}b"');
+  const started = performance.now();
+  fact(`z${" ".repeat(200000)}\u200B`);
+  fact(" ".repeat(200000));
+  expect(performance.now() - started).toBeLessThan(5000);
   const marker = `z${" ".repeat(200000)}z`;
   expect(fact(marker)).toBe(`- integration_branch: z${" ".repeat(200000)}z`);
 });
