@@ -23,6 +23,16 @@ by writing its own policy page (this file is a skeleton).
 > [decision layer](../../../GLOSSARY.md) at a time, each with a named
 > [A/B baseline](../../../GLOSSARY.md).
 
+This invariant governs model pins and tier declarations in agent and skill
+metadata, including a skill's explicit judgment-pass setting. Shared routing
+configuration is separate: it classifies a model for selection by a runtime,
+and may name either a known family spelling or an exact model identifier. It
+does not admit a decision layer to the Judgment tier or provide that layer's
+baseline. A layer that selects a Judgment model through shared routing still
+records its admission and A/B baseline at the layer's own metadata or
+configuration declaration point. Routing validation and merge rules belong
+with the routing configuration, not this metadata-pinning policy.
+
 Where a runtime has no family aliases, the pin uses the vendor's most general
 model name, or one central name the repository maps to a release in a single
 place; either way, no agent or skill carries a release of its own
@@ -157,8 +167,9 @@ it first would never ask the judgment question.
 
 If two tiers seem to fit, choose the cheaper and let it **escalate**: a scout
 hands a "harder than expected" finding up to an Execution or Strategic agent.
-Record the choice in the `model:` metadata (and in the declared cost tier,
-where the metadata carries one).
+Record the choice in the agent's or skill's `model:` metadata (and in the
+declared cost tier, where that metadata carries one). A runtime's shared
+routing configuration records its selection separately.
 
 ## Moving a pin on cost grounds needs a measurement
 
@@ -284,10 +295,10 @@ own account and runtime before a Judgment-tier layer becomes load-bearing on
 an unattended path, and again after a runtime upgrade
 ([observations, dated](../mappings.md#judgment-tier-access-and-data-retention)).
 
-### Declaration points and the baseline
+### Metadata declaration points and the baseline
 
-A tier lives in exactly one of these places, so it can be searched for and
-audited:
+A pin's tier lives in exactly one of these metadata declaration points, so it
+can be searched for and audited:
 
 | Surface | Where its tier is declared |
 |---------|----------------------------|
@@ -295,15 +306,30 @@ audited:
 | Skill that pins a model | `model:` in that skill's own metadata |
 | Judgment pass inside a skill | an explicit model setting in that skill's configuration |
 
+Shared routing is not a pin declaration point: its `routing.model_tiers`,
+`routing.models`, and stage rows classify and select runtime models. It may
+use a known family spelling or an exact model identifier under the routing
+configuration's validation rules. A route can serve several decision layers,
+so it cannot stand in for their separate Judgment admissions or baselines.
+
 Never in prose, in a prompt body or in a string literal in a script, and
 never as a model chosen at invocation time (a subagent call's model
 parameter, a `--model` flag on a spawned CLI) independently of these places:
 an invocation-time value outranks the definition's own metadata
 ([Claude Code](../mappings.md#family-aliases-and-pins-in-claude-code)), and a
 tier declared in any of those places is invisible to the check and to the
-audit. An invocation-time argument that only forwards a value read from one
-of the places above, such as a skill passing its own configured judgment-pass
-model to the subagent it calls, declares nothing new and is allowed.
+audit. An invocation-time argument declares nothing new and is allowed only
+when it forwards a value read from one of the places above, such as a skill
+passing its own configured pass model to the subagent it calls, or when shared
+routing selects a value for a field the effective definition leaves open. A
+documented built-in default is allowed only as the fallback when neither a
+configured nor routed value applies. A persistent setting that selects an
+invocation model for a Judgment pass is a skill configuration declaration,
+not a built-in default, and is checked and audited as such. Persistent
+selections for other passes remain routing configuration, not pin
+declarations. An explicit one-run operator choice is
+also allowed: it is recorded as the operator's choice and wins over a metadata
+pin. Shared routing never replaces a valid metadata pin.
 
 **An A/B baseline is mandatory.** Every Judgment-tier assignment names its
 Strategic-tier baseline next to the assignment, in a field of its own (such
@@ -313,11 +339,21 @@ Before the comparison has run, the baseline holds the family alias and the
 planned comparison; when it runs, the exact versioned id that was measured is
 recorded with its result.
 
-**A downgrade is one line.** Reverting a Judgment-tier assignment edits that
-single `model:` value or configuration setting back to the baseline's family
-alias, together with the declared cost tier beside it where the metadata
-carries one (the check rejects a tier that contradicts the model), and
-nothing else. It is an exact reversal only while the alias still
+**A downgrade changes the affected selection.** Reverting a Judgment-tier
+assignment edits the layer's `model:` value or configuration setting back to
+the baseline's family alias, together with the declared cost tier beside it
+where the metadata carries one (the check rejects a tier that contradicts the
+model). Where shared routing selects the model, change the cell that selects
+the affected layer and check tier ordering across every affected effective
+row, including inherited rows and other cells in the same stage. Different
+runtime rows are isolated, but different complexity-tier cells in one row are
+still compared by the tier-ordering check. A stage override can isolate the
+change only when each affected launch reads that stage row; different stage
+names alone do not establish isolation. Split the affected layer into a
+separately configured selection when consumers that must stay on different
+models resolve to the same cell, or when shared-row tier ordering prevents
+their required selections from coexisting. It
+is an exact reversal only while the alias still
 resolves to the measured release. Once the family has moved on, or when the
 measured baseline itself can no longer be used and some other model stands in
 as an operational fallback, the result is a provisional substitution: label

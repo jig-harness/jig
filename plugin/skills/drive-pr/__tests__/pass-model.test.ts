@@ -74,6 +74,30 @@ describe("resolveModelValue", () => {
     );
   });
 
+  it("keeps a classified Claude model in the complete CLI pass argv", () => {
+    const routing = () => ({
+      routing: {
+        models: { "claude-code": { complex: "claude-provider-model" } },
+        model_tiers: {
+          "claude-code": {
+            "claude-provider-model": {
+              tier: "strategic",
+              reason: "the provider supports this CLI model",
+            },
+          },
+        },
+      },
+    });
+    const resolve = (value: string, where: string, runtime?: string) =>
+      resolveModelValue(value, where, routing, runtime);
+    expect(
+      effectivePass(PASS, "complex", () => SONNET, undefined, resolve),
+    ).toMatchObject({
+      argv: ["claude", "--model", "claude-provider-model", ...PASS.slice(1)],
+      model: "claude-provider-model",
+    });
+  });
+
   it("gives a Codex tier or family alias as the model the family names", () => {
     expect(
       resolveModelValue("complex", "--pass-model", noRouting, "codex"),
@@ -93,6 +117,9 @@ describe("resolveModelValue", () => {
   it("refuses a value that is not one word", () => {
     expect(() =>
       resolveModelValue("--model sonnet", "--pass-model", noRouting),
+    ).toThrow(PassModelUsageError);
+    expect(() =>
+      resolveModelValue("sonnet\u001b", "--pass-model", noRouting),
     ).toThrow(PassModelUsageError);
     expect(() => resolveModelValue("", "--pass-model", noRouting)).toThrow(
       PassModelUsageError,
@@ -168,6 +195,16 @@ describe("effectivePass", () => {
     expect(pass.source).toBe(
       "--pass-model, replacing the pass command's --model haiku",
     );
+  });
+
+  it("escapes a replaced model before including it in the driver log source", () => {
+    const pass = effectivePass(
+      ["claude", "--model", "old\u202Emodel", "-p", "x"],
+      "opus",
+      configured,
+    );
+    expect(pass.source).toContain('"old\\u202emodel"');
+    expect(pass.source).not.toContain("old\u202Emodel");
   });
 
   it("knows Claude Code's CLI by its program name, a full path or a Windows launcher", () => {
@@ -363,6 +400,37 @@ describe("withoutModel for a registered harness's compact short flag", () => {
           "-p",
           "x",
         ]);
+    } finally {
+      off();
+    }
+  });
+
+  it("passes the caller's resolver to a registered harness", () => {
+    const off = registerHarness({ ...fakeHarness, modelFlags: ["-M"] });
+    try {
+      const resolve = (value: string, where: string, runtime?: string) => ({
+        model: `${runtime}-${value}`,
+        source: where,
+      });
+      expect(
+        effectivePass(
+          [fakeHarness.program, "-M", "old", "run", "x"],
+          "complex",
+          configured,
+          undefined,
+          resolve,
+        ),
+      ).toEqual({
+        argv: [
+          fakeHarness.program,
+          "--fake-model",
+          `${fakeHarness.runtime}-complex`,
+          "run",
+          "x",
+        ],
+        model: `${fakeHarness.runtime}-complex`,
+        source: "--pass-model",
+      });
     } finally {
       off();
     }

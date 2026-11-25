@@ -371,6 +371,14 @@ what order to take dependent items. These are a person's, and the pickup's
 pass frames them with its result
 ([structured-answers.md § Sessions frame their questions](structured-answers.md#sessions-frame-their-questions)).
 
+A batch pickup's question is about the members it names. The members it does
+not name, and the pass never claimed, are not its subject: the tick releases
+them (a claimed member keeps its own rule), so the queue picks them up and no
+need is raised for them. A question that names no member is about the whole
+batch: it is one need, on the batch's anchor, the other members wait on it
+with no need of their own, and its answer releases every member the record
+still holds that the pass never claimed.
+
 #### A label write failing
 
 A new state label shipped before the repository had it, and every label

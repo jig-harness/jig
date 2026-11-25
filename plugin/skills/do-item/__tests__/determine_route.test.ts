@@ -508,7 +508,7 @@ describe("the loading rules", () => {
     [{ models: { custom: { standard: "a" } } }, "missing: simple, complex"],
     [
       { models: { "claude-code": { standard: "sonnet 4" } } },
-      "routing.models.claude-code.standard must be a family alias",
+      "routing.models.claude-code.standard must be a model",
     ],
     [{ models: { "claude-code": { complex: "a,b" } } }, "one word"],
     [{ models: { Claude: { standard: "a" } } }, "a runtime name is lowercase"],

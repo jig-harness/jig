@@ -177,7 +177,7 @@ export async function applySteward(
   }
   const vendor = admittedVendor(slots.account);
   const runtime = harnessFor(vendor).runtime;
-  const models = parseRoutingModels(opened.values);
+  const models = parseRoutingModels(opened.values, "steward");
   const family = models[runtime]?.complex;
   if (family === undefined) {
     report.launches.push(

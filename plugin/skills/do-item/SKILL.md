@@ -734,11 +734,12 @@ implementation. Skip this check for issues about the repository's own code.
    bun "${CLAUDE_SKILL_DIR}/scripts/determine_route.ts" issue.json
    ```
 
-   It prints `{ agent, type, tier, effort, model, runtime_effort, runtime,
+   It prints `{ agent, type, tier, effort, model, runtime_model, runtime_effort, runtime,
    declared, fields, reasons }`: the agent as above, the type's row of
    `routing.types` raised one step each by a flag label, an area's mandatory
    review, a size too large to batch and the `hitl` label, capped at `max`,
-   and the tier's family alias for the runtime; `reasons` names the rule
+   and the selected model (`runtime_model` is the resolved identifier the
+   runtime would receive); `reasons` names the rule
    behind each part, a configuration rule in the wording of
    [the rule matchers' chapter](../../protocol/rule-matchers.md)
    ([configuration reference](../../CONFIGURATION.md#routing)).
@@ -751,7 +752,15 @@ implementation. Skip this check for issues about the repository's own code.
    the subagent's model and `runtime_effort` as its effort, field by field
    where the harness's subagent tool takes it, and the fix loop after the
    review delegates with the same values; a field the tool does not take is
-   not forwarded, and the status message says so. Before forwarding, resolve
+   not forwarded, and the status message says so. `determine_route.ts` accepts
+   provider model identifiers in shared routing for compatible CLI launches.
+   Before forwarding to a delegated runtime that accepts family aliases only,
+   first resolve the delegated agent's effective definition, then validate the
+   model it will actually receive. A pinned definition keeps its pin. If an
+   open field cannot accept the selected exact identifier, do not silently
+   substitute an alias or omit the field: refuse the dispatched pickup before
+   the claim and report that the delegated runtime cannot accept the selected
+   identifier. Before forwarding, resolve
    the delegated agent's definition: a model or effort it pins is kept, and
    only the fields it leaves open are forwarded; when no single effective
    definition can be found, or a scope that might hold one cannot be read,
