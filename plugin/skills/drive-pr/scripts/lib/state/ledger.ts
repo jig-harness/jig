@@ -593,6 +593,27 @@ function ledgerFields(data: Record<string, unknown>): LedgerFields {
       );
 }
 
+/**
+ * Drop the circuit fields a ledger carries ill-formed. Dropping the first
+ * launch would give a takeover a whole new wall-clock window, and dropping a
+ * person's stop would resume a drive they stopped, so a ledger with either
+ * ill-formed is refused instead of read.
+ */
+function dropMalformedCircuit(
+  ledger: Ledger,
+  fields: Record<string, unknown>,
+): ParsedLedger | null {
+  for (const f of circuit.malformedLedgerCircuit(fields)) {
+    if (f === "firstDrivenAt" || f === "circuitStop")
+      return {
+        kind: "malformed",
+        reason: `ill-formed field(s): ${f} is not ${f === "firstDrivenAt" ? "a timestamp" : "a circuit stop"}`,
+      };
+    delete ledger[f];
+  }
+  return null;
+}
+
 /** Parse a ledger comment body; `null` when the body is not a ledger. */
 export function parseLedger(body: string): ParsedLedger | null {
   if (!opensWith(body, LEDGER_MARKER)) return null;
@@ -617,17 +638,8 @@ export function parseLedger(body: string): ParsedLedger | null {
     !/^[a-f0-9]{40}$/.test(ledger.reviewCarriedFrom)
   )
     delete ledger.reviewCarriedFrom;
-  for (const f of circuit.malformedLedgerCircuit(read.fields)) {
-    // Dropping the first launch would give a takeover a whole new wall-clock
-    // window, and dropping a person's stop would resume a drive they stopped,
-    // so a ledger with either ill-formed is not read.
-    if (f === "firstDrivenAt" || f === "circuitStop")
-      return {
-        kind: "malformed",
-        reason: `ill-formed field(s): ${f} is not ${f === "firstDrivenAt" ? "a timestamp" : "a circuit stop"}`,
-      };
-    delete ledger[f];
-  }
+  const refused = dropMalformedCircuit(ledger, read.fields);
+  if (refused !== null) return refused;
   const { probe, ...driver } = ledger.driver;
   const clean = probeStopOf(probe);
   ledger.driver =
