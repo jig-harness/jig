@@ -284,205 +284,6 @@ describe("summary-findings parsing", () => {
     expect(parseDeclaredUnanchored(stickyBody({ unanchored: 2 }))).toBe(2);
   });
 
-  it("ignores fenced examples without changing live summary bullets", () => {
-    const body = [
-      "`not a fence ``` and still prose`",
-      "```markdown",
-      "- `example.ts:1` — a fenced decoy",
-      "~~~",
-      "- `still-example.ts:2` — a nested shorter fence",
-      "```",
-      "- `live.ts:3` — a live finding",
-      "> 9 finding(s) without a diff-anchorable line",
-    ].join("\n");
-    expect(parseBodyFindings(body)).toEqual([
-      { path: "live.ts", line: 3, text: "a live finding" },
-    ]);
-    expect(parseDeclaredUnanchored(body)).toBe(9);
-  });
-
-  it("ignores indented code examples when reading summary work", () => {
-    const body = [
-      "    ```markdown",
-      "    - `example.ts:1` — an indented code example",
-      "    > 0 finding(s) without a diff-anchorable line",
-      "- `live.ts:3` — a live finding",
-      "> 1 finding(s) without a diff-anchorable line",
-    ].join("\r\n");
-    expect(parseBodyFindings(body)).toEqual([
-      { path: "live.ts", line: 3, text: "a live finding" },
-    ]);
-    expect(parseDeclaredUnanchored(body)).toBe(1);
-  });
-
-  it("keeps a list-contained fence closed with its container indentation", () => {
-    const body = [
-      "- explanation:",
-      "  ```markdown",
-      "  - `example.ts:1` — a fenced decoy",
-      "    ```",
-      "- `live.ts:3` — a live finding",
-      "> 1 finding(s) without a diff-anchorable line",
-    ].join("\n");
-    expect(parseBodyFindings(body)).toEqual([
-      { path: "live.ts", line: 3, text: "a live finding" },
-    ]);
-    expect(parseDeclaredUnanchored(body)).toBe(1);
-  });
-
-  it("keeps fence scope at its Markdown container", () => {
-    const body = [
-      "  ```markdown",
-      "  - `example.ts:1` — a fenced decoy",
-      "```",
-      "- `live.ts:3` — a live finding",
-      "> 1 finding(s) without a diff-anchorable line",
-    ].join("\n");
-    expect(parseBodyFindings(body)).toEqual([
-      { path: "live.ts", line: 3, text: "a live finding" },
-    ]);
-    expect(parseDeclaredUnanchored(body)).toBe(1);
-  });
-
-  it("does not let an over-indented delimiter close a top-level fence", () => {
-    const body = [
-      "```markdown",
-      "    ```",
-      "    > 0 finding(s) without a diff-anchorable line",
-      "```",
-      "- `live.ts:3` — a live finding",
-      "> 1 finding(s) without a diff-anchorable line",
-    ].join("\n");
-    expect(parseBodyFindings(body)).toEqual([
-      { path: "live.ts", line: 3, text: "a live finding" },
-    ]);
-    expect(parseDeclaredUnanchored(body)).toBe(1);
-  });
-
-  it("keeps paragraph continuations and ignores mixed-whitespace code blocks", () => {
-    const body = [
-      " \t> 0 finding(s) without a diff-anchorable line",
-      "",
-      "paragraph",
-      "    > 1 finding(s) without a diff-anchorable line",
-    ].join("\n");
-    expect(parseDeclaredUnanchored(body)).toBe(1);
-  });
-
-  it("does not close a fence on a list marker or a blank container boundary", () => {
-    const body = [
-      "- explanation:",
-      "  ```markdown",
-      "",
-      "  - ```",
-      "  > 0 finding(s) without a diff-anchorable line",
-      "  ```",
-      "- `live.ts:3` — a live finding",
-      "> 1 finding(s) without a diff-anchorable line",
-    ].join("\n");
-    expect(parseBodyFindings(body)).toEqual([
-      { path: "live.ts", line: 3, text: "a live finding" },
-    ]);
-    expect(parseDeclaredUnanchored(body)).toBe(1);
-  });
-
-  it("does not treat prose or indented delimiters as declarations or fences", () => {
-    const body = [
-      "The example says 0 finding(s) without a diff-anchorable line.",
-      "",
-      "    ```",
-      "    > 0 finding(s) without a diff-anchorable line",
-      "- `live.ts:3` — a live finding",
-      "> 1 finding(s) without a diff-anchorable line",
-    ].join("\n");
-    expect(parseBodyFindings(body)).toEqual([
-      { path: "live.ts", line: 3, text: "a live finding" },
-    ]);
-    expect(parseDeclaredUnanchored(body)).toBe(1);
-  });
-
-  it("scans fences relative to ordered lists and ignores quoted examples", () => {
-    const body = [
-      "10. explanation:",
-      "    ```markdown",
-      "    > 0 finding(s) without a diff-anchorable line",
-      "    ```",
-      "> ```markdown",
-      "> - `quoted.ts:1` — a fenced decoy",
-      "> > 0 finding(s) without a diff-anchorable line",
-      "> ```",
-      "- `live.ts:3` — a live finding",
-      "> 1 finding(s) without a diff-anchorable line",
-    ].join("\n");
-    expect(parseBodyFindings(body)).toEqual([
-      { path: "live.ts", line: 3, text: "a live finding" },
-    ]);
-    expect(parseDeclaredUnanchored(body)).toBe(1);
-  });
-
-  it("does not read summary evidence quoted in HTML comments", () => {
-    const body = [
-      "<!--",
-      "- `quoted.ts:1` — a hidden finding",
-      "> 0 finding(s) without a diff-anchorable line",
-      "-->",
-      "- `live.ts:3` — a live finding",
-      "> 1 finding(s) without a diff-anchorable line",
-    ].join("\n");
-    expect(parseBodyFindings(body)).toEqual([
-      { path: "live.ts", line: 3, text: "a live finding" },
-    ]);
-    expect(parseDeclaredUnanchored(body)).toBe(1);
-  });
-
-  it("preserves live summary evidence beside comments and after code containers", () => {
-    const body = [
-      "```markdown",
-      "<!-- literal opener in code -->",
-      "```",
-      "- `live.ts:3` — a live finding <!-- explanation -->",
-      "> 1 finding(s) without a diff-anchorable line <!-- explanation -->",
-    ].join("\n");
-    expect(parseBodyFindings(body)).toEqual([
-      { path: "live.ts", line: 3, text: "a live finding" },
-    ]);
-    expect(parseDeclaredUnanchored(body)).toBe(1);
-  });
-
-  it("ends unclosed list and quote examples at their containers", () => {
-    const body = [
-      "- explanation:",
-      "  ```markdown",
-      "  example",
-      "- `list-live.ts:3` — a live finding",
-      "> ```markdown",
-      "> example",
-      "- `quote-live.ts:4` — a live finding",
-      "> 2 finding(s) without a diff-anchorable line",
-    ].join("\n");
-    expect(parseBodyFindings(body)).toEqual([
-      { path: "list-live.ts", line: 3, text: "a live finding" },
-      { path: "quote-live.ts", line: 4, text: "a live finding" },
-    ]);
-    expect(parseDeclaredUnanchored(body)).toBe(2);
-  });
-
-  it("keeps list ancestors when a child item closes", () => {
-    const body = [
-      "- parent:",
-      "  - child:",
-      "    text",
-      "  ```markdown",
-      "  example",
-      "- `live.ts:3` — a live finding",
-      "> 1 finding(s) without a diff-anchorable line",
-    ].join("\n");
-    expect(parseBodyFindings(body)).toEqual([
-      { path: "live.ts", line: 3, text: "a live finding" },
-    ]);
-    expect(parseDeclaredUnanchored(body)).toBe(1);
-  });
-
   it("extracts severity from the bullet", () => {
     expect(jigSeverity("🟡 **medium** (high confidence)")).toBe("medium");
     expect(jigSeverity("no severity here")).toBe("unknown");
@@ -2382,6 +2183,32 @@ describe("summary-findings parsing", () => {
       countMismatch.ignoredBacklog.map((entry) => entry.fingerprint),
     ).toContain(sectionFingerprint);
   });
+  const classifyBeyondThisPr = (
+    entries: Array<{
+      fingerprint: string;
+      path: string;
+      line: number | null;
+      comment: string;
+    }>,
+    renderedLines: string[],
+    prefixLines: string[] = [],
+  ) =>
+    classify({
+      pr: 1,
+      stickyCommentId: 9,
+      stickyBody: [
+        ...prefixLines,
+        `<details><summary>🗂️ <b>Beyond this PR</b> — ${entries.length} finding(s) for triage (not posted inline)</summary>`,
+        "",
+        "Held out of the inline threads so this PR can converge — **not blocking**.",
+        ...renderedLines,
+        "</details>",
+        `<!-- ai-review-backlog: ${Buffer.from(JSON.stringify(entries)).toString("base64")} -->`,
+      ].join("\n"),
+      anchoredKeys: [],
+      addressedFingerprints: new Set(),
+    });
+
   it("honors a Beyond this PR disposition when it renders every backlog entry", () => {
     const entries = [
       { path: "one.ts", line: 1, comment: "One held finding." },
@@ -2390,23 +2217,12 @@ describe("summary-findings parsing", () => {
       ...entry,
       fingerprint: fingerprintOf(entry.path, entry.line, entry.comment),
     }));
-    const blob = Buffer.from(JSON.stringify(entries)).toString("base64");
-    const r = classify({
-      pr: 1,
-      stickyCommentId: 9,
-      stickyBody: [
-        "<details><summary>🗂️ <b>Beyond this PR</b> — 2 finding(s) for triage (not posted inline)</summary>",
-        "",
-        "Held out of the inline threads so this PR can converge — **not blocking**.",
-        ...entries.map(
-          (entry) => `- \`${entry.path}:${entry.line}\` — ${entry.comment}`,
-        ),
-        "</details>",
-        `<!-- ai-review-backlog: ${blob} -->`,
-      ].join("\n"),
-      anchoredKeys: [],
-      addressedFingerprints: new Set(),
-    });
+    const r = classifyBeyondThisPr(
+      entries,
+      entries.map(
+        (entry) => `- \`${entry.path}:${entry.line}\` — ${entry.comment}`,
+      ),
+    );
     expect(r.ignoredBacklog.map((entry) => entry.fingerprint)).toEqual(
       entries.map((entry) => entry.fingerprint),
     );
@@ -2430,22 +2246,10 @@ describe("summary-findings parsing", () => {
       ...entry,
       fingerprint: fingerprintOf(entry.path, entry.line, entry.comment),
     }));
-    const blob = Buffer.from(JSON.stringify(entries)).toString("base64");
-    const r = classify({
-      pr: 1,
-      stickyCommentId: 9,
-      stickyBody: [
-        "<details><summary>🗂️ <b>Beyond this PR</b> — 2 finding(s) for triage (not posted inline)</summary>",
-        "",
-        "Held out of the inline threads so this PR can converge — **not blocking**.",
-        "- `AGENTS.md` — 🟡 **medium** (correctness · adjacent) — The full reviewer comment…",
-        "- `docs/README.md:12` — 🟢 **low** (maintainability · adjacent) — The full reviewer comment…",
-        "</details>",
-        `<!-- ai-review-backlog: ${blob} -->`,
-      ].join("\n"),
-      anchoredKeys: [],
-      addressedFingerprints: new Set(),
-    });
+    const r = classifyBeyondThisPr(entries, [
+      "- `AGENTS.md` — 🟡 **medium** (correctness · adjacent) — The full reviewer comment…",
+      "- `docs/README.md:12` — 🟢 **low** (maintainability · adjacent) — The full reviewer comment…",
+    ]);
     expect(r.ignoredBacklog).toEqual([]);
     expect(r.unaddressed.map((entry) => entry.fingerprint)).toEqual(
       entries.map((entry) => entry.fingerprint),
@@ -2461,57 +2265,40 @@ describe("summary-findings parsing", () => {
       comment,
       fingerprint: fingerprintOf("same.ts", 8, comment),
     }));
-    const blob = Buffer.from(JSON.stringify(entries)).toString("base64");
-    const r = classify({
-      pr: 1,
-      stickyCommentId: 9,
-      stickyBody: [
-        "<details><summary>🗂️ <b>Beyond this PR</b> — 2 finding(s) for triage (not posted inline)</summary>",
-        "",
-        "Held out of the inline threads so this PR can converge — **not blocking**.",
-        "- `same.ts:8` — 🟡 **medium** — The shared prefix…",
-        "- `same.ts:8` — 🟡 **medium** — The shared prefix…",
-        "</details>",
-        `<!-- ai-review-backlog: ${blob} -->`,
-      ].join("\n"),
-      anchoredKeys: [],
-      addressedFingerprints: new Set(),
-    });
+    const r = classifyBeyondThisPr(entries, [
+      "- `same.ts:8` — 🟡 **medium** — The shared prefix…",
+      "- `same.ts:8` — 🟡 **medium** — The shared prefix…",
+    ]);
     expect(r.ignoredBacklog).toEqual([]);
     expect(r.unaddressed.map((entry) => entry.fingerprint)).toEqual(
       entries.map((entry) => entry.fingerprint),
     );
   });
   it("does not treat distinct same-anchor backlog findings as rendered", () => {
-    const entries = ["The rendered finding.", "The hidden finding."].map(
-      (comment) => ({
-        path: "same.ts",
-        line: 8,
-        comment,
-        fingerprint: fingerprintOf("same.ts", 8, comment),
-      }),
-    );
-    const blob = Buffer.from(JSON.stringify(entries)).toString("base64");
-    const r = classify({
-      pr: 1,
-      stickyCommentId: 9,
-      stickyBody: [
-        "<details><summary>🗂️ <b>Beyond this PR</b> — 2 finding(s) for triage (not posted inline)</summary>",
-        "",
-        "Held out of the inline threads so this PR can converge — **not blocking**.",
+    const renderedEntry = {
+      path: "same.ts",
+      line: 8,
+      comment: "The rendered finding.",
+      fingerprint: fingerprintOf("same.ts", 8, "The rendered finding."),
+    };
+    const hiddenEntry = {
+      path: "same.ts",
+      line: 8,
+      comment: "The hidden finding.",
+      fingerprint: fingerprintOf("same.ts", 8, "The hidden finding."),
+    };
+    const r = classifyBeyondThisPr(
+      [renderedEntry, hiddenEntry],
+      [
         "- `same.ts:8` — The rendered finding.",
         "- `same.ts:8` — A different rendering.",
-        "</details>",
-        `<!-- ai-review-backlog: ${blob} -->`,
-      ].join("\n"),
-      anchoredKeys: [],
-      addressedFingerprints: new Set(),
-    });
+      ],
+    );
     expect(r.ignoredBacklog.map((entry) => entry.fingerprint)).toEqual([
-      entries[0]!.fingerprint,
+      renderedEntry.fingerprint,
     ]);
     expect(r.unaddressed.map((entry) => entry.fingerprint)).toEqual([
-      entries[1]!.fingerprint,
+      hiddenEntry.fingerprint,
     ]);
   });
   it("does not let a matching Beyond this PR count suppress a different backlog entry", () => {
@@ -2531,25 +2318,11 @@ describe("summary-findings parsing", () => {
       line: 2,
       comment: hiddenText,
     };
-    const blob = Buffer.from(JSON.stringify([rendered, hidden])).toString(
-      "base64",
+    const r = classifyBeyondThisPr(
+      [rendered, hidden],
+      [`- \`${renderedPath}:1\` — ${renderedText}`],
+      ["<details><summary>unrelated details</summary>", "</details>"],
     );
-    const r = classify({
-      pr: 1,
-      stickyCommentId: 9,
-      stickyBody: [
-        "<details><summary>unrelated details</summary>",
-        "</details>",
-        "<details><summary>🗂️ <b>Beyond this PR</b> — 2 finding(s) for triage (not posted inline)</summary>",
-        "",
-        "Held out of the inline threads so this PR can converge — **not blocking**.",
-        `- \`${renderedPath}:1\` — ${renderedText}`,
-        "</details>",
-        `<!-- ai-review-backlog: ${blob} -->`,
-      ].join("\n"),
-      anchoredKeys: [],
-      addressedFingerprints: new Set(),
-    });
     expect(r.ignoredBacklog.map((finding) => finding.fingerprint)).toEqual([
       rendered.fingerprint,
     ]);

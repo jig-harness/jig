@@ -1795,7 +1795,9 @@ Related orderings, all enforced rather than documented:
   than restoring the suppression.
 - The sticky's backlog reports an entry as informational when it marks the
   entry `blocking: false` or `reason: "winddown-deferred"`, or explicitly
-  declares the Beyond this PR backlog non-blocking. An explicit
+  declares the Beyond this PR backlog non-blocking and renders that entry with
+  its full fingerprint (abbreviated or unmatched renderings stay blocking unless
+  the entry carries an explicit non-blocking field). An explicit
   `blocking: true` takes precedence. Fresh body bullets remain subject to the
   usual thread-anchoring and answer rules, including when a backlog entry
   shares their fingerprint. The summary JSON exposes skipped entries in
