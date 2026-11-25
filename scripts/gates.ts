@@ -72,6 +72,8 @@ export const POSIX_ONLY_SUITES = [
   "tools/herdr/**",
   "tools/orca/**",
   "plugin/dispatch/**",
+  // The hub's process adapter: file modes, Unix sockets and uids.
+  "plugin/hub/process/**",
   "scripts/gates-mirror.test.ts",
 ];
 

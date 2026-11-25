@@ -276,10 +276,12 @@ function commandDeadlineSec(components: readonly Component[]): number {
       JIG_LAUNCHER_DEADLINE_SEC: undefined,
     }) / 1000,
   );
-  return components.reduce(
-    (total, component) => total + (component.job().deadlineSec ?? own),
-    0,
-  );
+  // A resident job (restarted after it exits) runs until stopped, never
+  // through the command, so its day-long deadline is no command's budget.
+  return components
+    .map((component) => component.job())
+    .filter((job) => !("afterExit" in job.schedule && job.schedule.afterExit))
+    .reduce((total, job) => total + (job.deadlineSec ?? own), 0);
 }
 
 const heading = (component: Component) =>
