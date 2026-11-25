@@ -327,7 +327,7 @@ function isExactRepositoryPath(path: string): boolean {
     path === "" ||
     path.trim() === "" ||
     path.includes("\0") ||
-    /[\r\n]/.test(path)
+    /[\r\n\u2028\u2029]/.test(path)
   )
     return false;
   if (/^[A-Za-z]:[\\/]/.test(path)) return false;

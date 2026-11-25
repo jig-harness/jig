@@ -210,11 +210,19 @@ export function reviewerStickyBody(
     // Finding-count declarations are intentionally rendered as blockquotes by
     // the reviewer. Keep their prose, but still discard quoted protocol
     // markers so examples cannot become evidence.
-    if (
-      /^ {0,3}>/.test(line) &&
-      !/findings?(?:\(s\))?\s+without\s+a\s+diff-anchorable\s+line/i.test(line)
-    )
+    if (/^ {0,3}>/.test(line)) {
+      if (
+        !/findings?(?:\(s\))?\s+without\s+a\s+diff-anchorable\s+line/i.test(
+          line,
+        )
+      )
+        continue;
+      // The declared count is data, but the rest of the quoted line is still
+      // untrusted example text. Do not let a marker beside that declaration
+      // become review evidence.
+      structural.push(line.replaceAll("<!--", "< !--"));
       continue;
+    }
     structural.push(line);
   }
   // Every evidence parser consumes this structural view. Returning the raw
@@ -324,6 +332,7 @@ export function reviewerStickyIn(
       highestExplicitRound !== null &&
       round < highestExplicitRound;
     const replacesSticky =
+      skip === null &&
       !lowerRound &&
       bodySha !== "" &&
       (sticky.sha === "" ||

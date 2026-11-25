@@ -1705,12 +1705,19 @@ describe("summary-findings marker overrides", () => {
            spacedSha: s.hasInvalidReviewedSha('<!-- custom+sha : unavailable -->', 'custom+sha'),
            caseVariantSha: s.hasInvalidReviewedSha('<!-- CUSTOM+SHA: abc1234 -->', 'custom+sha'),
            quotedDeclaration: m.reviewerSticky([
-             { id: 25, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n> 2 findings without a diff-anchorable line' },
+             { id: 25, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n> 2 findings without a diff-anchorable line <!-- custom+sha: def5678 -->' },
            ], false)?.id,
            malformedSummarySurvivesSkip: (() => { try {
              m.reviewerSticky([
                { id: 26, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: malformed -->\\n<!-- ai-review-round: 5 -->\\n- \`a.ts\` — finding' },
                { id: 27, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: def5678 -->\\n<!-- ai-review-round: 6 -->\\n<!-- ai-review-skip-notice -->\\n\`def5678\` skipped\\n<!-- /ai-review-skip-notice -->' },
+             ], false); return false;
+           } catch { return true; } })(),
+           multipleMalformedSummariesSurvivePartialRecovery: (() => { try {
+             m.reviewerSticky([
+               { id: 28, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: malformed -->\\n<!-- ai-review-round: 5 -->\\n- \`a.ts\` — finding' },
+               { id: 29, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: malformed -->\\n<!-- ai-review-round: 2 -->\\n- \`b.ts\` — finding' },
+               { id: 30, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: def5678 -->\\n<!-- ai-review-round: 3 -->\\nall clear' },
              ], false); return false;
            } catch { return true; } })(),
            foreignSkipDoesNotSetWatermark: s.reviewerStickyIn([
@@ -1821,6 +1828,7 @@ describe("summary-findings marker overrides", () => {
     expect(got.caseVariantSha).toBe(true);
     expect(got.quotedDeclaration).toBe(25);
     expect(got.malformedSummarySurvivesSkip).toBe(true);
+    expect(got.multipleMalformedSummariesSurvivePartialRecovery).toBe(true);
     expect(got.foreignSkipDoesNotSetWatermark).toMatchObject({
       sha: "abc1234",
       round: 2,

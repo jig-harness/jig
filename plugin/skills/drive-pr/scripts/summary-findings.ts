@@ -1379,8 +1379,9 @@ export function reviewerSticky(
   let selectedRound: number | null = null;
   let selectedReviewedSha: string | null = null;
   let highestExplicitRound: number | null = null;
-  let malformedFindingEvidence: { round: number | null; sha: string } | null =
-    null;
+  // Keep every malformed finding-bearing summary. A later malformed comment
+  // must not overwrite a stronger ordering constraint from an earlier one.
+  const malformedFindingEvidence: { round: number | null; sha: string }[] = [];
   for (const comment of comments) {
     const body = reviewerStickyBody(comment, isReviewerLogin, stickyMarker());
     if (body === null) continue;
@@ -1396,10 +1397,10 @@ export function reviewerSticky(
         parseBodyFindings(body).length > 0 ||
         parseDeclaredUnanchored(body) > 0
       )
-        malformedFindingEvidence = {
+        malformedFindingEvidence.push({
           round: parseReviewRound(body),
           sha: reviewedShaIn(body, reviewedShaMarker()),
-        };
+        });
       continue;
     }
     const round = parseReviewRound(body);
@@ -1446,14 +1447,29 @@ export function reviewerSticky(
     // clean summary proves it supersedes that summary by its explicit round.
     // A different SHA alone cannot establish ordering, and a skip-only
     // acknowledgement is not a replacement summary at all.
-    if (
-      malformedFindingEvidence !== null &&
-      replacesSelection &&
-      round !== null &&
-      malformedFindingEvidence.round !== null &&
-      round > malformedFindingEvidence.round
-    )
-      malformedFindingEvidence = null;
+    const advancesSelection =
+      selected === undefined ||
+      (round !== null && (selectedRound === null || round > selectedRound)) ||
+      (replacesSelection &&
+        (round === null || selectedRound === null || round === selectedRound));
+    if (advancesSelection && round !== null) {
+      // An explicit newer round is the only evidence that can supersede a
+      // malformed finding-bearing summary. An unorderable malformed comment
+      // remains a stopper until the reviewer repairs its protocol evidence.
+      for (
+        let index = malformedFindingEvidence.length - 1;
+        index >= 0;
+        index--
+      ) {
+        const malformed = malformedFindingEvidence[index];
+        if (
+          malformed !== undefined &&
+          malformed.round !== null &&
+          round > malformed.round
+        )
+          malformedFindingEvidence.splice(index, 1);
+      }
+    }
     // An auxiliary response never supersedes a finding-bearing summary just
     // because it happens to mention a protocol marker. A newer declared round
     // is also evidence: it is the reviewer's explicit replacement boundary.
@@ -1470,7 +1486,7 @@ export function reviewerSticky(
       selectedReviewedSha = reviewedSha;
     }
   }
-  if (malformedFindingEvidence !== null)
+  if (malformedFindingEvidence.length > 0)
     throw new Error("reviewer summary protocol evidence is unreadable");
   return selected;
 }
