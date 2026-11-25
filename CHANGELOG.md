@@ -404,6 +404,78 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.311.1] - 2026-11-25
+
+### Fixed
+
+- **Dispatch:** a batch pickup that ended on a question no longer holds every
+  member the question does not name. The members it never claimed and the
+  question does not name are picked up again by the queue's usual rules, with
+  no need raised for them, whether or not the pass claimed any member; hosts
+  holding members this way release them on the first tick after the upgrade.
+  A question that names no member is one need on the batch's anchor, the other
+  members wait on it with no need of their own. An anchor an open pull request
+  carries keeps its claim while its batch question stays visible on the
+  anchor; the selected answer is refused until a person chooses a safe
+  continuation. An unreadable pull-request link also refuses the release.
+- **Dispatch:** a batch whose pass stopped on a fault of its host keeps its
+  members held while the host's health check fails, even when the stop's text
+  names a member, and a legacy record that cannot say which member it claimed
+  stays conservative after one claim is observed. A claimed member of a batch
+  with a whole-batch question waits on the anchor's need with no need of its
+  own, and an anchor carried by an open pull request stays quiet as any
+  carried item does.
+
+## [0.311.0] - 2026-11-25
+
+Declare a model's tier with the new `routing.model_tiers` key. Choose a separate model for the steward with `routing.stages`.
+
+### Added
+
+- `routing.model_tiers` maps any model identifier that meets Jig's [token rules](plugin/CONFIGURATION.md#the-open-model-vocabulary) to a [model tier](GLOSSARY.md#model-tier) (`scout`, `execution`, `strategic` or `judgment`) with a reason, so `routing.models` can name a model the plugin's list of families does not.
+- Routing declarations can be layered through a host user file, repository configuration or one run; mapping values merge recursively, including a declaration's `tier` and `reason`. A higher-layer `routing: null` resets the whole routing section. The effective runtime loader refuses a `null` only when it survives the merge at the exact path: `routing.model_tiers: null` is refused, while `routing.family_tiers: null` remains an empty compatibility table. The audit separately checks the repository file's refused-null paths.
+- `routing.stages.<stage>.models.<runtime>.<tier>` sets the model for one launch stage (`pickup`, `rearm`, `followup`, `steward`) in place of the all-stages cell of `routing.models`. A stage's cell is more specific than the all-stages one whichever layer set each. Every configured row is validated when routing loads; implementer routing reads the active runtime's all-stages cell, and the dispatcher's steward launch currently reads its `steward` row.
+
+### Changed
+
+- For a runtime with a list of known families, an unrecognized model identifier that neither declaration key classifies is refused. The message names the key to set (`routing.model_tiers.<runtime>.<model>`) instead of `routing.family_tiers`.
+- `routing.family_tiers` is kept as the older spelling of `routing.model_tiers`: a configuration that sets only it keeps its tier classification and precedence, applied under the new selection rules, which accept model identifiers that were refused before (a cataloged release identifier such as `claude-opus-5-5` can now be selected). One model declared under both with different tiers is refused. A `routing.family_tiers` key keeps its older grammar, a lone surrogate or NUL included, and `routing.efforts` names keep theirs; `routing.model_tiers` keys and selected models refuse it. **Breaking:** A selected model identifier that was accepted before can now fail: one that starts with a dash (such as `-preview`), or holds a control or bidirectional character, is refused as a selected model, even where `routing.family_tiers` still accepts the same string as a declaration key. **Consumer action:** required at configuration, machine. Replace each affected `routing.models` or `routing.stages` selection, in the repository file, host user file or `JIG__ROUTING__…` override, with a valid identifier at the intended tier. Declare it in `routing.model_tiers` only if the catalog does not know it; then follow the [routing rules](plugin/CONFIGURATION.md#the-open-model-vocabulary).
+- Jig validates token shape, family classification and tier ordering for a declared exact model identifier; the selected runtime validates whether its provider accepts that identifier. The shared routing table remains usable by every supported CLI launch that accepts the configured identifier; an Agent-tool delegation keeps that tool's alias restriction at its own boundary.
+- Declared routing identifiers and reasons get two separate treatments in audit output. Both reports format a value for display: one that holds an invisible character (a control, format, bidirectional, zero-width, variation-selector, unpaired-surrogate, braille-blank or other default-ignorable character, or a line or paragraph separator) or starts with a double quote is JSON-quoted, so its quotes and backslashes are escaped too, and a finding's message carries that formatted text, an identifier included. A reason is trimmed before it is formatted, so a trailing newline alone does not trigger the quoting; an identifier outside the bare-key grammar is JSON-quoted as well, so a backslash in it is escaped. The Markdown report additionally escapes Markdown punctuation, so a reason such as `**local policy**` shows as written, and puts bare `http(s)` links and `www.` links, email addresses and mentions in code spans. It does not protect every renderer extension: emoji shortcodes such as `:warning:` and inline math delimiters (`$x^2$`) can still render specially. The structured (JSON) report carries the formatted message without Markdown escaping and without separate raw fields; ordinary text such as `local policy` appears in it unchanged. In the standalone `config-fit.ts` Markdown output, a fact such as the integration branch is shown as written, except that a value with an invisible character of that kind, edge whitespace or a leading double quote is JSON-quoted so it reads differently from its plain twin and stays on one line; the `facts` object of the structured (`--json`) report and the audit sheet carry the original value.
+
+### Fixed
+
+- The dispatcher's outcome log preserves separate stage defects that occur in the same millisecond.
+
+## [0.310.0] - 2026-11-25
+
+### Added
+
+- `jig hub serve` runs the optional hub on Bun: the host protocol's
+  listener under `/v1/` on loopback and private-network addresses only, a
+  webhook listener that serves `/webhooks/<source>` and answers 404 to
+  every other path, and the feed on a Unix socket or on loopback with the
+  front's secret. Its scheduled jobs keep their next run in the hub's
+  database and run in a worker thread with its own connection, so a long
+  run never delays a webhook's acknowledgement. The hub's settings file is
+  described in [the hub's README](plugin/hub/README.md).
+  **Consumer action:** none.
+- `jig install hub` installs `jig hub serve` as a resident job of the
+  hub's own OS user (`jig-hub` by default), restarted when it stops and
+  when the installed plugin copy changes, one at a time, and refuses root,
+  another user, the dispatcher's user and a user whose scheduler cannot be
+  read to tell. Where podman or docker is installed it builds the hub's
+  container image locally from the installed release, never pushing it,
+  and runs the hub in it with its settings mounted read-only. A bare
+  `jig install` never includes the hub, and only
+  `jig uninstall hub --machine` removes it, stopping the running hub.
+  **Consumer action:** none.
+- `jig doctor hub` checks the hub's OS user, the modes of its settings file
+  (0600) and database directory (0700), the interfaces its listeners
+  bind and the feed socket's directory, and fails when another user can
+  read either file.
+  **Consumer action:** none.
+
 ## [0.309.3] - 2026-11-25
 
 ### Fixed
@@ -11121,7 +11193,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.309.3...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.311.1...HEAD
+[0.311.1]: https://github.com/jig-harness/jig/compare/v0.311.0...v0.311.1
+[0.311.0]: https://github.com/jig-harness/jig/compare/v0.310.0...v0.311.0
+[0.310.0]: https://github.com/jig-harness/jig/compare/v0.309.3...v0.310.0
 [0.309.3]: https://github.com/jig-harness/jig/compare/v0.309.2...v0.309.3
 [0.309.2]: https://github.com/jig-harness/jig/compare/v0.309.1...v0.309.2
 [0.309.1]: https://github.com/jig-harness/jig/compare/v0.309.0...v0.309.1

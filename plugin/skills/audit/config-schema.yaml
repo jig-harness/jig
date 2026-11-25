@@ -121,7 +121,14 @@ strict:
 
 # Sections and fields whose `null` a skill refuses rather than reading it as
 # not set: a higher layer's `null` there would otherwise put a lower layer's
-# value back to its default unnoticed. Elsewhere a `null` reads as not set.
+# value back to its default unnoticed. At other declared field and section
+# paths a repository may set, the schema reads a `null` as not set (a field only
+# the user file may set is an error in a repository's file whatever its value,
+# `null` included); nested map types and a skill's
+# own validators can still reject it (a work-type entry must be a mapping, and
+# routing's validation refuses a `null` for `routing.model_tiers`, `routing.stages`
+# and `routing.stages.<stage>.models` separately, and the loader refuses one that
+# survives the merge).
 null_refused:
   - repository
   - repository.remote
@@ -129,6 +136,8 @@ null_refused:
   - file_issue
   - file_issue.sweep
   - file_issue.sweep.move
+  - routing.model_tiers
+  - routing.stages
 
 # Sections a skill refuses outright, with what to do instead.
 refused:
@@ -725,7 +734,7 @@ fields:
     read_by: [drive-pr]
   drive.pass_model:
     type: string
-    pattern: "^[A-Za-z0-9][A-Za-z0-9._:/@[\\]-]*$"
+    pattern: "^(?!-)(?![\\s\\S]*[\\uD800-\\uDBFF](?![\\uDC00-\\uDFFF]))(?![\\s\\S]*(?<![\\uD800-\\uDBFF])[\\uDC00-\\uDFFF])[^\\s,;=\\x00-\\x1F\\x7F-\\x9F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]+$"
     default: sonnet
     since: 0.102.0
     read_by: [drive-pr, do-item]
@@ -1206,6 +1215,18 @@ fields:
     values_type: { type: map, values_type: { type: map } }
     read_by: [do-item, drive-pr, dispatch]
     since: 0.179.0
+  routing.model_tiers:
+    type: map
+    values_type: { type: map, values_type: { type: map } }
+    read_by: [do-item, drive-pr, dispatch]
+    since: 0.311.0
+  routing.stages:
+    type: map
+    values_type:
+      type: map
+      values_type: { type: map, values_type: { type: map, values_type: string } }
+    read_by: [do-item, dispatch]
+    since: 0.311.0
   routing.efforts:
     type: map
     values_type: { type: map, values_type: string }

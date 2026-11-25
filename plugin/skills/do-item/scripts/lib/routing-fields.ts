@@ -4,7 +4,11 @@
  * `RoutingError` whose message opens with the field at fault.
  */
 
-import { formatField, isMapping } from "../../../../shared/config-layers.ts";
+import {
+  formatDisplayValue,
+  formatField,
+  isMapping,
+} from "../../../../shared/config-layers.ts";
 
 /** The complexity tiers a route may name, lightest first. */
 export const TIERS = ["simple", "standard", "complex"] as const;
@@ -40,8 +44,19 @@ export function tierNamed(value: unknown): Tier | undefined {
 
 /** A runtime name, as `routing.models` and `routing.efforts` key it. */
 const RUNTIME_NAME = /^[a-z][a-z0-9_-]*$/;
-/** A name a runtime takes: one token, so the route record needs no escaping. */
-const TOKEN = /^[^\s,;=]+$/;
+/**
+ * A model name a runtime takes: one token that is safe as an argv operand and
+ * in a driver log. Kept here so every routing and pass-model entry point
+ * applies the same boundary.
+ */
+export const MODEL_TOKEN_PATTERN =
+  /^(?!-)[^\p{Cc}\p{Cs}\p{Bidi_Control}\s,;=]+$/u;
+
+/** A declared model name, which need not itself be an argv operand. */
+export const DECLARATION_TOKEN_PATTERN = /^[^\p{Cs}\s,;=\0]+$/u;
+
+/** The declaration grammar `routing.family_tiers` has always had: surrogates are not refused. */
+export const LEGACY_DECLARATION_TOKEN_PATTERN = /^[^\s,;=]+$/;
 
 export function oneOf<T extends string>(
   value: unknown,
@@ -67,9 +82,42 @@ export function refuseUnknownKeys(
 }
 
 export function token(value: unknown, field: string, what: string): string {
-  if (typeof value !== "string" || !TOKEN.test(value))
+  if (typeof value !== "string" || !MODEL_TOKEN_PATTERN.test(value))
+    throw new RoutingError(
+      `${field} must be ${what}: one word that does not start with a dash or contain control or bidirectional characters, whitespace, a comma, semicolon or equals sign (got ${typeof value === "string" ? formatDisplayValue(value) : typeof value})`,
+    );
+  return value;
+}
+
+/** A runtime's name for an effort: the grammar `routing.efforts` has always had. */
+export function effortToken(
+  value: unknown,
+  field: string,
+  what: string,
+): string {
+  if (
+    typeof value !== "string" ||
+    !LEGACY_DECLARATION_TOKEN_PATTERN.test(value)
+  )
     throw new RoutingError(
       `${field} must be ${what}: one word, with no space, comma, semicolon or equals sign`,
+    );
+  return value;
+}
+
+/** Read a declaration key without applying the selected-model argv boundary. */
+export function declarationToken(
+  value: unknown,
+  field: string,
+  what: string,
+  legacy = false,
+): string {
+  const pattern = legacy
+    ? LEGACY_DECLARATION_TOKEN_PATTERN
+    : DECLARATION_TOKEN_PATTERN;
+  if (typeof value !== "string" || !pattern.test(value))
+    throw new RoutingError(
+      `${field} must be ${what}: one word that contains no ${legacy ? "" : "NUL, unpaired surrogate, "}whitespace, comma, semicolon or equals sign`,
     );
   return value;
 }

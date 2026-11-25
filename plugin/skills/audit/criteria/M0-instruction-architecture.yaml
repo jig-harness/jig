@@ -131,19 +131,34 @@ criteria:
       family aliases, the vendor's most general model name, or one central
       name mapped to a release in a single place), a CI check over that
       metadata enforces it, and any committed roster of the assignments is
-      generated from the metadata and drift-checked (expected-absent for a
-      repository whose agents and skills pin no model, in metadata or at
-      invocation).
+      generated from the metadata and drift-checked. This pin check is
+      expected-absent when a repository's agents and skills pin no model in
+      metadata or at invocation; shared routing is assessed separately.
     observe:
       - "every model: value in agent and skill definitions that pins a model is a bare family alias (Claude Code: fable, opus, sonnet, haiku), not a versioned id with a date or release number; an inheritance selector (Claude Code: inherit) or an absent field pins nothing and is not a pin"
       - "where a runtime has no family aliases, the pin is the vendor's undated, most general model name, or one central name the repository maps to a release in a single place; no agent or skill carries a release of its own"
       - "a model setting in a skill's configuration for a judgment pass follows the same rule"
-      - "no skill, prompt or script assigns a model at invocation time (Claude Code: the model parameter of a subagent call, a --model flag on a spawned CLI) other than from that metadata; such an override outranks the definition's own model: and is a declaration point outside it"
+      - "no skill, prompt or script assigns a model at invocation time (Claude Code: the model parameter of a subagent call, a --model flag on a spawned CLI) other than by forwarding a model selected from agent or skill metadata, a documented built-in fallback used only when no configured or routed value applies, a skill's explicit pass-model configuration, an explicit recorded one-run operator choice, or the shared routing table only for a field the effective definition leaves open; such an override otherwise outranks the definition's own model and is an undeclared pin"
       - "a CI check reads that metadata and accepts the runtime's inheritance selector as unpinned, and rejects an unknown model family, a versioned id used as a pin, and a declared cost tier that contradicts the model; it runs whether or not a roster is kept"
       - "a roster of model assignments, where one is committed, is generated from the metadata and a CI check fails when it drifts; no per-agent assignment is kept by hand in prose"
-      - "every Judgment-tier assignment records its A/B baseline and its admission next to it"
-      - "a repository whose agents and skills pin no model, in metadata or at invocation, meets it"
+      - "a repository whose agents and skills pin no model in metadata or at invocation meets this pin check (expected-absent)"
     since: 0.40.0
+
+  - id: judgment-tier-admission-and-baseline
+    level: standard
+    requires: convention
+    statement: >-
+      Every Judgment-tier metadata pin, skill Judgment-pass setting, and
+      decision layer that shared routing selects onto a Judgment model records
+      its admission and A/B baseline beside that layer's own declaration; a
+      shared routing row is not that declaration because one row can serve
+      several decision layers.
+    observe:
+      - "each Judgment-tier assignment identifies its decision layer and explains how that layer meets every admission clause, while identifying the cheaper mechanical procedure that ran without settling the call"
+      - "each Judgment-tier assignment records its A/B comparison beside the layer's own declaration: the Strategic baseline and planned comparison before measurement, then the exact measured model and result; each decision layer selected onto a Judgment model through shared routing has the same layer-specific evidence, while an implementation consumer that may edit code is not Judgment-only merely because shared routing selects a Judgment family for it"
+      - "a shared routing row alone is not evidence of admission or a baseline"
+      - "a repository with no Judgment-tier metadata pin, skill Judgment-pass setting or shared-routing Judgment selection meets it (expected-absent)"
+    since: 0.311.0
 
   - id: runtime-capabilities-name-fallbacks
     level: standard

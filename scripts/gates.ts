@@ -63,7 +63,8 @@ const root = join(import.meta.dir, "..");
  * it, which read `/proc` or `ps`; and the dispatcher's, whose session runtime
  * is Orca, which runs only on POSIX hosts; and the gates workflow's mirror
  * step's, which runs that step's script under bash as GitHub's Linux runner
- * does. Windows runs every other suite; a test
+ * does; and the hub's process adapter's, which checks file modes and owners
+ * and serves a Unix socket. Windows runs every other suite; a test
  * inside one that needs POSIX skips itself on win32 and names the work that
  * lifts the skip.
  */
@@ -72,6 +73,7 @@ export const POSIX_ONLY_SUITES = [
   "tools/herdr/**",
   "tools/orca/**",
   "plugin/dispatch/**",
+  "plugin/hub/process/**",
   "scripts/gates-mirror.test.ts",
 ];
 

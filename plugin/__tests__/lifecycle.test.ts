@@ -14,7 +14,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
+import {
+  expectSpawnExit,
+  expectSpawnExited,
+} from "../../lib/test-helpers/expect-spawn-exit.ts";
 import { skipsOnWindows } from "../../lib/test-helpers/windows-skip.ts";
 import { load } from "../shared/yaml.ts";
 import { SCHEDULERS, machine } from "./lifecycle-fixtures.ts";
@@ -57,6 +60,7 @@ test.skipIf(onWindows).each(SCHEDULERS)(
         installed: false,
         detail: expect.stringContaining("no machine file"),
       },
+      { component: "hub", installed: false },
     ]);
   },
 );
@@ -68,7 +72,9 @@ test.skipIf(onWindows).each(SCHEDULERS)(
     m.writeDispatchFile();
     const installed = m.jig(["install", "--yes"]);
     expectSpawnExit(installed, 0);
-    expect(installed.stdout.toString()).not.toContain("skipped");
+    // The hub is opted in by name, as its own OS user, never by a bare install.
+    expect(installed.stdout.toString()).not.toContain("dispatch: skipped");
+    expect(installed.stdout.toString()).toContain("hub: skipped");
     expect(m.hasJob("jig-gc")).toBe(true);
     expect(m.hasJob("jig-dispatch")).toBe(true);
     const status = m.jig(["status", "dispatch", "--json"]);
@@ -97,6 +103,83 @@ test.skipIf(onWindows).each(SCHEDULERS)(
     expect(existsSync(join(m.home, ".local", "state", "jig", "launcher"))).toBe(
       false,
     );
+  },
+);
+
+/** Runs `jig <args>` as `m.jig` does, without blocking, so a child this process started is reaped while it runs. */
+async function jigAsync(m: ReturnType<typeof machine>, args: string[]) {
+  const child = Bun.spawn(
+    [
+      process.execPath,
+      "--no-env-file",
+      `--config=${join(m.plugin, "gc", "bunfig.toml")}`,
+      join(m.plugin, "jig.ts"),
+      ...args,
+    ],
+    { cwd: m.repo, env: m.env, stdout: "pipe", stderr: "pipe", timeout: 60000 },
+  );
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  return { stdout, stderr, exitCode };
+}
+
+test.skipIf(onWindows).each(SCHEDULERS)(
+  "the hub's job is the machine's: uninstall leaves it without --machine, has nothing to remove where none is installed, and stops the running hub (%s)",
+  async (variant) => {
+    const m = machine(variant);
+    const bare = m.jig(["uninstall", "--yes"]);
+    expectSpawnExit(bare, 0);
+    expect(bare.stdout.toString()).toContain("jig uninstall hub --machine");
+    const none = m.jig(["uninstall", "hub", "--machine", "--yes"]);
+    expectSpawnExit(none, 0);
+    expect(none.stdout.toString()).toContain("nothing to remove");
+    expect(none.stdout.toString()).not.toContain("Removed:");
+
+    // A running hub: its install record, and a process holding its lock.
+    const hub = join(m.home, ".jig", "hub");
+    mkdirSync(hub, { recursive: true, mode: 0o700 });
+    const record = join(hub, "install.json");
+    writeFileSync(
+      record,
+      JSON.stringify({ runtime: null, settings: join(hub, "settings.yaml") }),
+    );
+    const holder = Bun.spawn(
+      [
+        "bun",
+        join(
+          import.meta.dir,
+          "..",
+          "hub",
+          "process",
+          "__tests__",
+          "fixtures",
+          "hold-serve-lock.ts",
+        ),
+      ],
+      { env: m.env, stdout: "pipe", stderr: "pipe" },
+    );
+    try {
+      const reader = holder.stdout.getReader();
+      const first = await reader.read();
+      expect(new TextDecoder().decode(first.value)).toContain("held");
+      reader.releaseLock();
+      const removed = await jigAsync(m, [
+        "uninstall",
+        "hub",
+        "--machine",
+        "--yes",
+      ]);
+      expectSpawnExit(removed, 0);
+      expect(removed.stdout).toContain(`Stopped the hub: `);
+      expect(removed.stdout).toContain("Removed:");
+      await expectSpawnExited(holder, 0, "the lock holder");
+      expect(existsSync(record)).toBe(false);
+    } finally {
+      holder.kill("SIGKILL");
+    }
   },
 );
 

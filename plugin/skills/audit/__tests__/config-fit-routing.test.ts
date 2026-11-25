@@ -6,6 +6,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { lintTaxonomyText } from "../../file-issue/scripts/lib/taxonomy.ts";
+import { render, type FitReport } from "../scripts/config-fit.ts";
 import { runScript, scratchRepo } from "./helpers.ts";
 
 const dirs: string[] = [];
@@ -167,4 +168,143 @@ test("a tier on a Judgment family is accepted and reported", () => {
 test("routing with no Judgment mapping and no family tiers reports nothing", () => {
   const found = findings("routing: {}\n");
   expect(found.some((f) => f.id === "report:routing.models")).toBe(false);
+});
+
+test("the Markdown rendering keeps routing findings literal", () => {
+  const report: FitReport = {
+    file: ".config/jig.yaml",
+    configured: true,
+    forge: "offline",
+    facts: {},
+    findings: [
+      {
+        id: "report:routing.models",
+        severity: "info",
+        message:
+          "routing.model_tiers.codex.model**name reads model**name as a strategic family: **not a separate result**",
+      },
+    ],
+    declined: [],
+    suggestions: [],
+  };
+  expect(render(report)).toContain(
+    "model\\*\\*name reads model\\*\\*name as a strategic family: \\*\\*not a separate result\\*\\*",
+  );
+});
+
+test("the Markdown rendering leaves configured autolink forms literal", () => {
+  const report: FitReport = {
+    file: ".config/jig.yaml",
+    configured: true,
+    forge: "offline",
+    facts: {},
+    findings: [
+      {
+        id: "report:routing.models",
+        severity: "info",
+        message:
+          "routing.model_tiers.codex.example has reason https://example.org/model-notes and https://example.org/next, ftp://example.org/model-notes, www.example.org, team@my_host.example, mailto:team@example.org and xmpp:team@example.org",
+      },
+    ],
+    declined: [],
+    suggestions: [],
+  };
+  expect(render(report)).toContain(
+    "reason `https://example.org/model-notes` and `https://example.org/next`, `ftp://example.org/model-notes`, `www.example.org`, `team@my_host.example`, `mailto:team@example.org` and `xmpp:team@example.org`",
+  );
+});
+
+test("the Markdown rendering keeps a fact on one line and escapes controls", () => {
+  const base: FitReport = {
+    file: ".config/jig.yaml",
+    configured: true,
+    forge: "offline",
+    facts: {},
+    findings: [],
+    declined: [],
+    suggestions: [],
+  };
+  // The whole Facts section, so a stray extra or duplicated line fails too.
+  const fact = (value: string) => {
+    const lines = render({
+      ...base,
+      facts: { integration_branch: value },
+    }).split("\n");
+    const from = lines.indexOf("## Facts");
+    const rest = lines.slice(from + 2);
+    // Everything between the heading and the report footer.
+    expect(rest.slice(1)).toEqual(["", "Nothing to fix.", ""]);
+    return rest[0];
+  };
+  expect(fact("a\rb\u202Ec")).toBe('- integration_branch: "a\\\\rb\\\\u202ec"');
+  expect(fact("main\r")).toBe('- integration_branch: "main\\\\r"');
+  expect(fact("main\t")).toBe('- integration_branch: "main\\\\t"');
+  expect(fact("main\u2028x")).toBe('- integration_branch: "main\\\\u2028x"');
+  expect(fact("  main")).toBe('- integration_branch: "\\\\u0020\\\\u0020main"');
+  expect(fact("\uFEFFmain")).not.toBe(fact("main\uFEFF"));
+  expect(fact("main\uFEFF")).toBe('- integration_branch: "main\\\\ufeff"');
+  expect(fact("\uFEFFmain")).toBe('- integration_branch: "\\\\ufeffmain"');
+  expect(fact("main\u2800")).toBe('- integration_branch: "main\\\\u2800"');
+  expect(fact("main\uD800")).toBe('- integration_branch: "main\\\\ud800"');
+  expect(fact("main\uD800")).not.toBe(fact("main\uD801"));
+  expect(fact("main\u200B")).toBe('- integration_branch: "main\\\\u200b"');
+  expect(fact("\u200Bmain")).toBe('- integration_branch: "\\\\u200bmain"');
+  expect(fact("  main")).not.toBe(fact(" \\u0020main"));
+  expect(fact(" a\\qb")).toBe('- integration_branch: "\\\\u0020a\\\\\\\\qb"');
+  expect(fact("main\r")).not.toBe(fact("main\\r"));
+  expect(fact("main\\r")).toBe("- integration_branch: main\\\\r");
+  expect(fact("main")).not.toBe(fact('"main"'));
+  expect(fact("\u200Bmain\r")).toBe(
+    '- integration_branch: "\\\\u200bmain\\\\r"',
+  );
+  expect(fact("main\u200B\r")).toBe(
+    '- integration_branch: "main\\\\u200b\\\\r"',
+  );
+  expect(fact("\u2060main")).toBe('- integration_branch: "\\\\u2060main"');
+  expect(fact("ma\u200Bin")).toBe('- integration_branch: "ma\\\\u200bin"');
+  expect(fact("ma\u200Bin")).not.toBe(fact("main"));
+  expect(fact("a\u{E0001}b")).toBe(
+    '- integration_branch: "a\\\\udb40\\\\udc01b"',
+  );
+  expect(fact("ma\u034Fin")).toBe('- integration_branch: "ma\\\\u034fin"');
+  expect(fact("ma\uFE0Fin")).toBe('- integration_branch: "ma\\\\ufe0fin"');
+  expect(fact("main \u200B")).toBe(
+    '- integration_branch: "main\\\\u0020\\\\u200b"',
+  );
+  expect(fact("main  \u200B")).not.toBe(fact("main \u200B"));
+  expect(fact("\u200B  main")).toBe(
+    '- integration_branch: "\\\\u200b\\\\u0020\\\\u0020main"',
+  );
+  const started = performance.now();
+  expect(fact(`z${" ".repeat(200000)}\u200B`)).toBe(
+    `- integration_branch: "z${"\\\\u0020".repeat(200000)}\\\\u200b"`,
+  );
+  expect(fact(" ".repeat(200000))).toBe(
+    `- integration_branch: "${"\\\\u0020".repeat(200000)}"`,
+  );
+  expect(performance.now() - started).toBeLessThan(5000);
+  const marker = `z${" ".repeat(200000)}z`;
+  expect(fact(marker)).toBe(`- integration_branch: z${" ".repeat(200000)}z`);
+});
+
+test("a routing declaration with invisible characters reaches the JSON report escaped", () => {
+  const config = [
+    "routing:",
+    "  models:",
+    '    codex: {complex: "outside\\u2800model"}',
+    "  model_tiers:",
+    "    codex:",
+    '      "outside\\u2800model": {tier: strategic, reason: "keep\\u2800this\\uD800"}',
+    "",
+  ].join("\n");
+  const all = findings(config);
+  const messages = all.map((f) => f.message).join("\n");
+  expect(messages).not.toContain("⠀");
+  expect(messages).not.toMatch(/[\uD800-\uDFFF]/);
+  expect(messages).toContain("\\u2800");
+  const declaration = all.filter((f) => f.id === "report:routing.models");
+  expect(declaration).toHaveLength(1);
+  expect(declaration[0]?.message).toBe(
+    'routing.model_tiers.codex."outside\\u2800model" reads "outside\\u2800model" as a strategic family: "keep\\u2800this\\ud800"',
+  );
 });
