@@ -269,6 +269,9 @@ test("the Markdown rendering keeps a fact on one line and escapes controls", () 
     '- integration_branch: "main\\\\u0020\\\\u200b"',
   );
   expect(fact("main  \u200B")).not.toBe(fact("main \u200B"));
+  expect(fact("\u200B  main")).toBe(
+    '- integration_branch: "\\\\u200b\\\\u0020\\\\u0020main"',
+  );
   const started = performance.now();
   expect(fact(`z${" ".repeat(200000)}\u200B`)).toBe(
     `- integration_branch: "z${"\\\\u0020".repeat(200000)}\\\\u200b"`,

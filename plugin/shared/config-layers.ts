@@ -316,17 +316,30 @@ export function repositoryConfigPath(
 const INVISIBLE_DISPLAY =
   /[\p{Cc}\p{Cf}\p{Bidi_Control}\p{Default_Ignorable_Code_Point}\u2028\u2029]/u;
 
-const escapeDisplayControls = (value: string): string =>
-  value.replace(new RegExp(INVISIBLE_DISPLAY.source, "gu"), (character) =>
-    Array.from(
-      { length: character.length },
-      (_, i) => `\\u${character.charCodeAt(i).toString(16).padStart(4, "0")}`,
-    ).join(""),
-  );
+/** Whether one character is invisible: a control, format, separator or default-ignorable character. */
+export function isInvisibleDisplayChar(character: string): boolean {
+  return INVISIBLE_DISPLAY.test(character);
+}
 
-/** A value for a diagnostic, with invisible controls escaped but ordinary text unchanged. */
+/** One character as `\uXXXX` escapes, one per UTF-16 unit. */
+export function escapeDisplayChar(character: string): string {
+  let out = "";
+  for (let i = 0; i < character.length; i++)
+    out += `\\u${character.charCodeAt(i).toString(16).padStart(4, "0")}`;
+  return out;
+}
+
+const escapeDisplayControls = (value: string): string =>
+  value.replace(new RegExp(INVISIBLE_DISPLAY.source, "gu"), escapeDisplayChar);
+
+/**
+ * A value for a diagnostic, ordinary text unchanged. A value with an
+ * invisible character, or one that starts with a quote (so it cannot pass
+ * for a quoted rendering of another value), is written as a JSON string with
+ * the invisible characters escaped.
+ */
 export function formatDisplayValue(value: string): string {
-  return INVISIBLE_DISPLAY.test(value)
+  return INVISIBLE_DISPLAY.test(value) || value.startsWith('"')
     ? escapeDisplayControls(JSON.stringify(value))
     : value;
 }

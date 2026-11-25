@@ -67,7 +67,9 @@ import {
 } from "./lib/section-validation.ts";
 import { lit } from "../../decide/scripts/sheet-kit/markdown.ts";
 import {
+  escapeDisplayChar,
   formatDisplayValue,
+  isInvisibleDisplayChar,
   isMapping as isRecord,
   readConfigFile,
 } from "../../../shared/config-layers.ts";
@@ -2312,34 +2314,23 @@ function factText(value: string): string {
   let out = "";
   let escaped = value.startsWith('"');
   chars.forEach((char, index) => {
-    const hidden = index < start || index >= end || factCharHidden(char);
+    const hidden =
+      index < start || index >= end || isInvisibleDisplayChar(char);
     escaped ||= hidden;
     out += escapeFactChar(char, hidden);
   });
   return escaped ? `"${out}"` : value;
 }
 
-/** Whether a fact's character is invisible: control, format, separator or default-ignorable. */
-function factCharHidden(char: string): boolean {
-  return /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u.test(
-    char,
-  );
-}
-
 /** Whether a character belongs to a fact's edge: whitespace or an invisible character. */
 function factCharEdge(char: string): boolean {
-  return /\s/u.test(char) || factCharHidden(char);
+  return /\s/u.test(char) || isInvisibleDisplayChar(char);
 }
 
-/** One character of a quoted fact: `\uXXXX` (UTF-16 units) when hidden, JSON-style otherwise. */
+/** One character of a quoted fact: escaped when hidden, JSON-style otherwise. */
 function escapeFactChar(char: string, hidden: boolean): string {
   if (!hidden) return char === "\\" || char === '"' ? `\\${char}` : char;
-  const named = FACT_NAMED_ESCAPES[char];
-  if (named) return named;
-  let out = "";
-  for (let i = 0; i < char.length; i++)
-    out += `\\u${char.charCodeAt(i).toString(16).padStart(4, "0")}`;
-  return out;
+  return FACT_NAMED_ESCAPES[char] ?? escapeDisplayChar(char);
 }
 
 export function render(report: FitReport): string {
