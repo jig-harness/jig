@@ -2,7 +2,9 @@
  * drive-pr suite: drive-status.ts's structural-churn brake, end to end: the
  * counting gate that completes a same-file streak parks the drive under
  * `structural-churn` and exits HITL_PARKED; the standing park holds live
- * work; a round carrying a high finding does not count.
+ * work, and a conflicting pull request reports PR_CONFLICTING before it; a
+ * round carrying a high finding does not count; a file whose content
+ * returns to an earlier one parks the drive.
  * Shared fixtures and probes live in drive-pr-harness.ts.
  */
 
@@ -10,6 +12,7 @@ import { describe, expect, it } from "bun:test";
 
 import {
   writeFixture,
+  park,
   probeIn,
   useDrivePrSuite,
   type FixtureThread,
@@ -17,6 +20,7 @@ import {
 } from "./drive-pr-harness.ts";
 import { createStatusEscalationFixtures } from "./drive-pr-status-escalation-fixtures.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { readState, seedRounds, writeState } from "./state-rows.ts";
 
 useDrivePrSuite();
 
@@ -135,6 +139,78 @@ describe("drive-status.ts structural-churn brake", () => {
     const state = await stored(stateDir);
     expect(state.parked).toEqual([]);
     expect(state.churnAckRound).toBeUndefined();
+  });
+
+  it("reports PR_CONFLICTING before a standing churn park, never ROUND_READY", async () => {
+    const head = headOf(1);
+    const fx = writeFixture({
+      head,
+      mergeable: "CONFLICTING",
+      threads: [finding("PRRT_live")],
+    });
+    await park(
+      fx.stateDir,
+      "structural-churn-r1",
+      "finding",
+      "structural-churn",
+    );
+    const r = await probeIn(fx.dir, fx.stateDir, head, ["--bump-attempt"], {
+      env: ENV,
+    });
+    expectSpawnExit(exitOf(r), 9);
+    expect(r.state).toBe("PR_CONFLICTING");
+    expect(r.json.reason).toContain("structural-churn-r1");
+    expect(r.json.work).toMatchObject({ unresolvedThreads: 1 });
+  });
+
+  it("records the park but reports PR_CONFLICTING when the round that trips it conflicts", async () => {
+    const { stateDir } = await rounds(["medium", "low", "medium"]);
+    const head = headOf(4);
+    const fx = writeFixture({
+      head,
+      mergeable: "CONFLICTING",
+      threads: [finding("PRRT_3", "low")],
+    });
+    const r = await probeIn(fx.dir, stateDir, head, ["--bump-attempt"], {
+      env: ENV,
+    });
+    expectSpawnExit(exitOf(r), 9);
+    expect(r.state).toBe("PR_CONFLICTING");
+    expect(r.json.reason).toContain("structural-churn-r4");
+    const state = await stored(stateDir);
+    expect(state.parked.map((p) => p.key)).toEqual(["structural-churn-r4"]);
+  });
+
+  it("parks on a file whose content returned to an earlier one (A, B, A)", async () => {
+    const head = headOf(4);
+    const fx = writeFixture({ head, threads: [finding("PRRT_live", "high")] });
+    seedRounds(fx.stateDir, 3, headOf(3));
+    const blob = (c: string) => c.repeat(40);
+    const seeded = readState(fx.stateDir, "999") as Record<string, unknown>;
+    writeState(fx.stateDir, "999", {
+      ...seeded,
+      roundPaths: ["a", "b", "a"].map((c, i) => ({
+        round: i + 1,
+        paths: ["a.ts"],
+        severe: true,
+        blobs: { "a.ts": blob(c) },
+      })),
+    });
+    const r = await probeIn(fx.dir, fx.stateDir, head, ["--bump-attempt"], {
+      env: ENV,
+    });
+    expectSpawnExit(exitOf(r), 8);
+    expect(r.state).toBe("HITL_PARKED");
+    expect(r.json.reason).toContain("structural churn (oscillation)");
+    const park = (await stored(fx.stateDir)).parked.find(
+      (p) => p.key === "structural-churn-r4",
+    );
+    expect(park?.class).toBe("structural-churn");
+    expect(park?.decision?.call.options.map((o) => o.id)).toEqual([
+      "defer",
+      "narrow",
+      "continue",
+    ]);
   });
 
   it("is off when drive.churn_rounds is 0", async () => {

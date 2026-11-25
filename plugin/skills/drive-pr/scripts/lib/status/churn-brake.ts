@@ -94,15 +94,16 @@ export function describeTrip(trip: ChurnTrip): string {
 }
 
 /**
- * The `HITL_PARKED` reason while the drive's own structural-churn park
- * stands, whatever work is live; `null` when there is none.
+ * What holds the drive while its own structural-churn park stands, whatever
+ * work is live, for a `HITL_PARKED` or `PR_CONFLICTING` reason; `null` when
+ * there is none.
  */
 export function churnParkReason(
   selfParked: ReadonlySet<string>,
 ): string | null {
   if (selfParked.size === 0) return null;
   const keys = [...selfParked].sort().join(", ");
-  return `the drive parked itself on structural churn (${keys}) and holds the live work until a person answers that decision — answer it, then re-arm`;
+  return `the drive parked itself on structural churn (${keys}), which holds the live work until a person answers that decision`;
 }
 
 interface BrakeContext {
@@ -116,6 +117,20 @@ interface BrakeReport {
   reason: string;
   parkedItemKeys: string[] | null;
   actionableParkKeys: string[] | null;
+  mergeable: string;
+  mergeStateStatus: string;
+  apiHead: string;
+  baseRefName: string;
+}
+
+/** The last non-empty line of a child's error output, or `''`. */
+function lastLine(text: string): string {
+  return (
+    text
+      .split("\n")
+      .map((l) => l.trim())
+      .findLast((l) => l !== "") ?? ""
+  );
 }
 
 function indeterminate(report: BrakeReport, reason: string): number {
@@ -132,8 +147,14 @@ async function readEvidence(
     stderr: "pipe",
     timeoutSec: ctx.helperTimeoutSec,
   });
-  if (r.code !== 0)
-    return failed("state-unreadable", `drive-state get exited ${r.code}`);
+  if (r.code !== 0) {
+    if (r.stderr) process.stderr.write(r.stderr);
+    const why = lastLine(r.stderr);
+    return failed(
+      "state-unreadable",
+      `drive-state get exited ${r.code}${why === "" ? "" : `: ${why}`}`,
+    );
+  }
   const parsed = attempt("state-unreadable", "drive-state get printed", () =>
     JSON.parse(r.stdout),
   );
@@ -146,12 +167,17 @@ async function readEvidence(
 
 /**
  * Judge the round just recorded and park the drive when it churns. Returns
- * the exit the gate ends with (`8` parked, `1` a failure), or `null` when
- * the round goes ahead.
+ * the exit the gate ends with (`8` parked, `9` parked on a pull request that
+ * conflicts with its base, which is reported first as for any park, `1` a
+ * failure), or `null` when the round goes ahead. `recorded` is whether this
+ * round's evidence landed: judging a window missing the round could let the
+ * round run that the brake should have stopped, so with the brake on an
+ * unrecorded round ends the gate instead.
  */
 export async function runChurnBrake(
   ctx: BrakeContext,
   report: BrakeReport,
+  recorded: boolean,
 ): Promise<number | null> {
   const setting = churnRoundsSetting();
   if (!setting.ok)
@@ -161,6 +187,11 @@ export async function runChurnBrake(
     );
   const n = setting.value;
   if (n === 0) return null;
+  if (!recorded)
+    return indeterminate(
+      report,
+      `this round's structural-churn evidence could not be recorded for #${ctx.pr} (record-paths failed), so the brake cannot judge the round; run it again`,
+    );
   const state = await readEvidence(ctx);
   if (!state.ok)
     return indeterminate(
@@ -198,9 +229,16 @@ export async function runChurnBrake(
     ...(report.actionableParkKeys ?? []),
     key,
   ].sort();
+  const parked = `${describeTrip(trip)}; the drive parked itself before round ${round}'s pass under ${CHURN_CLASS} (${key})`;
+  if (report.mergeable === "CONFLICTING")
+    return terminal(
+      report,
+      "PR_CONFLICTING",
+      `PR #${ctx.pr} conflicts with its base (mergeable=${report.mergeable}${report.mergeStateStatus === "" ? "" : `, mergeStateStatus=${report.mergeStateStatus}`}) and ${parked}. Merge ${report.baseRefName === "" ? "the base branch" : report.baseRefName} into this one, push, and re-run; the park waits for its answer`,
+    );
   return terminal(
     report,
     "HITL_PARKED",
-    `${describeTrip(trip)}; the drive parked itself before round ${round}'s pass under ${CHURN_CLASS} (${key}): answer that decision, then re-arm`,
+    `${parked}: answer that decision, then re-arm`,
   );
 }

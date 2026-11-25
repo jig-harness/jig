@@ -71,9 +71,11 @@ The park carries a framed decision under the `structural-churn`
 the question names the files and the rounds, and the options are to ship
 as is and defer the rest, to constrain the scope, or to continue driving.
 The gate then reports `HITL_PARKED` (exit `8`). While that park stands,
-every gate reports `HITL_PARKED`, even with work left. If the park could
-not be recorded the gate reports `INDETERMINATE` (exit `1`), and the round
-is run again. A repository's `autonomy.park_classes` cannot remove the class.
+every gate reports `HITL_PARKED`, even with work left. On a pull request
+that conflicts with its base, those gates report `PR_CONFLICTING` (exit
+`9`) instead, as they do before any park. If the round's evidence or the
+park could not be recorded the gate reports `INDETERMINATE` (exit `1`), and
+the round is run again. A repository's `autonomy.park_classes` cannot remove the class.
 
 ## The states and exits of `drive-status.ts` and `drive.ts`
 

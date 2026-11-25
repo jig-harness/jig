@@ -2863,8 +2863,12 @@ itself, before the round's pass, when either holds:
 The gate then records a framed decision under the `structural-churn` class
 (key `structural-churn-r<round>`, the files and the rounds in its question)
 and exits `8` (`HITL_PARKED`). While that park stands, every gate exits `8`,
-even with live work: re-arming without an answer runs no round. If the park
-cannot be recorded, the gate exits `1` (`INDETERMINATE`) and is run again.
+even with live work: re-arming without an answer runs no round. On a pull
+request that conflicts with its base, the gate that parks and every gate
+after it exit `9` (`PR_CONFLICTING`) instead, as for any park, so conflict
+repair runs while the decision waits; never `0`. If this round's evidence
+or the park cannot be recorded, the gate exits `1` (`INDETERMINATE`) and is
+run again.
 The class is kept whatever the repository's `autonomy.park_classes` lists.
 
 A person answers it like any park, and the re-arm hands the answer to the
@@ -2880,8 +2884,9 @@ first pass. Carry out the chosen option in that pass:
   say in the round's summary what was cut. A note that cannot be applied is
   parked again with the note quoted.
 - **Continue driving** (`continue`): work the round as usual. The brake
-  consumed the evidence up to the parked round, so it fires again only after
-  `drive.churn_rounds` more rounds of the same evidence.
+  consumed the evidence up to the parked round: a same-file streak needs
+  `drive.churn_rounds` more rounds to park it again, an oscillation at
+  least three.
 
 ### 4. Park what needs a human
 

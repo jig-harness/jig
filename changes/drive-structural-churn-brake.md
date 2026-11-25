@@ -14,7 +14,9 @@ release: minor
   toward the same-file streak. The park's framed decision names the files and
   the rounds and offers **Ship as is and defer the rest**, **Constrain the
   scope** and **Continue driving**. Nothing is deferred until a person chooses.
-  While the park stands, the drive runs no round, even with findings open
+  While the park stands, the drive runs no round, even with findings open;
+  a pull request that conflicts with its base reports `PR_CONFLICTING`
+  first, as with any park
   ([drive-pr](../plugin/skills/drive-pr/README.md#the-structural-churn-park),
   [drive end states](../plugin/protocol/drive-exits.md#when-the-drive-parks-itself-on-structural-churn)).
 - `drive.churn_rounds` in `.config/jig.yaml` sets the brake: `0` turns it

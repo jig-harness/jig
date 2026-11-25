@@ -1113,12 +1113,23 @@ async function evaluateFresh(
 
   // Over unpushed inherited commits only a conflict stops; else push them.
   const liveWork = Math.max(liveThreads, 0) + Math.max(liveSummary, 0);
+  const conflictsWith = `PR #${ctx.pr} conflicts with its base (mergeable=${report.mergeable}${report.mergeStateStatus !== "" ? `, mergeStateStatus=${report.mergeStateStatus}` : ""})`;
+  const mergeBase = `Merge ${report.baseRefName !== "" ? report.baseRefName : "the base branch"} into this one, push, and re-run; nothing here becomes judgeable with time`;
   // The drive's own structural-churn park holds whatever work is live:
-  // re-arming without answering it must not run the rounds it stopped.
+  // re-arming without answering it must not run the rounds it stopped. A
+  // conflict is still reported first, as for any park, so conflict repair
+  // runs while the decision waits.
   const braked = churnParkReason(parked.selfParked);
   if (braked !== null) {
     const rc = await stillOnHead();
-    return rc !== 0 ? rc : terminal(report, "HITL_PARKED", braked);
+    if (rc !== 0) return rc;
+    return conflicting
+      ? terminal(
+          report,
+          "PR_CONFLICTING",
+          `${conflictsWith} and ${braked} (${liveWork} live item(s) held on ${report.apiHead}). ${mergeBase}`,
+        )
+      : terminal(report, "HITL_PARKED", `${braked} — answer it, then re-arm`);
   }
   if (mayEndWithoutWork(liveWork, sync, conflicting)) {
     // Resolve a conflict before handing back the parked decisions.
@@ -1129,7 +1140,7 @@ async function evaluateFresh(
       return terminal(
         report,
         "PR_CONFLICTING",
-        `PR #${ctx.pr} conflicts with its base (mergeable=${report.mergeable}${report.mergeStateStatus !== "" ? `, mergeStateStatus=${report.mergeStateStatus}` : ""}) and has no workable findings on ${report.apiHead} (${report.threadsParked} parked thread(s), ${summaryParked} parked summary finding(s)${standaloneNote}). Merge ${report.baseRefName !== "" ? report.baseRefName : "the base branch"} into this one, push, and re-run; nothing here becomes judgeable with time`,
+        `${conflictsWith} and has no workable findings on ${report.apiHead} (${report.threadsParked} parked thread(s), ${summaryParked} parked summary finding(s)${standaloneNote}). ${mergeBase}`,
       );
     }
     if (

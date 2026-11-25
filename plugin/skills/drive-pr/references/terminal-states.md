@@ -714,10 +714,13 @@ before the round's pass when one file drew findings in each of the last
 or when a file's blob returned to an earlier value after a different one
 (oscillation, whatever the severity). The park (the `park-churn` command of
 `drive-state.ts`) and `churnAckRound`, which consumes the evidence up to that round, land in
-one state update; a park that does not land ends the gate
+one state update; a park that does not land, or a round whose evidence
+`record-paths` did not record, ends the gate
 [`INDETERMINATE`](../../../protocol/drive-exits.md). An unanswered
 `structural-churn` park reports `HITL_PARKED` even with live work, so a
-re-arm without an answer runs no round. The decision offers deferring the
+re-arm without an answer runs no round; on a pull request that conflicts
+with its base it reports [`PR_CONFLICTING`](../../../protocol/drive-exits.md)
+first, as every park does, and never `ROUND_READY`. The decision offers deferring the
 rest, constraining the scope and continuing; SKILL.md § 3, The
 structural-churn park, says what the next pass does for each.
 

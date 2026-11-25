@@ -63,18 +63,31 @@ export function roundFactsFor(
   };
 }
 
-/** Why a parsed `--stdin-json` object is not a round's input, or `null`. */
+/**
+ * Why a parsed `--stdin-json` object is not a round's input, or `null`. A
+ * malformed blob is refused, not dropped: the caller sent something it did
+ * not mean, and storing the rest would hide that.
+ */
 function inputProblem(value: Record<string, unknown>): string | null {
   const { paths, severe, blobs } = value;
   if (!Array.isArray(paths) || paths.some((p) => typeof p !== "string"))
     return "paths must be a list of strings";
   if (severe !== undefined && typeof severe !== "boolean")
     return "severe must be true or false";
-  const blobsOk =
-    blobs === undefined ||
-    (isRecord(blobs) &&
-      Object.values(blobs).every((id) => typeof id === "string"));
-  return blobsOk ? null : "blobs must map each path to an object id";
+  return blobs === undefined ? null : blobsProblem(blobs, paths as string[]);
+}
+
+/** Why `blobs` is not a map from recorded paths to object ids, or `null`. */
+function blobsProblem(blobs: unknown, paths: readonly string[]): string | null {
+  if (!isRecord(blobs)) return "blobs must map each path to an object id";
+  const recorded = new Set(paths);
+  for (const [path, id] of Object.entries(blobs)) {
+    if (!recorded.has(path))
+      return `blobs names ${JSON.stringify(path)}, which paths does not list`;
+    if (!isObjectId(id))
+      return `blobs gives ${JSON.stringify(path)} ${JSON.stringify(id)}, which is not a git object id`;
+  }
+  return null;
 }
 
 /**

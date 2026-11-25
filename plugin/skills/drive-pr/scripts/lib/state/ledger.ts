@@ -956,8 +956,8 @@ export function heldFromLedger(held: readonly LedgerHeld[]): {
  * round count (another clone reset the drive and published afresh) is a
  * different round history, so the local records positioned in the old one
  * (the reflect and escalation positions, the escalation's claim, the
- * per-round finding paths) are cleared rather than carried past the rounds
- * they would then exceed.
+ * per-round finding paths, the structural-churn acknowledgment) are cleared
+ * rather than carried past the rounds they would then exceed.
  */
 export function seedFromLedger(
   local: DriveState,
@@ -978,8 +978,9 @@ export function seedFromLedger(
           roundPaths: [],
         }
       : {};
+  const { churnAckRound: _churnAck, ...unacked } = local;
   const state: DriveState = {
-    ...local,
+    ...(l.round < local.rounds ? unacked : local),
     ...rewound,
     rounds: l.round,
     attempts: l.attempts,

@@ -78,7 +78,7 @@ export function churnDecision(
         {
           id: "continue",
           name: "Continue driving",
-          summary: `The drive goes on as it was; the churn count restarts after round ${round}, so the brake fires again only after ${n} more rounds of the same evidence.`,
+          summary: `The drive goes on as it was, and the churn count restarts after round ${round}: a same-file streak needs ${n} more rounds to park it again, and a file returning to an earlier content at least three.`,
           pay: [
             "More review rounds, CI runs and agent time on the same files.",
           ],

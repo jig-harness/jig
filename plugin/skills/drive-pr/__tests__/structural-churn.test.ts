@@ -14,6 +14,7 @@ import {
   type ChurnTrip,
 } from "../scripts/lib/state/churn.ts";
 import { churnDecision } from "../scripts/lib/state/churn-decision.ts";
+import { parseRoundInput } from "../scripts/lib/state/churn-facts.ts";
 import { churnRoundsSetting } from "../scripts/lib/status/churn-brake.ts";
 import {
   foldRoundPaths,
@@ -73,6 +74,22 @@ describe("structuralChurn: same-file", () => {
       e.round === 3 ? { ...e, severe: true } : e,
     );
     expect(structuralChurn({ roundPaths }, { rounds: 4 })).toBeNull();
+  });
+
+  it("restarts the streak after a severe round and parks only once four follow it", () => {
+    const severities = [false, false, true, false, false, false, false];
+    const all = severities.map((severe, i) =>
+      round(i + 1, ["a.ts"], { severe, blobs: { "a.ts": i + 1 } }),
+    );
+    for (let k = 1; k < all.length; k++)
+      expect(
+        structuralChurn({ roundPaths: all.slice(0, k) }, { rounds: 4 }),
+      ).toBeNull();
+    expect(structuralChurn({ roundPaths: all }, { rounds: 4 })).toEqual({
+      kind: "same-file",
+      paths: ["a.ts"],
+      rounds: [4, 5, 6, 7],
+    });
   });
 
   it("does not count a round recorded without its severity", () => {
@@ -197,6 +214,10 @@ describe("churnDecision", () => {
     expect(d.call.question).toContain("`a.ts`");
     expect(d.call.question).toContain("rounds 3, 4, 5, 6");
     expect(d.alreadyDone).toContain("round 6");
+    const cont = d.call.options.find((o) => o.id === "continue");
+    expect(cont?.summary).toContain("restarts after round 6");
+    expect(cont?.summary).toContain("same-file streak needs 4 more rounds");
+    expect(cont?.summary).toContain("three");
   });
 
   it("says why for an oscillation in its own words", () => {
@@ -306,6 +327,26 @@ describe("churnRoundsSetting", () => {
       const r = read(raw);
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.failure.code).toBe("churn-rounds-invalid");
+    }
+  });
+});
+
+describe("parseRoundInput", () => {
+  const input = (value: unknown) => parseRoundInput(JSON.stringify(value));
+
+  it("reads paths, severity and blobs", () => {
+    expect(
+      input({ paths: ["a.ts"], severe: false, blobs: { "a.ts": blob(1) } }),
+    ).toEqual({
+      paths: ["a.ts"],
+      facts: { severe: false, blobs: { "a.ts": blob(1) } },
+    });
+  });
+
+  it("refuses a blob that is not an object id or names a path not recorded", () => {
+    for (const blobs of [{ "a.ts": "not-a-blob" }, { "z.ts": blob(1) }]) {
+      const r = input({ paths: ["a.ts"], blobs });
+      expect("problem" in r).toBe(true);
     }
   });
 });

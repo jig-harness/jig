@@ -962,7 +962,9 @@ the rounds and offers **Ship as is and defer the rest** (recommended),
 **Constrain the scope** (your note names what stays) and **Continue
 driving** (the count restarts after the parked round). Nothing is deferred
 until you choose. While the park stands the drive runs no round, even with
-findings open. The class is kept whatever `autonomy.park_classes` lists;
+findings open; a pull request that conflicts with its base still stops
+[`PR_CONFLICTING`](../../protocol/drive-exits.md) first, so the conflict is
+repaired while the decision waits. The class is kept whatever `autonomy.park_classes` lists;
 `drive.churn_rounds: 0` turns the brake off.
 
 ### Recovering a stranded CI hold
