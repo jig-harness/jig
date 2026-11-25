@@ -2298,7 +2298,7 @@ function factText(value: string): string {
   // A value with edge whitespace (a no-break or zero-width space included) or
   // a leading quote is quoted, its edge whitespace escaped visibly, so it
   // cannot read like its trimmed or already-quoted twin.
-  const blank = /[\s\uFEFF]/;
+  const blank = /[\s\uFEFF\u200B]/;
   let start = 0;
   let end = value.length;
   while (start < end && blank.test(value[start]!)) start++;
@@ -2309,9 +2309,9 @@ function factText(value: string): string {
     `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`;
   const edged =
     [...value.slice(0, start)].map(esc).join("") +
-    value.slice(start, end) +
+    value.slice(start, end).replaceAll("\\", "\\\\").replaceAll('"', '\\"') +
     [...value.slice(end)].map(esc).join("");
-  return `"${edged.replaceAll('"', '\\"')}"`;
+  return `"${edged}"`;
 }
 
 export function render(report: FitReport): string {
