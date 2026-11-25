@@ -23,7 +23,7 @@ import {
   skipLongDriveFixture,
   spawnDriveIn,
 } from "./drive-loop-harness.ts";
-import { readState, seedRounds, writeState } from "./state-rows.ts";
+import { editState, readState, seedRounds, writeState } from "./state-rows.ts";
 
 const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
   rawFixture(f, scratchClean.dir);
@@ -174,6 +174,49 @@ describe("the round ceiling", () => {
       const state = readState(f.stateDir, "999");
       expect(state?.ceilingRaised).toBe(1);
       expect(park(f.stateDir, "round-ceiling")).toBeUndefined();
+    },
+    MULTI_ROUND_TIMEOUT_MS,
+  );
+
+  it.skipIf(skipLongDriveFixture)(
+    "carries only the stop immediately before a refused re-arm, never an older measurement",
+    async () => {
+      const f = writeFixture({ threads: [bot("PRRT_a")] });
+      seedRounds(f.stateDir, 2, PREV);
+      const ceiling = { max_total_rounds: 2 };
+      // A measured stop, then an ordinary stop that measured nothing.
+      editState(f.stateDir, "999", (s) => ({
+        ...s,
+        events: [
+          ...((s.events as unknown[]) ?? []),
+          {
+            at: "2026-11-07T10:00:00.000Z",
+            round: 2,
+            kind: "stop",
+            cause: "8",
+            leftWork: true,
+            tree: "someone@somewhere",
+          },
+          {
+            at: "2026-11-07T11:00:00.000Z",
+            round: 2,
+            kind: "stop",
+            cause: "8",
+          },
+        ],
+      }));
+      const rearmed = await drive(f, ceiling, [
+        "--max-rounds",
+        "1",
+        "--rearm-budget",
+      ]);
+      expectSpawnExit({ ...rearmed, stdout: null }, 8);
+      const events = (readState(f.stateDir, "999")?.events ?? []) as {
+        kind: string;
+        leftWork?: boolean;
+      }[];
+      const last = events.findLast((e) => e.kind === "stop");
+      expect(last?.leftWork).toBeUndefined();
     },
     MULTI_ROUND_TIMEOUT_MS,
   );

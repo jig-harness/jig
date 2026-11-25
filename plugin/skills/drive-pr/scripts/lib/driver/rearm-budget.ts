@@ -169,16 +169,15 @@ async function publishGrant(pr: string, required = true): Promise<void> {
 
 /**
  * A re-arm refused at the ceiling parks again before any pass runs, so its
- * stop measures nothing of its own. It carries the last measured stop's
- * word on the work in its tree, so the next arm reads the work the earlier
- * stop left from the last stop alone (`stop-pickup.ts`).
+ * stop measures nothing of its own. It carries the word on the work in its
+ * tree of the stop immediately before it, when that stop measured one, so
+ * the next arm reads the work the earlier stop left from the last stop
+ * alone (`stop-pickup.ts`). A later stop that measured nothing supersedes
+ * an older measurement: it is never reached past.
  */
 async function carryStopMeasure(pr: string): Promise<void> {
   const events = (await openStore(pr)).read().state.events ?? [];
-  const measured = events.findLast(
-    (e) =>
-      e.kind === "stop" && e.leftWork !== undefined && e.tree !== undefined,
-  );
+  const measured = events.findLast((e) => e.kind === "stop");
   if (measured?.leftWork !== undefined && measured.tree !== undefined)
     driverRuntime.stopLeftWork = {
       leftWork: measured.leftWork,
