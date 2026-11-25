@@ -32,13 +32,11 @@ export function hasInvalidReviewRound(body: string): boolean {
 /** A SHA marker was present but did not satisfy the marker grammar. */
 export function hasInvalidReviewedSha(body: string, marker: string): boolean {
   const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const openers = [
-    ...body.matchAll(new RegExp(`<!--\\s*${escaped}\\s*:`, "gi")),
-  ];
+  const openers = [...body.matchAll(new RegExp(`<!--\\s*${escaped}:`, "g"))];
   if (openers.length === 0) return false;
   const markers = [
     ...body.matchAll(
-      new RegExp(`<!--\\s*${escaped}\\s*:\\s*([0-9a-f]{7,40})\\s*-->`, "gi"),
+      new RegExp(`<!--\\s*${escaped}:\\s*([0-9a-f]{7,40})\\s*-->`, "g"),
     ),
   ];
   // The last marker is the witness. Any malformed attempt makes the whole
@@ -241,6 +239,9 @@ export function structuralSkipNotices(body: string, marker: string): string {
       const rest = line.slice(line.indexOf(token) + token.length);
       if (token[0] === "~" || !rest.includes("`"))
         fence = { character: token[0] as "`" | "~", length: token.length };
+      // A fence delimiter is never skip-notice payload. Treat opener and
+      // closer symmetrically so neither can leak into the decoder.
+      continue;
     } else if (
       fence !== null &&
       token !== "" &&
@@ -311,6 +312,7 @@ export function reviewerStickyIn(
       highestExplicitRound !== null &&
       round < highestExplicitRound;
     const replacesSticky =
+      !lowerRound &&
       bodySha !== "" &&
       (sticky.sha === "" ||
         newerRound ||

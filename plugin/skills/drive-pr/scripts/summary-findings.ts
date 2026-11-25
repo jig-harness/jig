@@ -88,6 +88,7 @@ import {
   reviewedShaIn,
   structuralSkipNotices,
   differentReviewedHead,
+  sameReviewedHead,
 } from "./lib/status/reviewer-sticky.ts";
 import { skipNoticeIn } from "./lib/status/skip-notice.ts";
 import {
@@ -1379,6 +1380,8 @@ export function reviewerSticky(
   let selectedRound: number | null = null;
   let selectedReviewedSha: string | null = null;
   let highestExplicitRound: number | null = null;
+  let malformedFindingEvidence: { round: number | null; sha: string } | null =
+    null;
   for (const comment of comments) {
     const body = reviewerStickyBody(comment, isReviewerLogin, stickyMarker());
     if (body === null) continue;
@@ -1394,7 +1397,10 @@ export function reviewerSticky(
         parseBodyFindings(body).length > 0 ||
         parseDeclaredUnanchored(body) > 0
       )
-        throw new Error("reviewer summary protocol evidence is unreadable");
+        malformedFindingEvidence = {
+          round: parseReviewRound(body),
+          sha: reviewedShaIn(body, reviewedShaMarker()),
+        };
       continue;
     }
     const round = parseReviewRound(body);
@@ -1427,6 +1433,16 @@ export function reviewerSticky(
       selectedReviewedSha,
     );
     const replacesSelection = carriesFindingEvidence || cleanReplacement;
+    if (
+      malformedFindingEvidence !== null &&
+      replacesSelection &&
+      ((round !== null &&
+        (malformedFindingEvidence.round === null ||
+          round > malformedFindingEvidence.round)) ||
+        (reviewedSha !== "" &&
+          !sameReviewedHead(reviewedSha, malformedFindingEvidence.sha)))
+    )
+      malformedFindingEvidence = null;
     const skipOnly =
       !carriesFindingEvidence &&
       skipNoticeIn(
@@ -1453,6 +1469,8 @@ export function reviewerSticky(
       selectedReviewedSha = reviewedSha;
     }
   }
+  if (malformedFindingEvidence !== null)
+    throw new Error("reviewer summary protocol evidence is unreadable");
   return selected;
 }
 

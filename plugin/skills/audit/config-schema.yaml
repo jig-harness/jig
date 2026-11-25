@@ -518,7 +518,7 @@ fields:
     since: 0.169.0
   review.skip_excluded_paths:
     type: list
-    items: { type: string, pattern: "^(?!\\s*$)(?!/)(?!\\\\)(?![A-Za-z]:[\\\\/])(?!.*//)(?!.*\\x00)(?!.*[\\r\\n])(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*\\/$).+$" }
+    items: { type: string, pattern: "^(?!\\s*$)(?!/)(?!\\\\)(?![A-Za-z]:[\\\\/])(?!.*//)(?!.*\\x00)(?!.*[\\r\\n])(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*\\/$)[^\\u0000]+$" }
     distinct: true
     repository_only: true
     read_by: [drive-pr]
