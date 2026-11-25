@@ -34,4 +34,4 @@ release: minor
   (`--stdin-json`), recording each round's severity and file contents beside
   its paths. The `--path` and `--stdin` forms work as before.
 
-A driven pull request reads `drive.churn_rounds` from its base branch's policy, so the change being driven cannot turn off its own brake.
+- A driven pull request reads `drive.churn_rounds` from its base branch's policy, so the change being driven cannot turn off its own brake.
