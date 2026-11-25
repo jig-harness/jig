@@ -94,9 +94,7 @@ export async function readRoundStatus(
     context.inheritedHead === ""
       ? []
       : ["--inherited-head", context.inheritedHead];
-  // The gate judges the base it observes now against the policy snapshot the
-  // driver exported: refresh the snapshot first, so a base that advanced
-  // between rounds does not read as an unreadable policy.
+  // Refresh the base branch policy before the gate evaluates the round.
   await announcePolicyBase(context.pr);
   const statusRes = await run(
     tsArgv(driveStatus, [
