@@ -668,10 +668,11 @@ function partitionBacklog(
   );
   const rendered = section ? parseBodyFindings(section[2] ?? "") : [];
   // A fingerprint is authoritative whenever the renderer preserves the full
-  // text. An abbreviated bullet is not an identity: even one unique
-  // same-location prefix can describe a different, implicitly blocking
-  // backlog entry. Only a complete fingerprint binds the rendered finding to
-  // the authoritative blob entry.
+  // text. An abbreviated renderer cannot reproduce that fingerprint, but can
+  // still identify exactly one producer entry when its location and displayed
+  // prefix match only that entry. Require that one-to-one match for every
+  // rendered bullet; location or a shared prefix alone never covers a
+  // backlog entry.
   const renderedFingerprints = new Map<string, number>();
   for (const finding of rendered) {
     const fingerprint = fingerprintOf(finding.path, finding.line, finding.text);
@@ -687,12 +688,16 @@ function partitionBacklog(
       (backlogFingerprints.get(entry.fingerprint) ?? 0) + 1,
     );
   }
+  const abbreviatedMatches = abbreviatedBacklogMatches(rendered, backlog);
   const sectionCoversBacklog =
     Number(section?.[1]) === backlog.length &&
     rendered.length === backlog.length &&
     [...backlog].every((entry) => {
       const fingerprintCount = renderedFingerprints.get(entry.fingerprint);
-      return fingerprintCount === 1;
+      return (
+        fingerprintCount === 1 ||
+        abbreviatedMatches.get(entry.fingerprint) === 1
+      );
     });
   const freshFingerprints = new Set(
     bullets.map((f) => fingerprintOf(f.path, f.line, f.text)),
@@ -711,6 +716,30 @@ function partitionBacklog(
       ignoredBacklog.push(entry);
   }
   return { blockingBacklog, ignoredBacklog };
+}
+
+function abbreviatedBacklogMatches(
+  rendered: readonly BodyFinding[],
+  backlog: readonly BacklogEntry[],
+): Map<string, number> {
+  const matchesByFingerprint = new Map<string, number>();
+  const matchedEntries = new Set<string>();
+  for (const finding of rendered) {
+    const header = finding.text.match(/^.*?\s—\s(.+)$/)?.[1];
+    const prefix = header?.endsWith("…") ? header.slice(0, -1) : undefined;
+    if (!prefix) continue;
+    const matches = backlog.filter(
+      (entry) =>
+        entry.path === finding.path &&
+        entry.line === finding.line &&
+        entry.comment.startsWith(prefix),
+    );
+    const entry = matches.length === 1 ? matches[0] : undefined;
+    if (!entry || matchedEntries.has(entry.fingerprint)) continue;
+    matchedEntries.add(entry.fingerprint);
+    matchesByFingerprint.set(entry.fingerprint, 1);
+  }
+  return matchesByFingerprint;
 }
 
 export function classify(input: ClassifyInput): SummaryReport {
