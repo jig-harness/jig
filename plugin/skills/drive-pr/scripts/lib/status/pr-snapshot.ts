@@ -48,7 +48,7 @@ export interface PrSnapshot {
 
 export type PrSnapshotRead =
   | { ok: true; snapshot: PrSnapshot }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; budgetSpent?: true };
 
 interface PullDocument {
   state?: unknown;
@@ -124,9 +124,17 @@ function final(r: ConditionalGet): boolean {
 
 const NOT_A_DOCUMENT = "the answer is not a pull document";
 
+function failureReason(read: Extract<ConditionalGet, { ok: false }>): string {
+  return read.failure === undefined
+    ? read.reason
+    : `${read.failure.code}: ${read.reason}`;
+}
+
 /** The failure of a full read that follows a first one that did not settle. */
 function afterFirst(first: ConditionalGet, reason: string): string {
-  return first.ok ? reason : `${first.reason}; then the full read: ${reason}`;
+  return first.ok
+    ? reason
+    : `${failureReason(first)}; then the full read: ${reason}`;
 }
 
 /**
@@ -150,21 +158,31 @@ export async function readPrSnapshot(
   // it starts, so a stalled first read leaves the fallback only the remainder.
   // An exhausted budget sends nothing: the transport's deadline is a whole
   // positive number of seconds, so a request is only made with time to spend.
-  const spent = `${path}: the caller's time budget is spent`;
-  const exhausted = (): boolean => (budgetSec?.() ?? 1) <= 0;
-  const options = (extra: { unconditional?: boolean } = {}) => {
+  const spent = {
+    ok: false,
+    budgetSpent: true,
+    reason: `${path}: the caller's time budget is spent`,
+  } as const;
+  const read = (unconditional = false): Promise<ConditionalGet> => {
     const left = budgetSec?.();
-    return left === undefined
-      ? { caller, ...extra }
-      : { caller, ...extra, timeoutSec: left };
+    return left !== undefined && left <= 0
+      ? Promise.resolve(spent)
+      : get(path, {
+          caller,
+          unconditional,
+          ...(left === undefined ? {} : { timeoutSec: left }),
+        });
   };
-  if (exhausted()) return { ok: false, reason: spent };
-  const first = await get(path, options());
+  const first = await read();
+  if (!first.ok && first.budgetSpent) return spent;
   const settled = settleFirst(first, path);
   if (settled !== null) return settled;
-  if (exhausted()) return { ok: false, reason: spent };
-  const full = await get(path, options({ unconditional: true }));
-  if (!full.ok) return { ok: false, reason: afterFirst(first, full.reason) };
+  const full = await read(true);
+  if (!full.ok) {
+    if (full.budgetSpent)
+      return first.ok ? spent : { ok: false, reason: failureReason(first) };
+    return { ok: false, reason: afterFirst(first, failureReason(full)) };
+  }
   const doc = parseDocument(full.body);
   if (doc === null)
     return {
@@ -180,7 +198,7 @@ function settleFirst(
   path: string,
 ): PrSnapshotRead | null {
   if (!first.ok)
-    return final(first) ? { ok: false, reason: first.reason } : null;
+    return final(first) ? { ok: false, reason: failureReason(first) } : null;
   const doc = parseDocument(first.body);
   // A full answer is the full read: what it lacks, the evaluation refuses.
   if (first.changed)

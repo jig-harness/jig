@@ -22,14 +22,14 @@ import { definedFields } from "../../../../shared/defined-fields.ts";
  * already treat "cannot read" as INDETERMINATE and retry.
  */
 
-import { readPrLiveness } from "./gh-conditional.ts";
+import { type PrLiveness, readPrLiveness } from "./gh-conditional.ts";
 import { ghCall } from "./proc.ts";
 
 export type PrState = "OPEN" | "CLOSED" | "MERGED";
 
 export type PrStateRead =
   | { ok: true; state: PrState }
-  | { ok: false; reason: string };
+  | Extract<PrLiveness, { ok: false }>;
 
 function isPrState(s: string): s is PrState {
   return s === "OPEN" || s === "CLOSED" || s === "MERGED";
@@ -54,7 +54,11 @@ export async function readPrState(
   // A spent budget starts no call: `ghCall` clamps a tightening timeout to a
   // one-second floor, so passing 0 through would still run `gh` for a second.
   if (opts.timeoutSec !== undefined && opts.timeoutSec <= 0) {
-    return { ok: false, reason: `gh pr view ${pr}: caller budget exhausted` };
+    return {
+      ok: false,
+      reason: `gh pr view ${pr}: caller budget exhausted`,
+      budgetSpent: true,
+    };
   }
   const r = await ghCall(
     ["pr", "view", pr, "--json", "state", "-q", ".state"],
