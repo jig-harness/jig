@@ -24,7 +24,15 @@ import type { RequestHandler } from "../../core/serving.ts";
 import { FRONT_SECRET_HEADER } from "../listeners.ts";
 import { readServeRecord, type RunningHub, startHub } from "../serve.ts";
 import { type HubSettings, parseHubSettings } from "../settings.ts";
-import { endedMarker, JOB_NAMES, SLOW_MS, startedMarker } from "./slow-jobs.ts";
+import { fakePorts } from "../../core/__tests__/fake-ports.ts";
+import * as hubJobs from "../jobs.ts";
+import {
+  endedMarker,
+  JOB_NAMES,
+  jobHandlers,
+  SLOW_MS,
+  startedMarker,
+} from "./slow-jobs.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "hub-serve-"));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -201,4 +209,11 @@ test("the hub refuses to start on a settings file or database directory another 
   chmodSync(settings.database, 0o750);
   const directory = await startHub({ settings, identity, stop: stop.signal });
   expect(directory.ok ? null : directory.failure.code).toBe("exposed");
+});
+
+test("every job a module names has a handler the worker runs, the hub's own and the test's", () => {
+  for (const module of [hubJobs, { JOB_NAMES, jobHandlers }])
+    expect([...module.jobHandlers(fakePorts()).keys()].sort()).toEqual(
+      [...module.JOB_NAMES].sort(),
+    );
 });

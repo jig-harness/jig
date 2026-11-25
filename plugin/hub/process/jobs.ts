@@ -27,8 +27,6 @@ export const JOB_NAMES: readonly string[] = [TRIM_JOB];
  * repositories' and hosts' partitions join its list when enrollment and
  * the world view first write them.
  */
-// The worker imports this module by URL (`runner.ts`).
-// fallow-ignore-next-line unused-export
 export function jobHandlers(ports: HubPorts): ReadonlyMap<string, JobHandler> {
   return new Map([
     [
