@@ -521,9 +521,12 @@ round budget). What needs a restart depends on how the drive ended:
   blocker (one outside the merge-now and approve-first lanes) falls back. When
   the pull request is held or busy, release the hold or wait for the busy
   drive; when mergeability reads `UNKNOWN` or cannot be read, recheck it. A
-  `CONFLICTING` result is a new stop, not a wait: restart by the conflict
-  procedure once the ledger reading identifies the head and base, since a drive
-  whose head or base cannot be identified stays `unplaced` (recheck it). A
+  `CONFLICTING` result is not a wait, and not a new stop either: once the
+  ledger reading identifies the head and base, a previously converged drive
+  reads `stale` while its ledger still records `CONVERGED`. Review the
+  effective conflict-resolution inputs, then re-drive that stale convergence by
+  hand. A drive whose head or base cannot be identified stays `unplaced`
+  (recheck it). A
   `MERGEABLE` head that differs from the verified head reads `stale`: when the
   refresh has fallen back, restart it by hand as the next bullet says.
   Until the refresh records the convergence the head is stale, and
