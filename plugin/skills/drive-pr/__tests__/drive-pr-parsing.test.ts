@@ -2220,6 +2220,46 @@ describe("summary-findings parsing", () => {
     expect(r.unaddressed).toEqual([]);
   });
 
+  it("matches the rendered Beyond this PR anchors when its comments are abbreviated", () => {
+    const entries = [
+      {
+        path: "AGENTS.md",
+        line: null,
+        comment:
+          "The full reviewer comment is authoritative in the backlog blob.",
+      },
+      {
+        path: "docs/README.md",
+        line: 12,
+        comment:
+          "The full reviewer comment can be longer than the rendered summary.",
+      },
+    ].map((entry) => ({
+      ...entry,
+      fingerprint: fingerprintOf(entry.path, entry.line, entry.comment),
+    }));
+    const blob = Buffer.from(JSON.stringify(entries)).toString("base64");
+    const r = classify({
+      pr: 1,
+      stickyCommentId: 9,
+      stickyBody: [
+        "<details><summary>🗂️ <b>Beyond this PR</b> — 2 finding(s) for triage (not posted inline)</summary>",
+        "",
+        "Held out of the inline threads so this PR can converge — **not blocking**.",
+        "- `AGENTS.md` — 🟡 **medium** (correctness · adjacent) — The full reviewer comment…",
+        "- `docs/README.md:12` — 🟢 **low** (maintainability · adjacent) — The full reviewer comment…",
+        "</details>",
+        `<!-- ai-review-backlog: ${blob} -->`,
+      ].join("\n"),
+      anchoredKeys: [],
+      addressedFingerprints: new Set(),
+    });
+    expect(r.ignoredBacklog.map((entry) => entry.fingerprint)).toEqual(
+      entries.map((entry) => entry.fingerprint),
+    );
+    expect(r.unaddressed).toEqual([]);
+  });
+
   it("does not let a matching Beyond this PR count suppress a different backlog entry", () => {
     const renderedPath = "rendered.ts";
     const renderedText = "This entry is explicitly shown as non-blocking.";

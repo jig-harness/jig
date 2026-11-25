@@ -667,15 +667,28 @@ function partitionBacklog(
     /<details><summary>🗂️ <b>Beyond this PR<\/b> — (\d+) finding\(s\) for triage \(not posted inline\)<\/summary>\r?\n[ \t\r\n]*Held out of the inline threads so this PR can converge — \*\*not blocking\*\*\.([\s\S]*?)<\/details>/,
   );
   const rendered = section ? parseBodyFindings(section[2] ?? "") : [];
-  const renderedFingerprints = new Set(
-    rendered.map((finding) =>
-      fingerprintOf(finding.path, finding.line, finding.text),
-    ),
-  );
+  // The backlog fingerprint identifies the reviewer's original finding, but
+  // the rendered bullet is a presentation: it can abbreviate the comment or
+  // add its severity. Its stable identity is the anchor the renderer retains.
+  // Keep multiplicity so two findings at one anchor cannot make a missing
+  // entry look rendered.
+  const renderedAnchors = new Map<string, number>();
+  for (const finding of rendered) {
+    const key = anchorKey(finding.path, finding.line);
+    renderedAnchors.set(key, (renderedAnchors.get(key) ?? 0) + 1);
+  }
+  const backlogAnchors = new Map<string, number>();
+  for (const entry of backlog) {
+    const key = anchorKey(entry.path, entry.line);
+    backlogAnchors.set(key, (backlogAnchors.get(key) ?? 0) + 1);
+  }
   const sectionCoversBacklog =
     Number(section?.[1]) === backlog.length &&
-    renderedFingerprints.size === backlog.length &&
-    backlog.every((entry) => renderedFingerprints.has(entry.fingerprint));
+    rendered.length === backlog.length &&
+    renderedAnchors.size === backlogAnchors.size &&
+    [...backlogAnchors].every(
+      ([key, count]) => renderedAnchors.get(key) === count,
+    );
   const freshFingerprints = new Set(
     bullets.map((f) => fingerprintOf(f.path, f.line, f.text)),
   );
