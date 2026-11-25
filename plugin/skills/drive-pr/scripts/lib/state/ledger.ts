@@ -97,6 +97,8 @@ import {
   isOptionalChurnAckRound,
   isOptionalLedgerRoundPaths,
   ledgerChurnFields,
+  OLDER_ROUND_PATHS_CUT,
+  ROUND_PATHS_CUT,
   seedChurnFields,
 } from "./ledger-churn.ts";
 import type { RoundPaths } from "./round-paths.ts";
@@ -266,7 +268,10 @@ export function ledgerFromState(
     ...ledgerChurnFields(s),
     driver: ledgerDriverWithProbe(s, opts.driver),
     narrative: opts.narrative.slice(-NARRATIVE_LINES).map(redact),
-    cut: s.resolvedParksLost === true ? [OLDER_PARKS_CUT] : [],
+    cut: [
+      ...(s.resolvedParksLost === true ? [OLDER_PARKS_CUT] : []),
+      ...(s.churnEvidenceLost === true ? [OLDER_ROUND_PATHS_CUT] : []),
+    ],
   };
 }
 
@@ -428,9 +433,13 @@ export function renderLedger(
       ledger.driver.personStop === undefined
         ? ledger.ledgerVersion
         : OPERATOR_STOP_LEDGER_VERSION,
-    // A receipt loss the state already carries stays named, whatever this render drops.
+    // A receipt or churn-evidence loss the state already carries stays named, whatever this render drops.
     cut: ledger.cut.filter(
-      (c) => c === RESOLVED_PARKS_CUT || c === OLDER_PARKS_CUT,
+      (c) =>
+        c === RESOLVED_PARKS_CUT ||
+        c === OLDER_PARKS_CUT ||
+        c === ROUND_PATHS_CUT ||
+        c === OLDER_ROUND_PATHS_CUT,
     ),
   };
   let body = ledgerBody(l, true, writer);
@@ -1002,7 +1011,11 @@ export function seedFromLedger(
           lastEscalatedInvariant: "",
         }
       : {};
-  const { churnAckRound: _churnAck, ...base } = local;
+  const {
+    churnAckRound: _churnAck,
+    churnEvidenceLost: _churnLost,
+    ...base
+  } = local;
   const state: DriveState = {
     ...base,
     ...rewound,

@@ -130,6 +130,8 @@ describe("cooperative driver stop", () => {
       DRIVE_PR_FIXTURES: dir,
       // This process-lifecycle fixture has no mirrored ledger; publication is covered by ledger-stop.test.ts.
       DRIVE_PR_LEDGER: "off",
+      // Scratch fixture repo has no origin fetch URL and synthetic HEAD tokens.
+      DRIVE_PR_CHURN_ROUNDS: "0",
       DRIVE_PR_STATE_DIR: stateDir,
       DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
       DRIVE_PR_MAILBOX_DIR: join(dir, "mailbox"),

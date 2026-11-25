@@ -24,6 +24,8 @@ import {
 } from "./drive-pr-harness.ts";
 import { createStatusEscalationFixtures } from "./drive-pr-status-escalation-fixtures.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { scopedStateDir } from "./scoped-state-dir.ts";
+import { readState, writeState } from "./state-rows.ts";
 
 useDrivePrSuite();
 
@@ -344,4 +346,64 @@ describe("drive-status.ts structural-churn brake", () => {
     const state = await stored(stateDir, cwd);
     expect(state.parked).toEqual([]);
   });
+
+  it("fails closed when prior churn evidence was cut from the ledger, and parks once surviving rounds trip", async () => {
+    const repo = history(5);
+    const early = await rounds(["medium", "low", "medium"], repo);
+    for (const r of early.results) expectSpawnExit(exitOf(r), 0);
+    // Simulate a takeover whose ledger size cut dropped round 1 of the streak.
+    const scoped = scopedStateDir(early.stateDir, repo.cwd);
+    const current = readState(scoped, "999");
+    expect(current).not.toBeNull();
+    if (current === null || !Array.isArray(current.roundPaths)) return;
+    writeState(scoped, "999", {
+      ...current,
+      roundPaths: current.roundPaths.slice(1),
+      churnEvidenceLost: true,
+    });
+    // Round 4 has only rounds 2..4 left in roundPaths (below the 4-round streak
+    // threshold), so without the loss flag it would run the pass; with it, the
+    // brake fails closed as INDETERMINATE.
+    const head4 = repo.heads[3] as string;
+    const fx4 = writeFixture({
+      head: head4,
+      threads: [finding("PRRT_4", "low")],
+    });
+    const r4 = await probeIn(
+      fx4.dir,
+      early.stateDir,
+      head4,
+      ["--bump-attempt"],
+      {
+        env: ENV,
+        cwd: repo.cwd,
+      },
+    );
+    expectSpawnExit(exitOf(r4), 1);
+    expect(r4.state).toBe("INDETERMINATE");
+    expect(r4.json.reason).toContain("cut from the drive ledger");
+
+    // Once surviving rounds 2..5 form a full 4-round streak, the brake parks
+    // normally and clears the incomplete-evidence flag.
+    const head5 = repo.heads[4] as string;
+    const fx5 = writeFixture({
+      head: head5,
+      threads: [finding("PRRT_5", "medium")],
+    });
+    const r5 = await probeIn(
+      fx5.dir,
+      early.stateDir,
+      head5,
+      ["--bump-attempt"],
+      {
+        env: ENV,
+        cwd: repo.cwd,
+      },
+    );
+    expectSpawnExit(exitOf(r5), 8);
+    expect(r5.state).toBe("HITL_PARKED");
+    const after = readState(scoped, "999");
+    expect(after?.churnAckRound).toBe(5);
+    expect(after?.churnEvidenceLost).toBeUndefined();
+  }, 30000);
 });

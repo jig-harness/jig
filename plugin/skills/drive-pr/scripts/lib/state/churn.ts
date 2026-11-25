@@ -49,6 +49,7 @@ export interface ChurnTrip {
 export interface ChurnEvidence {
   roundPaths?: readonly RoundPaths[];
   churnAckRound?: number;
+  churnEvidenceLost?: boolean;
 }
 
 /** The parked key of the brake's decision at `round`. */

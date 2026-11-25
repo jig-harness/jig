@@ -15,6 +15,11 @@ import {
 export const ROUND_PATHS_CUT = "the round paths";
 export const OLDER_ROUND_PATHS_CUT = "the older round paths";
 
+/** Whether `cut` records that round-path history was dropped. */
+export function hasRoundPathsCut(cut: readonly string[]): boolean {
+  return cut.some((c) => c === ROUND_PATHS_CUT || c === OLDER_ROUND_PATHS_CUT);
+}
+
 /** The brake's bounded evidence and acknowledgment as the ledger carries them. */
 export function ledgerChurnFields(s: {
   roundPaths: readonly RoundPaths[];
@@ -73,7 +78,9 @@ export function cutRoundPathsToFit<
   measure: (candidate: L) => { body: string; bytes: number },
 ): { ledger: L; body: string } | { ledger: L } {
   const paths = ledger.roundPaths ?? [];
-  const cutBefore = ledger.cut;
+  const cutBefore = ledger.cut.filter(
+    (c) => c !== ROUND_PATHS_CUT && c !== OLDER_ROUND_PATHS_CUT,
+  );
   let current = ledger;
   for (let keep = paths.length - 1; keep >= 0; keep--) {
     current = {
@@ -89,40 +96,81 @@ export function cutRoundPathsToFit<
 }
 
 /**
- * Restore the brake's evidence and acknowledgment from a ledger onto `local`.
- * A ledger carrying `roundPaths` replaces `local.roundPaths`; one without
- * (written before the field existed) keeps `local.roundPaths` unless the
- * ledger rewound behind `local.rounds`. `churnAckRound` restores from the
- * ledger whenever present, and clears when the ledger rewound or carried
- * `roundPaths` without an acknowledgment.
+ * Whether a seeded state's structural-churn evidence is incomplete because the
+ * ledger cut unacknowledged `roundPaths` entries. Entries at or before
+ * `churnAckRound` are already consumed, so dropping only them loses nothing the
+ * brake reads.
+ */
+function seededEvidenceLost(opts: {
+  pathsCut: boolean;
+  hasLedgerPaths: boolean;
+  rewound: boolean;
+  round: number;
+  roundPaths: readonly RoundPaths[];
+  ack: number;
+  localLost: boolean;
+}): boolean {
+  if (opts.ack >= opts.round) return false;
+  if (opts.pathsCut) {
+    const oldest = opts.roundPaths[0]?.round;
+    return oldest === undefined || oldest > opts.ack + 1;
+  }
+  return !opts.hasLedgerPaths && !opts.rewound && opts.localLost;
+}
+
+/**
+ * Restore the brake's evidence, acknowledgment, and incomplete-evidence flag
+ * from a ledger onto `local`. A ledger carrying `roundPaths` (or a round-paths
+ * size cut) replaces `local.roundPaths`; one without (written before the field
+ * existed) keeps `local.roundPaths` unless the ledger rewound behind
+ * `local.rounds`. `churnAckRound` restores from the ledger whenever present,
+ * and clears when the ledger rewound or carried round-path state without an
+ * acknowledgment.
  */
 export function seedChurnFields(
   local: {
     rounds: number;
     roundPaths: RoundPaths[];
     churnAckRound?: number;
+    churnEvidenceLost?: boolean;
   },
   ledger: {
     round: number;
     roundPaths?: RoundPaths[];
     churnAckRound?: number;
+    cut: readonly string[];
   },
-): { roundPaths: RoundPaths[]; churnAckRound?: number } {
+): {
+  roundPaths: RoundPaths[];
+  churnAckRound?: number;
+  churnEvidenceLost?: boolean;
+} {
   const rewound = ledger.round < local.rounds;
-  const roundPaths =
-    ledger.roundPaths !== undefined
-      ? ledger.roundPaths
-      : rewound
-        ? []
-        : local.roundPaths;
+  const pathsCut = hasRoundPathsCut(ledger.cut);
+  const hasLedgerPaths = ledger.roundPaths !== undefined || pathsCut;
+  const roundPaths = hasLedgerPaths
+    ? (ledger.roundPaths ?? [])
+    : rewound
+      ? []
+      : local.roundPaths;
   const churnAckRound =
     ledger.churnAckRound !== undefined
       ? ledger.churnAckRound
-      : rewound || ledger.roundPaths !== undefined
+      : rewound || hasLedgerPaths
         ? undefined
         : local.churnAckRound;
+  const lost = seededEvidenceLost({
+    pathsCut,
+    hasLedgerPaths,
+    rewound,
+    round: ledger.round,
+    roundPaths,
+    ack: churnAckRound ?? 0,
+    localLost: local.churnEvidenceLost === true,
+  });
   return {
     roundPaths,
     ...(churnAckRound === undefined ? {} : { churnAckRound }),
+    ...(lost ? { churnEvidenceLost: true } : {}),
   };
 }

@@ -453,6 +453,11 @@ export async function runChurnBrake(
     );
   const trip = structuralChurn(state.value, { rounds: n });
   if (trip === null) {
+    if (state.value.churnEvidenceLost === true)
+      return indeterminate(
+        report,
+        `prior structural-churn evidence for #${ctx.pr} was cut from the drive ledger, so the brake cannot rule out a ${CHURN_CLASS} trip; inspect the pull request's recent rounds and re-arm`,
+      );
     // A round recorded without facts (the sweep did not complete, or no
     // severity was read) that would finish a streak is not a measured
     // non-trip: it must not run as though the brake had judged it.

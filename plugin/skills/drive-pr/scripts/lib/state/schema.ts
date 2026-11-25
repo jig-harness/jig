@@ -411,6 +411,7 @@ export interface DriveState {
   ladderVerdicts?: RecordedLadderVerdict[];
   resolvedParks?: import("./resolution-receipt.ts").ResolutionReceipt[];
   resolvedParksLost?: boolean; // receipts evicted or cut: absence proves nothing
+  churnEvidenceLost?: boolean; // unacknowledged roundPaths cut: brake fails closed
   [extra: string]: unknown;
 }
 

@@ -43,7 +43,8 @@ export async function parkChurn(
           2,
           `park-churn: the round moved to ${s.rounds} before round ${round}'s park was recorded`,
         );
-      return { ...s, churnAckRound: round };
+      const { churnEvidenceLost: _cleared, ...rest } = s;
+      return { ...rest, churnAckRound: round };
     },
   );
 }
