@@ -92,6 +92,14 @@ import {
   redactedReceipt,
   type ResolutionReceipt,
 } from "./resolution-receipt.ts";
+import {
+  cutRoundPathsToFit,
+  isOptionalChurnAckRound,
+  isOptionalLedgerRoundPaths,
+  ledgerChurnFields,
+  seedChurnFields,
+} from "./ledger-churn.ts";
+import type { RoundPaths } from "./round-paths.ts";
 import { decisionAnswerLines } from "./park-frame.ts";
 import { parseMs } from "../../../../../shared/time.ts";
 
@@ -169,6 +177,10 @@ export interface Ledger {
   rulings?: ArbiterRuling[];
   /** The resolution receipts of the parks re-arms unparked (`resolution-receipt.ts`); absent in a ledger written before them. */
   resolvedParks?: ResolutionReceipt[];
+  /** The structural-churn brake's bounded per-round evidence window (`round-paths.ts`). */
+  roundPaths?: RoundPaths[];
+  /** The round at which the brake's evidence was last consumed by a churn park. */
+  churnAckRound?: number;
   driver: LedgerDriver;
   /** The handoff narrative's last lines. */
   narrative: string[];
@@ -251,6 +263,7 @@ export function ledgerFromState(
         ? { ...receipt, outcome: "answered" as const }
         : receipt;
     }),
+    ...ledgerChurnFields(s),
     driver: ledgerDriverWithProbe(s, opts.driver),
     narrative: opts.narrative.slice(-NARRATIVE_LINES).map(redact),
     cut: s.resolvedParksLost === true ? [OLDER_PARKS_CUT] : [],
@@ -455,6 +468,12 @@ export function renderLedger(
   l = { ...l, narrative: [], cut: [...l.cut, "the narrative"] };
   body = ledgerBody(l, true, writer);
   if (bytes(body) <= limit) return { body, ledger: l };
+  const trimmedPaths = cutRoundPathsToFit(l, limit, (candidate) => {
+    const rendered = ledgerBody(candidate, true, writer);
+    return { body: rendered, bytes: bytes(rendered) };
+  });
+  l = trimmedPaths.ledger;
+  if ("body" in trimmedPaths) return { body: trimmedPaths.body, ledger: l };
   l = { ...l, cut: [...l.cut, "the visible list of parked decisions"] };
   body = ledgerBody(l, false, writer);
   if (bytes(body) <= limit) return { body, ledger: l };
@@ -503,6 +522,8 @@ function ledgerFault(v: Record<string, unknown>): string {
     ciActions: () => isOptionalCiActions(v.ciActions),
     rulings: () => isOptionalRulings(v.rulings),
     resolvedParks: () => isOptionalResolvedParks(v.resolvedParks),
+    roundPaths: () => isOptionalLedgerRoundPaths(v.roundPaths, v.round),
+    churnAckRound: () => isOptionalChurnAckRound(v.churnAckRound, v.round),
     roundsGranted: () => isOptionalRetryCount(v.roundsGranted),
     driver: () => isLedgerDriver(v.driver),
   };
@@ -979,13 +1000,13 @@ export function seedFromLedger(
           lastReflectedAttempts: 0,
           lastEscalatedRound: 0,
           lastEscalatedInvariant: "",
-          roundPaths: [],
         }
       : {};
-  const { churnAckRound: _churnAck, ...unacked } = local;
+  const { churnAckRound: _churnAck, ...base } = local;
   const state: DriveState = {
-    ...(l.round < local.rounds ? unacked : local),
+    ...base,
     ...rewound,
+    ...seedChurnFields(local, l),
     rounds: l.round,
     attempts: l.attempts,
     attemptsHead: l.attemptsHead,
