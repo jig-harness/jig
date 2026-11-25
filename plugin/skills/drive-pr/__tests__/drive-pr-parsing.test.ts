@@ -2309,10 +2309,10 @@ describe("summary-findings parsing", () => {
       addressedFingerprints: new Set(),
     });
     expect(r.ignoredBacklog.map((entry) => entry.fingerprint)).toEqual([
-      entries[0]?.fingerprint,
+      entries[0]!.fingerprint,
     ]);
     expect(r.unaddressed.map((entry) => entry.fingerprint)).toEqual([
-      entries[1]?.fingerprint,
+      entries[1]!.fingerprint,
     ]);
   });
   it("does not let a matching Beyond this PR count suppress a different backlog entry", () => {
