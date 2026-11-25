@@ -24,6 +24,9 @@ committed. Claude Code and Codex read it alike. It holds:
 - `journal/`, a folder with one file a day, `<date>.md`, only ever added to: each decision,
   ruling and action with its reason, for when someone needs the history.
 
+Reports and notebook entries link directly to issues and pull requests in
+other repositories using full Markdown URL links.
+
 A session started with `/jig:orchestrate <topic>` reads `state.md` first and
 picks up from it alone. It rewrites the state and adds to the journal at
 each natural pause. When the session has run long, it suggests at a quiet

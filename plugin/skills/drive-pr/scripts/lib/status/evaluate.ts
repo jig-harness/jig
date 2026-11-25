@@ -427,6 +427,8 @@ async function evaluateFresh(
       ctx.budgetLeftSec,
     );
     if (!now.ok) {
+      if (now.budgetSpent)
+        return terminal(report, "POLL_BUDGET_SPENT", now.reason);
       return readFailure(
         report,
         `cannot re-read #${ctx.pr}'s state, head and base to confirm they did not change while the witnesses were gathered (${now.reason})`,
@@ -555,6 +557,8 @@ async function evaluateFresh(
     ctx.budgetLeftSec,
   );
   if (!snapshot.ok) {
+    if (snapshot.budgetSpent)
+      return terminal(report, "POLL_BUDGET_SPENT", snapshot.reason);
     return readFailure(
       report,
       `cannot read PR #${ctx.pr} (${snapshot.reason}) — retrying rather than drawing a verdict from no reading`,

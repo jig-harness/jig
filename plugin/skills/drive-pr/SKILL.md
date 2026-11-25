@@ -208,8 +208,13 @@ consumer polling `--json` for one of these states will never see it there.
 | `TAKEN_OVER` | 20 | Another clone took the drive over: a takeover claim in force, newer than this driver's own, was on the PR at a round boundary or during a quota sleep or mailbox pause, and the driver stopped without another pass; or this driver's own `--take-over` claim lost to a rival's earlier claim on the same ledger generation. `drive.ts` only. That clone drives now; do not re-arm beside it (§ Picking up a stopped drive) |
 
 When the driver passes through the status probe's exit, its log, handoff and
-ledger record the probe's state and reason. Read that reason when diagnosing
-the stop.
+ledger record the probe's state and reason. A pull-request read skipped
+because the poll budget expired reports `POLL_BUDGET_SPENT` (exit
+`4`), as does an iteration the probe could not start. A request that was
+sent and failed keeps its diagnostic, including the failure class or
+HTTP status. When the probe stops with exit `1` marked as a read failure,
+the dispatcher re-drives it once per pull-request head and hands a second
+such stop on that head to a person.
 
 In an [Orca](https://www.onorca.dev) worktree, `drive.ts` shows a stop a
 person must settle on the workspace card: a park, a usage-limit stop and
