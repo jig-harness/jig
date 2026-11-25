@@ -15,6 +15,8 @@ import { isRecord } from "../../../../../shared/guards.ts";
 import { rearmGrant, type SpentRounds } from "./../state/round-grant.ts";
 import { HANDOFF_TELLS_REFUSED } from "./../state/ledger-mirror.ts";
 import { driveState } from "./paths.ts";
+import { openStore } from "./../state/store.ts";
+import { driverRuntime } from "./runtime.ts";
 import {
   type CircuitLimits,
   clearCircuitStop,
@@ -165,6 +167,25 @@ async function publishGrant(pr: string, required = true): Promise<void> {
     );
 }
 
+/**
+ * A re-arm refused at the ceiling parks again before any pass runs, so its
+ * stop measures nothing of its own. It carries the last measured stop's
+ * word on the work in its tree, so the next arm reads the work the earlier
+ * stop left from the last stop alone (`stop-pickup.ts`).
+ */
+async function carryStopMeasure(pr: string): Promise<void> {
+  const events = (await openStore(pr)).read().state.events ?? [];
+  const measured = events.findLast(
+    (e) =>
+      e.kind === "stop" && e.leftWork !== undefined && e.tree !== undefined,
+  );
+  if (measured?.leftWork !== undefined && measured.tree !== undefined)
+    driverRuntime.stopLeftWork = {
+      leftWork: measured.leftWork,
+      tree: measured.tree,
+    };
+}
+
 /** The limits a drive enforces on its two counters. */
 export interface RoundLimits {
   /** Distinct reviewed heads: the base plus what re-arms granted. */
@@ -243,6 +264,7 @@ export async function roundBudget(
       console.error(
         `re-arm: PR #${pr} has spent its ${atCeiling ? `round ceiling of ${stoppedAt.ceiling}` : "wall-clock cap"}; a re-arm grants nothing past it without a person's override (--past-ceiling, or the round-ceiling park's override answer).`,
       );
+      await carryStopMeasure(pr);
       return await stopAtCeiling(stoppedAt, cause, before, dryRun);
     }
     if (spent.headKnown === false)

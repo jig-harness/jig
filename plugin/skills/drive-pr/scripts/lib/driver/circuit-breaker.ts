@@ -103,7 +103,7 @@ function overrideAnswerIdentity(verdicts: readonly PendingVerdict[]): string {
   return verdicts
     .filter(answerRaisesCeiling)
     .flatMap((v) => v.answers.map((a) => `${v.key}|${a.url}|${a.at}`))
-    .sort()
+    .sort((a, b) => a.localeCompare(b))
     .join(",");
 }
 

@@ -264,7 +264,7 @@ export function openFindingKeys(
   if (!Array.isArray(threads) || !Array.isArray(summary)) return null;
   const keys = [...threads, ...summary];
   if (!keys.every((k) => typeof k === "string")) return null;
-  return [...new Set(keys as string[])].sort();
+  return [...new Set(keys as string[])].sort((a, b) => a.localeCompare(b));
 }
 
 /**

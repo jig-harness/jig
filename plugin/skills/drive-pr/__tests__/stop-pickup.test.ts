@@ -80,11 +80,15 @@ describe("stopPickup", () => {
     expect((await pickupAfter([stop("8", false)])).notice).toBe("");
   });
 
-  it("keeps the work a park left across a refused re-arm's unmeasured park", async () => {
-    const r = await pickupAfter([stop("8", true), stop("8")]);
-    expect(r.notice).toStartWith("RE-ARMED AFTER A WALL-CLOCK PARK");
-    expect(r.inheritsEdits).toBe(true);
-    // A later stop that measured the tree speaks for it.
+  it("reads the work a park left from the last stop alone", async () => {
+    // A refused re-arm's park carries the measurement itself, so it speaks for the tree.
+    const carried = await pickupAfter([stop("8", true), stop("8", true)]);
+    expect(carried.notice).toStartWith("RE-ARMED AFTER A WALL-CLOCK PARK");
+    expect(carried.inheritsEdits).toBe(true);
+    // A later ordinary park that measured nothing never recovers the old work.
+    const later = await pickupAfter([stop("8", true), stop("8")]);
+    expect(later.notice).toBe("");
+    expect(later.inheritsEdits).toBe(false);
     expect(
       (await pickupAfter([stop("8", true), stop("8", false)])).notice,
     ).toBe("");

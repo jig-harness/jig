@@ -116,28 +116,12 @@ function isCeilingStop(stop: DriveEvent): boolean {
   return code === DRIVE_EXIT.HITL_PARKED || code === MAX_ROUNDS_EXIT;
 }
 
-/**
- * The stop that speaks for the tree: the last one, unless it is a ceiling
- * stop that never measured the tree (a re-arm refused at the ceiling parks
- * again before any pass runs). Such a stop carries no word about the work an
- * earlier stop left, so the search goes back past it to the stop that did.
- */
-function stopOfTree(events: readonly DriveEvent[]): DriveEvent | undefined {
-  const stops = events.filter((e) => e.kind === "stop");
-  for (let i = stops.length - 1; i >= 0; i--) {
-    const stop = stops[i];
-    if (stop === undefined) break;
-    if (stop.leftWork !== undefined || !isCeilingStop(stop)) return stop;
-  }
-  return stops.at(-1);
-}
-
 /** What a drive armed after `state`'s last stop hands its first pass. */
 export async function stopPickup(
   pr: string,
   state: DriveState,
 ): Promise<StopPickup> {
-  const stop = stopOfTree(state.events ?? []);
+  const stop = (state.events ?? []).findLast((e) => e.kind === "stop");
   const code = stop === undefined ? null : Number(stop.cause);
   const ciStop = code === null ? undefined : CI_STOPS.get(code);
   if (ciStop !== undefined)
