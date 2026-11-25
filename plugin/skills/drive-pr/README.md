@@ -904,9 +904,13 @@ drive with `--past-ceiling` (`bun "<skill-dir>/scripts/arm-drive.ts" <PR>
 --past-ceiling`). Either raises the ceiling by one `drive.max_rounds` block,
 and a spent wall-clock cap by one more cap from then, kept in the drive state
 and its ledger so a takeover keeps it, and grants the round budget to match.
-The dispatcher's re-drives never pass `--past-ceiling`. Any answer to
-`divergence-stop` starts its count again; answer **Continue driving** and
-re-arm to drive on.
+The dispatcher's re-drives never pass `--past-ceiling`. To drive on after
+`divergence-stop`, answer **Continue driving** and re-arm: its count of
+diverging rounds starts again. Any other answer to either decision (**Finish
+by hand**, **Re-scope or close**, a note or a free answer) keeps the drive
+stopped: the re-arm that reads it records it, stops with
+[`INDETERMINATE`](../../protocol/drive-exits.md) for you to act on, and asks
+nothing again, until you arm it with `--past-ceiling`.
 
 ### The morning report
 

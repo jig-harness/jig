@@ -179,6 +179,45 @@ describe("the round ceiling", () => {
   );
 });
 
+describe("a person's answer that keeps the drive stopped", () => {
+  it.skipIf(skipLongDriveFixture)(
+    "stops every launch without asking again, a re-arm included, until --past-ceiling",
+    async () => {
+      const f = writeFixture({ threads: [bot("PRRT_a")] });
+      seedRounds(f.stateDir, 1, PREV);
+      writeState(f.stateDir, "999", {
+        ...(readState(f.stateDir, "999") ?? {}),
+        circuitStop: {
+          key: "divergence-stop",
+          choice: "Finish by hand",
+          at: isoFromMs(currentMs()),
+        },
+      });
+      const rearmed = await drive(f, {}, [
+        "--max-rounds",
+        "1",
+        "--rearm-budget",
+      ]);
+      expectSpawnExit({ ...rearmed, stdout: null }, 1);
+      expect(rearmed.passes).toBe(0);
+      expect(rearmed.stderr).toContain(
+        "the drive stays stopped and asks nothing again",
+      );
+      expect(parked(f.stateDir)).toEqual([]);
+
+      const overridden = await drive(f, {}, [
+        "--max-rounds",
+        "1",
+        "--past-ceiling",
+      ]);
+      expectSpawnExit({ ...overridden, stdout: null }, 6);
+      expect(overridden.passes).toBe(1);
+      expect(readState(f.stateDir, "999")?.circuitStop).toBeUndefined();
+    },
+    MULTI_ROUND_TIMEOUT_MS,
+  );
+});
+
 describe("the wall-clock cap", () => {
   it(
     "parks round-ceiling once the hours since the first launch reach it",

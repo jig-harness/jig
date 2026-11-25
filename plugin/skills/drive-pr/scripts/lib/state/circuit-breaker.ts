@@ -57,6 +57,18 @@ export interface CircuitBreakerState {
   openFindings?: string[];
   /** The last rounds' finding movement, oldest first. */
   roundFindings?: RoundFindings[];
+  /** A person's answer to a circuit park that keeps the drive stopped, until their `--past-ceiling`. */
+  circuitStop?: CircuitStop;
+}
+
+/** A person's answer to a circuit park that keeps the drive stopped. */
+export interface CircuitStop {
+  /** The park answered: `round-ceiling` or `divergence-stop`. */
+  key: string;
+  /** The option chosen, or `a free answer`. */
+  choice: string;
+  /** When the re-arm read it. */
+  at: string;
 }
 
 /** The fields the drive ledger carries, so a takeover keeps them. */
@@ -97,7 +109,12 @@ export function isOptionalCircuit(s: Record<string, unknown>): boolean {
         s.openFindings.every((k) => typeof k === "string"))) &&
     (s.roundFindings === undefined ||
       (Array.isArray(s.roundFindings) &&
-        s.roundFindings.every(isRoundFindings)))
+        s.roundFindings.every(isRoundFindings))) &&
+    (s.circuitStop === undefined ||
+      (isRecord(s.circuitStop) &&
+        typeof s.circuitStop.key === "string" &&
+        typeof s.circuitStop.choice === "string" &&
+        isMoment(s.circuitStop.at)))
   );
 }
 

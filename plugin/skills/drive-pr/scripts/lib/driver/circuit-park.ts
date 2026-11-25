@@ -8,6 +8,7 @@
 import type { ParkedDecision } from "../../../../../shared/decisions/park.ts";
 import { currentIso } from "../../../../../shared/time.ts";
 import type { PendingVerdict } from "../state/pass-handoff.ts";
+import { answersChooseOption } from "../cancelled-recovery.ts";
 import {
   parkAdmissionContext,
   parkAdmissionProblem,
@@ -24,6 +25,9 @@ export const DIVERGENCE_PARK = "divergence-stop";
 
 /** The `round-ceiling` option whose answer is a person's override. */
 export const PAST_CEILING_OPTION = "past";
+
+/** The `divergence-stop` option whose answer drives on. */
+export const CONTINUE_OPTION = "continue";
 
 /** What a `round-ceiling` park states. */
 export interface CeilingFacts {
@@ -82,7 +86,7 @@ export function roundCeilingDecision(f: CeilingFacts): ParkedDecision {
           id: "hand",
           name: "Finish by hand",
           summary:
-            "Leave the drive parked; a person settles the open review findings, or re-scopes or closes the pull request.",
+            "Keep the drive stopped; a person settles the open review findings, or re-scopes or closes the pull request.",
           pay: ["A person's time on the open findings."],
         },
       ],
@@ -120,7 +124,7 @@ export function divergenceDecision(
       question: `How should PR #${pr}, whose last ${rounds} rounds each raised as many review findings as they fixed, proceed?`,
       options: [
         {
-          id: "continue",
+          id: CONTINUE_OPTION,
           name: "Continue driving",
           summary:
             "Re-arm the drive; the count of diverging rounds starts again from zero.",
@@ -132,7 +136,7 @@ export function divergenceDecision(
           id: "hand",
           name: "Finish by hand",
           summary:
-            "Leave the drive parked; a person settles the open review findings.",
+            "Keep the drive stopped; a person settles the open review findings.",
           pay: ["A person's time on the open findings."],
         },
         {
@@ -205,32 +209,36 @@ export async function parkCircuit(
   }
 }
 
-/**
- * Whether a person's answers to the `round-ceiling` park all choose the
- * override; a provisional decision, a disputed set, a note narrowing it or
- * another option is no override.
- */
+/** Whether a person's answers to the `round-ceiling` park choose the override. */
 export function answerRaisesCeiling(verdict: PendingVerdict): boolean {
-  if (verdict.key !== ROUND_CEILING_PARK || verdict.provisional === true)
-    return false;
-  const option = verdict.decision?.call.options.find(
-    (o) => o.id === PAST_CEILING_OPTION,
-  );
-  return (
-    option !== undefined &&
-    verdict.answers.length > 0 &&
-    verdict.answers.every(
-      (a) =>
-        a.choice?.option === option.name && (a.choice.note ?? "").trim() === "",
-    )
-  );
+  return answersChooseOption(verdict, ROUND_CEILING_PARK, PAST_CEILING_OPTION);
 }
 
-/** Whether a person answered the `divergence-stop` park (any option but a provisional one). */
-export function answerSettlesDivergence(verdict: PendingVerdict): boolean {
-  return (
-    verdict.key === DIVERGENCE_PARK &&
-    verdict.provisional !== true &&
-    verdict.answers.length > 0
-  );
+/** Whether a person's answers to the `divergence-stop` park choose to continue driving. */
+export function answerContinuesDivergence(verdict: PendingVerdict): boolean {
+  return answersChooseOption(verdict, DIVERGENCE_PARK, CONTINUE_OPTION);
+}
+
+/**
+ * Whether a person answered a circuit park with anything but the option
+ * that drives on (another option, a note, or a free answer): the drive then
+ * stays stopped for that person.
+ */
+export function answerKeepsStopped(verdict: PendingVerdict): boolean {
+  if (verdict.provisional === true || verdict.answers.length === 0)
+    return false;
+  if (verdict.key === ROUND_CEILING_PARK) return !answerRaisesCeiling(verdict);
+  if (verdict.key === DIVERGENCE_PARK)
+    return !answerContinuesDivergence(verdict);
+  return false;
+}
+
+/** What a person answered, as a stop names it. */
+export function answeredChoice(verdict: PendingVerdict): string {
+  const options = [
+    ...new Set(verdict.answers.map((a) => a.choice?.option ?? "")),
+  ];
+  return options.length === 1 && options[0] !== ""
+    ? (options[0] as string)
+    : "a free answer";
 }

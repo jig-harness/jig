@@ -1106,8 +1106,11 @@ stops admit it on a mechanical state:
   recorded as `ceilingRaised` and published to the ledger: an answer to the
   park choosing **Allow one more budget**, read by the next re-arm, or
   `--past-ceiling` on `drive.ts` or `arm-drive.ts`, which implies
-  `--rearm-budget`. An agent never passes `--past-ceiling`, and never
-  answers that park for a person.
+  `--rearm-budget`. Any other answer to `round-ceiling`, and any answer to
+  `divergence-stop` but **Continue driving**, keeps the drive stopped: the
+  re-arm records it as `circuitStop` and stops with `INDETERMINATE`, asking
+  nothing again, until a person's `--past-ceiling`. An agent never passes
+  `--past-ceiling`, and never answers these parks for a person.
 - **[`HITL_PARKED`](../../protocol/drive-exits.md).** Once **every** parked item has an answer — a
   comment by an author GitHub reports as the repository's owner, member or
   collaborator, last edited (or posted) later than the park, on the item's

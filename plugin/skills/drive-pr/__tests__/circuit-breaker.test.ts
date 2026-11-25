@@ -366,7 +366,7 @@ import { openStore } from ${JSON.stringify(join(LIB, "state", "store.ts"))};
 const verdicts = JSON.parse(await Bun.stdin.text());
 await applyCircuitAnswers("12", verdicts, false);
 const state = (await openStore("12")).read().state;
-console.log(JSON.stringify({ override: pastCeilingAnswered(), history: state.roundFindings ?? null }));
+console.log(JSON.stringify({ override: pastCeilingAnswered(), history: state.roundFindings ?? null, stop: state.circuitStop ?? null }));
 `;
 
   async function apply(verdicts: PendingVerdict[]) {
@@ -390,7 +390,11 @@ console.log(JSON.stringify({ override: pastCeilingAnswered(), history: state.rou
       env: { DRIVE_PR_TARGET: "12" },
     });
     expectSpawnExit(r, 0);
-    return JSON.parse(r.stdout) as { override: boolean; history: unknown };
+    return JSON.parse(r.stdout) as {
+      override: boolean;
+      history: unknown;
+      stop: { key: string; choice: string } | null;
+    };
   }
 
   const ceiling = roundCeilingDecision({
@@ -440,15 +444,36 @@ console.log(JSON.stringify({ override: pastCeilingAnswered(), history: state.rou
     ).toBe(false);
   });
 
-  it("starts the count of diverging rounds again on any answer to divergence-stop", async () => {
+  it("starts the count of diverging rounds again only on Continue driving", async () => {
     const decision = divergenceDecision("12", [], 2);
     const answered = await apply([
       answer("divergence-stop", "Continue driving", decision),
     ]);
     expect(answered.history).toBeNull();
-    const other = await apply([
+    expect(answered.stop).toBeNull();
+  });
+
+  it.each(["Finish by hand", "Re-scope or close"])(
+    "keeps the drive stopped on a %p answer to divergence-stop",
+    async (option) => {
+      const decision = divergenceDecision("12", [], 2);
+      const kept = await apply([answer("divergence-stop", option, decision)]);
+      expect(kept.history).toHaveLength(1);
+      expect(kept.stop).toMatchObject({
+        key: "divergence-stop",
+        choice: option,
+      });
+    },
+  );
+
+  it("keeps the drive stopped on a Finish by hand answer to round-ceiling", async () => {
+    const kept = await apply([
       answer(ROUND_CEILING_PARK, "Finish by hand", ceiling),
     ]);
-    expect(other.history).toHaveLength(1);
+    expect(kept.override).toBe(false);
+    expect(kept.stop).toMatchObject({
+      key: ROUND_CEILING_PARK,
+      choice: "Finish by hand",
+    });
   });
 });

@@ -640,8 +640,10 @@ state): keys newly open are the round's `newFindings`, keys no longer open its
 `fixedFindings`, kept for the last four rounds in `roundFindings`. A gate
 whose keys did not move records nothing. Two diverging rounds in a row
 (`newFindings ≥ fixedFindings` and `newFindings ≥ 1`) with a finding still
-open park `divergence-stop` ([`HITL_PARKED`](../../../protocol/drive-exits.md));
-any answer to it clears the count.
+open park `divergence-stop` ([`HITL_PARKED`](../../../protocol/drive-exits.md)).
+Only a **Continue driving** answer clears the count. Any other answer to
+either circuit park is recorded as `circuitStop`: every later launch stops
+with `INDETERMINATE` without asking again, until a person's `--past-ceiling`.
 
 **A second, earlier guard catches the spin `--max-rounds` only bounds**: the
 stall stop ([`STALLED`](../../../protocol/drive-exits.md)). Each ROUND_READY gate fingerprints the observable

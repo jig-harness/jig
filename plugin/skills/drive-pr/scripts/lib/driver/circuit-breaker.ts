@@ -37,8 +37,10 @@ import { framedDecisionLines } from "../state/park-frame.ts";
 import { openStore } from "../state/store.ts";
 import { DRIVE_EXIT } from "../status/terminal-states.ts";
 import {
+  answerContinuesDivergence,
+  answeredChoice,
+  answerKeepsStopped,
   answerRaisesCeiling,
-  answerSettlesDivergence,
   type CeilingFacts,
   DIVERGENCE_PARK,
   divergenceDecision,
@@ -90,11 +92,15 @@ export function pastCeilingAnswered(): boolean {
 }
 
 /**
- * What a re-arm's answers mean to the circuit breaker: an override answer to
- * `round-ceiling` lets this launch raise the ceiling, as `--past-ceiling`
+ * What a re-arm's answers mean to the circuit breaker. An override answer
+ * to `round-ceiling` lets this launch raise the ceiling, as `--past-ceiling`
  * does (the raise happens only at the ceiling, so an answer read again by a
- * later arm raises nothing more), and any answer to `divergence-stop`
- * starts the count of diverging rounds again.
+ * later arm raises nothing more); a "Continue driving" answer to
+ * `divergence-stop` starts the count of diverging rounds again. Any other
+ * answer to either park (finish by hand, re-scope, a note or a free answer)
+ * is recorded as `circuitStop`, and the drive stays stopped for that person
+ * without asking the same question again, until a person arms it with
+ * `--past-ceiling`.
  */
 export async function applyCircuitAnswers(
   pr: string,
@@ -107,15 +113,61 @@ export async function applyCircuitAnswers(
       `re-arm: a person's answer to the ${ROUND_CEILING_PARK} park allows PR #${pr} one more round budget past its ceiling.`,
     );
   }
-  if (dryRun || !verdicts.some(answerSettlesDivergence)) return;
+  const resume = verdicts.some(answerContinuesDivergence);
+  const stop = verdicts.find(answerKeepsStopped);
+  if (dryRun || (!resume && stop === undefined)) return;
   const store = await openStore(pr);
   await store.update((s) => {
     const next = { ...s };
+    if (resume) {
+      delete next.roundFindings;
+      if (next.circuitStop?.key === DIVERGENCE_PARK) delete next.circuitStop;
+    }
+    if (stop !== undefined)
+      next.circuitStop = {
+        key: stop.key,
+        choice: answeredChoice(stop),
+        at: currentIso(),
+      };
+    return next;
+  });
+  if (resume)
+    console.error(
+      `re-arm: a person chose to continue driving PR #${pr} past the ${DIVERGENCE_PARK} park; the count of diverging rounds starts again.`,
+    );
+  if (stop !== undefined)
+    console.error(
+      `re-arm: a person answered the ${stop.key} park of PR #${pr} with ${answeredChoice(stop)}; the drive stays stopped for them.`,
+    );
+}
+
+/**
+ * The stop a person's answer to a circuit park asked for: print it and
+ * return `INDETERMINATE`, a person's to act on, as the advisory-CI park's
+ * manual answer does; `null` when no such answer is recorded. Only a
+ * person's `--past-ceiling` lifts it.
+ */
+export async function personsCircuitStop(pr: string): Promise<number | null> {
+  const stop = (await openStore(pr)).read().state.circuitStop;
+  if (stop === undefined) return null;
+  console.error(
+    `circuit breaker: a person answered the ${stop.key} park of PR #${pr} with ${stop.choice} at ${stop.at}, so the drive stays stopped and asks nothing again. To drive it on, a person arms it with --past-ceiling: ${overrideCommand(pr)}`,
+  );
+  return DRIVE_EXIT.INDETERMINATE;
+}
+
+/** Lift a person's circuit stop: their `--past-ceiling` override. */
+export async function clearCircuitStop(pr: string): Promise<void> {
+  const store = await openStore(pr);
+  if (store.read().state.circuitStop === undefined) return;
+  await store.update((s) => {
+    const next = { ...s };
+    delete next.circuitStop;
     delete next.roundFindings;
     return next;
   });
   console.error(
-    `re-arm: a person answered the ${DIVERGENCE_PARK} park of PR #${pr}; the count of diverging rounds starts again.`,
+    `re-arm: a person's --past-ceiling lifts the stop an earlier answer to a circuit park recorded on PR #${pr}.`,
   );
 }
 

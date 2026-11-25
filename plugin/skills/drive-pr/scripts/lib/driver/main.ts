@@ -601,35 +601,34 @@ async function drive(ctx: DriveContext): Promise<number> {
   // The budget the rounds enforce: the base plus what a re-arm granted, and
   // under `--rearm-budget` another grant when the counters spent it, held to
   // the round ceiling; a re-arm that finds the ceiling spent stops here.
-  const budget = await roundBudget(pr, maxRoundsN, {
-    rearm: options.rearmBudget,
-    pastCeiling: options.pastCeiling,
-    dryRun,
-  });
-  if (typeof budget === "number") return await settlement.done(budget);
-  await announceRoundBudget(pr, budget.rounds, handoffAt);
-
-  await capturePickup(pr, dryRun, diag);
-
-  const roundsExit = await runDriverRounds({
+  const roundsExit = await withRoundBudget(
     pr,
-    mailboxDir,
-    generation,
-    keepDraft,
-    dryRun,
-    agent,
-    held,
-    maxRoundsN: budget.rounds,
-    maxAttemptsN: budget.attempts,
-    circuit: budget.circuit,
-    forward,
-    probeFlags,
-    markReadyPolicy,
-    deadlineRetryBudget,
-    firstPassNotice,
-    settleWorktree: options.settleWorktree,
-    inheritsEdits: afterStop.inheritsEdits,
-  });
+    maxRoundsN,
+    { rearm: options.rearmBudget, pastCeiling: options.pastCeiling, dryRun },
+    async (budget) => {
+      await announceRoundBudget(pr, budget.rounds, handoffAt);
+      await capturePickup(pr, dryRun, diag);
+      return await runDriverRounds({
+        pr,
+        mailboxDir,
+        generation,
+        keepDraft,
+        dryRun,
+        agent,
+        held,
+        maxRoundsN: budget.rounds,
+        maxAttemptsN: budget.attempts,
+        circuit: budget.circuit,
+        forward,
+        probeFlags,
+        markReadyPolicy,
+        deadlineRetryBudget,
+        firstPassNotice,
+        settleWorktree: options.settleWorktree,
+        inheritsEdits: afterStop.inheritsEdits,
+      });
+    },
+  );
   const exit = await settlement.done(roundsExit);
   return exit;
 }
@@ -705,6 +704,22 @@ function validatePassCommand(
   }
 
   return undefined;
+}
+
+/**
+ * Fixes the round budget, then runs `rounds` under it; a launch the budget
+ * stops (a re-arm that finds the round ceiling spent) returns its exit.
+ */
+async function withRoundBudget(
+  pr: string,
+  base: number,
+  opts: Parameters<typeof roundBudget>[2],
+  rounds: (
+    budget: Exclude<Awaited<ReturnType<typeof roundBudget>>, number>,
+  ) => Promise<number>,
+): Promise<number> {
+  const budget = await roundBudget(pr, base, opts);
+  return typeof budget === "number" ? budget : await rounds(budget);
 }
 
 async function announceRoundBudget(

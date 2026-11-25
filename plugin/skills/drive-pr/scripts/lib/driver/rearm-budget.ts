@@ -17,7 +17,9 @@ import { HANDOFF_TELLS_REFUSED } from "./../state/ledger-mirror.ts";
 import { driveState } from "./paths.ts";
 import {
   type CircuitLimits,
+  clearCircuitStop,
   drivenHours,
+  personsCircuitStop,
   pastCeilingAnswered,
   readCircuitSettings,
   recordFirstDriven,
@@ -197,6 +199,11 @@ export async function roundBudget(
 ): Promise<RoundLimits | number> {
   const { dryRun } = launch;
   const settings = readCircuitSettings();
+  // A person's answer that kept the drive stopped holds until their own
+  // override; no launch asks the same question again.
+  if (launch.pastCeiling && !dryRun) await clearCircuitStop(pr);
+  const personStop = await personsCircuitStop(pr);
+  if (personStop !== null && !(launch.pastCeiling && dryRun)) return personStop;
   const override = launch.pastCeiling || pastCeilingAnswered();
   const rearm = launch.rearm || override;
   const spent = await spentRounds(pr, rearm);

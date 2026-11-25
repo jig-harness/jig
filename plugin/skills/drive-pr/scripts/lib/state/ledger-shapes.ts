@@ -221,6 +221,12 @@ export const LEDGER_PAYLOAD_FIELDS = {
   // Published unrestricted, as the stable ledger accepted it before the field
   // existed; the reader checks it is a whole number (`ledger.ts`).
   roundsGranted: s.optional(s.unknown()),
+  // The circuit breaker's raises and first launch, unrestricted as the stable
+  // ledger accepted them before they existed; the reader drops a malformed
+  // one (`circuit-breaker.ts`).
+  ceilingRaised: s.optional(s.unknown()),
+  firstDrivenAt: s.optional(s.unknown()),
+  wallClockRaisedHours: s.optional(s.unknown()),
   phase: text,
   lastCountedHead: text,
   verifiedSha: text,
