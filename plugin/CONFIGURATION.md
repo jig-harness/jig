@@ -454,7 +454,11 @@ produces the same effective install inputs; otherwise prepare the worktree
 first and start the drive in it. The drive installs right after its own clean
 merge and cannot wait for a recheck, so keep the base branch from moving
 between that review and the install, and when the head or base has moved since
-the review, repeat it before starting the drive. Recheck when the head, base or resolution changes the
+the review, repeat it before starting the drive. Keep the pull request's head
+fixed from the review through the drive's attachment and installation: the
+attach advances a checkout to a newer head of the same branch, so start the
+drive in the reviewed worktree with the head you reviewed, and review again if
+the head differs when the drive attaches. Recheck when the head, base or resolution changes the
 inputs. Review the
 contents of any newly selected lockfile, including an unchanged lockfile
 selected after a manifest edit or after a lockfile is added, removed, moved
@@ -503,9 +507,14 @@ round budget). What needs a restart depends on how the drive ended:
 - A head the dispatcher proves moved only by a clean base merge is refreshed,
   not restarted, once the refresh records the convergence: it needs the merge
   proof, an applicable review witness, passing checks on the new head and a
-  standing announcement on the previously verified head. Until then the head is
-  stale, and dispatch can withhold a re-drive while verification of the new head
-  is pending.
+  standing announcement on the previously verified head. The refresh runs only
+  while the pull request is open, not a draft, mergeable, and neither held nor
+  busy; when one of those fails, resolve it before deciding whether a restart is
+  needed. Until the refresh records the convergence the head is stale, and
+  dispatch can withhold a re-drive while verification of the new head is
+  pending. A refresh that is still unresolved (verification pending, a held
+  drive slot, an unconfirmed ledger write) can show as `unplaced`: check again
+  rather than restarting.
 - When a refresh falls back, check the canonical ledger before restarting: a
   fallback can follow a ledger that already carries the new verified head, in
   which case the convergence holds. When the ledger still shows the old head,
