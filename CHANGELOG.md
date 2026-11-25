@@ -404,6 +404,21 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.309.1] - 2026-11-25
+
+### Fixed
+
+- `jig dispatch` no longer re-arms a drive every tick when each re-arm stops
+  `NOT_SETTLED` (`4`) again on the same pull request head, as a drive whose
+  required check completed skipped does after its final CI wait: the next
+  re-arm on that head waits 15 minutes, doubling with each, and after 3 in a
+  row the drive is a person's, notified once until its head changes.
+- `jig dispatch` no longer launches a takeover every tick of a silent driver
+  it started when each takeover fails (such as `drive.ts --take-over`
+  refusing to take over blind) without moving the ledger: the next takeover
+  waits 10 minutes, doubling with each, and after 3 in a row the drive is a
+  person's, notified once until its ledger moves.
+
 ## [0.309.0] - 2026-11-25
 
 ### Added
@@ -11090,7 +11105,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.309.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.309.1...HEAD
+[0.309.1]: https://github.com/jig-harness/jig/compare/v0.309.0...v0.309.1
 [0.309.0]: https://github.com/jig-harness/jig/compare/v0.308.3...v0.309.0
 [0.308.3]: https://github.com/jig-harness/jig/compare/v0.308.2...v0.308.3
 [0.308.2]: https://github.com/jig-harness/jig/compare/v0.308.1...v0.308.2
