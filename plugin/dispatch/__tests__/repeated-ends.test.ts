@@ -207,6 +207,22 @@ describe("re-arms that keep stopping NOT_SETTLED on one head", () => {
     expect(pr).toBe(asked);
   });
 
+  it("still cap re-arms whose heads did not read", () => {
+    const unread = (generation: number): DrivenPr => {
+      const pr = notSettled(generation);
+      delete pr.evidence.headSha;
+      return pr;
+    };
+    const records = Array.from({ length: NOT_SETTLED_REARMS }, (_, i) =>
+      launch("rearm", factsOf(unread(i + 1)), NOT_SETTLED, 200 - i * 60, {}),
+    );
+    const [pr] = settleRepeatedNotSettled(
+      [unread(NOT_SETTLED_REARMS + 1)],
+      records,
+    );
+    expect(pr?.class).toBe("needs-person");
+  });
+
   it("read the pull request's head beside a NOT_SETTLED stop", () => {
     const ledger = {
       driver: { state: "stopped", exit: NOT_SETTLED },
@@ -368,6 +384,13 @@ describe("launch record retention", () => {
     expect(kept.size).toBe(Math.max(NOT_SETTLED_REARMS, FAILED_TAKEOVERS));
     expect(kept.has(records.at(-1)?.record.id ?? "")).toBe(true);
     expect(kept.has(records[0]?.record.id ?? "")).toBe(false);
+  });
+
+  it("keeps the owner record that started the driver beside its failed takeovers", () => {
+    const own = owner();
+    const run = takeovers(FAILED_TAKEOVERS);
+    const kept = latestRepeatedEnds([own, ...run]);
+    expect(kept.has(own.record.id)).toBe(true);
   });
 
   it("keeps nothing past a launch that ended cleanly", () => {

@@ -81,13 +81,16 @@ function fromRequest(r: ReadRecord): boolean {
   return r.record.rearmRequestId != null;
 }
 
-/** A re-arm that stopped `NOT_SETTLED` at `head`. */
+/** The head a head that did not read stands for: unread heads count as one head, so the cap still bounds them. */
+const UNREAD_HEAD = "";
+
+/** A re-arm that stopped `NOT_SETTLED` at `head` (`UNREAD_HEAD` when neither it nor the launch read one). */
 function notSettledAt(head: string): (r: ReadRecord) => boolean {
   return (r) =>
     r.record.action === "rearm" &&
     !fromRequest(r) &&
     endCode(r) === DRIVE_EXIT.NOT_SETTLED &&
-    prHeadOf(r.record.heads) === head;
+    (prHeadOf(r.record.heads) ?? UNREAD_HEAD) === head;
 }
 
 /** A takeover that failed on `facts` without a cause answered elsewhere. */
@@ -126,19 +129,18 @@ export function settleRepeatedNotSettled(
   own: readonly ReadRecord[],
 ): DrivenPr[] {
   return drives.map((pr) => {
-    const head = pr.evidence.headSha;
+    const listed = pr.evidence.headSha;
+    const head = typeof listed === "string" ? listed : UNREAD_HEAD;
     if (
       pr.class !== "re-armable" ||
       pr.evidence.exit !== DRIVE_EXIT.NOT_SETTLED ||
-      pr.evidence.rearm === true ||
-      typeof head !== "string" ||
-      head === ""
+      pr.evidence.rearm === true
     )
       return pr;
     const run = trailing(drivesOf(pr, own), notSettledAt(head));
     const last = run[0];
     if (last === undefined) return pr;
-    const short = head.slice(0, 12);
+    const short = head === UNREAD_HEAD ? "(unread)" : head.slice(0, 12);
     const evidence = {
       ...pr.evidence,
       notSettledRearms: run.length,
