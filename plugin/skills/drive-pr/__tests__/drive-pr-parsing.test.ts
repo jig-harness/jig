@@ -435,6 +435,54 @@ describe("summary-findings parsing", () => {
     expect(parseDeclaredUnanchored(body)).toBe(1);
   });
 
+  it("preserves live summary evidence beside comments and after code containers", () => {
+    const body = [
+      "```markdown",
+      "<!-- literal opener in code -->",
+      "```",
+      "- `live.ts:3` — a live finding <!-- explanation -->",
+      "> 1 finding(s) without a diff-anchorable line <!-- explanation -->",
+    ].join("\n");
+    expect(parseBodyFindings(body)).toEqual([
+      { path: "live.ts", line: 3, text: "a live finding" },
+    ]);
+    expect(parseDeclaredUnanchored(body)).toBe(1);
+  });
+
+  it("ends unclosed list and quote examples at their containers", () => {
+    const body = [
+      "- explanation:",
+      "  ```markdown",
+      "  example",
+      "- `list-live.ts:3` — a live finding",
+      "> ```markdown",
+      "> example",
+      "- `quote-live.ts:4` — a live finding",
+      "> 2 finding(s) without a diff-anchorable line",
+    ].join("\n");
+    expect(parseBodyFindings(body)).toEqual([
+      { path: "list-live.ts", line: 3, text: "a live finding" },
+      { path: "quote-live.ts", line: 4, text: "a live finding" },
+    ]);
+    expect(parseDeclaredUnanchored(body)).toBe(2);
+  });
+
+  it("keeps list ancestors when a child item closes", () => {
+    const body = [
+      "- parent:",
+      "  - child:",
+      "    text",
+      "  ```markdown",
+      "  example",
+      "- `live.ts:3` — a live finding",
+      "> 1 finding(s) without a diff-anchorable line",
+    ].join("\n");
+    expect(parseBodyFindings(body)).toEqual([
+      { path: "live.ts", line: 3, text: "a live finding" },
+    ]);
+    expect(parseDeclaredUnanchored(body)).toBe(1);
+  });
+
   it("extracts severity from the bullet", () => {
     expect(jigSeverity("🟡 **medium** (high confidence)")).toBe("medium");
     expect(jigSeverity("no severity here")).toBe("unknown");
