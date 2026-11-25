@@ -1,6 +1,6 @@
 /** A provider account's credential, resolved through the host's command, and what a refusal holds. */
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -284,6 +284,11 @@ describe("resolving a credential reference", () => {
 
   it("does not relay a failed credential command's stderr to its parent", async () => {
     const stderrOnly = "opaque-stderr-diagnostic-1234";
+    const stdoutSentinel = "credential-command-ran-1234";
+    const sentinelPath = join(
+      mkdtempSync(join(tmpdir(), "provider-credential-")),
+      "ran",
+    );
     const credentialModule = new URL(
       "../lib/provider-credential.ts",
       import.meta.url,
@@ -292,7 +297,7 @@ describe("resolving a credential reference", () => {
       import { resolveCredential } from ${JSON.stringify(credentialModule)};
       const result = await resolveCredential({
         credentialCommand: [process.execPath, "--no-env-file", "-e", ${JSON.stringify(
-          `process.stderr.write(${JSON.stringify(stderrOnly)}); process.exit(1)`,
+          `require("node:fs").writeFileSync(${JSON.stringify(sentinelPath)}, ${JSON.stringify(stdoutSentinel)}); process.stderr.write(${JSON.stringify(stderrOnly)}); process.exit(43)`,
         )}],
         credentialTimeoutMs: 10_000,
         credentialEnv: [],
@@ -305,6 +310,7 @@ describe("resolving a credential reference", () => {
       stdout: "pipe",
       stderr: "pipe",
       env: { PATH: process.env.PATH ?? "" },
+      timeout: 15_000,
     });
     const [exitCode, stdout, stderr] = await Promise.all([
       child.exited,
@@ -317,11 +323,12 @@ describe("resolving a credential reference", () => {
       "credential resolver child",
     );
     expect(stdout).toBe(
-      "the credential command exited 1; its error output is not recorded\n",
+      "the credential command exited 43; its error output is not recorded\n",
     );
+    expect(readFileSync(sentinelPath, "utf8")).toBe(stdoutSentinel);
     expect(stdout).not.toContain(stderrOnly);
     expect(stderr).not.toContain(stderrOnly);
-  });
+  }, 20_000);
 
   it("is unreachable when the command does not answer in time", async () => {
     const printed = "timed-out-secret-1234";
