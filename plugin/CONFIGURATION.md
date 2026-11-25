@@ -932,7 +932,7 @@ the pass itself keeps the agent's own
 | `routing.raise.reviews` | `true` or `false` | `true` | do-item | Whether an area with a mandatory review (`review.skills` naming a skill) among the areas the item's labels reach through `do_item.agents.codearea_areas`, and every area their `impliedBy` closure adds, moves the effort up one step |
 | `routing.models` | map from a runtime (`claude-code`, `codex`, or any other runtime name) to `{simple, standard, complex}`, each a model the runtime takes: a [family alias](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) or any other model identifier, which for a runtime with a list of families must have its tier declared in `routing.model_tiers` (or its older spelling `routing.family_tiers`) unless the list already names it (a family alias or a cataloged release ID such as `gpt-5.6-terra`) | `claude-code: {simple: sonnet, standard: sonnet, complex: opus}`, `codex: {simple: terra, standard: terra, complex: sol}` | do-item, drive-pr, dispatch | Where a complexity tier becomes a model: a route names a tier, never a model, and `drive.pass_model` set to a tier resolves here too (that field may also name a model directly). The dispatcher reads the row of the agent a session runs in, which the account's vendor picks: a repository names a model per runtime here, never an agent. A cell a row leaves out keeps its runtime's default; a runtime with no defaults names every tier, and a runtime with no row gets no model, its routes recorded and not applied. Claude Code is given the alias; Codex is given the model the family names today (`terra` runs as `gpt-5.6-terra`), from the plugin's one list of families (`plugin/shared/model-families.ts`); a model outside the list is given as written. A Codex pass of a drive with no model of its own runs on the `codex` row's `standard` model. The legacy keys `execution` and `strategic` read as `standard` and `complex`, and an `execution` model is also `simple`'s unless the row names `simple`; a row naming a legacy key and its new key with different models is refused. This row is the all-stages one; [`routing.stages`](#the-open-model-vocabulary) replaces a cell for one stage |
 | `routing.model_tiers` | map from a runtime to a map from a model identifier or family alias to `{tier, reason}`, the tier one of M0's `scout`, `execution`, `strategic`, `judgment` | Each listed family's tier from the plugin's list | do-item, drive-pr, dispatch | The M0 tier of a model the list does not name, which a route needs before it may use the model on a runtime that has a list of families (a runtime with none accepts any name), or of a listed family whose tier differs in this repository. Refused without a `reason`. The audit reports each surviving configured entry, not a list of live consumers: an all-stages entry may be inherited by a stage, and a stage entry is reported even before a launch reads it. Where `routing.family_tiers` declares the same model with the same tier, the `model_tiers` entry's reason is the one reported. [The open model vocabulary](#the-open-model-vocabulary) says how the layers combine |
-| `routing.family_tiers` | the same shape as `routing.model_tiers` | none | do-item, drive-pr, dispatch | The older spelling of `routing.model_tiers`; its entries are read as that key's, and a configuration that sets only this one routes exactly as it did. One model declared under both keys with different tiers is refused |
+| `routing.family_tiers` | the same shape as `routing.model_tiers` | none | do-item, drive-pr, dispatch | The older spelling of `routing.model_tiers`; its entries are read as that key's, and a configuration that sets only this one keeps its tier classification, but each selected model must now meet the [operand rule](#the-open-model-vocabulary), so a selection that starts with a dash or holds a control character is refused. One model declared under both keys with different tiers is refused |
 | `routing.stages` | map from a stage (`pickup`, `rearm`, `followup`, `steward`) to `{models: {<runtime>: {simple, standard, complex}}}`, each cell a model as in `routing.models` | none: every stage runs on the `routing.models` row | do-item, dispatch | One launch stage's model for a tier, in place of the all-stages cell. A cell a stage leaves out falls through to `routing.models`. The checks of `routing.models` apply to a stage's cells beside the row they replace. The steward reads its row today; a stage's other passes read theirs as each learns its stage |
 | `routing.efforts` | map from a runtime to a map from an effort to the runtime's name for it | Each effort as written | do-item, dispatch | Where a runtime spells an effort differently. A dispatched Codex session takes its effort as Codex's `model_reasoning_effort` |
 
@@ -960,18 +960,20 @@ model.
   `routing.stages.<stage>.models.<runtime>.<tier>` take any model the selected
   launch can pass to its runtime, one word with no control characters,
   whitespace, comma, semicolon or equals sign and not beginning with a dash.
-  Both `model_tiers` and `family_tiers` declaration keys keep the older key
-  grammar: they may begin with a dash, but may not be empty or contain NUL,
-  whitespace, commas, semicolons or equals signs. This lets an unused legacy
-  declaration remain while selected values use the safe operand rule. A
+  A `routing.family_tiers` key keeps the older grammar: it may begin with a
+  dash or hold NUL or a lone surrogate, but not whitespace, a comma, semicolon
+  or equals sign. A `routing.model_tiers` key may also begin with a dash, but
+  may not contain NUL or a lone surrogate. Selected values use the stricter
+  operand rule, so a dormant legacy key can stay while a selection of the
+  same string is refused. A
   declaration key, unlike a model value, may not be `__proto__`:
   the shared loader rejects that mapping key before routing
   reads it. For a runtime with a list (`claude-code`, `codex`) a name
   outside the list is **refused** until `routing.model_tiers.<runtime>.<model>` (the recommended spelling; the older
   `routing.family_tiers` supplies the same declaration) says which M0 tier it
   is, so a typo never routes silently; the message names
-  that key. A runtime with no list accepts every name as written, as before,
-  and the checks below apply to a name once its tier is declared. For a
+  that key. A runtime with no list accepts every name that meets the operand rule
+  as written, and the checks below apply to a name once its tier is declared. For a
   runtime that takes the alias itself (`claude-code`), a cataloged release ID
   (the pinned spelling of a known family) is accepted for its compatible CLI
   launch without `model_tiers`. A delegated Agent-tool invocation is
