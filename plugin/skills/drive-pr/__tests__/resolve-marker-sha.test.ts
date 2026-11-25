@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,7 +17,7 @@ function sh(cwd: string, ...args: string[]): string {
       GIT_COMMITTER_EMAIL: "t@example.invalid",
     },
   });
-  expect(p.exitCode).toBe(0);
+  expectSpawnExit(p, 0);
   return p.stdout.toString().trim();
 }
 

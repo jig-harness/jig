@@ -177,37 +177,16 @@ export function reviewerStickyBody(
   // A structural marker may follow a heading, but quoted and code examples
   // are not reviewer evidence. Requiring byte zero rejected valid configured
   // summaries; accepting every trimmed line lets an example replace one.
-  let fence: { character: "`" | "~"; length: number } | null = null;
+  let fence: Fence = null;
   let quotedFence: { character: "`" | "~"; length: number } | null = null;
   const structural: string[] = [];
   for (const line of body.split(/\r?\n/)) {
     // Fenced blocks are structural only at Markdown's permitted indentation.
     // Remember their delimiter length: three backticks inside a four-backtick
     // block are content, not its closing fence.
-    const indentation = markdownIndentation(line);
-    const token =
-      indentation.columns <= 3
-        ? (/^\s*(`{3,}|~{3,})/.exec(line)?.[1] ?? "")
-        : "";
-    if (fence === null && token !== "") {
-      // An opening fence may have an info string immediately after it.  A
-      // closing fence, on the other hand, admits whitespace only.
-      const rest = line.slice(line.indexOf(token) + token.length);
-      if (token[0] === "~" || !rest.includes("`"))
-        fence = { character: token[0] as "`" | "~", length: token.length };
-      continue;
-    }
-    if (
-      fence !== null &&
-      token !== "" &&
-      token[0] === fence.character &&
-      token.length >= fence.length &&
-      /^[ \t]*$/.test(line.slice(line.indexOf(token) + token.length))
-    ) {
-      fence = null;
-      continue;
-    }
-    if (fence !== null || indentation.columns >= 4) continue;
+    const step = fenceStep(line, fence);
+    fence = step.fence;
+    if (step.delimiter || fence !== null || step.columns >= 4) continue;
     // Finding-count declarations are intentionally rendered as blockquotes by
     // the reviewer. Only the declaration's recognised prefix survives, and
     // only from a quoted prose line outside quoted code: trailing prose,
@@ -266,6 +245,42 @@ export function reviewerStickyBody(
     : null;
 }
 
+type Fence = { character: "`" | "~"; length: number } | null;
+
+/**
+ * One line's effect on a Markdown code fence. Fences are structural only at
+ * Markdown's permitted indentation, and their delimiter length is remembered:
+ * three backticks inside a four-backtick block are content, not its closing
+ * fence. An opening fence may carry an info string; a closing one admits
+ * whitespace only.
+ */
+function fenceStep(
+  line: string,
+  fence: Fence,
+): { fence: Fence; delimiter: boolean; columns: number } {
+  const { columns } = markdownIndentation(line);
+  const token = columns <= 3 ? (/^\s*(`{3,}|~{3,})/.exec(line)?.[1] ?? "") : "";
+  if (token === "") return { fence, delimiter: false, columns };
+  const rest = line.slice(line.indexOf(token) + token.length);
+  if (fence === null) {
+    const opens = token[0] === "~" || !rest.includes("`");
+    return {
+      fence: opens
+        ? { character: token[0] as "`" | "~", length: token.length }
+        : null,
+      delimiter: true,
+      columns,
+    };
+  }
+  const closes =
+    token[0] === fence.character &&
+    token.length >= fence.length &&
+    /^[ \t]*$/.test(rest);
+  return closes
+    ? { fence: null, delimiter: true, columns }
+    : { fence, delimiter: false, columns };
+}
+
 /**
  * Complete skip-notice blocks whose delimiters are structural Markdown, while
  * retaining their deliberately blockquoted payload for the skip decoder.
@@ -275,36 +290,19 @@ export function structuralSkipNotices(body: string, marker: string): string {
   const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const opener = new RegExp(`^ {0,3}<!--\\s*${escaped}\\s*-->\\s*$`);
   const closer = new RegExp(`^ {0,3}<!--\\s*/\\s*${escaped}\\s*-->\\s*$`);
-  let fence: { character: "`" | "~"; length: number } | null = null;
+  let fence: Fence = null;
   let open = false;
   const kept: string[] = [];
   for (const line of body.split(/\r?\n/)) {
-    const indentation = markdownIndentation(line);
-    const token =
-      indentation.columns <= 3
-        ? (/^\s*(`{3,}|~{3,})/.exec(line)?.[1] ?? "")
-        : "";
-    if (fence === null && token !== "") {
-      const rest = line.slice(line.indexOf(token) + token.length);
-      if (token[0] === "~" || !rest.includes("`"))
-        fence = { character: token[0] as "`" | "~", length: token.length };
-      // A fence delimiter is never skip-notice payload. Treat opener and
-      // closer symmetrically so neither can leak into the decoder.
-      continue;
-    } else if (
-      fence !== null &&
-      token !== "" &&
-      token[0] === fence.character &&
-      token.length >= fence.length &&
-      /^[ \t]*$/.test(line.slice(line.indexOf(token) + token.length))
-    ) {
-      fence = null;
-      continue;
-    }
-    if (fence !== null || indentation.columns >= 4 || /^ {0,3}>/.test(line)) {
+    // A fence delimiter is never skip-notice payload. Treat opener and
+    // closer symmetrically so neither can leak into the decoder.
+    const step = fenceStep(line, fence);
+    fence = step.fence;
+    if (step.delimiter) continue;
+    if (fence !== null || step.columns >= 4 || /^ {0,3}>/.test(line)) {
       // The skip notice intentionally retains its blockquoted prose, but a
       // fenced or indented code example inside it is not payload evidence.
-      if (open && fence === null && indentation.columns < 4) kept.push(line);
+      if (open && fence === null && step.columns < 4) kept.push(line);
       continue;
     }
     if (!open && opener.test(line)) {
