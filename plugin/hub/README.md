@@ -2,11 +2,11 @@
 
 **What problem this solves.** Several machines that dispatch the same
 repositories each read the forge and the tracker for themselves, and none
-sees what the others are doing. The [hub](../../GLOSSARY.md) is an optional
+sees what the others are doing. The [hub](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is an optional
 service they enroll in: it keeps one view of the forge and the tracker for
 all of them. Without it, every host dispatches alone, as it does today;
 nothing here is needed for that. The design is
-[design/control-plane.md](../../design/control-plane.md).
+[design/control-plane.md](https://github.com/jig-harness/jig/blob/main/design/control-plane.md).
 
 This page is for the person who runs a hub on their own machine, with the
 process adapter: `jig hub serve` on Bun, its database a SQLite file. It
@@ -22,8 +22,8 @@ own paths:
 | Listener | Paths | Where it listens |
 | --- | --- | --- |
 | Host protocol | `/v1/` | the addresses in `host.listen`: loopback and the private network's interface only, never every interface |
-| Webhooks | `/webhooks/<source>`, and 404 to everything else | `webhooks.listen`; a [tunnel](../../GLOSSARY.md) publishes this path and nothing else |
-| Feed | the page and the change feed | a Unix socket only the front's user may open, or loopback with a secret the [private-network front](../../GLOSSARY.md) adds |
+| Webhooks | `/webhooks/<source>`, and 404 to everything else | `webhooks.listen`; a [tunnel](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) publishes this path and nothing else |
+| Feed | the page and the change feed | a Unix socket only the front's user may open, or loopback with a secret the [private-network front](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) adds |
 
 Its background work (trimming old rows, and later the reconciliation
 sweep) runs as scheduled jobs. Each job's next run is kept in the database,
