@@ -1,6 +1,6 @@
 Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 78 beyond it, not needed for this profile; 36 unchanged and met.
 
-### What changed (138)
+### What changed (139)
 
 | Module | Criterion | Before → after | Change |
 |--------|-----------|----------------|--------|
@@ -8,6 +8,7 @@ Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/
 | M0 Instruction architecture | `instruction-file-stays-small` | not scored → absent | Added by Jig |
 | M0 Instruction architecture | `load-model-recorded` | not scored → absent | Added by Jig |
 | M0 Instruction architecture | `model-pins-are-family-aliases` | not scored → expected absent | Added by Jig |
+| M0 Instruction architecture | `judgment-tier-admission-and-baseline` | not scored → absent | Added by Jig |
 | M0 Instruction architecture | `runtime-capabilities-name-fallbacks` | not scored → absent | Added by Jig |
 | M0 Instruction architecture | `deny-lists-per-runtime` | not scored → absent | Added by Jig |
 | M0 Instruction architecture | `standards-declare-scope` | not scored → absent | Added by Jig |

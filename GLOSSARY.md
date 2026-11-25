@@ -1922,6 +1922,8 @@ make, use the entry's term instead.
   not to use it ("not for X; use Y instead"). Only the description is read
   before a skill is chosen, so a negative trigger elsewhere cannot prevent a
   wrong choice.
+- **NUL** — the zero byte (`U+0000`), which command-line arguments and many
+  text formats cannot represent safely.
 - **Exact / judgment section label** — a bold label opening a section of a
   *skill*: **exact** means run the named command as written, **judgment**
   means reach the stated outcome by the means that fit. Not yet a rule
@@ -1934,11 +1936,25 @@ make, use the entry's term instead.
 - **Scout** — a small, cheap agent (fast model, read-only) sent ahead of
   implementation to gather facts; part of tiered model routing (expensive
   models decide, cheap models explore).
-- **Model tier** — the cost class of model an agent or skill runs on, named by
-  role: *Judgment*, Strategic, Execution or *Scout*. Derived from the model
-  family it declares, not from how important its job sounds. See the
-  [model routing policy](modules/M0-instruction-architecture/reference/model-routing-policy.md).
-  *Avoid*: model level (a *maturity level* is something else).
+
+- <a id="model-tier"></a>**Model tier** — the cost class of model an agent or
+  skill runs on, named by role: *Judgment*, Strategic, Execution or *Scout*;
+  it is not chosen from how important the job sounds.
+  In agent and skill metadata the tier follows from the model pin, as the
+  [model routing policy](modules/M0-instruction-architecture/reference/model-routing-policy.md)
+  sets out; a separately declared tier is checked only where the metadata
+  carries one. That pinning rule applies to agent and skill metadata. Shared
+  routing configuration instead classifies models for shared model selection:
+  its declarations are per runtime and can name a known family spelling or an
+  exact model identifier. For one runtime, every surviving declaration of the
+  same family or exact identifier — from `routing.model_tiers` or its older
+  spelling `routing.family_tiers` — must agree on its tier; conflicting
+  declarations are refused. A listed family alias or release identifier uses
+  the plugin's known-family classification without a declaration. When both
+  declaration keys name the same model with the same tier, the modern key's
+  reason wins. The catalog's Scout restriction still applies. *Avoid*: model
+  level (a *maturity level*
+  is something else).
 - **Route** — the agent, *complexity tier* and reasoning effort chosen for the
   implementer of one piece of work at its pickup; derived from the item's
   *work type*, size, *flag labels* and the *change-area catalog*'s flags and
@@ -1946,7 +1962,7 @@ make, use the entry's term instead.
   each part, the source (the rules, or the person who chose instead, whose
   choice always wins) and whether it was applied recorded on the pull request
   ([design](design/agent-routing.md)).
-- **Complexity tier** — how hard one piece of work is, for its *route*:
+- **Complexity tier** — how hard one piece of work is, for its *route*; it is not chosen from how important the job sounds:
   simple, standard or complex, derived from its *work type*, its size and
   the flags a repository marks complex at any size (a migration, an API
   change). Each tier maps to a model per agent tool, by default Sonnet or

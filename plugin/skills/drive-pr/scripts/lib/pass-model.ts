@@ -34,6 +34,7 @@
  * it rather than guessed into its grammar.
  */
 import { basename } from "node:path";
+import { formatDisplayValue } from "../../../../shared/config-layers.ts";
 import { swallow } from "../../../../shared/errors.ts";
 import { runtimeModel } from "../../../../shared/model-families.ts";
 import {
@@ -84,7 +85,7 @@ export function resolveModelValue(
 ): PassModel {
   if (!PASS_MODEL_PATTERN.test(value))
     throw new PassModelUsageError(
-      `${where} must be one word naming a model, a Claude Code alias or a complexity tier (got '${value}')`,
+      `${where} must be one word naming a model, a Claude Code alias or a complexity tier (got ${formatDisplayValue(value)})`,
     );
   const tier = tierNamed(value);
   if (tier === undefined) {
@@ -265,7 +266,7 @@ function ownModel(
     return {
       argv: [...argv],
       model: null,
-      source: `the pass command's own --model '${value}', which names no model`,
+      source: `the pass command's own --model ${formatDisplayValue(value)}, which names no model`,
     };
   const config = configuredOrNull(configured);
   return {
@@ -292,7 +293,7 @@ function codexPass(
       return {
         argv: [...argv],
         model: null,
-        source: `the pass command's own model '${own.value}', which names no model`,
+        source: `the pass command's own model ${formatDisplayValue(own.value)}, which names no model`,
       };
     let config: CodexPassModel | null = null;
     try {
@@ -323,6 +324,7 @@ function codexPass(
 function registeredPass(
   argv: readonly string[],
   flag: string | undefined,
+  resolve: (value: string, where: string, runtime?: string) => PassModel,
 ): EffectivePass {
   const other = harnessOfProgram(argv[0]);
   if (flag === undefined || other === null)
@@ -331,12 +333,7 @@ function registeredPass(
       model: null,
       source: `chosen by the pass command (${basename(argv[0] ?? "")})`,
     };
-  const chosen = resolveModelValue(
-    flag,
-    "--pass-model",
-    readOptionalOverlay,
-    other.runtime,
-  );
+  const chosen = resolve(flag, "--pass-model", other.runtime);
   return {
     argv: other.withModel(
       withoutModel(argv),
@@ -356,6 +353,11 @@ export function effectivePass(
   flag: string | undefined,
   configured: () => PassModel = configuredPassModel,
   codex: () => CodexPassModel = configuredCodexModel,
+  resolve: (value: string, where: string, runtime?: string) => PassModel = (
+    value,
+    where,
+    runtime = PASS_RUNTIME,
+  ) => resolveModelValue(value, where, readOptionalOverlay, runtime),
 ): EffectivePass {
   const first = argv[0];
   if (first === undefined)
@@ -367,18 +369,13 @@ export function effectivePass(
     );
   if (vendor === "codex") {
     if (flag === undefined) return codexPass(argv, codex);
-    const chosen = resolveModelValue(
-      flag,
-      "--pass-model",
-      readOptionalOverlay,
-      CODEX_RUNTIME,
-    );
+    const chosen = resolve(flag, "--pass-model", CODEX_RUNTIME);
     return { argv: withCodexModel(argv, chosen.model), ...chosen };
   }
-  if (vendor !== "claude") return registeredPass(argv, flag);
+  if (vendor !== "claude") return registeredPass(argv, flag, resolve);
   const own = modelOption(argv);
   if (flag !== undefined) {
-    const chosen = resolveModelValue(flag, "--pass-model");
+    const chosen = resolve(flag, "--pass-model");
     const replaced = own === null || own.value === chosen.model ? null : own;
     return {
       argv: withModel(argv, chosen.model),
@@ -386,7 +383,7 @@ export function effectivePass(
       source:
         replaced === null
           ? chosen.source
-          : `${chosen.source}, replacing the pass command's --model ${replaced.value}`,
+          : `${chosen.source}, replacing the pass command's --model ${formatDisplayValue(replaced.value)}`,
     };
   }
   if (own !== null) return ownModel(argv, own.value, configured);

@@ -665,7 +665,7 @@ not resolve it either.
 | `drive.churn_rounds` | `0`, or a whole number from 2 to 12 | `4` | drive-pr | The structural-churn brake: how many consecutive rounds one file may draw findings, none of them `high` or `blocker`, and change between each pair of consecutive reviewed heads, before the drive parks itself under the `structural-churn` class with [`HITL_PARKED`](protocol/drive-exits.md#when-the-drive-parks-itself-on-structural-churn). The same brake parks a file that returns to an earlier content. `0` turns the brake off, both kinds. At most 12, the longest streak the drive's state can hold. `DRIVE_PR_CHURN_ROUNDS` sets it for one run and wins over the file. Any other value stops the round as `INDETERMINATE` ([the structural-churn park](skills/drive-pr/README.md#the-structural-churn-park)) |
 | `drive.pass_deadline_retries` | whole number ≥ 0 | `2` | drive-pr | How many passes killed at their deadline one drive restarts from, counted in the drive state across re-arms and takeovers until the drive converges or the pull request closes: the driver reports what the killed pass left in the tree, leaves it there and starts the next round. Past this many it stops with [`PASS_DEADLINE`](protocol/drive-exits.md) and says the budget is spent; `0` stops at the first. A value that is not a whole number of at least 0 stops the drive |
 | `drive.ci_repair_rounds` | whole number ≥ 0 | `2` | drive-pr | How many CI-repair passes a drive spends per head and failing check once the final CI on the converged head comes back red; `0` disables repair and diagnosis. Spending a positive budget starts one diagnosing session on the head. The repository's CI cost and flake posture, so every host that drives it spends the same. `DRIVE_PR_CI_REPAIR_ROUNDS` sets it for one run and wins over the file. A failed-job retry (`ci.rerun_failed_once`) and an infrastructure re-run spend none of it |
-| `drive.pass_model` | one word: a model id, a Claude Code alias, or a complexity tier (`simple`, `standard`, `complex`; `execution` and `strategic` read as `standard` and `complex`) | `sonnet`, Claude Code's alias for the latest Sonnet | drive-pr, do-item | The model each pass of a drive runs on: the arm command both skills build carries it as `claude --model <model> -p …`, and `drive.ts` adds it after `claude` to a pass command that names no model of its own. A tier resolves through the same tier-to-model table as the implementer's route (`routing.models`, row `claude-code`). The `--pass-model` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive. The driver log and the `drives.ts` listing name the model. The setting is Claude Code's; `--pass-model` also overrides a Codex pass and resolves tiers through `routing.models.codex`. Without that flag, a Codex pass runs on its own `-m`, else the standard tier of `routing.models.codex` (by default `terra`, given as `gpt-5.6-terra`), and any other pass command chooses its own model. A value that is not one word stops the drive |
+| `drive.pass_model` | one word: a model id, a Claude Code alias, or a complexity tier (`simple`, `standard`, `complex`; `execution` and `strategic` read as `standard` and `complex`) | `sonnet`, Claude Code's alias for the latest Sonnet | drive-pr, do-item | The model each pass of a drive runs on: the arm command both skills build carries it as `claude --model <model> -p …`, and `drive.ts` adds it after `claude` to a pass command that names no model of its own. A tier resolves through the same tier-to-model table as the implementer's route (`routing.models`, row `claude-code`). The `--pass-model` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive. The driver log and the `drives.ts` listing name the model. The setting is Claude Code's; `--pass-model` also overrides a Codex pass and resolves tiers through `routing.models.codex`. Without that flag, a Codex pass runs on its own `-m`, else the standard tier of `routing.models.codex` (by default `terra`, given as `gpt-5.6-terra`), and any other pass command chooses its own model. A value must not start with a dash or contain whitespace, commas, semicolons, equals signs or NUL; otherwise the drive stops |
 | `drive.pass_args` | list of words, each a string without spaces, such as `[--permission-mode, bypassPermissions]`. Only the host's user file or one run's environment sets it | `[]`: the pass command carries no extra arguments | drive-pr, do-item, dispatch | Extra arguments for a Claude Code pass command on this host: the arm command both skills build carries them before `-p` (`claude --model <model> <words> -p …`), and `drive.ts` adds them before `-p` to a pass command that carries no arguments of its own, as the dispatcher's wrapper does to a follow-up's headless pass. A command that carries its own (the arm command, or a re-arm or takeover command a stopped drive printed) is kept as written. The `--pass-args "<words>"` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive: one value, split on spaces, and empty for none. The driver log and the `drives.ts` listing name the [permission mode](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) each pass runs in (`inherited` when the command sets none: Claude Code's own settings decide). A headless Claude pass can commit only where its approval source allows it: a permission mode `drive.pass_args` names, or an allow rule of Claude Code's own settings (`--allowedTools`, `permissions.allow`). Where nothing allows the commit, a conflict re-drive stops with [`PR_CONFLICTING`](protocol/drive-exits.md) again at the same change and the dispatcher notifies a person. A repository's file that sets it, an empty list included, stops the drive with an error naming the field; [a host's opt-in](#a-hosts-opt-in-to-bypass) says why, and what the setting risks. It cannot hold `--model` (set `drive.pass_model`) or `-p`/`--print` (the drive writes the prompt), and it cannot end in an option that needs a value, such as `--permission-mode`, since the drive's `-p` would be read as that value; `--pass-args` follows the same rules. A Codex pass takes `drive.codex_pass_args` instead; a pass command of any other tool ignores both fields, and the driver log says so. A value that is not a list of words stops the drive with a message naming the field |
 | `drive.codex_pass_args` | list of words, each a string without spaces, such as `[--dangerously-bypass-hook-trust]`. Only the host's user file or one run's environment sets it | `[]`: a Codex pass command carries no extra arguments | drive-pr, do-item, dispatch | Extra arguments for a Codex pass command on this host, after `codex exec` (after `--dangerously-bypass-approvals-and-sandbox` when `drive.codex_bypass` adds it) and before the prompt. An arm from a Codex session writes them into the pass command; `drive.ts` adds them to a Codex pass command that carries no arguments of its own (`codex exec`, its `-m`, the bypass and the prompt) and keeps one that carries its own as written, so a re-arm or takeover command a stopped drive printed runs the arguments it shows; words the command already carries are not added twice. The dispatcher reads it with `drive.codex_bypass`, and the launch record keeps what the run read, so the drive, follow-up, pickup or steward pass it launches on a Codex account carries those words. There is no flag for one drive: `--pass-args` is Claude Code's, and its empty value means no extra arguments for either. A repository's file that sets it, an empty list included, stops the drive with an error naming the field ([a host's opt-in](#a-hosts-opt-in-to-bypass)). It cannot hold `-m`/`--model` or `-c model=…` (`routing.models.codex` sets the model), `--dangerously-bypass-approvals-and-sandbox` (`drive.codex_bypass` adds it), `-i`/`--image` (it would read the prompt as an image), `-` or `--`, or a word that is neither an option nor an option's value, which Codex would read as the prompt or a subcommand such as `exec`; and it cannot end in an option that needs a value, such as `--sandbox`, since the prompt would be read as that value. A value that is not such a list stops the drive, fails an arm from a Codex session and keeps the dispatcher from admitting a Codex account, naming the field |
 | `drive.codex_bypass` | `true`, `false`. Only the host's user file or one run's environment sets it | `false`: a Codex pass carries no bypass, and Codex's own configuration decides | drive-pr, do-item, dispatch | Whether a Codex pass on this host runs with `--dangerously-bypass-approvals-and-sandbox`, which means no sandbox and no approvals. An arm from a Codex session writes it into the pass command. The dispatcher admits a Codex account only where it is `true`, for any launch, and says why on every run where it is not ([the machine's dispatch file](#the-machines-dispatch-file)); the launch record keeps what the run judged, so the launched pass does what was admitted. `drive.ts` adds no bypass to a Codex pass command, so one armed without the setting still starts and its driver log says `inherited`. A repository's file that sets it stops the drive with an error naming the field ([a host's opt-in](#a-hosts-opt-in-to-bypass)). A value that is neither `true` nor `false` fails an arm from a Codex session and keeps the dispatcher from admitting a Codex account, naming the field |
@@ -1048,8 +1048,10 @@ the pass itself keeps the agent's own
 | `routing.raise.flags` | list of labels, or `catalog` | `catalog`: every flag the catalog's areas declare under `tracker.flags` | do-item | Flag labels that move the effort up one step, matched as [rule matchers](protocol/rule-matchers.md) say |
 | `routing.raise.sizes` | list of sizes | The known sizes (the size facet's values where the label taxonomy has a size group, with `work_batch.sizes`, else `issue_tracker.labels.batch_sizes`, and `review.taxonomy.sizes`) outside `issue_tracker.labels.batch_sizes`; `[large]` where that leaves none | do-item | Sizes that move the effort up one step, matched as [rule matchers](protocol/rule-matchers.md) say: against the item's size facet where the repository has one, else against its labels. A batchable size never raises by default |
 | `routing.raise.reviews` | `true` or `false` | `true` | do-item | Whether an area with a mandatory review (`review.skills` naming a skill) among the areas the item's labels reach through `do_item.agents.codearea_areas`, and every area their `impliedBy` closure adds, moves the effort up one step |
-| `routing.models` | map from a runtime (`claude-code`, `codex`) to `{simple, standard, complex}`, each the runtime's [family alias](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) | `claude-code: {simple: sonnet, standard: sonnet, complex: opus}`, `codex: {simple: terra, standard: terra, complex: sol}` | do-item, drive-pr, dispatch | Where a complexity tier becomes a model: a route names a tier, never a model, and `drive.pass_model` set to a tier resolves here too (that field may also name a model directly). The dispatcher reads the row of the agent a session runs in, which the account's vendor picks: a repository names a model per runtime here, never an agent. A cell a row leaves out keeps its runtime's default; a runtime with no defaults names every tier, and a runtime with no row gets no model, its routes recorded and not applied. Claude Code is given the alias; Codex is given the model the family names today (`terra` runs as `gpt-5.6-terra`), from the plugin's one list of families (`plugin/shared/model-families.ts`). A Codex pass of a drive with no model of its own runs on the `codex` row's `standard` model. The legacy keys `execution` and `strategic` read as `standard` and `complex`, and an `execution` model is also `simple`'s unless the row names `simple`; a row naming a legacy key and its new key with different models is refused |
-| `routing.family_tiers` | map from a runtime to a map from a family alias to `{tier, reason}`, the tier one of M0's `scout`, `execution`, `strategic`, `judgment` | Each family's tier from the plugin's list | do-item, drive-pr, dispatch | A family whose M0 tier differs in this repository (a provider whose alias names another family), or a model outside the list the repository names in `routing.models`. Refused without a `reason`. The audit reports each entry |
+| `routing.models` | map from a runtime (`claude-code`, `codex`, or any other runtime name) to `{simple, standard, complex}`, each a model the runtime takes: a [family alias](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) or any other model identifier, which for a runtime with a list of families must have its tier declared in `routing.model_tiers` (or its older spelling `routing.family_tiers`) unless the list already names it (a family alias or a cataloged release ID such as `gpt-5.6-terra`) | `claude-code: {simple: sonnet, standard: sonnet, complex: opus}`, `codex: {simple: terra, standard: terra, complex: sol}` | do-item, drive-pr, dispatch | Where a complexity tier becomes a model: a route names a tier, never a model, and `drive.pass_model` set to a tier resolves here too (that field may also name a model directly). The dispatcher reads the row of the agent a session runs in, which the account's vendor picks: a repository names a model per runtime here, never an agent. A cell a row leaves out keeps its runtime's default; a runtime with no defaults names every tier, and a runtime with no row gets no model, its routes recorded and not applied. Claude Code is given the alias; Codex is given the model the family names today (`terra` runs as `gpt-5.6-terra`), from the plugin's one list of families (`plugin/shared/model-families.ts`); a model outside the list is given as written. A Codex pass of a drive with no model of its own runs on the `codex` row's `standard` model. The legacy keys `execution` and `strategic` read as `standard` and `complex`, and an `execution` model is also `simple`'s unless the row names `simple`; a row naming a legacy key and its new key with different models is refused. This row is the all-stages one; [`routing.stages`](#the-open-model-vocabulary) replaces a cell for one stage |
+| `routing.model_tiers` | map from a runtime to a map from a model identifier or family alias to `{tier, reason}`, the tier one of M0's `scout`, `execution`, `strategic`, `judgment` | Each listed family's tier from the plugin's list | do-item, drive-pr, dispatch | The M0 tier of a model the list does not name, which a route needs before it may use the model on a runtime that has a list of families (a runtime with none accepts any name), or of a listed family whose tier differs in this repository. Refused without a `reason`. The audit reports each surviving configured entry, not a list of live consumers: an all-stages entry may be inherited by a stage, and a stage entry is reported even before a launch reads it. Where `routing.family_tiers` declares the same model with the same tier, the `model_tiers` entry's reason is the one reported. [The open model vocabulary](#the-open-model-vocabulary) says how the layers combine |
+| `routing.family_tiers` | the same shape as `routing.model_tiers` | none | do-item, drive-pr, dispatch | The older spelling of `routing.model_tiers`; its entries are read as that key's, and a configuration that sets only this one keeps its tier classification, but each selected model must now meet the [operand rule](#the-open-model-vocabulary), so a selection that starts with a dash or holds a control character is refused. One model declared under both keys with different tiers is refused |
+| `routing.stages` | map from a stage (`pickup`, `rearm`, `followup`, `steward`) to `{models: {<runtime>: {simple, standard, complex}}}`, each cell a model as in `routing.models` | none: every stage runs on the `routing.models` row | do-item, dispatch | One launch stage's model for a tier, in place of the all-stages cell. A cell a stage leaves out falls through to `routing.models`. The checks of `routing.models` apply to a stage's cells beside the row they replace. The steward reads its row today; a stage's other passes read theirs as each learns its stage |
 | `routing.efforts` | map from a runtime to a map from an effort to the runtime's name for it | Each effort as written | do-item, dispatch | Where a runtime spells an effort differently. A dispatched Codex session takes its effort as Codex's `model_reasoning_effort` |
 
 The families each runtime knows, with the tier
@@ -1063,15 +1065,120 @@ give them:
 | Strategic | `opus` | `sol` (`gpt-6.2-sol`) |
 | Judgment | `fable` | `astra` (`gpt-6-astra`) |
 
-Loading `routing.models` refuses, for a runtime with a list: an alias
-outside its families unless `routing.family_tiers` declares it; any tier
-mapped to a Scout family (`haiku`, `luna`), by default or by configuration,
-which no `routing.family_tiers` entry waives, since M0 keeps that tier
-read-only (an implementer may still hand it simple sub-steps); and a row in
-which a stricter complexity tier runs on a family of a lower M0 tier than a
-lighter one. A Judgment family (`fable`, `astra`) is no tier's default and
-is accepted where a repository configures it; the audit reports each such
-mapping.
+### The open model vocabulary
+
+The list of families above is the **default**, not an allowlist: configuration
+maps any model identifier to an M0 tier, for the host and for a repository
+(`routing.model_tiers`, one table per runtime, the same for every stage), and
+names the model a tier runs on for the host, a repository and a stage
+(`routing.models`, `routing.stages`). A route still names a tier, never a
+model.
+
+- **Naming a model.** `routing.models.<runtime>.<tier>` and
+  `routing.stages.<stage>.models.<runtime>.<tier>` take any model the selected
+  launch can pass to its runtime, one word with no control,
+  bidirectional-control or lone-surrogate characters, no whitespace, comma,
+  semicolon or equals sign, and not beginning with a dash. Every declaration
+  key must also be nonempty and hold no whitespace, comma, semicolon or equals
+  sign. Beyond that, a `routing.family_tiers` key keeps the older grammar: it
+  may begin with a dash or hold NUL or a lone surrogate. A
+  `routing.model_tiers` key may also begin with a dash, but may not contain
+  NUL or a lone surrogate. Selected values use the stricter operand rule, so a
+  dormant legacy key can stay while a selection of the same string is refused.
+  A
+  declaration key, unlike a model value, may not be `__proto__`:
+  the shared loader rejects that mapping key before routing
+  reads it. For a runtime with a list (`claude-code`, `codex`) a name
+  outside the list is **refused** until `routing.model_tiers.<runtime>.<model>` (the recommended spelling; the older
+  `routing.family_tiers` supplies the same declaration) says which M0 tier it
+  is, so a typo never routes silently; the message names
+  that key. A runtime with no list accepts every name that meets the operand rule
+  as written, and the checks below apply to a name once its tier is declared. For a
+  runtime that takes the alias itself (`claude-code`), a cataloged release ID
+  (the pinned spelling of a known family) is accepted for its compatible CLI
+  launch without `model_tiers`. A delegated Agent-tool invocation is
+  stricter: its open `model` field accepts only a family alias, so an exact
+  identifier is refused before delegation rather than silently falling back.
+  Codex also has a list of aliases but its CLI accepts the release ID the family
+  names, so its cataloged IDs are accepted as written. The same holds in both
+  tables. A run's environment variable segment allows only letters,
+  digits and single underscores, and is lowercased, so a model ID with a dot,
+  a slash, a capital letter or a double underscore, or the runtime
+  `claude-code`, cannot be a leaf override; set the parent key to a
+  flow-style mapping instead. The model must also be declared when its
+  runtime has a list of families, for example
+  `JIG__ROUTING__STAGES='{steward: {models: {codex: {complex: my/model-1.2}}}}'`
+  with
+  `JIG__ROUTING__MODEL_TIERS='{codex: {my/model-1.2: {tier: strategic, reason: "pinned for this host"}}}'`.
+- **Layers.** A host sets any of these keys in its [user file](#configuration-layers)
+  and a repository in `.config/jig.yaml`; the layers merge cell by cell before
+  the loader reads them, so the repository's value for a cell replaces the
+  host's, and a cell only the host sets serves every repository. The merge is
+  by the literal key: a host's declaration of `sol` and a repository's of
+  `gpt-6.2-sol` both survive, and are refused if their tiers differ, so
+  re-tiering an inherited declaration means using its exact key, spelling
+  included. Two spellings of one family that survive in different layers
+  (`routing.family_tiers.codex.sol` in one, `routing.model_tiers.codex.sol` or
+  `gpt-6.2-sol` in another) must agree on the tier, so an override matches the
+  full declaration path and every surviving spelling of the family. A
+  `routing: null` in a higher layer resets the whole section to its defaults,
+  protected declarations included; to keep inherited cells, omit the key. A run's
+  `JIG__ROUTING__…` variable wins for the paths it sets. Layers combine by
+  mapping: when both values at a path are mappings their cells merge, and
+  otherwise the higher value replaces the lower whole, descendants included. So
+  a leaf variable leaves the file layers' other cells in place, but a variable
+  that sets a parent key to a non-mapping (`JIG__ROUTING__MODELS=null`) replaces
+  everything below it, and the loader refuses a `null` only when it is the value
+  that survives the merge. The paths `routing.model_tiers`, `routing.stages`
+  and a stage's `models` map have dedicated null messages
+  (`routing.models` accepts a null and restores the default rows); a null
+  deeper down, such as a stage, a runtime's row or a tier's cell, fails the
+  mapping or model-token check that field requires. A higher layer can replace
+  any of these nulls with a value valid for the field (a mapping for a
+  mapping-valued path, a model string for a model cell). The audit's
+  `null_refused` check names exact paths and covers only `routing.model_tiers`
+  and `routing.stages` of those discussed here; a stage's `models: null` is
+  reported by the separate routing validation, which parses the repository file
+  on its own, so it can flag that file's `null` where a higher runtime layer
+  masks it and the loader accepts the merged result. A `null` only in the host
+  file is outside both checks. A segment that ends in an underscore immediately before a `__`
+  separator cannot be addressed by a variable, whether it is a model or a runtime
+  name. An underscore inside a segment (`my_model`) works in either position. For a
+  model, `JIG__ROUTING__MODEL_TIERS__CODEX__MODEL_`
+  addresses the key `model_` and can take the whole `{tier, reason}` mapping,
+  while appending `__TIER` addresses `model._tier` instead; set an affected model's
+  whole entry as a mapping. For a runtime named `custom_` holding the model `model`,
+  the variable `JIG__ROUTING__MODEL_TIERS__CUSTOM___MODEL` splits into `custom` and `_model`
+  (a literal key `custom___model` in a file is a different, valid key), so set
+  `JIG__ROUTING__MODEL_TIERS__CUSTOM_` to the whole runtime mapping, with the model
+  entries inside it. Likewise set such a runtime's
+  whole row under `routing.models` or a stage's `models` table as one mapping.
+- **Precedence.** For a stage, a runtime and a tier, the first of: the stage's
+  cell (highest layer that sets it), the all-stages `routing.models` cell
+  (highest layer that sets it), the runtime's default. A stage's cell is
+  more specific than the all-stages one whichever layer set each, so a host
+  that sets the steward's model in its user file has it in every repository
+  unless a higher layer overrides that cell or resets a section that contains it.
+- **`routing.family_tiers`** is kept: its entries are read as
+  `routing.model_tiers` entries, and a configuration that sets only it keeps its
+  tier classification and precedence; selecting a model follows the
+  selected-model rules above, which refuse some strings (one starting with a
+  dash, for example) that were accepted before. The two keys are one table; a model declared under both
+  with different tiers is refused.
+- **Which stages read their row today.** The dispatcher's steward launch. The
+  other stages (`pickup`, `rearm`, `followup`) are accepted and checked, and a
+  pass reads its row as it learns its stage.
+
+Loading `routing.models` and `routing.stages` refuses, for a runtime with a
+list, a model outside it whose tier neither `routing.model_tiers` nor `routing.family_tiers` declares. It
+also refuses: any tier mapped to a Scout model (`haiku`, `luna`), by default or by
+configuration, where the runtime has a catalog that identifies it (a runtime without one can use the name `luna` undeclared, while routing a model an explicit declaration classifies as `scout` is refused on any runtime), which no `routing.model_tiers` or `routing.family_tiers` entry
+waives, since M0 keeps that tier read-only (an implementer may still hand it
+simple sub-steps); and a row in which a stricter complexity tier runs on a
+model of a lower M0 tier than a lighter one (a stage's cells are checked
+beside the row they replace; the check skips a pair when either model has no classification). A Judgment model (`fable`, `astra`) is no
+tier's default and is accepted where a repository configures it; the audit
+reports each such mapping.
 
 Refused besides: an unknown field in `routing`, `routing.raise` or a
 `routing.models` row, a name that is more than one word (it would not read
@@ -1800,8 +1907,12 @@ session ended without claiming the item is not started again until the
 item leaves the dispatch states or its assignment for one run and comes
 back, or a person answers the need it raises (pick it up again, or leave
 it); a batch pickup that ended after claiming some of its members holds
-only those, so the members it never claimed are wanted again at once,
-unless its pass ended on a question, which holds them until it is answered. A
+only those, so the members it never claimed are wanted again at once;
+one that ended on a question holds the members the question names, and
+releases the unclaimed rest at once, whether or not it claimed any. A
+question that names no member is about the whole batch: it is one need, on
+the batch's anchor, the other members wait on it with no need of their own,
+and answering it releases every member the pass never claimed. A
 person's label (`jig:hold`, the human-in-the-loop or
 manual-operations label) that holds the item, in a served person's queue or
 the ready pool, while it is not claimed releases its record too: once the
@@ -2668,9 +2779,13 @@ routing:                                 # absent: routes derived and printed, n
     reviews: true
   models:
     claude-code: { simple: sonnet, standard: sonnet, complex: opus }
-    codex: { complex: astra }
-  family_tiers:
+    codex: { complex: sol }
+  model_tiers:
+    codex: { gpt-house: { tier: strategic, reason: "our gateway's flagship" } }
+  family_tiers:                          # the older spelling, read as model_tiers entries
     codex: { terra: { tier: execution, reason: "the provider serves Terra as listed" } }
+  stages:
+    steward: { models: { codex: { complex: gpt-house } } }
   efforts:
     codex: { max: xhigh }
 fleet_health:

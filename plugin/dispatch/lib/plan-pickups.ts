@@ -86,7 +86,9 @@ import {
   hostFault,
   latestPickupFor,
 } from "./pickup-host-fault.ts";
-import { ANY_KEY_SOURCE } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
+import { hostFaultNeed, restartedNote } from "./host-fault-need.ts";
+import { namedMembers, wholeBatchQuestion } from "./batch-question.ts";
+import { settleBatchSiblings, waitForBatchAnchor } from "./batch-siblings.ts";
 import { relaunched, relaunchStep } from "./pickup-relaunch.ts";
 import { lockWaitStop } from "./pickup-lock-wait.ts";
 import type { TreeReader } from "./pickup-tree.ts";
@@ -227,6 +229,16 @@ export function planPickups(input: PickupInput): PickupPlan {
   for (const item of input.claimed ?? [])
     planClaimed(item, input, plan, joined(item.key));
   planWaiting(input, plan);
+  settleBatchSiblings(plan, {
+    asked: (w, anchor) =>
+      questionAsked(w.input, { ...anchor, key: w.anchor }, w.record, true),
+    idle: (w) =>
+      planIdle(w.item, w.input, plan, {
+        held: w.held,
+        pr: w.pr,
+        latest: w.latest,
+      }),
+  });
   if (input.values !== undefined && input.root !== undefined)
     plan.actions = batchPickups(
       plan.actions,
@@ -375,6 +387,18 @@ function planStopped(
     plan.actions.push(asked);
     return;
   }
+  // A question about the whole batch is one need, on its anchor: the siblings wait on it.
+  if (
+    wholeBatchQuestion(hold.record) &&
+    batchQuestionForSibling(hold.record, item.key)
+  ) {
+    plan.quiet.push({
+      target: item.key,
+      class: "pickup-ended",
+      why: `waits on the question its batch's pass asked on ${hold.record.record.item}, which names no member; the answer releases the anchor and the members the pass never claimed, and a claimed member keeps its claim (launch record ${hold.record.record.id})`,
+    });
+    return;
+  }
   plan.actions.push(endedNeed(input.slug, item, hold.record, why));
 }
 
@@ -414,52 +438,6 @@ function heldAfterHostFault(
   if (held === null) return false;
   plan.quiet.push({ target: key, class: "pickup-ended", why: held });
   return true;
-}
-
-function restartedNote(source: ReadRecord): string {
-  return `it was restarted once after its pickup stopped on a host fault (launch record ${source.record.id}) and stopped on one again, so it is not restarted a second time`;
-}
-
-/**
- * The need an item raises when its pickup stopped on a fault of its host
- * and no restart is left to it: notified once per launch record, for a
- * diagnosing session (the steward) or a person to find the fault's cause.
- */
-function hostFaultNeed(
-  slug: string,
-  item: Pick<WantedItem, "key" | "title" | "state">,
-  latest: ReadRecord,
-  fault: HostFault,
-  note: string,
-): Action {
-  const { record } = latest;
-  const asked = endedQuestion(latest);
-  const reason = `the pickup stopped on a fault of this host (${fault.why}), and it is not restarted: ${note}`;
-  return {
-    stage: "notify",
-    target: item.key,
-    record: "runtime",
-    reason,
-    evidence: {
-      record: record.id,
-      stage: "pickup",
-      title: item.title,
-      state: item.state,
-      account: record.account,
-      hostFault: fault.kind,
-      ended: endedHow(latest),
-      ...(asked === null ? {} : { question: asked }),
-    },
-    cause: "pickup-ended",
-    notice: pickupNotice(
-      slug,
-      `${item.key} host fault, record ${record.id}`,
-      `${item.key} (${item.title}): ${reason}; the host's fault is diagnosed and repaired, then the item is picked up again or left`,
-    ),
-    ...(record.workspace === null ? {} : { workspace: record.workspace.path }),
-    // The pass's ended row in the outcome log already holds how it ended.
-    launched: true,
-  };
 }
 
 /**
@@ -682,8 +660,28 @@ function planIdleClaimed(
 ): void {
   const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
   const latest = latestPickupFor(item.key, input.launches);
-  if (quietByPr(item, input, pr, plan, asksPerson(latest))) return;
   if (hostFaultStop(item, input, plan, latest, pr)) return;
+  if (quietByPr(item, input, pr, plan, asksPerson(latest))) {
+    if (
+      pickup.kind === "ended" &&
+      wholeBatchQuestion(pickup.record) &&
+      pickup.record.record.item === item.key &&
+      plan.quiet.some(
+        (quiet) =>
+          quiet.target === item.key && quiet.class === "claimed-carried",
+      )
+    )
+      waitForBatchAnchor(plan, {
+        item,
+        input,
+        held,
+        pr,
+        latest,
+        record: pickup.record,
+        anchor: item.key,
+      });
+    return;
+  }
   if (lockWaitStop(item, input, plan, latest, pr)) return;
   const asked =
     pickup.kind === "ended" ? questionAsked(input, item, pickup.record) : null;
@@ -696,6 +694,22 @@ function planIdleClaimed(
     pickup.kind === "ended" &&
     batchQuestionForSibling(pickup.record, item.key)
   ) {
+    // A question about the whole batch is one need, on its anchor. Whether the
+    // anchor shows it depends on how the anchor itself is planned, so the
+    // sibling is settled once every item is (`settleBatchSiblings`).
+    const anchor = pickup.record.record.item;
+    if (wholeBatchQuestion(pickup.record) && anchor !== null) {
+      waitForBatchAnchor(plan, {
+        item,
+        input,
+        held,
+        pr,
+        latest,
+        record: pickup.record,
+        anchor,
+      });
+      return;
+    }
     plan.actions.push(endedNeed(input.slug, item, pickup.record, pickup.why));
     return;
   }
@@ -854,18 +868,9 @@ function settledByPr(
  * so an answered question cannot reappear on a sibling.
  */
 function batchQuestionForSibling(latest: ReadRecord, item: string): boolean {
-  const members = latest.record.batchItems;
-  if (members === undefined || members.length < 2) return false;
-  const asked = endedQuestion(latest);
-  if (asked === null) return false;
-  const question = reportQuestion(latest.report, asked);
-  const keys = new Set(
-    question.toUpperCase().match(new RegExp(ANY_KEY_SOURCE, "gi")),
-  );
-  const named = members.filter(({ key }) => keys.has(key.toUpperCase()));
-  return named.length > 0
-    ? !named.some(({ key }) => key === item)
-    : latest.record.item !== item;
+  const named = namedMembers(latest);
+  if (named === null) return false;
+  return named.length > 0 ? !named.includes(item) : latest.record.item !== item;
 }
 
 /**
@@ -903,6 +908,8 @@ function questionAsked(
   input: Pick<PickupInput, "slug" | "rerunsHeld">,
   item: { key: string; title: string; state: string },
   latest: ReadRecord,
+  /** The anchor cannot show a whole-batch question, so this sibling carries it. */
+  forSibling = false,
 ): Action | null {
   const { slug } = input;
   const unwritten = unwrittenResult(latest);
@@ -912,7 +919,10 @@ function questionAsked(
   // Without a decision the pass framed, an unwritten result gets the generic prompt.
   const generic = unwritten && !hasDecision;
   const asked = resultQuestion(latest, item.key, unwritten, hasDecision);
-  if (asked === null || (!generic && batchQuestionForSibling(latest, item.key)))
+  if (
+    asked === null ||
+    (!generic && !forSibling && batchQuestionForSibling(latest, item.key))
+  )
     return null;
   const report = generic ? null : latest.report;
   const question = reportQuestion(report, asked);

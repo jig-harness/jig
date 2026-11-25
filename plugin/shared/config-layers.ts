@@ -315,6 +315,37 @@ export function repositoryConfigPath(
   return nonEmpty(env.JIG_OVERLAY) ?? join(root, OVERLAY_RELPATH);
 }
 
+const INVISIBLE_DISPLAY =
+  /[\p{Cc}\p{Cf}\p{Cs}\p{Bidi_Control}\p{Default_Ignorable_Code_Point}\u2028\u2029\u2800]/u;
+
+/** Whether one character is invisible: a control, format, unpaired surrogate, separator, braille blank or default-ignorable character. */
+export function isInvisibleDisplayChar(character: string): boolean {
+  return INVISIBLE_DISPLAY.test(character);
+}
+
+/** One character as `\uXXXX` escapes, one per UTF-16 unit. */
+export function escapeDisplayChar(character: string): string {
+  let out = "";
+  for (let i = 0; i < character.length; i++)
+    out += `\\u${character.charCodeAt(i).toString(16).padStart(4, "0")}`;
+  return out;
+}
+
+const escapeDisplayControls = (value: string): string =>
+  value.replace(new RegExp(INVISIBLE_DISPLAY.source, "gu"), escapeDisplayChar);
+
+/**
+ * A value for a diagnostic, ordinary text unchanged. A value with an
+ * invisible character, or one that starts with a quote (so it cannot pass
+ * for a quoted rendering of another value), is written as a JSON string with
+ * the invisible characters escaped.
+ */
+export function formatDisplayValue(value: string): string {
+  return INVISIBLE_DISPLAY.test(value) || value.startsWith('"')
+    ? escapeDisplayControls(JSON.stringify(value))
+    : value;
+}
+
 /**
  * A field path for a message: segments joined by `.`, a segment that holds
  * anything but letters, digits, `_` and `-` written as a JSON string
@@ -323,7 +354,11 @@ export function repositoryConfigPath(
  */
 export function formatField(path: readonly string[]): string {
   return path
-    .map((key) => (/^[A-Za-z0-9_-]+$/.test(key) ? key : JSON.stringify(key)))
+    .map((key) =>
+      /^[A-Za-z0-9_-]+$/.test(key)
+        ? key
+        : escapeDisplayControls(JSON.stringify(key)),
+    )
     .join(".");
 }
 

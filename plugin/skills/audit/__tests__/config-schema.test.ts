@@ -375,7 +375,65 @@ describe("the reading skills", () => {
     expect(field("do_item.post_merge_state")?.values).toEqual([
       ...POST_MERGE_STATES,
     ]);
-    expect(field("drive.pass_model")?.pattern).toBe(PASS_MODEL_PATTERN.source);
+    const passModelPattern = field("drive.pass_model")?.pattern;
+    expect(passModelPattern).toBeDefined();
+    const schemaPassModel = new RegExp(passModelPattern as string);
+    for (const value of [
+      "sonnet",
+      "provider/model",
+      "-sonnet",
+      "has space",
+      "has,comma",
+      "has;semicolon",
+      "has=equals",
+      "模型",
+      "\u{10400}-model",
+      "model\uD800",
+      "model\uDC00",
+      "\uD800\uD800\uDC00",
+      "\uDC00\uD800\uDC00",
+      "has\u2003em",
+      ...[
+        0x00a0, 0x1680, 0x2000, 0x2007, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000,
+        0xfeff,
+      ].map((code) => `has${String.fromCodePoint(code)}space`),
+      ...[
+        ...Array.from({ length: 0x20 }, (_, i) => i),
+        ...Array.from({ length: 0x21 }, (_, i) => 0x7f + i),
+      ].map((code) => `has${String.fromCodePoint(code)}control`),
+      "",
+      ...[
+        0x061c, 0x200e, 0x200f, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066,
+        0x2067, 0x2068, 0x2069,
+      ].map((code) => `has${String.fromCodePoint(code)}control`),
+    ]) {
+      expect(schemaPassModel.test(value)).toBe(PASS_MODEL_PATTERN.test(value));
+      const findings = checkConfig({ drive: { pass_model: value } }, schema);
+      if (PASS_MODEL_PATTERN.test(value)) {
+        expect(findings).toEqual([]);
+      } else {
+        expect(findings.map((f) => `${f.id}:${f.severity}`)).toEqual([
+          "type:drive.pass_model:error",
+        ]);
+      }
+    }
+    // Each lone surrogate is refused on its own, independent of the other pattern.
+    for (const value of [
+      "model\uDC00",
+      "\uDC00model",
+      "a\uD800\u{10400}",
+      "\u{10400}\uDC00",
+    ]) {
+      expect(schemaPassModel.test(value)).toBe(false);
+      expect(PASS_MODEL_PATTERN.test(value)).toBe(false);
+    }
+    // A non-ASCII letter is an ordinary model character: both validators accept it.
+    expect(schemaPassModel.test("模型")).toBe(true);
+    expect(PASS_MODEL_PATTERN.test("模型")).toBe(true);
+    expect(checkConfig({ drive: { pass_model: "模型" } }, schema)).toEqual([]);
+    // A supplementary-plane letter is an ordinary model character too.
+    expect(schemaPassModel.test("\u{10400}-model")).toBe(true);
+    expect(PASS_MODEL_PATTERN.test("\u{10400}-model")).toBe(true);
     expect(field("ci.repair_skill")?.pattern).toBe(SKILL_NAME_PATTERN.source);
     expect(field("drive.pass_args")?.items).toEqual({
       type: "string",
@@ -703,6 +761,12 @@ describe("the reading skills", () => {
       ["null:repository.base_branch", "info"],
     ]);
     expect(severities({ drive: null })).toEqual([["null:drive", "error"]]);
+    expect(severities({ routing: { model_tiers: null } })).toEqual([
+      ["null:routing.model_tiers", "error"],
+    ]);
+    expect(severities({ routing: { stages: null } })).toEqual([
+      ["null:routing.stages", "error"],
+    ]);
     expect(severities({ review: null })).toEqual([]);
   });
 

@@ -35,7 +35,9 @@ import { readMarkers } from "./followup-marker.ts";
 import { openPullRequest, pullRequestLabels } from "./forge.ts";
 import { holding } from "./holding.ts";
 import { commandLabel, hasCommand } from "./labels.ts";
+import { wholeBatchQuestion } from "./batch-question.ts";
 import { holdsItem } from "./launch-pickups.ts";
+import { pickupClaimed } from "./actions/pickup-hold.ts";
 import {
   inspectRow,
   readEnded,
@@ -230,7 +232,7 @@ function startState(section: DispatchSection): CanonicalState | null {
 }
 
 /** Mark the ended pickup record `id` released, so the item is launched again; why it could not be, or `null`. */
-function releaseRecord(
+export function releaseRecord(
   inputs: StationInputs,
   item: string,
   id: string,
@@ -247,21 +249,39 @@ function releaseRecord(
   if (!members.includes(item))
     return `launch record ${id} is not a pickup of ${item}`;
   if (!holdsItem(record, item)) return null;
-  // Only the member answered is released; its siblings keep the question they wait on.
-  const released = [...(record.releasedItems ?? []), item];
+  // The member answered is released, and, when it is the anchor carrying a
+  // whole-batch question, the members that question held and the pass never claimed; otherwise its siblings keep
+  // the question they wait on.
+  const settled =
+    wholeBatchQuestion(ended) && item === record.item
+      ? members.filter((m) => m === item || !pickupClaimed(record, m))
+      : [item];
+  const released = [...new Set([...(record.releasedItems ?? []), ...settled])];
   record.releasedItems = released;
   if (members.every((m) => released.includes(m))) record.released = true;
   writeRecord(record, root);
   return null;
 }
 
-/** Why an open pull request stops a release of `item`, or that none can be told; `null` when none carries it. */
-function carryFault(inputs: StationInputs, item: string): string | null {
-  const carried = inputs.links?.prsOf(item) ?? null;
-  if (carried === null)
-    return `whether an open pull request carries ${item} cannot be told this tick`;
+/** Whether an open pull request carries `item`; an unreadable link is never carriage. */
+function carryFault(
+  inputs: StationInputs,
+  item: string,
+):
+  | { kind: "carried"; reason: string }
+  | { kind: "unreadable"; reason: string }
+  | null {
+  const carried = inputs.links?.prsOf(item);
+  if (carried === undefined || carried === null)
+    return {
+      kind: "unreadable",
+      reason: `whether an open pull request carries ${item} cannot be told this tick`,
+    };
   return carried.length > 0
-    ? `open pull request ${carried.map((p) => `#${p.number}`).join(", ")} carries ${item}`
+    ? {
+        kind: "carried",
+        reason: `open pull request ${carried.map((p) => `#${p.number}`).join(", ")} carries ${item}`,
+      }
     : null;
 }
 
@@ -307,7 +327,12 @@ async function releasePickup(
       `${item} is now ${current.state.name}, not a claim to release`,
     );
   const carriedBy = carryFault(inputs, item);
-  if (carriedBy !== null) return refused(carriedBy);
+  if (carriedBy !== null) {
+    if (carriedBy.kind === "unreadable") return refused(carriedBy.reason);
+    return refused(
+      `${carriedBy.reason}; its answer cannot start a successor session while the anchor remains carried`,
+    );
+  }
   const held = await sessionHolds(inputs, (w) => w.items.includes(item), item);
   if (held !== null) return refused(held);
   const unclaimed = ["backlog", "unstarted", "triage"].includes(

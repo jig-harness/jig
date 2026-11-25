@@ -15,10 +15,16 @@ import {
   recordsWanted,
   releaseEnded,
 } from "../lib/actions/pickup-hold.ts";
-import type { LaunchRecord, ReadRecord } from "../lib/launches.ts";
+import { releaseRecord } from "../lib/station-ports.ts";
+import {
+  type LaunchRecord,
+  readEnded,
+  type ReadRecord,
+  recordExit,
+  writeRecord,
+} from "../lib/launches.ts";
 import { leftBehindWorkspaces } from "../lib/actions/pickup-hold.ts";
 import { planPickups } from "../lib/plan-pickups.ts";
-import { stationContextOf, stationDecision } from "../lib/line-station.ts";
 import type { Workspace } from "../lib/runtime/port.ts";
 import { closeStateDb } from "../lib/state.ts";
 import type { DispatchSection, WantedItem } from "../lib/types.ts";
@@ -215,6 +221,29 @@ describe("a batch pickup that ended after claiming one member", () => {
     return read;
   }
 
+  /** The record as a tick stores it, with its exit written, so the station reads it back. */
+  function persist(read: ReadRecord, dir: string): void {
+    Object.assign(read.record, {
+      version: 1,
+      id: "20261112T164041Z-aaaaaaaa",
+      token: "t",
+      repoPath: "/work/example-repo",
+      configDir: "/home/example/.claude",
+      facts: "f",
+      vendor: "claude",
+      wallBackoffMs: 0,
+      replaces: null,
+      attempts: [],
+      batchItems: read.record.batchItems?.map((i) => ({
+        ...i,
+        person: "writer",
+      })),
+    });
+    writeRecord(read.record, dir);
+    if (read.state.kind === "ended")
+      recordExit(read.record.id, read.state.exit, dir);
+  }
+
   function questionTargets(keys: string[], records: ReadRecord[]): string[] {
     return plan(keys, records)
       .actions.filter((a) => a.cause === "pickup-question")
@@ -303,32 +332,167 @@ describe("a batch pickup that ended after claiming one member", () => {
     ).toEqual([]);
   });
 
-  it("offers a sibling a release for its own hold without reusing the question", () => {
+  it("releases the members a question does not name, with no need for them", () => {
+    const dir = root();
     const read = questionedBatch("Should #924 change its scope?");
-    const sibling = plan(["#925"], [read]).actions[0];
-    expect(sibling).toMatchObject({
-      target: "#925",
-      cause: "pickup-ended",
-      evidence: { record: read.record.id },
-    });
-    expect(sibling?.evidence.question).toBeUndefined();
-    expect(sibling?.notice).toBeUndefined();
-    expect(sibling?.framed).toBeUndefined();
-    const decision = stationDecision(
-      sibling as Parameters<typeof stationDecision>[0],
-      stationContextOf(SLUG, { tracker: { adapter: "github" } }),
+    const next = plan(["#924", "#925"], [read]);
+    expect(
+      next.actions.filter((a) => a.stage === "pickup").map((a) => a.target),
+    ).toEqual(["#925"]);
+    expect(next.actions.filter((a) => a.cause === "pickup-ended")).toEqual([]);
+    expect(
+      next.actions.filter((a) => a.cause === "pickup-question"),
+    ).toMatchObject([{ target: "#924" }]);
+    release([read], ["#924", "#925"], ["#923"], dir);
+    expect(read.record.releasedItems).toEqual(["#925"]);
+    expect(pickupHold("#924", [read]).kind).toBe("ended");
+  });
+
+  it("releases the members a question does not name when the pass claimed none", () => {
+    const dir = root();
+    const read = endedBatch(["#923", "#924", "#925"], "failed", []);
+    if (read.state.kind === "ended")
+      read.state.exit.said = "Question: Should #923 and #99 change scope?\n";
+    const next = plan(["#923", "#924", "#925"], [read]);
+    expect(
+      next.actions.filter((a) => a.stage === "pickup").map((a) => a.target),
+    ).toEqual(["#924", "#925"]);
+    expect(next.actions.filter((a) => a.cause === "pickup-ended")).toEqual([]);
+    release([read], ["#923", "#924", "#925"], [], dir);
+    expect(read.record.releasedItems).toEqual(["#924", "#925"]);
+  });
+
+  it("releases the members the claimed member's question does not name", () => {
+    const dir = root();
+    const read = questionedBatch("Should #923 change its scope?");
+    const next = plan(["#924", "#925"], [read], [], ["#923"]);
+    expect(
+      next.actions.filter((a) => a.stage === "pickup").map((a) => a.target),
+    ).toEqual(["#924", "#925"]);
+    expect(next.actions.filter((a) => a.cause === "pickup-ended")).toEqual([]);
+    release([read], ["#924", "#925"], ["#923"], dir);
+    expect(read.record.releasedItems).toEqual(["#924", "#925"]);
+  });
+
+  it("keeps every member of a legacy record that only knows a claim was seen, whatever the question names", () => {
+    const read = questionedBatch("Should #924 change its scope?");
+    delete (read.record as { claimedItems?: string[] }).claimedItems;
+    (read.record as { claimedSeen?: boolean }).claimedSeen = true;
+    expect(pickupHold("#925", [read]).kind).toBe("ended");
+  });
+
+  it("shows a whole-batch question on a claimed anchor, so its siblings have a need to wait on", () => {
+    const read = questionedBatch(
+      "Should the batch follow the shared approach?",
     );
-    expect(decision).not.toBeNull();
-    if (decision === null) return;
-    expect(decision.answer).toMatchObject({
-      station: "pickup",
-      address: "pickup@example-org/example-repo#925",
-    });
-    expect(decision.decision).toBeDefined();
-    if (decision.decision === undefined) return;
-    expect(decision.decision.call.options.map((option) => option.id)).toContain(
-      "release",
+    const next = plan(["#924", "#925"], [read], [], ["#923"]);
+    expect(
+      next.actions.filter((a) => a.cause === "pickup-question"),
+    ).toMatchObject([{ target: "#923" }]);
+  });
+
+  it("holds the siblings of a whole-batch question as one need on its anchor, no need of their own", () => {
+    const read = questionedBatch(
+      "Should the batch follow the shared approach?",
     );
+    const next = plan(["#924", "#925"], [read]);
+    expect(next.actions).toEqual([]);
+    expect(next.quiet.map((q) => [q.target, q.class])).toEqual([
+      ["#924", "pickup-ended"],
+      ["#925", "pickup-ended"],
+    ]);
+    expect(next.quiet[0]?.why).toContain("asked on #923");
+    expect(pickupHold("#924", [read]).kind).toBe("ended");
+  });
+
+  it("settles every unclaimed member when the whole-batch question is answered", async () => {
+    const dir = root();
+    const read = questionedBatch(
+      "Should the batch follow the shared approach?",
+    );
+    persist(read, dir);
+    const inputs = {
+      repo: { slug: SLUG },
+      root: dir,
+    } as unknown as Parameters<typeof releaseRecord>[0];
+    expect(releaseRecord(inputs, "#923", read.record.id)).toBeNull();
+    const after = readEnded(read.record.id, dir);
+    expect(after?.record.releasedItems).toEqual(["#923", "#924", "#925"]);
+    expect(after?.record.released).toBe(true);
+  });
+
+  it("frees the siblings of a whole-batch question once its anchor is released on its own", () => {
+    const dir = root();
+    const read = questionedBatch(
+      "Should the batch follow the shared approach?",
+    );
+    // The claimed anchor goes back to the queue, which releases its record alone.
+    release([read], ["#923", "#924", "#925"], [], dir);
+    expect(read.record.releasedItems).toContain("#923");
+    release([read], ["#924", "#925"], [], dir);
+    expect(read.record.released).toBe(true);
+    const next = plan(["#924", "#925"], [read]);
+    expect(
+      next.actions.filter((a) => a.stage === "pickup").map((a) => a.target),
+    ).toEqual(["#924", "#925"]);
+    expect(next.quiet).toEqual([]);
+  });
+
+  it("quiets a claimed sibling only when its claimed anchor raised the whole-batch question", () => {
+    const read = questionedBatch(
+      "Should the batch follow the shared approach?",
+    );
+    const next = plan([], [read], [], ["#923", "#924"]);
+    expect(
+      next.actions.filter((a) => a.cause === "pickup-question"),
+    ).toMatchObject([{ target: "#923" }]);
+    expect(
+      next.quiet.filter((q) => q.why.includes("waits on the question")),
+    ).toMatchObject([{ target: "#924" }]);
+  });
+
+  it("plans a claimed sibling as any claimed item once the anchor of a whole-batch question is released", () => {
+    const dir = root();
+    const read = questionedBatch(
+      "Should the batch follow the shared approach?",
+    );
+    release([read], ["#923", "#924", "#925"], [], dir);
+    expect(read.record.releasedItems).toContain("#923");
+    const next = plan([], [read], [], ["#924"]);
+    expect(
+      next.quiet.filter((q) => q.why.includes("waits on the question")),
+    ).toEqual([]);
+  });
+
+  it("keeps a whole-batch question's anchor when a claimed sibling is released", () => {
+    const dir = root();
+    const read = endedBatch(["#923", "#924", "#925"], "failed", ["#924"]);
+    if (read.state.kind === "ended")
+      read.state.exit.said =
+        "Question: Should the batch follow the shared approach?\n";
+    persist(read, dir);
+    const inputs = {
+      repo: { slug: SLUG },
+      root: dir,
+    } as unknown as Parameters<typeof releaseRecord>[0];
+    expect(releaseRecord(inputs, "#924", read.record.id)).toBeNull();
+    expect(readEnded(read.record.id, dir)?.record.releasedItems).toEqual([
+      "#924",
+    ]);
+  });
+
+  it("settles only the member answered when the question names members", () => {
+    const dir = root();
+    const read = questionedBatch("Should #924 change its scope?");
+    persist(read, dir);
+    const inputs = {
+      repo: { slug: SLUG },
+      root: dir,
+    } as unknown as Parameters<typeof releaseRecord>[0];
+    expect(releaseRecord(inputs, "#924", read.record.id)).toBeNull();
+    expect(readEnded(read.record.id, dir)?.record.releasedItems).toEqual([
+      "#924",
+    ]);
   });
 
   it("does not recognize an HTML entity as a GitHub member key", () => {

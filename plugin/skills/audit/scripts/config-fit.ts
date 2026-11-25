@@ -65,7 +65,10 @@ import {
   sizePointsFindings,
   skillValidation,
 } from "./lib/section-validation.ts";
+import { render } from "./lib/config-fit-render.ts";
+export { render } from "./lib/config-fit-render.ts";
 import {
+  formatDisplayValue,
   isMapping as isRecord,
   readConfigFile,
 } from "../../../shared/config-layers.ts";
@@ -1082,7 +1085,7 @@ function integrationBranch(
         {
           id: "unchecked:repository.base_branch",
           severity: "info",
-          message: `the clone has no origin remote, so whether ${declared} exists there is unchecked`,
+          message: `the clone has no origin remote, so whether ${formatDisplayValue(declared)} exists there is unchecked`,
         },
       ];
     const found = run(
@@ -1096,7 +1099,7 @@ function integrationBranch(
           {
             id: "derivation:repository.base_branch",
             severity: "error",
-            message: `repository.base_branch is ${declared}, but origin has no such branch (fetch, or correct the name)`,
+            message: `repository.base_branch is ${formatDisplayValue(declared)}, but origin has no such branch (fetch, or correct the name)`,
           },
         ];
   }
@@ -2276,62 +2279,6 @@ function applyDeclines(report: FitReport, recordPath: string): void {
   report.suggestions = report.suggestions.filter((s) =>
     kept.has(suggestionId(s)),
   );
-}
-
-const SECTIONS: [Finding["severity"], string][] = [
-  ["error", "Errors"],
-  ["warning", "Warnings"],
-  ["suggestion", "Suggestions"],
-  ["info", "Information"],
-];
-
-export function render(report: FitReport): string {
-  const lines = [`# Configuration fit: ${report.file}`, ""];
-  if (!report.configured)
-    lines.push("The repository has no configuration file.", "");
-  lines.push(`Forge: ${report.forge}.`, "");
-  const facts = Object.entries(report.facts);
-  if (facts.length > 0) {
-    lines.push("## Facts", "");
-    for (const [key, value] of facts) lines.push(`- ${key}: ${value}`);
-    lines.push("");
-  }
-  for (const [severity, title] of SECTIONS) {
-    const rows = report.findings.filter((f) => f.severity === severity);
-    if (rows.length === 0) continue;
-    lines.push(`## ${title} (${rows.length})`, "");
-    for (const f of rows) lines.push(`- \`config/${f.id}\`: ${f.message}`);
-    lines.push("");
-  }
-  lines.push(...closingSections(report));
-  if (report.findings.every((f) => f.severity === "info"))
-    lines.push("Nothing to fix.", "");
-  return lines.join("\n");
-}
-
-/** The report's declined findings and its starter configuration, when present. */
-function closingSections(report: FitReport): string[] {
-  const lines: string[] = [];
-  if (report.declined.length > 0)
-    lines.push(
-      `## Declined (${report.declined.length})`,
-      "",
-      ...report.declined.map(
-        (d) =>
-          `- \`config/${d.finding.id}\`: ${d.reason} Revisit when: ${d.revisit_when}`,
-      ),
-      "",
-    );
-  if (report.draft !== undefined)
-    lines.push(
-      "## Starter configuration",
-      "",
-      "```yaml",
-      report.draft.trimEnd(),
-      "```",
-      "",
-    );
-  return lines;
 }
 
 /** What `--draft` prints when the repository implies nothing to add. */
