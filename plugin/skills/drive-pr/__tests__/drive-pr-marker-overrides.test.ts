@@ -52,6 +52,10 @@ describe("summary-findings marker overrides", () => {
              { id: 9, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- ai-review-round: 1 -->\\n- \`a.ts\` — finding' },
              { id: 10, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- ai-review-round: 2 -->' },
            ], false)?.id,
+           stampedNewerRoundSelected: m.reviewerSticky([
+             { id: 21, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 1 -->\\n- \`a.ts\` — finding' },
+             { id: 22, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: def5678 -->\\n<!-- ai-review-round: 2 -->' },
+           ], false)?.id,
            acknowledgementSelected: m.reviewerSticky([
              { id: 13, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 1 -->\\n- \`a.ts\` — finding' },
              { id: 14, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 1 -->\\nacknowledged' },
@@ -183,7 +187,11 @@ describe("summary-findings marker overrides", () => {
     expect(got.proseBacklogSelected).toBe(5);
     expect(got.skipSelected).toBe(11);
     expect(got.declaredSelected).toBe(8);
-    expect(got.newerRoundSelected).toBe(10);
+    // A round number alone never retires findings: the unstamped round 2
+    // comment leaves the finding-bearing summary selected.
+    expect(got.newerRoundSelected).toBe(9);
+    // A newer round stamped with its own reviewed head is a real replacement.
+    expect(got.stampedNewerRoundSelected).toBe(22);
     // A stamp-only acknowledgement is not evidence of a distinct review, even
     // when it repeats the summary's round, so it cannot erase that summary.
     expect(got.acknowledgementSelected).toBe(13);
