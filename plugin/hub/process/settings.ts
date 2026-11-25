@@ -64,10 +64,10 @@ export interface HubSettings {
 export type SettingsFailureCode = "unreadable" | "invalid" | "exposed";
 
 /** The hub's OS user when the settings name none. */
-export const DEFAULT_HUB_USER = "jig-hub";
+const DEFAULT_HUB_USER = "jig-hub";
 /** The default ports of the host and webhook listeners. */
-export const DEFAULT_HOST_PORT = 7461;
-export const DEFAULT_WEBHOOK_PORT = 7462;
+const DEFAULT_HOST_PORT = 7461;
+const DEFAULT_WEBHOOK_PORT = 7462;
 /** The fewest characters a feed secret has. */
 const MIN_SECRET_LENGTH = 32;
 
@@ -214,6 +214,54 @@ function webhookAddress(
   );
 }
 
+/** A feed on loopback, with the secret the front adds. */
+function portFeed(
+  feed: Record<string, unknown>,
+  file: string,
+): Checked<FeedListen> {
+  if (feed.socket !== undefined || feed.group !== undefined)
+    return invalid(
+      file,
+      "feed takes socket (with group) or listen (with secret), not both",
+    );
+  const address = boundedAddress(feed.listen, "feed.listen", file, true);
+  if (!address.ok) return address;
+  const { secret } = feed;
+  if (typeof secret !== "string" || secret.length < MIN_SECRET_LENGTH)
+    return invalid(
+      file,
+      `feed.listen needs feed.secret, the secret the front adds, of at least ${MIN_SECRET_LENGTH} characters`,
+    );
+  return ok({ listen: address.value, secret });
+}
+
+/** A feed on a Unix socket, opened to the front's group when one is named. */
+function socketFeed(
+  feed: Record<string, unknown>,
+  file: string,
+  env: Record<string, string | undefined>,
+): Checked<FeedListen> {
+  if (feed.secret !== undefined)
+    return invalid(
+      file,
+      "feed.secret goes with feed.listen; a socket's file mode guards it instead",
+    );
+  const group = feed.group ?? null;
+  if (group !== null && !isName(group))
+    return invalid(file, "feed.group must be a group's name");
+  const path = pathValue(
+    feed.socket ?? join(hubHome(env), "feed", "feed.sock"),
+    "feed.socket",
+    file,
+  );
+  return path.ok ? ok({ socket: path.value, group }) : path;
+}
+
+/** Whether `value` is a user's or a group's name. */
+function isName(value: unknown): value is string {
+  return typeof value === "string" && /^[a-z_][a-z0-9_-]*\$?$/i.test(value);
+}
+
 function feedListen(
   values: Record<string, unknown>,
   file: string,
@@ -226,42 +274,9 @@ function feedListen(
     file,
   );
   if (!feed.ok) return feed;
-  const { socket, group, listen, secret } = feed.value;
-  if (listen !== undefined) {
-    if (socket !== undefined || group !== undefined)
-      return invalid(
-        file,
-        "feed takes socket (with group) or listen (with secret), not both",
-      );
-    const address = boundedAddress(listen, "feed.listen", file, true);
-    if (!address.ok) return address;
-    if (typeof secret !== "string" || secret.length < MIN_SECRET_LENGTH)
-      return invalid(
-        file,
-        `feed.listen needs feed.secret, the secret the front adds, of at least ${MIN_SECRET_LENGTH} characters`,
-      );
-    return ok({ listen: address.value, secret });
-  }
-  if (secret !== undefined)
-    return invalid(
-      file,
-      "feed.secret goes with feed.listen; a socket's file mode guards it instead",
-    );
-  if (
-    group !== undefined &&
-    (typeof group !== "string" || !/^[a-z_][a-z0-9_-]*\$?$/i.test(group))
-  )
-    return invalid(file, "feed.group must be a group's name");
-  const path = pathValue(
-    socket ?? join(hubHome(env), "feed", "feed.sock"),
-    "feed.socket",
-    file,
-  );
-  if (!path.ok) return path;
-  return ok({
-    socket: path.value,
-    group: (group as string | undefined) ?? null,
-  });
+  return feed.value.listen === undefined
+    ? socketFeed(feed.value, file, env)
+    : portFeed(feed.value, file);
 }
 
 /** The settings in `text`, as the file at `file` holds them. */
@@ -283,8 +298,7 @@ export function parseHubSettings(
   );
   if (!extra.ok) return extra;
   const user = values.user ?? DEFAULT_HUB_USER;
-  if (typeof user !== "string" || !/^[a-z_][a-z0-9_-]*\$?$/i.test(user))
-    return invalid(file, "user must be an OS user's name");
+  if (!isName(user)) return invalid(file, "user must be an OS user's name");
   const database = pathValue(
     values.database ?? join(hubHome(env), "data"),
     "database",

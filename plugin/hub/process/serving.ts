@@ -18,7 +18,7 @@ import {
 import type { HubSettings } from "./settings.ts";
 
 /** The group id of `name`, from the group database. */
-export function groupId(
+function groupId(
   name: string,
   readGroups: () => string = () => readFileSync("/etc/group", "utf8"),
 ): Outcome<number, "unavailable"> {
@@ -33,7 +33,7 @@ export function groupId(
 }
 
 /** The listeners the settings name, without their handlers yet. */
-export function listenerBinds(
+function listenerBinds(
   settings: Pick<HubSettings, "host" | "webhooks" | "feed">,
 ): Outcome<Omit<ListenerSpec, "handler">[], "unavailable"> {
   const specs: Omit<ListenerSpec, "handler">[] = settings.host.map(

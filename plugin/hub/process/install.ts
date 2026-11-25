@@ -124,7 +124,7 @@ async function lingering(): Promise<string | null> {
     : "the hub's user needs systemd lingering to stay up after logout: an administrator runs loginctl enable-linger <hub user>, then retry";
 }
 
-export const systemProbes: InstallProbes = {
+const systemProbes: InstallProbes = {
   identity: () => {
     const info = userInfo();
     return { uid: info.uid, gid: info.gid, user: info.username };

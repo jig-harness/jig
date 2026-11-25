@@ -20,16 +20,16 @@ import { dirname, join } from "node:path";
 import type { HubSettings } from "./settings.ts";
 
 /** The container tools, in the order `jig install hub` prefers them. */
-export const CONTAINER_RUNTIMES = ["podman", "docker"] as const;
+const CONTAINER_RUNTIMES = ["podman", "docker"] as const;
 export type ContainerRuntime = (typeof CONTAINER_RUNTIMES)[number];
 
 /** Where the settings file is mounted inside the container. */
-export const CONTAINER_SETTINGS = "/run/jig-hub/settings.yaml";
+const CONTAINER_SETTINGS = "/run/jig-hub/settings.yaml";
 /** The container's name, one hub per user. */
-export const CONTAINER_NAME = "jig-hub";
+const CONTAINER_NAME = "jig-hub";
 
 /** The image's tag for a plugin version. */
-export function imageTag(version: string): string {
+function imageTag(version: string): string {
   return `jig-hub:${version}`;
 }
 

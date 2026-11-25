@@ -26,11 +26,11 @@ import type {
 import { runUnit } from "../core/unit.ts";
 
 /** The largest body the webhook listener reads: GitHub's cap on a payload. */
-export const WEBHOOK_BODY_LIMIT = 25 * 1024 * 1024;
+const WEBHOOK_BODY_LIMIT = 25 * 1024 * 1024;
 /** The largest body the host and feed listeners read. */
-export const REQUEST_BODY_LIMIT = 1024 * 1024;
+const REQUEST_BODY_LIMIT = 1024 * 1024;
 /** How long one request's unit may run before it answers 503. */
-export const REQUEST_TIMEOUT_MS = 10_000;
+const REQUEST_TIMEOUT_MS = 10_000;
 /** The header the front adds to a feed request on a port. */
 export const FRONT_SECRET_HEADER = "x-jig-front-secret";
 
@@ -101,14 +101,14 @@ const respond = (response: HubResponse) =>
   });
 
 /** Whether `given` is `secret`, compared in constant time. */
-export function secretMatches(given: string | null, secret: string): boolean {
+function secretMatches(given: string | null, secret: string): boolean {
   if (given === null) return false;
   const digest = (text: string) => createHash("sha256").update(text).digest();
   return timingSafeEqual(digest(given), digest(secret));
 }
 
 /** The fetch handler for one listener: each request one unit, its failure a coded answer. */
-export function fetchHandler(
+function fetchHandler(
   ports: Pick<HubPorts, "clock" | "observability">,
   spec: ListenerSpec,
   stop: AbortSignal,

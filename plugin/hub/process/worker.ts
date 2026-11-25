@@ -21,7 +21,7 @@ import type {
 } from "./worker-protocol.ts";
 
 /** How long one run of a job may take, beyond the job's own deadline. */
-export const JOB_UNIT_MS = 60 * 60 * 1000;
+const JOB_UNIT_MS = 60 * 60 * 1000;
 
 const port = parentPort;
 if (port === null)

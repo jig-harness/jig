@@ -40,9 +40,9 @@ import {
 import { openHubSqlite } from "./sqlite.ts";
 
 /** The database file in the database directory. */
-export const DATABASE_FILE = "hub.sqlite";
+const DATABASE_FILE = "hub.sqlite";
 /** What a running hub bound, in the database directory. */
-export const SERVE_RECORD = "serve.json";
+const SERVE_RECORD = "serve.json";
 
 /** What `serve.json` holds. */
 export interface ServeRecord {

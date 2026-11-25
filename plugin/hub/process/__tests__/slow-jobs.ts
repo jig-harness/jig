@@ -18,6 +18,8 @@ export const endedMarker = () =>
 
 export const JOB_NAMES: readonly string[] = ["slow"];
 
+// The worker imports this module by URL (`runner.ts`).
+// fallow-ignore-next-line unused-export
 export function jobHandlers(_ports: HubPorts): ReadonlyMap<string, JobHandler> {
   return new Map<string, JobHandler>([
     [

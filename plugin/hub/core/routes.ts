@@ -26,8 +26,8 @@ import type {
 export type { ListenerName };
 
 /** Where each listener's paths start. */
-export const HOST_PREFIX = "/v1/";
-export const WEBHOOK_PREFIX = "/webhooks/";
+const HOST_PREFIX = "/v1/";
+const WEBHOOK_PREFIX = "/webhooks/";
 
 /** The handlers each listener serves; empty tables serve only coded 404s. */
 export interface HubRoutes {
@@ -104,7 +104,7 @@ function feedHandler(routes: HubRoutes): RequestHandler {
 }
 
 /** The handler a listener runs for each request, over its own table only. */
-export function listenerHandler(
+function listenerHandler(
   listener: ListenerName,
   routes: HubRoutes,
 ): RequestHandler {

@@ -52,7 +52,7 @@ const serve = command(
   },
 );
 
-export const hubCommand = command(
+const hubCommand = command(
   "hub",
   withDefault(or(serve), { action: "help" as const }),
   {

@@ -61,7 +61,7 @@ function asScheduling(failure: {
 }
 
 /** The first moment after `now` on the cadence that started at `due`. */
-export function nextOnCadence(due: number, everyMs: number, now: number) {
+function nextOnCadence(due: number, everyMs: number, now: number) {
   if (due > now) return due;
   return due + (Math.floor((now - due) / everyMs) + 1) * everyMs;
 }
