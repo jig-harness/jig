@@ -60,23 +60,36 @@ so it must never reach the hub's settings or its database.
    webhooks:
      listen: 127.0.0.1:7462
    feed:
-     socket: /home/jig-hub/.jig/hub/feed/feed.sock
+     socket: /home/jig-hub/.jig/hub-feed/feed.sock
      group: jig-front                    # the front's group; optional
    ```
 
    Every setting has a default: user `jig-hub`, database
    `~/.jig/hub/data`, `/v1/` on `127.0.0.1:7461`, webhooks on
-   `127.0.0.1:7462`, the feed on `~/.jig/hub/feed/feed.sock`. Write paths
+   `127.0.0.1:7462`, the feed on `~/.jig/hub-feed/feed.sock`. Write paths
    in full: the container sees the same paths as the host.
 
    - `host.listen` and `webhooks.listen` take loopback (`127.0.0.0/8`,
      `::1`) and private-network addresses (`10.0.0.0/8`, `172.16.0.0/12`,
      `192.168.0.0/16`, `100.64.0.0/10` as a tailnet hands out,
-     `fc00::/7`). `0.0.0.0`, `::` and public addresses are refused.
-   - The feed takes either `socket` (with `group`, which opens it to the
-     front's group as mode 0660; without it the socket is 0600) or
+     `fc00::/7`). `0.0.0.0`, `::`, link-local addresses (`fe80::/10`,
+     which reach only the link, not a private network) and public
+     addresses are refused.
+   - The feed takes either `socket` (with `group`, the front's group) or
      `listen`, a loopback address, with `secret`, at least 32 characters,
      which the front sends as the `x-jig-front-secret` header.
+   - The socket's directory decides who reaches the socket. Without
+     `group` it is mode 0700, the hub user's alone, and the socket 0600.
+     With `group`, `jig install hub` gives the directory that group and
+     mode 0710, so the front's user may pass through it but not list it,
+     and the hub opens the socket inside it to whoever reaches it (0666).
+     Every directory above it must let the front's user pass too: the hub
+     user's home is often 0750 or 0700, so give it the others' search
+     permission (`chmod 711 /home/jig-hub`), or point `feed.socket` at a
+     directory the front can reach. `jig install hub` and `jig doctor hub`
+     name each directory in the way. The hub's own directory,
+     `~/.jig/hub`, stays the hub user's alone, which is why the socket's
+     default sits beside it.
 
    ```sh
    chmod 600 ~/.jig/hub/settings.yaml
@@ -89,21 +102,28 @@ so it must never reach the hub's settings or its database.
    and when the settings file or the database directory is readable by
    another user. A bare `jig install` never includes the hub.
 
-   The install writes a resident job (`jig hub serve --scheduled`), started
-   again within a minute of stopping, and stopping by itself when the
-   installed plugin copy or the settings file changes, so it restarts on the
-   new copy. Where podman (preferred, rootless) or docker is installed, it
-   first builds the hub's container image locally from the installed
-   release, tagged `jig-hub:<version>`, and never pushes it anywhere; the
-   job runs `jig hub serve` in it:
+   The install makes the database directory and the feed socket's
+   directory, then writes a resident job (`jig hub serve --scheduled`),
+   started again within a minute of stopping, and stopping by itself when
+   the installed plugin copy or the settings file changes, so it restarts
+   on the new copy. One runs at a time: a start while the hub runs leaves
+   at once. Where podman or docker is installed, it first builds the
+   hub's container image locally from the installed release, tagged
+   `jig-hub:<version>`, and never pushes it anywhere; the job runs
+   `jig hub serve` in it:
 
    - the settings file mounted read-only at `/run/jig-hub/settings.yaml`;
    - the database directory and the feed socket's directory mounted
      read-write at their own paths;
    - the host's network (`--network=host`), so the listeners bind exactly
      the host addresses the settings name and no port is published beyond
-     them;
+     them; it also lets the hub reach the services the host listens for on
+     loopback;
    - the hub user's uid and gid, and a read-only root filesystem.
+
+   Prefer podman, rootless: to run containers with docker, the hub's user
+   joins the `docker` group, and that group can do anything as root on the
+   machine, so the hub's user would effectively hold root.
 
    With neither tool installed the job runs `jig hub serve` directly. On a
    machine of its own that is enough; on a machine that also runs agent
@@ -111,9 +131,10 @@ so it must never reach the hub's settings or its database.
 
 4. **Check it**: `jig doctor hub` checks the OS user, that the settings
    file is 0600 and the database directory 0700, both owned by the hub's
-   user, that every listener is on loopback or the private network, and
-   warns when no container tool is installed. It fails when either file is
-   readable by another user.
+   user, that every listener is on loopback or the private network, that
+   the feed socket's directory has its mode and group and the front can
+   reach it, and warns when no container tool is installed. It fails when
+   either file is readable by another user.
 
 `jig hub serve --settings <file>` runs the hub in the foreground, for a
 first try; it stops on Ctrl-C.
@@ -152,7 +173,9 @@ neither rotation drops a delivery. The commands come with webhook intake.
 
 In this order:
 
-1. Stop the hub: `jig uninstall hub --yes` (the database stays).
+1. Stop the hub: `jig uninstall hub --machine --yes` removes its job and
+   stops the running hub, and fails when the hub has not stopped (the
+   database stays). Without `--machine` the hub's job stays.
 2. Revoke the App's private key on GitHub and make a new one.
 3. Rotate every webhook secret.
 4. Revoke the tracker application's tokens and rotate its secret.

@@ -15,12 +15,16 @@ release: minor
   **Consumer action:** none.
 - `jig install hub` installs `jig hub serve` as a resident job of the
   hub's own OS user (`jig-hub` by default), restarted when it stops and
-  when the installed plugin copy changes, and refuses root, another user
-  and the dispatcher's user. Where podman or docker is installed it builds
-  the hub's container image locally from the installed release, never
-  pushing it, and runs the hub in it with its settings mounted read-only.
-  A bare `jig install` never includes the hub. **Consumer action:** none.
+  when the installed plugin copy changes, one at a time, and refuses root,
+  another user, the dispatcher's user and a user whose scheduler cannot be
+  read to tell. Where podman or docker is installed it builds the hub's
+  container image locally from the installed release, never pushing it,
+  and runs the hub in it with its settings mounted read-only. A bare
+  `jig install` never includes the hub, and only
+  `jig uninstall hub --machine` removes it, stopping the running hub.
+  **Consumer action:** none.
 - `jig doctor hub` checks the hub's OS user, the modes of its settings file
-  (0600) and database directory (0700) and the interfaces its listeners
-  bind, and fails when another user can read either file.
+  (0600) and database directory (0700), the interfaces its listeners
+  bind and the feed socket's directory, and fails when another user can
+  read either file.
   **Consumer action:** none.

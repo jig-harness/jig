@@ -2183,9 +2183,9 @@ fails, otherwise. An unknown key is refused.
 | --- | --- | --- |
 | `user` | `jig-hub` | The OS user the hub runs as; `jig install hub` runs only as this user, never as root or the dispatcher's user |
 | `database` | `~/.jig/hub/data` | The database directory, holding `hub.sqlite` |
-| `host.listen` | `[127.0.0.1:7461]` | Where `/v1/` listens: loopback or private-network addresses, `host:port` or `[v6]:port`; never `0.0.0.0`, `::` or a public address |
+| `host.listen` | `[127.0.0.1:7461]` | Where `/v1/` listens: loopback or private-network addresses, `host:port` or `[v6]:port`; never `0.0.0.0`, `::`, a link-local (`fe80::/10`) or a public address |
 | `webhooks.listen` | `127.0.0.1:7462` | Where the webhook listener listens, the address a tunnel forwards `/webhooks/` to; the same ranges |
-| `feed.socket`, `feed.group` | `~/.jig/hub/feed/feed.sock`, none | The feed's Unix socket, mode 0600, or 0660 opened to the front's group |
+| `feed.socket`, `feed.group` | `~/.jig/hub-feed/feed.sock`, none | The feed's Unix socket and the front's group: the socket's directory is mode 0700 and the socket 0600, or with a group the directory is 0710 with that group and the socket 0666 inside it |
 | `feed.listen`, `feed.secret` | none | Instead of the socket: a loopback address, and the secret of at least 32 characters the front sends in `x-jig-front-secret` |
 
 [plugin/hub/README.md](hub/README.md) says how to set the hub up.
