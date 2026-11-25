@@ -301,13 +301,29 @@ describe("summary-findings parsing", () => {
     expect(parseDeclaredUnanchored(body)).toBe(9);
   });
 
-  it("does not treat an indented code example as a fenced summary example", () => {
+  it("ignores indented code examples when reading summary work", () => {
     const body = [
       "    ```markdown",
       "    - `example.ts:1` — an indented code example",
+      "    > 0 finding(s) without a diff-anchorable line",
       "- `live.ts:3` — a live finding",
       "> 1 finding(s) without a diff-anchorable line",
     ].join("\r\n");
+    expect(parseBodyFindings(body)).toEqual([
+      { path: "live.ts", line: 3, text: "a live finding" },
+    ]);
+    expect(parseDeclaredUnanchored(body)).toBe(1);
+  });
+
+  it("keeps a list-contained fence closed with its container indentation", () => {
+    const body = [
+      "- explanation:",
+      "  ```markdown",
+      "  - `example.ts:1` — a fenced decoy",
+      "    ```",
+      "- `live.ts:3` — a live finding",
+      "> 1 finding(s) without a diff-anchorable line",
+    ].join("\n");
     expect(parseBodyFindings(body)).toEqual([
       { path: "live.ts", line: 3, text: "a live finding" },
     ]);

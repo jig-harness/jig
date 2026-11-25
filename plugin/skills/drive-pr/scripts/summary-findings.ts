@@ -461,37 +461,64 @@ export interface BodyFinding {
 }
 
 /**
- * Remove fenced examples without letting inline backticks, a shorter nested
- * fence, or an unclosed fence change the surrounding summary. Keep line
- * breaks so the line-oriented finding parser cannot join two live bullets.
+ * Remove Markdown code blocks without letting inline backticks, a shorter
+ * nested fence, or an unclosed fence change the surrounding summary. Keep
+ * line breaks so the line-oriented finding parser cannot join two live bullets.
  */
+type MarkdownFence = { char: string; length: number; indent: number };
+
+function fenceOf(match: RegExpMatchArray): MarkdownFence {
+  return {
+    char: match[2]?.[0] ?? "`",
+    length: match[2]?.length ?? 0,
+    indent: match[1]?.length ?? 0,
+  };
+}
+
+function closesFence(
+  match: RegExpMatchArray | null,
+  fence: MarkdownFence,
+): boolean {
+  return (
+    match !== null &&
+    (match[1]?.length ?? 0) >= fence.indent &&
+    match[2]?.[0] === fence.char &&
+    (match[2]?.length ?? 0) >= fence.length &&
+    !(match[3] ?? "").trim()
+  );
+}
+
+function opensFence(match: RegExpMatchArray | null): match is RegExpMatchArray {
+  return (
+    match !== null &&
+    (match[1]?.length ?? 0) <= 3 &&
+    !(match[2]?.[0] === "`" && (match[3] ?? "").includes("`"))
+  );
+}
+
 function withoutFencedExamples(body: string): string {
-  let fence: { char: string; length: number } | null = null;
+  let fence: MarkdownFence | null = null;
   return body
     .split(/\r?\n/)
     .map((line) => {
-      // CommonMark permits at most three spaces before a fenced-code
-      // delimiter. Four spaces start an indented code block instead, which
-      // must not hide the live summary lines that follow it.
-      const match = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+      // A top-level fence has at most three spaces before its delimiter.
+      // Closing a fence in a list can carry the list's indentation as well,
+      // so its indentation is checked against the opener below.
+      const match = line.match(/^( *)(`{3,}|~{3,})(.*)$/);
       if (fence !== null) {
-        const closes =
-          match !== null &&
-          match[1]?.[0] === fence.char &&
-          (match[1]?.length ?? 0) >= fence.length &&
-          !(match[2] ?? "").trim();
-        if (closes) fence = null;
+        if (closesFence(match, fence)) fence = null;
         return "";
       }
       // A backtick run with a backtick in its info string is an inline span,
       // not a CommonMark fence opener.
-      if (
-        match !== null &&
-        !(match[1]?.[0] === "`" && (match[2] ?? "").includes("`"))
-      ) {
-        fence = { char: match[1]?.[0] ?? "`", length: match[1]?.length ?? 0 };
+      if (opensFence(match)) {
+        fence = fenceOf(match);
         return "";
       }
+      // Four spaces (or a tab) introduce an indented code block. Dropping the
+      // whole line prevents sample bullets and declared counts in examples
+      // from becoming live review work.
+      if (/^(?: {4}|\t)/.test(line)) return "";
       return line;
     })
     .join("\n");
