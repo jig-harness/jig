@@ -324,7 +324,7 @@ export const TERMINAL_STATES: Readonly<
     meaning:
       "The pull request conflicts with its base and has no other workable finding, or the drive parked itself on structural churn on a conflicting pull request, whose live work then waits for that answer; `drive.ts` ends with it once its conflict-repair passes are spent. Merge the base in, then re-arm.",
     report: {
-      stop: "stopped: it conflicts with its base and has nothing left to work",
+      stop: "stopped: it conflicts with its base and has nothing left that the drive can work (work held by a park waits for its answer)",
       cause: "needs-person",
       next: {
         step: "Merge the base in and resolve the conflicts, then re-arm the drive.",

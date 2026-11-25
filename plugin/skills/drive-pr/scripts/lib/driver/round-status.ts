@@ -58,7 +58,7 @@ async function previewConflictingRound(
       );
     } else {
       console.error(
-        `PR #${context.pr} conflicts with its base and has nothing left to work — stopping.`,
+        `PR #${context.pr} conflicts with its base and has nothing left that the drive can work — stopping.`,
       );
       console.error(reasonLine);
       console.error(

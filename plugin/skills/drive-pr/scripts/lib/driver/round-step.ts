@@ -379,12 +379,20 @@ function parkedCancelled(status: Record<string, unknown>): boolean {
 
 /** Whether the parked set holds a structural-churn park and no cancelled-CI one. */
 function parkedChurnOnly(status: Record<string, unknown>): boolean {
-  const work = status.work as { parkedKeys?: unknown } | undefined;
+  const work = status.work as
+    | { parkedKeys?: unknown; actionableParkKeys?: unknown }
+    | undefined;
   const keys = work?.parkedKeys;
+  const actionable = work?.actionableParkKeys;
+  // The brake's own key shape (`churnKey`), and an actionable park: a key that
+  // merely begins alike, or one a person answered, is not the brake's.
   return (
     Array.isArray(keys) &&
+    Array.isArray(actionable) &&
     !keys.includes(CANCELLED_CI_KEY) &&
-    keys.some((k) => typeof k === "string" && k.startsWith("structural-churn-"))
+    actionable.some(
+      (k) => typeof k === "string" && /^structural-churn-r\d+$/.test(k),
+    )
   );
 }
 

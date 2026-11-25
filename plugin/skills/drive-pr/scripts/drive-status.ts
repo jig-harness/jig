@@ -811,7 +811,7 @@ async function main(): Promise<number> {
     // The JSON form carries the structural-churn brake's facts too.
     // The brake's setting first: with the brake off no file content is read,
     // and only the paths the writer retains are measured.
-    const setting = churnRoundsSetting();
+    const setting = churnRoundsSetting(process.env, report.baseHead);
     const brakeOn = !setting.ok || setting.value > 0;
     // A round the replied-thread sweep did not reconcile carries no facts, so
     // the brake never counts it toward a streak or a return.

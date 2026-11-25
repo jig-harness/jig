@@ -53,6 +53,14 @@ git("commit", "-q", "-m", "seed");
 const head = git("rev-parse", "HEAD");
 
 describe("readRoundBlobs", () => {
+  it("fails, rather than reading every path absent, when the commit is missing", async () => {
+    const err = spyOn(process.stderr, "write").mockImplementation(() => true);
+    const read = await readRoundBlobs("1".repeat(40), ["a.ts"], 30, repo);
+    err.mockRestore();
+    expect(read.failed).toBe(true);
+    expect(read.blobs).toEqual({});
+  });
+
   it("keeps a path named __proto__ as an own entry", async () => {
     const { blobs } = await readRoundBlobs(head, ["__proto__"], 30, repo);
     expect(Object.hasOwn(blobs, "__proto__")).toBe(true);

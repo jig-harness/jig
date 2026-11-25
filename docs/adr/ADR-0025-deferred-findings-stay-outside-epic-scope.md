@@ -99,8 +99,10 @@ follow-ups.
 - One open issue per batch gives later findings an existing destination.
 - A person's remaining checks stay visible without keeping delivered scope
   on the active plan.
-- Late review rounds on Jig's pull requests fix defects, not wording, and
-  the owed findings they decline still reach the backlog.
+- From the later rounds, Jig's calibrated decline ladder lets a finding
+  outside the retained categories and not caused by the pull request itself
+  be declined, and the owed findings it declines still reach the backlog.
+  Severity and category still admit what must be fixed in the pull request.
 
 ### Costs
 

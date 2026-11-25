@@ -32,6 +32,7 @@ import {
   type ChurnEvidence,
   type ChurnTrip,
   churnKey,
+  churnUnmeasured,
   DEFAULT_CHURN_ROUNDS,
   MAX_CHURN_ROUNDS,
   MIN_CHURN_ROUNDS,
@@ -61,6 +62,7 @@ function inRange(n: unknown): n is number {
  */
 export function churnRoundsSetting(
   env: Record<string, string | undefined> = process.env,
+  observedBase?: string,
 ): Outcome<number, "churn-rounds-invalid"> {
   const raw = env[CHURN_ROUNDS_VARIABLE];
   if (raw !== undefined && raw.trim() !== "") {
@@ -83,8 +85,17 @@ export function churnRoundsSetting(
       "churn-rounds-invalid",
       `the base branch's policy cannot be read (${policy.reason}), so drive.churn_rounds cannot be trusted`,
     );
-  if (policy.from === "base") values = policy.values;
-  else {
+  if (policy.from === "base") {
+    // The snapshot is the driver's, read before the pass; the gate judges the
+    // base it observed now. A base that moved or a retarget between the two
+    // would apply the previous target's setting.
+    if (observedBase !== undefined && policy.commit !== observedBase)
+      return failed(
+        "churn-rounds-invalid",
+        `the policy snapshot (${policy.commit}) is not the base this gate observed (${observedBase}), so drive.churn_rounds cannot be trusted; re-arm the drive`,
+      );
+    values = policy.values;
+  } else {
     const read = attempt(
       "churn-rounds-invalid",
       "cannot read the repository's configuration",
@@ -153,6 +164,8 @@ interface BrakeContext {
   repo?: string;
   driveStateScript: string;
   helperTimeoutSec: number;
+  /** Seconds left of the gate's own budget, when it has one. */
+  budgetLeftSec?: () => number | undefined;
 }
 
 interface BrakeReport {
@@ -225,7 +238,7 @@ export async function runChurnBrake(
   reconciled: boolean,
   env: Record<string, string | undefined> = process.env,
 ): Promise<number | null> {
-  const setting = churnRoundsSetting(env);
+  const setting = churnRoundsSetting(env, report.baseHead);
   if (!setting.ok)
     return indeterminate(
       report,
@@ -236,7 +249,7 @@ export async function runChurnBrake(
   if (!recorded)
     return indeterminate(
       report,
-      `this round's structural-churn evidence could not be recorded for #${ctx.pr} (record-paths failed), so the brake cannot judge the round; re-arm the drive`,
+      `this round's structural-churn evidence could not be recorded for #${ctx.pr} (the record-paths write or the file-content read failed; the stderr line above names which), so the brake cannot judge the round; re-arm the drive`,
     );
   const state = await readEvidence(ctx);
   if (!state.ok)
@@ -245,7 +258,17 @@ export async function runChurnBrake(
       `cannot judge structural churn on #${ctx.pr}: ${state.failure.reason}`,
     );
   const trip = structuralChurn(state.value, { rounds: n });
-  if (trip === null) return null;
+  if (trip === null) {
+    // A round recorded without facts (the sweep did not complete, or no
+    // severity was read) that would finish a streak is not a measured
+    // non-trip: it must not run as though the brake had judged it.
+    if (churnUnmeasured(state.value, { rounds: n }))
+      return indeterminate(
+        report,
+        `round ${state.value.rounds} of #${ctx.pr} was recorded without its severity and file contents${reconciled ? "" : " (the replied-thread reconciliation sweep did not complete)"}, and the rounds before it would make a ${CHURN_CLASS} streak with it, so the brake cannot judge it; re-arm the drive for a counting pass`,
+      );
+    return null;
+  }
   // A new park ends the drive, so it needs the replied-thread sweep behind
   // it, as every other verdict that ends one does.
   if (!reconciled)
@@ -262,6 +285,8 @@ export async function runChurnBrake(
       ctx.repo,
       ctx.pr,
       "still-on-head",
+      undefined,
+      ctx.budgetLeftSec,
     );
     if (!now.ok)
       return indeterminate(
@@ -272,7 +297,9 @@ export async function runChurnBrake(
       now.snapshot.state !== "OPEN" ||
       now.snapshot.headRefOid !== report.apiHead ||
       (report.baseHead !== undefined &&
-        now.snapshot.baseRefOid !== report.baseHead)
+        now.snapshot.baseRefOid !== report.baseHead) ||
+      (report.baseRefName !== "" &&
+        now.snapshot.baseRefName !== report.baseRefName)
     )
       return terminal(
         report,

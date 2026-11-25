@@ -150,3 +150,30 @@ export function structuralChurn(
     .slice(-ROUND_PATHS_WINDOW);
   return sameFile(entries, opts.rounds) ?? oscillation(entries);
 }
+
+/**
+ * Whether the newest recorded round is unmeasured (no severity fact) and the
+ * rounds before it would make a same-file streak with it were it measured
+ * clean: consecutive, none severe, sharing a file. Such a round is no
+ * measured non-trip: the gate must not let it run as though the brake had
+ * judged it.
+ */
+export function churnUnmeasured(
+  s: ChurnEvidence,
+  opts: { rounds: number },
+): boolean {
+  if (opts.rounds < MIN_CHURN_ROUNDS) return false;
+  const since = s.churnAckRound ?? 0;
+  const entries = [...(s.roundPaths ?? [])]
+    .filter((e) => e.round > since)
+    .sort((a, b) => a.round - b.round)
+    .slice(-ROUND_PATHS_WINDOW);
+  if (entries.length < opts.rounds) return false;
+  const streak = entries.slice(-opts.rounds);
+  const last = streak.at(-1);
+  if (last === undefined || last.severe !== undefined) return false;
+  for (let i = 1; i < streak.length; i++)
+    if (streak[i]?.round !== (streak[i - 1]?.round ?? -2) + 1) return false;
+  if (streak.slice(0, -1).some((e) => e.severe !== false)) return false;
+  return last.paths.some((path) => streak.every((e) => e.paths.includes(path)));
+}

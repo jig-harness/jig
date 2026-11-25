@@ -2858,7 +2858,10 @@ itself, before the round's pass, when either holds:
   never counts toward the streak.
 - **oscillation**: a file's content at one round's head came back at a
   later round's head after a different content in between (A, B, A),
-  whatever the findings' severity.
+  whatever the findings' severity Contents are recorded only for
+  the files that drew a finding in a round, so a return is seen only among
+  the rounds in which the file drew one; a file with no finding at the
+  middle or the returning head is not caught.
 
 The gate then records a framed decision under the `structural-churn` class
 (key `structural-churn-r<round>`, the files and the rounds in its question)

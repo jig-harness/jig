@@ -10,6 +10,7 @@ import {
 } from "../../../shared/decisions/park.ts";
 import {
   churnKey,
+  churnUnmeasured,
   structuralChurn,
   type ChurnTrip,
 } from "../scripts/lib/state/churn.ts";
@@ -409,5 +410,44 @@ describe("structuralChurn window", () => {
     expect(structuralChurn({ roundPaths: early }, { rounds: 4 })?.kind).toBe(
       "oscillation",
     );
+  });
+});
+
+describe("churnUnmeasured", () => {
+  const clean = (r: number) =>
+    round(r, ["a.ts"], { severe: false, blobs: { "a.ts": r } });
+
+  it("flags a newest round without facts that would finish a streak", () => {
+    const roundPaths = [clean(1), clean(2), clean(3), round(4, ["a.ts"])];
+    expect(structuralChurn({ roundPaths }, { rounds: 4 })).toBeNull();
+    expect(churnUnmeasured({ roundPaths }, { rounds: 4 })).toBe(true);
+  });
+
+  it("does not flag a measured round, a severe earlier round or no shared file", () => {
+    expect(
+      churnUnmeasured(
+        { roundPaths: [clean(1), clean(2), clean(3), clean(4)] },
+        { rounds: 4 },
+      ),
+    ).toBe(false);
+    expect(
+      churnUnmeasured(
+        {
+          roundPaths: [
+            clean(1),
+            round(2, ["a.ts"], { severe: true }),
+            clean(3),
+            round(4, ["a.ts"]),
+          ],
+        },
+        { rounds: 4 },
+      ),
+    ).toBe(false);
+    expect(
+      churnUnmeasured(
+        { roundPaths: [clean(1), clean(2), clean(3), round(4, ["b.ts"])] },
+        { rounds: 4 },
+      ),
+    ).toBe(false);
   });
 });
