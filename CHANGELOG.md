@@ -404,6 +404,21 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.308.1] - 2026-11-25
+
+### Fixed
+
+- A notification channel added to a dispatch host no longer sends every need that
+  already stands, one message each. On the first tick it can send, the channel
+  records the standing needs of each repository as known without sending them,
+  and sends only needs that appear or change afterwards; the tick's
+  receipt says once how many it started from. The recorded needs are repeated on
+  `dispatch.renotify_after` while they stand, as before. A renamed channel, or
+  one whose records were dropped, starts again the same way. The start is per repository: a repository reached on a
+  later tick starts silently too, and one with a send record of the channel is not started
+  again. The Orca card and a channel that already has records are unchanged. See
+  [`notify.channels`](plugin/CONFIGURATION.md#the-machines-dispatch-file).
+
 ## [0.308.0] - 2026-11-24
 
 ### Added
@@ -11016,7 +11031,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.308.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.308.1...HEAD
+[0.308.1]: https://github.com/jig-harness/jig/compare/v0.308.0...v0.308.1
 [0.308.0]: https://github.com/jig-harness/jig/compare/v0.307.0...v0.308.0
 [0.307.0]: https://github.com/jig-harness/jig/compare/v0.306.4...v0.307.0
 [0.306.4]: https://github.com/jig-harness/jig/compare/v0.306.3...v0.306.4
