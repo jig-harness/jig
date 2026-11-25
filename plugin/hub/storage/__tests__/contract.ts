@@ -16,8 +16,11 @@ import {
   IN_FLIGHT_READ_MS,
   readInFlightRead,
   readJob,
+  readJobSchedules,
   releaseInFlightRead,
+  removeJobSchedule,
   saveJobProgress,
+  saveJobSchedule,
   takeInFlightRead,
   takeJobLease,
   trimExpired,
@@ -142,6 +145,10 @@ const READ_KEY =
 const LEASE_KEY =
   "job_leases USING INDEX sqlite_autoindex_job_leases_1 (partition=? AND job=?)";
 
+/** A search through the job schedules' primary key. */
+const SCHEDULE_KEY =
+  "job_schedules USING INDEX sqlite_autoindex_job_schedules_1 (partition=? AND job=?)";
+
 /** At least one sample per operation the storage holds. */
 const SAMPLES: Record<string, readonly Sample[]> = {
   takeInFlightRead: [
@@ -194,6 +201,30 @@ const SAMPLES: Record<string, readonly Sample[]> = {
       partition: DIRECTORY_PARTITION,
       input: { job: "sweep" },
       searches: [LEASE_KEY],
+    },
+  ],
+  saveJobSchedule: [
+    {
+      partition: DIRECTORY_PARTITION,
+      input: { job: "sweep", nextRunAt: T0, everyMs: 60_000, now: T0 },
+      // An upsert by its key shows no plan.
+      searches: [],
+    },
+  ],
+  readJobSchedules: [
+    {
+      partition: DIRECTORY_PARTITION,
+      input: {},
+      searches: [
+        "job_schedules USING INDEX sqlite_autoindex_job_schedules_1 (partition=?)",
+      ],
+    },
+  ],
+  removeJobSchedule: [
+    {
+      partition: DIRECTORY_PARTITION,
+      input: { job: "sweep" },
+      searches: [SCHEDULE_KEY],
     },
   ],
   trimExpired: [
@@ -821,6 +852,59 @@ export function storageContract(
           trim(T0, 0),
         ]) {
           const refused = await storage.run(context(), P, trimExpired, input);
+          expect(refused.ok ? null : refused.failure.code).toBe("refused");
+        }
+      });
+    });
+
+    describe("the job schedules", () => {
+      test("a schedule is kept, replaced whole, read by partition and removed", async () => {
+        const { storage } = store();
+        const D = DIRECTORY_PARTITION;
+        const save = (job: string, nextRunAt: number, everyMs: number | null) =>
+          storage.run(context(), D, saveJobSchedule, {
+            job,
+            nextRunAt,
+            everyMs,
+            now: T0,
+          });
+        ok(await save("trim", T0 + 10, 60_000));
+        ok(await save("once", T0 + 5, null));
+        ok(await save("trim", T0 + 20, 30_000));
+        expect(
+          ok(await storage.run(context(), D, readJobSchedules, {})),
+        ).toEqual([
+          { job: "once", nextRunAt: T0 + 5, everyMs: null, updatedAt: T0 },
+          { job: "trim", nextRunAt: T0 + 20, everyMs: 30_000, updatedAt: T0 },
+        ]);
+        expect(
+          ok(await storage.run(context(), OTHER, readJobSchedules, {})),
+        ).toEqual([]);
+        expect(
+          ok(
+            await storage.run(context(), D, removeJobSchedule, { job: "once" }),
+          ),
+        ).toEqual({ removed: true });
+        expect(
+          ok(
+            await storage.run(context(), D, removeJobSchedule, { job: "once" }),
+          ),
+        ).toEqual({ removed: false });
+      });
+
+      test("a time that is no whole millisecond, or a cadence below 1, is refused", async () => {
+        const { storage } = store();
+        for (const input of [
+          { job: "trim", nextRunAt: 1.5, everyMs: null, now: T0 },
+          { job: "trim", nextRunAt: T0, everyMs: 0, now: T0 },
+          { job: "trim", nextRunAt: T0, everyMs: null, now: Number.NaN },
+        ]) {
+          const refused = await storage.run(
+            context(),
+            DIRECTORY_PARTITION,
+            saveJobSchedule,
+            input,
+          );
           expect(refused.ok ? null : refused.failure.code).toBe("refused");
         }
       });

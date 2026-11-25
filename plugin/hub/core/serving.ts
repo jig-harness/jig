@@ -3,8 +3,10 @@
  * credential or the webhook's signature headers
  * ([design/control-plane.md § The portable core and its adapters](../../../design/control-plane.md#the-portable-core-and-its-adapters)).
  *
- * The adapter owns the listener (Bun's HTTP server, a Worker's `fetch`
- * handler). It turns each request into a `HubRequest`, runs the core's
+ * The adapter owns the listeners (Bun's HTTP servers, a Worker's `fetch`
+ * handler). The hub has three, kept apart (`routes.ts`): the host
+ * protocol's, the webhook listener and the feed's. For each request the
+ * adapter turns it into a `HubRequest`, runs that listener's
  * `RequestHandler` for it as one unit (`runUnit`), and writes the
  * `HubResponse` back. The body stays bytes, so a webhook's signature is
  * checked over exactly what was sent.
@@ -50,14 +52,21 @@ export type RequestHandler = (
   request: HubRequest,
 ) => Promise<Outcome<HubResponse>>;
 
+/** The hub's listeners: the host protocol's, the webhook listener and the feed's. */
+export type ListenerName = "host" | "webhook" | "feed";
+
+/** Each listener's handler. */
+export type ListenerHandlers = Readonly<Record<ListenerName, RequestHandler>>;
+
 export interface ServingPort {
   /**
-   * Hands `handler` every request from now on. A process adapter resolves
-   * when its listener stops; a platform that owns the listener resolves
-   * once the handler is in place.
+   * Hands each listener's handler every request that listener receives
+   * from now on. A process adapter resolves when its listeners stop (the
+   * context's signal); a platform that owns the listener resolves once the
+   * handlers are in place.
    */
   serve(
     context: UnitContext,
-    handler: RequestHandler,
+    handlers: ListenerHandlers,
   ): Promise<Outcome<void, ServingFailureCode>>;
 }

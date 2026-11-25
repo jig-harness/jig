@@ -3,14 +3,13 @@
  * Installed command entry point: bun <plugin>/jig.ts <command> …, and what
  * the `jig` command on `PATH` runs.
  *
- * It registers the components, resource collection (`gc/component.ts`) and
- * the dispatcher (`dispatch/component.ts`): each defines its own command
+ * It registers the components, resource collection (`gc/component.ts`),
+ * the dispatcher (`dispatch/component.ts`) and the hub (`hub/component.ts`): each defines its own command
  * beside its code, and the lifecycle verbs (`runtime/verbs.ts`: install,
  * uninstall, upgrade, doctor, status, receipts, run) act on them through one
  * interface. Beside them it registers the commands that run and exit with
  * nothing to install, `jig ask` (`ask/component.ts`), `jig send`
- * (`send/component.ts`), `jig budget` (`budget/component.ts`) and
- * `jig hub` (`hub/component.ts`). All of
+ * (`send/component.ts`) and `jig budget` (`budget/component.ts`). All of
  * it is one Optique parser, so `jig --help`, `jig help <command>`,
  * `<command> --help` and `jig completion <shell>` come from the same
  * definitions that parse.
@@ -31,7 +30,11 @@ import { withCaller } from "./shared/outbound/ledger.ts";
 import { map, message, or, runParser } from "./shared/vendor/optique.mjs";
 
 /** The components, in the order the lifecycle verbs act on them. */
-const COMPONENTS: readonly Component[] = [gcComponent, dispatchComponent];
+const COMPONENTS: readonly Component[] = [
+  gcComponent,
+  dispatchComponent,
+  hubComponent,
+];
 
 /** Every command beside the verbs: the components', then the ones the verbs never act on. */
 const COMMANDS: readonly CommandComponent[] = [
@@ -39,7 +42,6 @@ const COMMANDS: readonly CommandComponent[] = [
   askComponent,
   sendComponent,
   budgetComponent,
-  hubComponent,
 ];
 
 const verbs = verbCommands(COMPONENTS.map((component) => component.name));

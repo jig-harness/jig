@@ -58,9 +58,9 @@ here reaches every repository at once.
   links to it ([modules/AGENTS.md](../modules/AGENTS.md#the-module-contract)). A
   template in a skill is licensed MIT No Attribution and listed in the root
   NOTICE (copied here as [NOTICE](NOTICE): `cp NOTICE plugin/`).
-- **The `jig` command's components** (`gc/`, `dispatch/`) each implement
+- **The `jig` command's components** (`gc/`, `dispatch/`, `hub/`) each implement
   `runtime/component.ts` and are registered in `jig.ts`, beside the
-  commands with no job to install (`ask/`, `send/`, `budget/`, `hub/`, each a
+  commands with no job to install (`ask/`, `send/`, `budget/`, each a
   `CommandComponent`); the lifecycle
   verbs (`runtime/verbs.ts`) reach them only through that interface, and
   the scheduler and launcher code the components share lives in

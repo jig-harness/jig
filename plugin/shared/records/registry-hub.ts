@@ -10,7 +10,7 @@ import type { RecordKind } from "./registry-kind.ts";
 const SCHEMA = "hub/storage/schema.ts";
 const AT = "the hub's storage, every partition";
 /** The hub's schema version: the number of its migrations (`hub/storage/migrations/meta/_journal.json`). */
-export const HUB_SCHEMA = 1;
+export const HUB_SCHEMA = 2;
 
 /** A table of the hub's storage. */
 function hubTable(name: string, table: string, meaning: string): RecordKind {
@@ -35,5 +35,10 @@ export const HUB: RecordKind[] = [
     "hub-job-lease",
     "job_leases",
     "A scheduled job's lease: the run that holds it and until when, the progress that run stored, and when a run last started and finished. A run that finds the lease held does not run, and the next run after a lease lapsed resumes from the stored progress.",
+  ),
+  hubTable(
+    "hub-job-schedule",
+    "job_schedules",
+    "A scheduled job's next run: when it is due and, for a job that repeats, its cadence. The process adapter's timers read it when the hub starts, so a restart runs each job when it was due rather than forgetting it.",
   ),
 ];

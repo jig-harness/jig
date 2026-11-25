@@ -1332,6 +1332,7 @@ for a team without a private network, is left out until a team needs it.
 
 ### How it fits the rest of Jig
 
+
 | Part of Jig | Without a hub | With a hub |
 | --- | --- | --- |
 | `do-item`, `drive-pr`, `work-batch` and the review skills | Their own fences | Unchanged: they never call the hub, except an enrolled host's drive pass making the optional watch call below |
@@ -1343,7 +1344,7 @@ for a team without a private network, is left out until a team needs it.
 | The dispatch dashboard | Shows its own machine | May read the hub's feed and show every host, and the hub's health |
 | The Jig plugin for Orca | Reads this machine's line | Unchanged; reading the hub's feed is a later step of its own |
 | The steward, notices, labels, reflection | On the host whose machine file owns the repository | On the host the hub names owner |
-| `jig gc` | Cleans the host | Also trims the hub's database where the process adapter runs |
+| `jig gc` | Cleans the host | Unchanged; the running hub's own worker trims its database |
 | The records registry | The machine, the working tree, the forge and tracker | One more medium, the hub, for its enrollments, leases, world view and copies |
 
 ### Where it lives
@@ -1353,7 +1354,7 @@ for a team without a private network, is left out until a team needs it.
 hub agree on the protocol by version, within the window
 [The host protocol](#the-host-protocol) states. The core is `plugin/hub/core/`, the
 one directory the portability gate covers, and each adapter is a directory
-of its own under `plugin/hub/adapters/`. `jig install hub` installs the
+of its own under `plugin/hub/`, the process adapter's `plugin/hub/process/`. `jig install hub` installs the
 process adapter's `jig hub serve` as a resident job, restarted when it
 fails and when the installed copy changes, the way the dispatch
 dashboard's reader is installed; the container image is built from the

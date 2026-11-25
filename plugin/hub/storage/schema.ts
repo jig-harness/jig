@@ -59,3 +59,20 @@ export const jobLeases = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.partition, table.job] })],
 );
+
+/**
+ * One scheduled job's next run, kept so a restarted hub runs it when it
+ * was due: the moment it is due, and its cadence when it repeats (`null`
+ * for a run at one moment, whose row goes once it has run).
+ */
+export const jobSchedules = sqliteTable(
+  "job_schedules",
+  {
+    partition: text("partition").notNull(),
+    job: text("job").notNull(),
+    nextRunAt: integer("next_run_at").notNull(),
+    everyMs: integer("every_ms"),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.partition, table.job] })],
+);
