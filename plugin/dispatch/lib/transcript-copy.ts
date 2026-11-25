@@ -260,6 +260,7 @@ function isMaskedValue(layer: string, at: number): boolean {
 }
 
 /** Whether `layer` holds a quoted member named like a credential whose value is not masked. Each quoted span is read once, left to right: a span that never closes ends the scan, since every later quote is escaped inside it and would never close either. */
+// fallow-ignore-next-line complexity -- this scanner must preserve escaped JSON-string semantics.
 function layerHoldsCredentialMember(layer: string): boolean {
   let at = layer.indexOf('"');
   while (at !== -1) {
@@ -295,6 +296,7 @@ function holdsCredentialMember(text: string): boolean {
 const NEST_LIMIT = 64;
 
 /** Whether `value`, or any JSON a string in it encodes at any depth, still holds a secret or a credential field that is not masked. Nothing is rewritten: a hit leaves the whole line out, so no number or property name is ever re-encoded. */
+// fallow-ignore-next-line complexity -- each decoded JSON shape has distinct secret-detection rules.
 function leaksDecoded(
   value: unknown,
   secrets: readonly string[],
@@ -337,6 +339,7 @@ function leaksDecoded(
 }
 
 /** `value` with each exact secret replaced in every string, every number written as one and every property name, before any generic redaction can split it. JSON a string encodes is not decoded here: `leaksDecoded` leaves such a line out when it holds a secret. */
+// fallow-ignore-next-line complexity -- each JSON shape must retain its original structure while masking.
 function maskExact(value: unknown, secrets: readonly string[]): unknown {
   if (secrets.length === 0) return value;
   if (typeof value === "string") return replaceSecrets(value, secrets);

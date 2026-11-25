@@ -49,6 +49,7 @@ function nameFinder(quoted: boolean): NameFinder {
   const tail = /\s*[:=]\s*/y;
   return {
     lastIndex: 0,
+    // fallow-ignore-next-line complexity -- the scanner advances each candidate only once.
     exec(text) {
       run.lastIndex = this.lastIndex;
       for (let r = run.exec(text); r; r = run.exec(text)) {
@@ -118,6 +119,7 @@ function startsAssignment(text: string, at: number): boolean {
  * physical line. A quote glued to a bare prefix takes its line only, which
  * is all a line-cutting reader can track.
  */
+// fallow-ignore-next-line complexity -- this is the complete quoted-value grammar.
 function quotedEnd(text: string, start: number, multiline: boolean): number {
   const q = text[start];
   let firstBreak = -1;
@@ -170,6 +172,7 @@ function separatorEnds(text: string, i: number): boolean {
  * survives; a bare run takes them as part of the secret. A backslash before
  * a line break does not continue the value past it.
  */
+// fallow-ignore-next-line complexity -- this is the complete unquoted-value grammar.
 function valueEnd(text: string, start: number): number {
   let afterQuote = false;
   let i = start;
@@ -201,6 +204,7 @@ function valueEnd(text: string, start: number): number {
  * string, a bracketed value, or else what `plain` matches there; `skip`
  * leaves a value already masked alone.
  */
+// fallow-ignore-next-line complexity -- each branch selects one supported value grammar.
 function maskValues(
   text: string,
   prefix: NameFinder,

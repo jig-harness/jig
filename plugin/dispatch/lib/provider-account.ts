@@ -303,6 +303,7 @@ function urlFormRefusal(url: URL, where: string): string | null {
  * loopback or private-network host is never a provider's own, so it needs
  * `provider_hosts` too.
  */
+// fallow-ignore-next-line complexity -- each URL refusal protects a distinct credential boundary.
 function baseUrl(
   value: unknown,
   where: string,

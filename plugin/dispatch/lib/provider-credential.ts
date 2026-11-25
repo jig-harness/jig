@@ -119,6 +119,7 @@ function collidesWithMarker(value: string): boolean {
  * why not. `env` is the environment the command runs with
  * (`credentialEnvOf`).
  */
+// fallow-ignore-next-line complexity -- every refusal learns output before it can be recorded.
 export async function resolveCredential(
   settings: CredentialSettings | undefined,
   reference: string,
