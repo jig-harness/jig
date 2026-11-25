@@ -695,7 +695,7 @@ fields:
     max: 12
     excluded: [1]
     default: 4
-    since: next
+    since: 0.309.0
     read_by: [drive-pr]
   drive.pass_deadline_retries:
     type: integer
