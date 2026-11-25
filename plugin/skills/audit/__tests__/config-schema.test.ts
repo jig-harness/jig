@@ -381,6 +381,8 @@ describe("the reading skills", () => {
       "has,comma",
       "has;semicolon",
       "has=equals",
+      "模型",
+      "has\u2003em",
       ...[
         0x00a0, 0x1680, 0x2000, 0x2007, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000,
         0xfeff,
@@ -400,11 +402,9 @@ describe("the reading skills", () => {
       if (PASS_MODEL_PATTERN.test(value)) {
         expect(findings).toEqual([]);
       } else {
-        expect(
-          findings.some(
-            (f) => f.id === "type:drive.pass_model" && f.severity === "error",
-          ),
-        ).toBe(true);
+        expect(findings.map((f) => `${f.id}:${f.severity}`)).toEqual([
+          "type:drive.pass_model:error",
+        ]);
       }
     }
     expect(field("ci.repair_skill")?.pattern).toBe(SKILL_NAME_PATTERN.source);
