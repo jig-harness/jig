@@ -4,13 +4,19 @@
  *
  *   - same-file: one file drew findings in each of the last N recorded
  *     rounds, consecutive, none of them carrying a `high` or `blocker`
- *     finding, and the file was rewritten between each pair of them. Fixing
+ *     finding, and the file was positively rewritten between each pair of them. Fixing
  *     low-value findings on one file round after round is how a drive spends
  *     its budget without converging; a round with a severe finding is real
  *     work, so it breaks the streak.
  *   - oscillation: a file's content at one round's head came back at a later
  *     round's head after a different content in between (A, B, A): the
- *     rounds are undoing each other. Severity does not suppress it.
+ *     rounds are undoing each other. Severity does not suppress it. Contents
+ *     are recorded only for the files that drew findings in a round, so the
+ *     return is judged among the rounds in which the file drew a finding; a
+ *     file that returns while only other files draw findings is not seen.
+ *
+ * Both shapes need positive evidence: a blob that could not be read never
+ * counts as a rewrite or a return.
  *
  * Pure: it reads only the state it is given. `churnAckRound` consumes the
  * evidence at or before it, so a person's answer to the park the brake
@@ -50,11 +56,21 @@ export function churnKey(round: number): string {
   return `${CHURN_CLASS}-r${round}`;
 }
 
-/** Whether `path` changed between two rounds; an unknown blob counts as changed. */
+/** The blob a round recorded for `path`, as an own entry only. */
+function blobOf(e: RoundPaths, path: string): string | undefined {
+  return e.blobs !== undefined && Object.hasOwn(e.blobs, path)
+    ? e.blobs[path]
+    : undefined;
+}
+
+/**
+ * Whether `path` is positively known to have changed between two rounds: both
+ * blobs were read and differ. A blob that could not be read is no evidence.
+ */
 function rewritten(a: RoundPaths, b: RoundPaths, path: string): boolean {
-  const before = a.blobs?.[path];
-  const after = b.blobs?.[path];
-  return before === undefined || after === undefined || before !== after;
+  const before = blobOf(a, path);
+  const after = blobOf(b, path);
+  return before !== undefined && after !== undefined && before !== after;
 }
 
 function sameFile(entries: readonly RoundPaths[], n: number): ChurnTrip | null {
@@ -92,7 +108,7 @@ function returnOf(
   const seen = new Map<string, number>();
   let prev: { blob: string; round: number } | null = null;
   for (const e of entries) {
-    const blob = e.blobs?.[path];
+    const blob = blobOf(e, path);
     if (blob === undefined) continue;
     const earlier = seen.get(blob);
     if (prev !== null && prev.blob !== blob && earlier !== undefined)

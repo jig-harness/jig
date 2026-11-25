@@ -2680,6 +2680,8 @@ export async function probeIn(
     env?: Record<string, string>;
     /** The pull request argument: a number, a URL or a branch. */
     pr?: string;
+    /** The working directory of the probe: a repository holding the heads. */
+    cwd?: string;
   } = {},
 ): Promise<ProbeResult> {
   const proc = Bun.spawn(
@@ -2718,6 +2720,7 @@ export async function probeIn(
         DRIVE_PR_STATE_DIR: stateDir,
         ...opts.env,
       },
+      ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }),
       stdout: "pipe",
       stderr: "pipe",
     },

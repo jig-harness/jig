@@ -66,7 +66,7 @@ async function stopHitlParked(
   // act on, and burns turns until something external stops it.
   // Only these remain: the drive worked everything they do not block.
   console.error(
-    "HITL-parked — only the decisions below remain, and each is a person's; not re-arming.",
+    "HITL-parked — the decisions below wait for a person (on their thread, or as a pull-request comment `answer <key>: …`); not re-arming.",
   );
   const get = await run(tsArgv(driveState, ["get", context.pr]), {
     stderr: "ignore",

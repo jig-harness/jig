@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { readRoundBlobs } from "../scripts/lib/status/round-blobs.ts";
 import { runChurnBrake } from "../scripts/lib/status/churn-brake.ts";
 
@@ -26,7 +27,17 @@ function git(...args: string[]): string {
   );
   const r = spawnSync(
     "git",
-    ["-c", "user.name=t", "-c", "user.email=t@example.invalid", ...args],
+    [
+      "-c",
+      "user.name=t",
+      "-c",
+      "user.email=t@example.invalid",
+      "-c",
+      "commit.gpgsign=false",
+      "-c",
+      "core.hooksPath=/dev/null",
+      ...args,
+    ],
     { cwd: repo, env, encoding: "utf8" },
   );
   if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
@@ -35,12 +46,33 @@ function git(...args: string[]): string {
 
 git("init", "-q");
 writeFileSync(join(repo, "a.ts"), "export const a = 1;\n");
+writeFileSync(join(repo, "__proto__"), "x\n");
 writeFileSync(join(repo, "b c.ts"), "export const b = 2;\n");
 git("add", ".");
 git("commit", "-q", "-m", "seed");
 const head = git("rev-parse", "HEAD");
 
 describe("readRoundBlobs", () => {
+  it("keeps a path named __proto__ as an own entry", async () => {
+    const blobs = await readRoundBlobs(head, ["__proto__"], 30, repo);
+    expect(Object.hasOwn(blobs, "__proto__")).toBe(true);
+    expect(Object.keys(blobs)).toEqual(["__proto__"]);
+  });
+
+  it("reads the repository at cwd whatever GIT_DIR is inherited", () => {
+    const script = `import { readRoundBlobs } from ${JSON.stringify(join(import.meta.dir, "../scripts/lib/status/round-blobs.ts"))};
+console.log(JSON.stringify(await readRoundBlobs(${JSON.stringify(head)}, ["a.ts"], 30, ${JSON.stringify(repo)})));`;
+    const r = spawnSync(process.execPath, ["-e", script], {
+      env: { ...process.env, GIT_DIR: join(notRepo, "elsewhere") },
+      encoding: "utf8",
+    });
+    expectSpawnExit(
+      { exitCode: r.status, stdout: r.stdout, stderr: r.stderr },
+      0,
+    );
+    expect(Object.keys(JSON.parse(r.stdout))).toEqual(["a.ts"]);
+  });
+
   it("reads each present path's blob and leaves a missing path out", async () => {
     const blobs = await readRoundBlobs(
       head,
@@ -88,7 +120,11 @@ describe("runChurnBrake", () => {
       driveStateScript: join(notRepo, "absent.ts"),
       helperTimeoutSec: 5,
     };
-    expect(await runChurnBrake(ctx, report, false)).toBe(1);
+    expect(
+      await runChurnBrake(ctx, report, false, true, {
+        DRIVE_PR_CHURN_ROUNDS: "4",
+      }),
+    ).toBe(1);
     expect(report.state).toBe("INDETERMINATE");
     expect(report.reason).toContain("could not be recorded");
   });

@@ -12,9 +12,22 @@ import { CHURN_CLASS, type ChurnTrip } from "./churn.ts";
 const LISTED_FILES = 5;
 const LISTED_ROUNDS = 12;
 
-function listed(items: readonly string[], max: number): string {
-  const shown = items.slice(0, max).join(", ");
-  return items.length > max ? `${shown} and ${items.length - max} more` : shown;
+/** The most UTF-8 bytes the listed files may take, so the decision fits its park. */
+const FILES_BYTE_BUDGET = 1024;
+
+function listed(items: readonly string[], max: number, bytes?: number): string {
+  let count = Math.min(items.length, max);
+  const text = (n: number) => {
+    const shown = items.slice(0, n).join(", ");
+    return items.length > n ? `${shown} and ${items.length - n} more` : shown;
+  };
+  if (bytes !== undefined)
+    while (count > 1 && Buffer.byteLength(text(count)) > bytes) count -= 1;
+  const out = text(count);
+  // One path that alone overruns the budget is cut, never dropped.
+  return bytes !== undefined && Buffer.byteLength(out) > bytes
+    ? `${items.length} files, the first starting ${JSON.stringify([...(items[0] ?? "")].slice(0, 80).join(""))}`
+    : out;
 }
 
 const KIND_TEXT: Record<ChurnTrip["kind"], { what: string; why: string }> = {
@@ -47,6 +60,7 @@ export function churnDecision(
   const files = listed(
     trip.paths.map((p) => `\`${p}\``),
     LISTED_FILES,
+    FILES_BYTE_BUDGET,
   );
   const rounds = listed(trip.rounds.map(String), LISTED_ROUNDS);
   return {

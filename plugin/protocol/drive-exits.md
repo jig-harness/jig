@@ -63,7 +63,7 @@ parked. It parks the drive when one file drew findings in each of the last
 off), none of those rounds carrying a `high` or `blocker` finding, and the
 file was rewritten between each; or when a file's content at one round's
 head came back at a later round's head after a different one in between,
-whatever the severity. A round with a `high` or `blocker` finding never
+among the rounds in which the file drew a finding, whatever the severity. A round with a `high` or `blocker` finding never
 counts toward the same-file streak.
 
 The park carries a framed decision under the `structural-churn`
@@ -74,8 +74,9 @@ The gate then reports `HITL_PARKED` (exit `8`). While that park stands,
 every gate reports `HITL_PARKED`, even with work left. On a pull request
 that conflicts with its base, those gates report `PR_CONFLICTING` (exit
 `9`) instead, as they do before any park. If the round's evidence or the
-park could not be recorded the gate reports `INDETERMINATE` (exit `1`), and
-the round is run again. A repository's `autonomy.park_classes` cannot remove the class.
+park could not be recorded, or a trip meets a replied-thread sweep that did not
+complete, the gate reports `INDETERMINATE` (exit `1`). That ends `drive.ts`; a
+person re-arms the drive once the failure is addressed. A repository's `autonomy.park_classes` cannot remove the class.
 
 ## The states and exits of `drive-status.ts` and `drive.ts`
 
@@ -96,8 +97,8 @@ the round is run again. A repository's `autonomy.park_classes` cannot remove the
 | `PR_NOT_OPEN` | state | 5 | 5 | yes | The pull request was merged or closed. Stop, and push nothing to it. |
 | `MAX_ROUNDS` | driver-only | — | 6 | yes | The drive spent its round budget (`--max-rounds`, with any rounds a re-arm granted) without converging. Read the handoff file before re-arming: a re-arm a person asks for grants one more round budget. |
 | `REVIEWER_FAILED` | state | 7 | 7 | yes | The reviewer's check failed or says the review did not complete. The drive stops. The dispatcher can retry a neutral check that reports an incomplete review and escalate repeated stops on that head. |
-| `HITL_PARKED` | state | 8 | 8 | yes | Everything left waits on a person's decision, each framed on its thread, or the drive parked itself on structural churn (class `structural-churn`), a park that holds even live work. The drive does not wake itself: once every one is answered, re-arm it. |
-| `PR_CONFLICTING` | state | 9 | 9 | yes | The pull request conflicts with its base and has nothing else to work on; `drive.ts` ends with it once its conflict-repair passes are spent. Merge the base in, then re-arm. |
+| `HITL_PARKED` | state | 8 | 8 | yes | Everything left waits on a person's decision, each framed on its thread or, for a park with no thread, as a pull-request comment `answer <key>`, or the drive parked itself on structural churn (class `structural-churn`), a park that holds even live work. The drive does not wake itself: once every one is answered, re-arm it. |
+| `PR_CONFLICTING` | state | 9 | 9 | yes | The pull request conflicts with its base and has no other workable finding, or the drive parked itself on structural churn on a conflicting pull request, whose live work then waits for that answer; `drive.ts` ends with it once its conflict-repair passes are spent. Merge the base in, then re-arm. |
 | `RETIRED` | tombstone | — | — | — | Withdrawn: it once stopped a drive on a draft pull request, which is now driven like any other. Never exited, and never given another meaning. |
 | `SESSION_LEASE_HELD` | state | 11 | 11 | yes | Another live session in this working tree holds the drive's lease for this pull request. Nothing was changed: wait for it, or clear its lease once its process is gone. |
 | `SINGLE_INSTANCE_LOCK` | driver-only | — | 11 | yes | Another driver already holds this pull request's or this working tree's lock, so the drive is already armed. Nothing was changed. |
@@ -161,7 +162,7 @@ fall short of its goal.
 | `PR_NOT_OPEN` | 5 | ended: the pull request was merged or closed | — | `none` | — | Nothing is left for the drive; a merge's follow-up settles what the merge owes. |
 | `MAX_ROUNDS` | 6 | used its round budget without converging | `deadline` | `person` | `Investigate` | Read the handoff file for what keeps the review open, then re-arm the drive, which grants it one more round budget (`jig send drive@<repo> <PR> rearm`, or `--rearm-budget` on the arm command), or take the work over. |
 | `REVIEWER_FAILED` | 7 | stopped: the posting reviewer's check reported a failure | `tool-failed` | `person` | `Investigate` | Look at the reviewer's failed check, then re-arm the drive. |
-| `HITL_PARKED` | 8 | parked: a decision waits for a person | `needs-person` | `person` | `Decide` | Answer each parked decision on its thread, then re-arm the drive. |
+| `HITL_PARKED` | 8 | parked: a decision waits for a person | `needs-person` | `person` | `Decide` | Answer each parked decision (on its thread, or in a pull-request comment `answer <key>: …`), then re-arm the drive. |
 | `PR_CONFLICTING` | 9 | stopped: it conflicts with its base and has nothing left to work | `needs-person` | `person` | `Do` | Merge the base in and resolve the conflicts, then re-arm the drive. |
 | `SINGLE_INSTANCE_LOCK` | 11 | refused: another driver already holds this pull request's or this working tree's lock | `refused` | `line` | — | The driver that holds the lock goes on driving. |
 | `WORKTREE_UNCLEAN` | 12 | converged, but its worktree holds changes no round shipped | `environment` | `line` | — | A re-armed drive settles the working tree, then reports convergence. |

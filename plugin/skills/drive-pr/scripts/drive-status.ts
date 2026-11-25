@@ -1861,7 +1861,7 @@ async function main(): Promise<number> {
         // (`lib/status/churn-brake.ts`); never on a re-read.
         const braked = noCount
           ? null
-          : await runChurnBrake(ctx, report, recorded);
+          : await runChurnBrake(ctx, report, recorded, sweepReconciled);
         if (braked !== null) {
           await emit(braked);
           return braked;

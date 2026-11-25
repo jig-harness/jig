@@ -6,9 +6,11 @@
  * and end the gate `HITL_PARKED` before the round's pass runs.
  *
  * A failure is never a silent pass: an unreadable setting, an unreadable
- * state or a park that did not land ends the gate `INDETERMINATE`, so the
- * driver runs it again rather than spending a round the brake should have
- * stopped.
+ * state, a round whose evidence did not land, a trip before the replied-thread
+ * sweep completed or a park that did not land ends the gate `INDETERMINATE`
+ * (exit `1`). That exit ends `drive.ts`: the drive stops there and is re-armed
+ * once the failure is addressed, rather than spending a round the brake
+ * should have stopped.
  *
  * Its setting, `drive.churn_rounds` (`DRIVE_PR_CHURN_ROUNDS` overrides it
  * for one run), is how many consecutive rounds make a same-file streak; `0`
@@ -22,6 +24,7 @@ import {
   type Outcome,
 } from "../../../../../shared/outcome.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
+import { readPolicySnapshot } from "../../../../../shared/autonomy.ts";
 import { readOptionalOverlay } from "../overlay.ts";
 import { run, tsArgv } from "../proc.ts";
 import {
@@ -68,14 +71,35 @@ export function churnRoundsSetting(
           `${CHURN_ROUNDS_VARIABLE} must be ${RANGE} (got '${raw}')`,
         );
   }
-  const read = attempt(
-    "churn-rounds-invalid",
-    "cannot read the repository's configuration",
-    readOptionalOverlay,
-  );
-  if (!read.ok) return read;
-  const drive = read.value.drive;
-  const value = isRecord(drive) ? drive.churn_rounds : undefined;
+  // The repository's value comes from the policy the driver names (the base
+  // branch's file at its commit), never from the pull request's own checkout:
+  // the change being driven must not turn off its own brake. A person's
+  // session reads the working tree, as for every autonomy setting.
+  const policy = readPolicySnapshot(env);
+  let values: Record<string, unknown>;
+  if (policy.from === "unreadable")
+    return failed(
+      "churn-rounds-invalid",
+      `the base branch's policy cannot be read (${policy.reason}), so drive.churn_rounds cannot be trusted`,
+    );
+  if (policy.from === "base") values = policy.values;
+  else {
+    const read = attempt(
+      "churn-rounds-invalid",
+      "cannot read the repository's configuration",
+      readOptionalOverlay,
+    );
+    if (!read.ok) return read;
+    values = read.value;
+  }
+  if (!Object.hasOwn(values, "drive")) return ok(DEFAULT_CHURN_ROUNDS);
+  const drive = values.drive;
+  if (!isRecord(drive))
+    return failed(
+      "churn-rounds-invalid",
+      `drive must be a mapping to hold drive.churn_rounds: ${configSource("drive.churn_rounds")}`,
+    );
+  const value = drive.churn_rounds;
   if (value === undefined || value === null) return ok(DEFAULT_CHURN_ROUNDS);
   return inRange(value)
     ? ok(value)
@@ -178,8 +202,10 @@ export async function runChurnBrake(
   ctx: BrakeContext,
   report: BrakeReport,
   recorded: boolean,
+  reconciled: boolean,
+  env: Record<string, string | undefined> = process.env,
 ): Promise<number | null> {
-  const setting = churnRoundsSetting();
+  const setting = churnRoundsSetting(env);
   if (!setting.ok)
     return indeterminate(
       report,
@@ -190,7 +216,7 @@ export async function runChurnBrake(
   if (!recorded)
     return indeterminate(
       report,
-      `this round's structural-churn evidence could not be recorded for #${ctx.pr} (record-paths failed), so the brake cannot judge the round; run it again`,
+      `this round's structural-churn evidence could not be recorded for #${ctx.pr} (record-paths failed), so the brake cannot judge the round; re-arm the drive`,
     );
   const state = await readEvidence(ctx);
   if (!state.ok)
@@ -200,6 +226,13 @@ export async function runChurnBrake(
     );
   const trip = structuralChurn(state.value, { rounds: n });
   if (trip === null) return null;
+  // A new park ends the drive, so it needs the replied-thread sweep behind
+  // it, as every other verdict that ends one does.
+  if (!reconciled)
+    return indeterminate(
+      report,
+      `${describeTrip(trip)}, but the replied-thread reconciliation sweep did not complete on #${ctx.pr}, so the ${CHURN_CLASS} park is withheld; the drive stops here, so re-arm it for a counting pass`,
+    );
   const round = state.value.rounds;
   const park = await run(
     tsArgv(ctx.driveStateScript, [
@@ -220,7 +253,7 @@ export async function runChurnBrake(
     if (park.stderr) process.stderr.write(park.stderr);
     return indeterminate(
       report,
-      `${describeTrip(trip)}, but the ${CHURN_CLASS} park could not be recorded (park-churn exited ${park.code}); run the round again`,
+      `${describeTrip(trip)}, but the ${CHURN_CLASS} park could not be recorded (park-churn exited ${park.code}); re-arm the drive once it is addressed`,
     );
   }
   const key = churnKey(round);

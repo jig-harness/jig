@@ -61,7 +61,11 @@ import {
 } from "../../drive-pr/scripts/lib/codex-pass-args.ts";
 import { readStatusPolling } from "../../drive-pr/scripts/lib/status/poll-pacing.ts";
 import { CI_REPAIR_ROUNDS_DEFAULT } from "../../drive-pr/scripts/lib/driver/settings.ts";
-import { DEFAULT_CHURN_ROUNDS } from "../../drive-pr/scripts/lib/state/churn.ts";
+import {
+  DEFAULT_CHURN_ROUNDS,
+  MAX_CHURN_ROUNDS,
+  MIN_CHURN_ROUNDS,
+} from "../../drive-pr/scripts/lib/state/churn.ts";
 import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
 import { SKILL_NAME_PATTERN } from "../../../shared/ci-status.ts";
 import { DEFAULT_REMOTE } from "../../../shared/consumer.ts";
@@ -710,6 +714,18 @@ describe("the reading skills", () => {
     expect(problems(MAX_TIMEOUT_MINUTES + 1)).toEqual([
       `verify.timeout_minutes must be a whole number ≥ 1 and ≤ ${MAX_TIMEOUT_MINUTES}`,
     ]);
+  });
+
+  test("accept the churn rounds the brake accepts: 0 or its range, never the hole", () => {
+    const accepted = (value: number) =>
+      checkConfig({ drive: { churn_rounds: value } }, schema).length === 0;
+    expect(field("drive.churn_rounds")?.min).toBe(0);
+    expect(field("drive.churn_rounds")?.max).toBe(MAX_CHURN_ROUNDS);
+    expect(accepted(0)).toBe(true);
+    expect(accepted(MIN_CHURN_ROUNDS - 1)).toBe(false);
+    expect(accepted(MIN_CHURN_ROUNDS)).toBe(true);
+    expect(accepted(MAX_CHURN_ROUNDS)).toBe(true);
+    expect(accepted(MAX_CHURN_ROUNDS + 1)).toBe(false);
   });
 
   test("refuse the batch-key labels the deferral helper refuses", () => {

@@ -121,11 +121,30 @@ describe("structuralChurn: same-file", () => {
     expect(structuralChurn({ roundPaths }, { rounds: 4 })).toBeNull();
   });
 
-  it("counts a file whose blob is unknown as rewritten", () => {
+  it("never counts a file whose blob is unknown as rewritten", () => {
     const roundPaths = churning(1, 4).map(({ blobs: _blobs, ...e }) => e);
-    expect(structuralChurn({ roundPaths }, { rounds: 4 })?.kind).toBe(
-      "same-file",
+    expect(structuralChurn({ roundPaths }, { rounds: 4 })).toBeNull();
+    const oneMissing = churning(1, 4).map((e) =>
+      e.round === 3 ? { round: e.round, paths: e.paths, severe: false } : e,
     );
+    expect(
+      structuralChurn({ roundPaths: oneMissing }, { rounds: 4 }),
+    ).toBeNull();
+  });
+
+  it("reads a blob entry inherited from Object.prototype as unknown", () => {
+    const roundPaths = churning(1, 4).map((e) => ({
+      ...e,
+      blobs: {} as Record<string, string>,
+    }));
+    expect(
+      structuralChurn(
+        {
+          roundPaths: roundPaths.map((e) => ({ ...e, paths: ["constructor"] })),
+        },
+        { rounds: 4 },
+      ),
+    ).toBeNull();
   });
 
   it("reads only the rounds after churnAckRound", () => {
@@ -186,6 +205,15 @@ describe("structuralChurn: oscillation", () => {
     });
   });
 
+  it("judges a return only among the rounds the file drew a finding in", () => {
+    const roundPaths = [
+      round(1, ["a.ts"], { severe: false, blobs: { "a.ts": 10 } }),
+      round(2, ["b.ts"], { severe: false, blobs: { "b.ts": 1 } }),
+      round(3, ["a.ts"], { severe: false, blobs: { "a.ts": 10 } }),
+    ];
+    expect(structuralChurn({ roundPaths }, { rounds: 4 })).toBeNull();
+  });
+
   it("is consumed by churnAckRound and off at 0", () => {
     expect(
       structuralChurn({ roundPaths: abA, churnAckRound: 1 }, { rounds: 4 }),
@@ -220,6 +248,18 @@ describe("churnDecision", () => {
     expect(cont?.summary).toContain("three");
   });
 
+  it("fits the park's byte limit for long multibyte paths", () => {
+    const paths = Array.from(
+      { length: 5 },
+      (_, i) => `${"界".repeat(160)}${i}.ts`,
+    );
+    const d = churnDecision({ ...trip, paths }, "999", 6, 4);
+    expect(checkParkedDecision(d, "structural-churn")).toEqual([]);
+    expect(Buffer.byteLength(JSON.stringify(d))).toBeLessThan(
+      DECISION_BYTE_LIMIT,
+    );
+  });
+
   it("says why for an oscillation in its own words", () => {
     const d = churnDecision(
       { kind: "oscillation", paths: ["a.ts"], rounds: [1, 2, 3] },
@@ -250,7 +290,7 @@ describe("churnDecision", () => {
     expect(
       new TextEncoder().encode(JSON.stringify(d)).length,
     ).toBeLessThanOrEqual(DECISION_BYTE_LIMIT);
-    expect(d.call.question).toContain("and 195 more");
+    expect(d.call.question).toMatch(/and \d+ more/);
   });
 
   it("keys the park by its round", () => {

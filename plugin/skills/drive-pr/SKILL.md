@@ -2867,18 +2867,23 @@ even with live work: re-arming without an answer runs no round. On a pull
 request that conflicts with its base, the gate that parks and every gate
 after it exit `9` (`PR_CONFLICTING`) instead, as for any park, so conflict
 repair runs while the decision waits; never `0`. If this round's evidence
-or the park cannot be recorded, the gate exits `1` (`INDETERMINATE`) and is
-run again.
+or the park cannot be recorded, or a trip meets a replied-thread sweep that
+did not complete, the gate exits `1` (`INDETERMINATE`). That exit ends
+`drive.ts`: the drive stops there, and a person re-arms it once the failure is
+addressed.
 The class is kept whatever the repository's `autonomy.park_classes` lists.
 
 A person answers it like any park, and the re-arm hands the answer to the
 first pass. Carry out the chosen option in that pass:
 
-- **Ship as is and defer the rest** (`defer`): defer each open non-blocking
-  finding through the deferral protocol
+- **Ship as is and defer the rest** (`defer`): triage each open finding as
+  usual first, with its severity read and the decline ladder run; a false
+  positive, a duplicate or a finding of unknown severity gets its ordinary
+  outcome. Apply the person's choice to the confirmed non-blocking findings
+  that are real work: defer each through the deferral protocol
   (`/jig:resolve-review-comments`), replying `**deferred**` with the
-  follow-up issue, and still fix any `high` or `blocker` finding; then
-  finish the round so the drive can converge.
+  follow-up issue. Still fix any `high` or `blocker` finding; then finish the
+  round so the drive can converge.
 - **Constrain the scope** (`narrow`): the person's note names what the pull
   request keeps. Revert the rest, or defer it through the same protocol, and
   say in the round's summary what was cut. A note that cannot be applied is
@@ -2897,11 +2902,13 @@ human-in-the-loop registry, `autonomy.park_classes` (`bun "${CLAUDE_SKILL_DIR}/.
 lists them): by default the registry template's rows (`ready`, `merge`,
 `release`, `scope`, `human-thread`, `reviewer-posture`, `next-item`,
 `reopen-or-waive`, `dark-dial`, `rules`, `destructive`, `legal`, `copy`),
-`escalated` for a product or stakeholder call the arbiter or `decide`
+`structural-churn` for the drive's own churn park (§ 3), kept whatever the
+repository lists, `escalated` for a product or stakeholder call the arbiter or `decide`
 escalates, and `human-decision` for a value the pull request records as a
 person's decision or a rule inside a human-decided span. In a pass the list
 is the base branch's; while its policy cannot be read it is `escalated`,
-`human-decision` and `human-thread` only, and every decision is parked under
+`human-decision`, `human-thread` and `structural-churn` only, and every
+decision is parked under
 `human-decision`. Record every
 arbiter ruling on a thread as it arrives, its verdict, its `class:` and its
 `human-decision:` answer as one JSON object on stdin
