@@ -1353,7 +1353,7 @@ for a team without a private network, is left out until a team needs it.
 hub agree on the protocol by version, within the window
 [The host protocol](#the-host-protocol) states. The core is `plugin/hub/core/`, the
 one directory the portability gate covers, and each adapter is a directory
-of its own under `plugin/hub/adapters/`. `jig install hub` installs the
+of its own under `plugin/hub/`, the process adapter's `plugin/hub/process/`. `jig install hub` installs the
 process adapter's `jig hub serve` as a resident job, restarted when it
 fails and when the installed copy changes, the way the dispatch
 dashboard's reader is installed; the container image is built from the

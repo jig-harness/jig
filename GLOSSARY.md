@@ -2864,6 +2864,16 @@ make, use the entry's term instead.
   that machine, so the machine needs no open inbound port. A *hub* uses
   one to publish its *webhook* path and nothing else; Cloudflare Tunnel
   and Tailscale Funnel are two implementations.
+- **Resident job** — a scheduled job that runs until it is stopped rather
+  than once per tick: its timer starts it again within a minute of it
+  exiting, and it exits when the installed plugin copy or its settings
+  change, so the timer starts it on the new copy. The *dispatch dashboard*'s
+  reader and `jig hub serve` run this way.
+- **Container image** — a packaged filesystem and the command to run in
+  it, which a container tool (Podman, Docker) runs as a process kept apart
+  from the host's other users and files. `jig install hub` builds the
+  *hub*'s image locally from the installed plugin copy and never pushes it
+  to a registry.
 - **Drizzle** — an object-relational mapper (ORM) for TypeScript: a
   library that declares database tables in code and builds typed queries
   against them, with drivers for SQLite, PostgreSQL and serverless
