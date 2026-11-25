@@ -498,6 +498,7 @@ describe("drive-status.ts reports counts it never measured as null", () => {
       unresolvedThreadVersions: null,
       summaryUnaddressedKeys: null,
       summaryHeldUndispatchedKeys: null,
+      summaryIgnoredBacklogKeys: null,
       parkedKeys: null,
       actionableParkKeys: null,
       // The anchor PATHS the same way — `[]` here would be the

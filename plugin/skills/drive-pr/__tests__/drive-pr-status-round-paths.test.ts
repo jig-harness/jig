@@ -435,11 +435,11 @@ describe("drive-status.ts structuralEscalationDue", () => {
   // Same argument, for a held SUMMARY finding — no thread, so the exclusion
   // has to key on the fingerprint `answer-summary-finding.ts` will eventually
   // post against, not a thread id. The fixture's two backlog findings both
-  // anchor `AGENTS.md` (see `backlogJson` above), so both are held here —
+  // anchor `AGENTS.md` (see the sticky fixture), so both are held here —
   // otherwise the sibling, still-unaddressed finding on the same path would
   // keep it in the list and the assertion would prove nothing about the fix.
   it("a held summary finding stays excluded until a later drive review round", async () => {
-    const round1 = writeFixture({ backlog: true });
+    const round1 = writeFixture({ backlog: "blocking-only" });
     await probeIn(round1.dir, round1.stateDir, HEAD);
     await hold(round1.stateDir, "b9a7a18089043564", "finding");
     await hold(round1.stateDir, "c773d9fdb7974e6d", "finding");
@@ -476,11 +476,11 @@ describe("drive-status.ts structuralEscalationDue", () => {
   });
 
   it("counts a held summary finding re-emitted on a later reviewed head, even with --once", async () => {
-    const first = writeFixture({ backlog: true });
+    const first = writeFixture({ backlog: "blocking-only" });
     await probeIn(first.dir, first.stateDir, HEAD);
     for (const key of ["b9a7a18089043564", "c773d9fdb7974e6d"])
       await hold(first.stateDir, key, "finding");
-    const next = writeFixture({ backlog: true, head: PREV });
+    const next = writeFixture({ backlog: "blocking-only", head: PREV });
     const r = await probeIn(next.dir, first.stateDir, PREV);
     expect(
       (r.json.work as Record<string, unknown>).unresolvedThreadPaths,

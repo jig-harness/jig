@@ -60,7 +60,7 @@
  *                                     # the review arbiter's ruling on a thread
  *   drive-state.ts unpark       [PR] --key K [--key K …] [--stdin]  # all, or none; --stdin: receipts
  *   drive-state.ts parked-keys  [PR]  # newline-delimited keys (reversal-parked-keys: reversed provisional decisions'')
- *   drive-state.ts hold         [PR] --key K --kind thread|finding --outcome accepted|moot
+ *   drive-state.ts hold         [PR] --key K --kind thread|finding --outcome OUTCOME
  *                                     [--comment-url URL] [--unconfirmed]
  *                                     (--kind finding also requires the reason body on stdin)
  *                                     --comment-url: REQUIRED for --kind thread (either path) — the
@@ -196,6 +196,8 @@
  * every one of them.
  */
 
+import { isFixDependentOutcome, isOutcome } from "./lib/outcome.ts";
+import { summaryAnswerProblem } from "./lib/summary-answer.ts";
 import { writeFileSync } from "node:fs";
 import { claimAdvisoryRepair } from "./lib/state/advisory-repair.ts";
 import {
@@ -365,7 +367,7 @@ function usage(): void {
   unpark       [PR] --key K [--key K …] [--stdin]  every key, or none when one is not parked (--stdin: the consumed verdicts, JSON, for receipts)
   parked-keys  [PR]                 newline-delimited keys (reversal-parked-keys: reversed provisional decisions'')
   class-parked-keys [PR] --class C  newline-delimited keys of the parks under class C
-  hold        [PR] --key K --kind thread|finding --outcome accepted|moot
+  hold        [PR] --key K --kind thread|finding --outcome OUTCOME
                [--comment-url URL] [--unconfirmed]
                     (--kind finding also requires the reason body on stdin)
                     (--comment-url: REQUIRED for --kind thread — the qualifying comment's url)
@@ -848,11 +850,8 @@ async function main(): Promise<number> {
     if (a.pushedSha === "") {
       fail(
         2,
-        "claim-held --kind finding requires --pushed-sha — the push that carries this",
-        "finding's promised fix (`$(git rev-parse HEAD)`, after guarded-push.ts and",
-        "stamp-held, per SKILL.md § 6). Every held finding is fix-dependent by",
-        "construction ('hold' refuses any outcome that is not accepted|moot), so there",
-        "is no claim of one that legitimately has no push to name.",
+        "claim-held --kind finding requires --pushed-sha — the round's verified head",
+        "after guarded-push.ts and stamp-held (SKILL.md § 6).",
       );
     }
     const path = claimRefFor(store.stateDir, pr, a.key);
@@ -989,9 +988,8 @@ async function main(): Promise<number> {
           `claim-held: --pushed-sha ${a.pushedSha} is not the push recorded against`,
           `'${a.key}' itself (${item.verifiedSha === undefined ? "none — no push by the driver that holds it has been verified since it was held" : item.verifiedSha}).`,
           "",
-          "Answering a summary finding is NOT idempotent — it posts a new top-level",
-          "comment every call — so dispatching one against a push that does not carry",
-          "its fix leaves a standing, wrong claim on the PR that no later round undoes.",
+          "The round's verified push binds held answers to this head. A fix-dependent",
+          "marker posted for an unrelated push could mark an unresolved finding answered.",
           "",
           "Two recoveries, and which one applies is decided by the PR, not by this",
           "stored state. Check whether this finding was ALREADY answered — an earlier",
@@ -1701,13 +1699,13 @@ async function main(): Promise<number> {
       }
       if (a.kind !== "thread" && a.kind !== "finding")
         fail(2, `hold requires --kind thread|finding (got '${a.kind}')`);
-      // Only fix-dependent outcomes wait for a push; merit replies resolve now.
-      if (a.outcome !== "accepted" && a.outcome !== "moot") {
+      if (
+        !isOutcome(a.outcome) ||
+        (a.kind === "thread" && !isFixDependentOutcome(a.outcome))
+      ) {
         fail(
           2,
-          `hold requires --outcome accepted|moot (got '${a.outcome}')`,
-          "Those are the only outcomes whose reply must wait on a push. rejected /",
-          "wont-fix / deferred are answered and resolved in the same step.",
+          `hold requires an outcome allowed for ${a.kind} (got '${a.outcome}'). Only accepted and moot thread replies are held.`,
         );
       }
       // The kind decides which script releases it, so it is recorded rather
@@ -1736,14 +1734,8 @@ async function main(): Promise<number> {
       let heldReason: string | undefined;
       if (a.kind === "finding") {
         const body = await readStdinAll();
-        if (body === "") {
-          fail(
-            2,
-            "hold --kind finding requires the reason body on stdin — it is what",
-            "step 6 pipes to 'answer-summary-finding.ts --pushed-sha' once the push",
-            "lands, and there is nowhere else it survives a crash until then.",
-          );
-        }
+        const problem = summaryAnswerProblem(a.key, body);
+        if (problem !== undefined) fail(2, `hold --kind finding: ${problem}`);
         heldReason = body;
       }
       const kind = a.kind;

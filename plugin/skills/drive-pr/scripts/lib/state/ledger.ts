@@ -28,6 +28,9 @@
  * other comment opening with a marker is ignored and reported. When two
  * creations race, the lower comment id is canonical.
  */
+import { FORGE_BODY_LIMIT } from "../../../../../shared/records/comment-limit.ts";
+export { FORGE_BODY_LIMIT } from "../../../../../shared/records/comment-limit.ts";
+import { isFixDependentOutcome } from "../outcome.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { redact, redactStrings } from "../../../../../shared/redact.ts";
 export { redact, redactStrings } from "../../../../../shared/redact.ts";
@@ -103,9 +106,6 @@ export const LEDGER_KIND = "drive-ledger";
 /** The ledger shape this version reads and writes: the envelope's `v`, and `ledgerVersion` beside it. */
 export const LEDGER_VERSION = 1;
 const OPERATOR_STOP_LEDGER_VERSION = 2;
-
-/** GitHub's issue-comment body limit, measured here in UTF-8 bytes. */
-export const FORGE_BODY_LIMIT = 65_536;
 
 /** How much of the handoff narrative travels with the ledger. */
 export const NARRATIVE_LINES = 20;
@@ -925,7 +925,11 @@ export function heldFromLedger(held: readonly LedgerHeld[]): {
   const dropped: string[] = [];
   for (const h of held) {
     const answerless = h.kind === "finding" && (h.reason ?? "") === "";
-    if (h.outcome === undefined || answerless) {
+    if (
+      h.outcome === undefined ||
+      answerless ||
+      (h.kind === "thread" && !isFixDependentOutcome(h.outcome))
+    ) {
       dropped.push(h.key);
       continue;
     }
