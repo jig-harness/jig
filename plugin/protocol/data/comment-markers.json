@@ -896,6 +896,7 @@
                   "minimum": 0,
                   "maximum": 1.7976931348623157e308
                 },
+                "roundsGranted": true,
                 "phase": {
                   "type": "string"
                 },
@@ -1367,7 +1368,8 @@
                           "reviewerHead": true,
                           "reviewerApp": true,
                           "until": true,
-                          "probe": true
+                          "probe": true,
+                          "finish": true
                         },
                         "required": ["at", "round", "kind", "cause"],
                         "additionalProperties": true
@@ -1544,7 +1546,7 @@
                         "type": "string"
                       },
                       "outcome": {
-                        "enum": ["answered", "provisional"]
+                        "enum": ["answered", "provisional", "resolved-thread"]
                       },
                       "answers": {
                         "type": "array",
@@ -1741,6 +1743,7 @@
               "minimum": 0,
               "maximum": 1.7976931348623157e308
             },
+            "roundsGranted": true,
             "phase": {
               "type": "string"
             },
@@ -2212,7 +2215,8 @@
                       "reviewerHead": true,
                       "reviewerApp": true,
                       "until": true,
-                      "probe": true
+                      "probe": true,
+                      "finish": true
                     },
                     "required": ["at", "round", "kind", "cause"],
                     "additionalProperties": true
@@ -2389,7 +2393,7 @@
                     "type": "string"
                   },
                   "outcome": {
-                    "enum": ["answered", "provisional"]
+                    "enum": ["answered", "provisional", "resolved-thread"]
                   },
                   "answers": {
                     "type": "array",

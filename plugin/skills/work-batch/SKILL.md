@@ -54,7 +54,7 @@ Where a step needs a person's answer (a verdict in step 2, an issue left
 for a person to settle), use `AskUserQuestion` under Claude Code where the
 session can use it; in any interactive harness where it cannot (another
 harness, or a permission mode that denies the tool), ask a plain-text
-numbered question and end the turn. With nobody to answer, stop and state the question. Never pick on the
+numbered question and end the turn (one numbered line per option, the recommended one first and marked as the default where there is one, which the reply `default` takes). With nobody to answer, stop and state the question. Never pick on the
 user's behalf. A member's size in a dispatched served batch is no question:
 step 1 says what happens to it.
 

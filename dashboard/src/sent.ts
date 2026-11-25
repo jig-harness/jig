@@ -1,8 +1,8 @@
 /**
- * What this browser sent for a card: the comment and its links, kept in this
- * browser alone under the card's repository and target, so the card says
- * "Sent here" with the link until the next tick reads the answer and the
- * card goes. Forgotten after `KEPT_MS`, as the answers are.
+ * What this browser sent for a card: the comment, its links and the login it
+ * was sent as, kept in this browser alone under the card's repository and
+ * target, so the card says "Sent here" with the link and the login until the
+ * next tick reads the answer and the card goes. Forgotten after `KEPT_MS`, as the answers are.
  */
 import { useSyncExternalStore } from "react";
 import { keptKeys, readKeptRecord, writeKept } from "./kept.ts";
@@ -17,6 +17,8 @@ export interface SentHere {
   /** Each comment's link, one per decision it answered. */
   urls: string[];
   at: number;
+  /** The login of the token it was sent with; absent from a send kept before the page named it. */
+  login?: string;
 }
 
 const held = new Map<string, SentHere>();
@@ -30,7 +32,7 @@ function changed(): void {
 
 /** What is kept under `key`, when it is a send this page kept. */
 function storedSent(key: string): SentHere | null {
-  const { text, urls, at } = readKeptRecord(key) ?? {};
+  const { text, urls, at, login } = readKeptRecord(key) ?? {};
   return typeof text === "string" &&
     Array.isArray(urls) &&
     urls.length > 0 &&
@@ -38,7 +40,12 @@ function storedSent(key: string): SentHere | null {
       (u) => typeof u === "string" && u.startsWith("https://github.com/"),
     ) &&
     typeof at === "number"
-    ? { text, urls: urls as string[], at }
+    ? {
+        text,
+        urls: urls as string[],
+        at,
+        ...(typeof login === "string" && login !== "" ? { login } : {}),
+      }
     : null;
 }
 

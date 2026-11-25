@@ -1,7 +1,7 @@
 {
   "chapter": "drive-exits",
   "title": "Drive end states and exit codes",
-  "version": 1,
+  "version": 2,
   "status": "stable",
   "fields": {
     "name": {
@@ -34,7 +34,7 @@
       "required": true,
       "identifies": false,
       "comparedAs": "exact",
-      "description": "The code drive-status.ts exits with for it; null when drive-status.ts never does. Not part of identity: a withdrawn code keeps its row with this null."
+      "description": "The code drive-status.ts exits with when it reports this state; null when it reports no such state. A class label (NOT_SETTLED) is never itself reported: its row holds the exit its member states share. A startup refusal that names no state (UNSUPPORTED_CLI's exit 2 from drive-status.ts) is not a report, so it stays null. Not part of identity: a withdrawn code keeps its row with this null."
     },
     "driveExit": {
       "type": "integer",
@@ -127,12 +127,12 @@
     },
     {
       "name": "UNSUPPORTED_CLI",
-      "kind": "state",
+      "kind": "driver-only",
       "exit": 2,
-      "driveStatusExit": 2,
+      "driveStatusExit": null,
       "driveExit": 2,
       "endsDrive": true,
-      "meaning": "A prerequisite is missing: the installed `gh` cannot report a field the round needs. `drive.ts` also exits `2`, with no report, when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which.",
+      "meaning": "A prerequisite is missing. `drive.ts` exits `2`, with no state report (a dispatcher closing report may still be written), when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which. `drive-status.ts` also exits `2`, before there is a pull request to report on and naming no state, on arguments it cannot use and when its startup cannot resolve the repository or the pull request selector, which can be a network or authentication failure rather than an argument error. The same exit can end a drive already running: when a later round's `drive-status.ts` fails that way, the driver passes the `2` on, after earlier rounds' passes may have changed the tree or the pull request, so read the handoff file before assuming no work occurred.",
       "stop": "stopped: a usage error, or a gh that cannot report the pull request",
       "cause": "environment",
       "nextOwner": "person",
@@ -228,12 +228,12 @@
       "driveStatusExit": null,
       "driveExit": 6,
       "endsDrive": true,
-      "meaning": "The drive spent its round budget (`--max-rounds`) without converging. Read the handoff file before re-arming.",
+      "meaning": "The drive spent its round budget (`--max-rounds`, with any rounds a re-arm granted) without converging. Read the handoff file before re-arming: a re-arm a person asks for grants one more round budget.",
       "stop": "used its round budget without converging",
       "cause": "deadline",
       "nextOwner": "person",
       "nextAct": "Investigate",
-      "nextStep": "Read the handoff file for what keeps the review open, then re-arm the drive or take the work over."
+      "nextStep": "Read the handoff file for what keeps the review open, then re-arm the drive, which grants it one more round budget (`jig send drive@<repo> <PR> rearm`, or `--rearm-budget` on the arm command), or take the work over."
     },
     {
       "name": "REVIEWER_FAILED",

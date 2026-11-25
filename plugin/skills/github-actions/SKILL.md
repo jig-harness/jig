@@ -23,6 +23,14 @@ recommendations (see [Output format](#output-format)).
 
 ---
 
+## Paths and working directory
+
+`${CLAUDE_SKILL_DIR}` in the commands below stands for the absolute path of the
+directory containing this `SKILL.md`. Claude Code fills it in. In any other
+harness, replace it with that path yourself before running a command: a shell
+would expand the unset variable to an empty string. Run every command from the
+root of the repository whose workflows you review.
+
 ## The repository's CI architecture
 
 Read the repository's own description of its pipeline first, if it has one.

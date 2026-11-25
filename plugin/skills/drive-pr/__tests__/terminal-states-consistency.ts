@@ -642,6 +642,7 @@ const DRIVER_ONLY_EXIT_NAMES: ReadonlyArray<{
   readonly constantName: string;
   readonly stateName: DriverOnlyStateName;
 }> = [
+  { constantName: "UNSUPPORTED_CLI_EXIT", stateName: "UNSUPPORTED_CLI" },
   { constantName: "MAX_ROUNDS_EXIT", stateName: "MAX_ROUNDS" },
   {
     constantName: "SINGLE_INSTANCE_LOCK_EXIT",

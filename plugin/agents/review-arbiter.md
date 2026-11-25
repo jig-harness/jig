@@ -68,6 +68,18 @@ boundary is enforced by tooling rather than instruction. Any PR-level context
 beyond what the working tree shows must arrive as input. If something you need
 is missing, say so in the verdict rather than guessing.
 
+## Where the harness has no subagents
+
+A harness with no subagents (the caller cannot start this agent) does not
+skip the ruling: the **calling session** reads this file and rules each
+contested thread itself, with the same inputs, the same procedure, the same
+verdicts and the same output format. This fallback has neither the tool limit
+nor the fresh context above, so it holds the boundary by discipline: the
+session writes every ruling in its output, in the format below, from the
+anchored code and the two ladder verdicts, before it edits, replies to or
+resolves any thread. Information it lacks goes into the verdict, which is
+`escalate` when the call hinges on it.
+
 ## Procedure (per thread)
 
 1. **Read the anchored code** — the file at `path`, around `line`, in its

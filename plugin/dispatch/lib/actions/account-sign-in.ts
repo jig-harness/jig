@@ -34,7 +34,7 @@ export async function prelaunchSignIn(
     checks.set(account.name, "tick-deadline");
     return identity;
   }
-  const selected = { vendor: "claude" as const, configDir: account.configDir };
+  const selected = { vendor: account.vendor, configDir: account.configDir };
   const env =
     settings === undefined
       ? passEnvironment(process.env, selected)

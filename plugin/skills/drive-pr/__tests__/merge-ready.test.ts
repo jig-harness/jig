@@ -13,6 +13,8 @@ import {
   readiness,
   readyOrder,
 } from "../scripts/lib/merge-ready.ts";
+import { trustedAutomationOf } from "../scripts/lib/trusted-automation.ts";
+import { ok } from "../../../shared/outcome.ts";
 
 const HEAD = "a".repeat(40);
 const OTHER = "b".repeat(40);
@@ -155,6 +157,27 @@ describe("whose approval counts", () => {
 });
 
 describe("the review witness, run by run", () => {
+  it("does not carry a review while its replacement is still running", () => {
+    const r = at({
+      reviewCarriedFrom: OTHER,
+      checks: [
+        {
+          name: "AI review",
+          app: "example-review",
+          required: false,
+          state: "pending",
+          startedAt: null,
+        },
+      ],
+    });
+    expect(r.place).toBe("needs-you");
+  });
+
+  it("explains when a carried review cannot be checked without a checkout", () => {
+    const r = at({ checks: [], reviewCarriedUnavailable: true });
+    expect(r.says).toContain("could not be verified without a checkout");
+  });
+
   it("takes a reviewer run not started yet as the newest, over an older success", () => {
     const r = at({
       checks: [
@@ -175,6 +198,30 @@ describe("the review witness, run by run", () => {
       ],
     });
     expect(r.place).toBe("needs-you");
+  });
+
+  it("does not carry a review when duplicate reviewer attempts have unreadable ordering", () => {
+    const r = at({
+      reviewCarriedFrom: OTHER,
+      checks: [
+        {
+          name: "AI review",
+          app: "example-review",
+          required: false,
+          state: "success",
+          startedAt: "2026-11-08T09:00:00Z",
+        },
+        {
+          name: "AI review",
+          app: "example-review",
+          required: false,
+          state: "pending",
+          startedAt: null,
+        },
+      ],
+    });
+    expect(r.place).toBe("needs-you");
+    expect(r.says).toContain("attempt order on this head could not be read");
   });
 
   it("keeps a required review owed under a merge queue", () => {
@@ -496,6 +543,19 @@ describe("the forge's facts", () => {
     expect(pull?.partial).toContain("another commit");
   });
 
+  it("does not treat a null check rollup without its commit ID as complete", () => {
+    const node = {
+      number: 12,
+      headRefOid: HEAD,
+      commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
+    };
+    const pull = parseAnswer(
+      { data: { repository: { pr12: node } } },
+      [12],
+    ).pulls.get(12);
+    expect(pull?.partial).toContain("not read on the head commit");
+  });
+
   it("reads check runs and commit statuses with their app and state", () => {
     const node = {
       number: 12,
@@ -506,6 +566,7 @@ describe("the forge's facts", () => {
             commit: {
               statusCheckRollup: {
                 contexts: {
+                  pageInfo: { hasNextPage: false },
                   nodes: [
                     {
                       __typename: "CheckRun",
@@ -551,6 +612,32 @@ describe("the forge's facts", () => {
 });
 
 describe("required checks and reviewer attempts", () => {
+  it("uses the failing check's own required flag when the forge reports CLEAN", () => {
+    const f = facts();
+    const review = f.checks.find((check) => check.app === RULES.reviewerApp);
+    if (review === undefined) throw new Error("fixture has no reviewer check");
+    f.checks = [
+      { ...review, id: 10, required: true, state: "failure" },
+      { ...review, id: 11, required: true },
+      { ...review, app: "github-actions", state: "failure" },
+    ];
+    const result = readiness(f, RULES);
+    expect(result.failing).toEqual(["AI review"]);
+    expect(result.lane).toBe("merge-now");
+  });
+
+  it("keeps a required pending review attempt until a newer attempt is known", () => {
+    const f = facts();
+    const review = f.checks.find((check) => check.app === RULES.reviewerApp);
+    if (review === undefined) throw new Error("fixture has no reviewer check");
+    const pending = { ...review, required: true, state: "pending" } as const;
+    const passed = { ...review, id: 11, required: true };
+    f.checks = [passed, pending];
+    expect(readiness(f, RULES).says).toContain("attempt order");
+    f.checks = [passed, { ...pending, id: 10 }];
+    expect(readiness(f, RULES).lane).toBe("merge-now");
+  });
+
   it("waits on required queue checks, even when approval is owed", () => {
     for (const reviewDecision of [null, "REVIEW_REQUIRED"]) {
       const f = facts({
@@ -619,4 +706,157 @@ it("requires every distinct reviewer check and reduces retries within each name"
   if (base === undefined) throw new Error("fixture has no reviewer check");
   f.checks.push({ ...base, name: "AI review (security)" });
   expect(readiness(f, RULES).lane).toBe("merge-now");
+});
+
+describe("condition 8 for trusted automation", () => {
+  const TRUSTED: ReadyRules = {
+    ...RULES,
+    trustedAutomation: trustedAutomationOf({
+      pull_requests: { trusted_automation: ["renovate[bot]"] },
+    }),
+  };
+  const bot = (over: Partial<MergeFacts> = {}): Partial<MergeFacts> => ({
+    authorAssociation: "NONE",
+    author: "renovate[bot]",
+    crossRepository: false,
+    base: "main",
+    automation: ok({
+      head: HEAD,
+      commits: [
+        {
+          sha: HEAD,
+          login: "renovate[bot]",
+          committer: "renovate[bot]",
+          verified: true,
+        },
+      ],
+      files: [{ path: "pnpm-lock.yaml", previous: null, patch: null }],
+    }),
+    ...over,
+  });
+  const authorCondition = (r: ReturnType<typeof readiness>) =>
+    r.conditions.find((c) => c.name === "own author or approved");
+
+  it("places a listed bot's converged pull request in merge now when every rule holds", () => {
+    const r = at(bot(), TRUSTED);
+    expect([r.place, r.lane]).toEqual(["ready", "merge-now"]);
+    expect(authorCondition(r)).toEqual({
+      name: "own author or approved",
+      met: true,
+      fact: "trusted automation renovate[bot]: same repository, 1 commit allowed, 1 file within its paths",
+    });
+  });
+
+  it("leaves it in approve first, naming the rule, when a rule fails", () => {
+    const r = at(
+      bot({
+        automation: ok({
+          head: HEAD,
+          commits: [
+            {
+              sha: HEAD,
+              login: "outsider",
+              committer: "outsider",
+              verified: true,
+            },
+          ],
+          files: [],
+        }),
+      }),
+      TRUSTED,
+    );
+    expect(r.lane).toBe("approve-first");
+    expect(authorCondition(r)).toMatchObject({
+      met: false,
+      fact: "renovate[bot] is trusted automation, but commit aaaaaaa is by outsider",
+    });
+  });
+
+  it("leaves it in approve first where its commits and files were not read", () => {
+    const { automation: _unread, ...unread } = bot();
+    const r = at(unread, TRUSTED);
+    expect(r.lane).toBe("approve-first");
+    expect(authorCondition(r)?.fact).toContain("were not read");
+  });
+
+  it("grants nothing where no reviewer app is named: a person's approval is the witness", () => {
+    const r = at(bot(), { ...TRUSTED, reviewerApp: null });
+    expect(r.lane).toBe("approve-first");
+    expect(authorCondition(r)?.met).toBe(false);
+    expect(authorCondition(r)?.fact).toContain("no reviewer app is named");
+  });
+
+  it("says why a bot is not trusted when the list does not read", () => {
+    const r = at(bot(), {
+      ...RULES,
+      trustedAutomation: trustedAutomationOf({
+        pull_requests: { trusted_automation: "renovate[bot]" },
+      }),
+    });
+    expect(r.lane).toBe("approve-first");
+    expect(authorCondition(r)?.fact).toBe(
+      "pull_requests.trusted_automation must be a list",
+    );
+  });
+
+  it("reads a bot the list does not name as an outside author", () => {
+    const r = at(bot({ author: "dependabot[bot]" }), TRUSTED);
+    expect(r.lane).toBe("approve-first");
+    expect(authorCondition(r)?.fact).toBe("outside author (NONE)");
+  });
+
+  it("still lets a person's approval of the head meet the condition when a rule fails", () => {
+    const r = at(
+      bot({
+        crossRepository: true,
+        reviews: [
+          {
+            author: "maintainer",
+            person: true,
+            association: "MEMBER",
+            state: "APPROVED",
+            commit: HEAD,
+          },
+        ],
+      }),
+      TRUSTED,
+    );
+    expect(r.lane).toBe("merge-now");
+    expect(authorCondition(r)?.fact).toBe(
+      "outside author, approved by a person",
+    );
+  });
+});
+
+describe("the board query's author, fork flag and base commit", () => {
+  it("reads a bot author as <name>[bot], the fork flag and the base commit", () => {
+    const none = { pageInfo: { hasNextPage: false }, nodes: [] };
+    const read = parseAnswer(
+      {
+        data: {
+          repository: {
+            pr7: {
+              number: 7,
+              headRefOid: HEAD,
+              author: { __typename: "Bot", login: "renovate" },
+              isCrossRepository: false,
+              baseRefOid: HEAD,
+              labels: none,
+              reviewThreads: none,
+              reviewRequests: none,
+              latestReviews: none,
+              commits: { nodes: [] },
+            },
+          },
+        },
+      },
+      [7],
+    );
+    const f = read.pulls.get(7);
+    expect([f?.author, f?.crossRepository, f?.baseOid]).toEqual([
+      "renovate[bot]",
+      false,
+      HEAD,
+    ]);
+  });
 });

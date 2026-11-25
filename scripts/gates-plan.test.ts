@@ -60,6 +60,7 @@ test("the gate set runs its cheap stages first and --fast runs only those", asyn
     "bun scripts/review-risk.ts --check",
     "bun scripts/check-roadmap.ts",
     "bun scripts/check-plugin.ts",
+    "bun scripts/check-skill-runtime-forms.ts",
     "bun scripts/check-skill-shell-neutrality.ts",
     "bun scripts/check-voice.ts",
   ]);

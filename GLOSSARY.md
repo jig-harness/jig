@@ -1535,6 +1535,9 @@ make, use the entry's term instead.
   other decision the agent takes itself and records where a person can
   reverse it
   ([ADR-0010](docs/adr/ADR-0010-parking-is-reserved-for-registry-classes.md)).
+  A **standalone park** names no review thread or summary finding, such as a
+  CI repair's decision on whether to loosen a rule; it holds the drive for a
+  person like any other park.
 - **Session-framed decision, dispatcher-framed decision** — the *framed
   decision* a need on the dispatcher's line carries when it is not a
   *park*. A **session-framed decision** is the one a dispatched follow-up's
@@ -1545,6 +1548,13 @@ make, use the entry's term instead.
   facts that identify it, with a fixed set of options that are steps the
   tick carries out once a person chooses one
   ([design](design/structured-answers.md#every-need-framed)).
+- **Question group** — needs on one host's line whose *framed decisions*
+  are identical apart from the target each is about: the same act, class,
+  question, options and recommended option once the need's own item
+  or pull request is replaced. The dashboard's Needs you shows a question
+  group as one card, and one answer on it is sent to each target as that
+  target's own answer; `jig ask --waiting` names each need's group
+  ([design](design/need-classes.md#identical-questions-fold)).
 - **Decision class** — one row of the *HITL* registry, named by a short
   slug (`merge`, `scope`, `human-thread`, …): a kind of decision that must
   stay a person's. A repository lists its classes in
@@ -2474,8 +2484,10 @@ make, use the entry's term instead.
   pass, the name a model has there, what a launch carries, what a run cost
   and how a stop is classified
   ([ADR-0026](docs/adr/ADR-0026-the-agent-harness-is-an-interface.md)).
-  Not the *session runtime*, which says where a session runs and not which
-  program runs in it. Planned.
+  Claude Code and Codex are behind that interface today; a third harness
+  and the skills' harness-neutral wording are planned. Not the *session
+  runtime*, which says where a session runs and not which program runs in
+  it.
 - **Spend cap** — the amount of money per day against which the
   *dispatcher* admits a *provider account*'s launches, with an optional
   ceiling for one run. A launch the day's remaining amount does not cover
@@ -3018,7 +3030,21 @@ make, use the entry's term instead.
   (a bot the *adoption rule* names is the host's own identity, not
   automation). The dispatcher drives one, adopted or re-driven, only while
   it needs work (a failed check, a conflict with its base, an unresolved
-  review thread) and leaves a healthy one for a person to merge.
+  review thread) and leaves a healthy one for a person to merge, unless its
+  bot is *trusted automation*.
+- **Trusted automation** — a bot a repository names in
+  `pull_requests.trusted_automation` (a dependency bot such as Renovate or
+  Dependabot) whose converged pull requests count as the repository's own
+  for the *Ready predicate*, so they reach merge now instead of approve
+  first, but only while the change stays within what the bot is trusted to
+  change: its head in the repository, every commit by an allowed author (the
+  bot or a listed committer), each signed unless the entry says
+  `signed: false`, every file within the entry's paths, and, where
+  set, an allowed update type; the exception also needs the repository to name
+  a reviewer app. With `dispatch.adopt` on, the dispatcher also adopts its
+  same-repository pull requests while healthy, recently updated and not held
+  (the [configuration guide](plugin/CONFIGURATION.md) has the complete rules). The bot's identity
+  is trusted; the third-party text it carries is not.
 - **Owed-steps label** — the repository's manual-operations label
   (`issue_tracker.labels.manual_ops`, `manual-ops` by default) on a pull
   request: its description's `## Out-of-tree follow-ups` section lists a

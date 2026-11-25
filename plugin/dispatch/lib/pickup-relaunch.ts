@@ -169,7 +169,11 @@ function relaunchExtras(
 function relaunchAction(
   item: { key: string; title: string; state: string },
   record: ReadRecord["record"],
-  at: { open: { id: string; path: string }; path: string; tree: ReadTree },
+  at: {
+    open: { id: string; path: string; branch: string };
+    path: string;
+    tree: ReadTree;
+  },
   why: { holds: string; fault: HostFault | null; lockWait: boolean },
   dependency: string | undefined,
 ): Action {
@@ -193,7 +197,7 @@ function relaunchAction(
     },
     relaunch: {
       record: record.id,
-      workspace: { id: open.id, path: open.path },
+      workspace: { id: open.id, path: open.path, branch: open.branch },
       head: tree.head,
       ...relaunchExtras(why.fault, why.lockWait, dependency),
     },

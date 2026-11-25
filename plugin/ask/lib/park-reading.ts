@@ -2,8 +2,8 @@
 import {
   parkAnswers,
   threadComments,
+  type ThreadComments,
 } from "../../skills/drive-pr/scripts/lib/driver/rearm.ts";
-import type { CommentLike } from "../../skills/drive-pr/scripts/lib/answer-forms.ts";
 import type { ParkReading } from "../../dispatch/lib/sources/ledgers.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import type { PendingAnswer } from "../../skills/drive-pr/scripts/lib/state/pass-handoff.ts";
@@ -45,7 +45,7 @@ export function parkedQuestions(
 export async function readParkThread(
   ctx: AskContext,
   key: string,
-): Promise<CommentLike[] | null> {
+): Promise<ThreadComments | null> {
   const record = `park-answer-thread:${key}`;
   const sec = ctx.reading.sourceSec();
   if (sec === 0) {

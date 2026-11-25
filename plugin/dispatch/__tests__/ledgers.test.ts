@@ -188,6 +188,70 @@ describe("classifyLedger", () => {
     ).toBeUndefined();
   });
 
+  it("hands a stall whose every pass's push failed to a person, naming why, instead of re-driving it", () => {
+    const ledger = stoppedLedger(7, 14);
+    const forge = { head: "c".repeat(40), mergeable: "MERGEABLE" };
+    const reason =
+      "guarded-push.ts exited 1 (pre-push-gate): the pre-push hook's gates refused the push — typecheck failed";
+    const stall = (state: string, cause = "14") => ({
+      at: new Date(NOW).toISOString(),
+      round: 3,
+      kind: "stop" as const,
+      cause,
+      leftWork: true,
+      finish: { state, reason },
+    });
+    ledger.events = [stall("PUSH_FAILED")];
+    ledger.lastCountedHead = forge.head;
+    const pushed = classifyLedger(ledger, NOW, WINDOW, undefined, forge);
+    expect(pushed.class).toBe("needs-person");
+    expect(pushed.stale).toBeUndefined();
+    expect(pushed.why).toContain("every stalled pass's push failed");
+    expect(pushed.why).toContain("typecheck failed");
+    expect(pushed.why).toContain("re-arm");
+    // Even with no head known: it waits on a person, not on the forge.
+    expect(
+      classifyLedger(ledger, NOW, WINDOW, undefined, {
+        head: null,
+        mergeable: null,
+      }).class,
+    ).toBe("needs-person");
+    // An empty head is no head: unknown, like null.
+    expect(
+      classifyLedger(ledger, NOW, WINDOW, undefined, {
+        head: "",
+        mergeable: null,
+      }).class,
+    ).toBe("needs-person");
+    // A long reason keeps its start and its last line.
+    ledger.events = [stall("PUSH_FAILED")];
+    (ledger.events[0] as { finish: { reason: string } }).finish.reason =
+      `guarded-push.ts exited 1 (pre-push-gate): ${"x".repeat(900)} FINAL-ERROR-LINE`;
+    const longWhy = classifyLedger(ledger, NOW, WINDOW, undefined, forge).why;
+    expect(longWhy).toContain("guarded-push.ts exited 1");
+    expect(longWhy).toContain("FINAL-ERROR-LINE");
+    ledger.events = [stall("PUSH_FAILED")];
+    // A push to the pull request since the stall is what a person's fix looks like: it is re-driven once for that head.
+    const moved = classifyLedger(ledger, NOW, WINDOW, undefined, {
+      ...forge,
+      head: "d".repeat(40),
+    });
+    expect(moved.class).toBe("stale");
+    expect(moved.stale?.change).toContain("d".repeat(40));
+    // A stall held by another finish, or a push failure an earlier stop recorded, is re-driven as before.
+    ledger.events = [stall("CI_HOLD_WAIT")];
+    expect(classifyLedger(ledger, NOW, WINDOW, undefined, forge).class).toBe(
+      "stale",
+    );
+    ledger.events = [
+      stall("PUSH_FAILED"),
+      { at: new Date(NOW).toISOString(), round: 4, kind: "stop", cause: "14" },
+    ];
+    expect(classifyLedger(ledger, NOW, WINDOW, undefined, forge).class).toBe(
+      "stale",
+    );
+  });
+
   it("binds a stall whose stop never measured its tree, and frees one measured clean", () => {
     const ledger = stoppedLedger(7, 14);
     const forge = { head: "c".repeat(40), mergeable: "MERGEABLE" };
@@ -248,27 +312,32 @@ describe("classifyLedger", () => {
     expect(converged({ head: verified, mergeable: "MERGEABLE" }).class).toBe(
       "done",
     );
-    expect(converged({ head: verified, mergeable: "CONFLICTING" })).toEqual({
+    const base = { oid: "c".repeat(40) };
+    const conflict = { head: verified, mergeable: "CONFLICTING", base };
+    expect(converged(conflict)).toEqual({
       class: "stale",
-      why: "stopped 0 (converged), and now conflicting with its base: re-drive on any account",
+      why: "stopped 0 (converged), and now conflicting with its base: re-drive on any account, once for head aaaaaaa and base ccccccc",
       stale: {
-        cause: "conflicting with its base",
-        change: `head ${verified}, conflicting`,
+        cause: "stopped 0 (converged), and now conflicting with its base",
+        change: `head ${verified}, base ${base.oid}`,
+        conflictStop: true,
       },
+    });
+    expect(
+      converged({ head: verified, mergeable: "CONFLICTING" }),
+    ).toMatchObject({
+      class: "unplaced",
+      forgeUndecided: true,
     });
     expect(converged({ head: moved, mergeable: "MERGEABLE" }).stale).toEqual({
       cause: "head bbbbbbb past the verified head aaaaaaa",
       change: `head ${moved}, mergeable`,
     });
-    expect(
-      converged({ head: moved, mergeable: "CONFLICTING" }).stale?.cause,
-    ).toBe(
-      "conflicting with its base, and head bbbbbbb past the verified head aaaaaaa",
+    expect(converged({ ...conflict, head: moved }).stale?.change).toBe(
+      `head ${moved}, base ${base.oid}`,
     );
     // A conflict needs no verified head; a moved head does.
-    expect(
-      converged({ head: verified, mergeable: "CONFLICTING" }, "").class,
-    ).toBe("stale");
+    expect(converged(conflict, "").class).toBe("stale");
     expect(
       converged({ head: verified, mergeable: "MERGEABLE" }, "").class,
     ).toBe("unplaced");

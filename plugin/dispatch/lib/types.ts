@@ -90,6 +90,8 @@ export interface AdoptRule {
   authors: string[] | null;
   /** How recently a pull request must have been updated. */
   withinMs: number;
+  /** The bots `pull_requests.trusted_automation` names, case folded: adopted, and driven while healthy too; absent for none. */
+  trusted?: string[];
 }
 
 /** One repository as the tick dispatches for it. */
@@ -127,7 +129,8 @@ export type MissingPriority = "hold" | "start";
 /** A stalled pickup's relaunch: the launch record it finishes, the workspace that holds its tree, and the tree's head when the plan read it. */
 export interface PickupRelaunch {
   record: string;
-  workspace: { id: string; path: string };
+  /** The workspace as the runtime reported it, its checked-out branch included (`""` when none): the relaunch's launch record keeps it, and the first-drive handoff reads it. */
+  workspace: { id: string; path: string; branch?: string };
   head: string;
   /** The host fault the pickup stopped on, when it did (`pickup-host-fault.ts`): the relaunch resumes it rather than only pushing it. */
   fault?: string;

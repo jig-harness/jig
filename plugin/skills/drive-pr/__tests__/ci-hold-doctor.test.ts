@@ -60,7 +60,7 @@ interface Options {
   gitFailure?: "--git-common-dir" | "HEAD" | "status";
   branchReason?: string;
   timelineFailure?: boolean;
-  reviewState?: "UNSUPPORTED_CLI" | "INDETERMINATE" | "AWAITING_REVIEWER";
+  reviewState?: "INDETERMINATE" | "AWAITING_REVIEWER";
 }
 
 function arrange(options: Options = {}) {
@@ -268,10 +268,7 @@ function treeAndReviewReads(options: Options) {
   watch(status, "evaluate").mockImplementation(async (_ctx, report) => {
     Object.assign(report, {
       state: options.reviewState ?? (options.moved ? "HEAD_LAG" : "CONVERGED"),
-      reason:
-        options.reviewState === "UNSUPPORTED_CLI"
-          ? "upgrade gh: headRefOid is unavailable"
-          : "review evidence is not ready",
+      reason: "review evidence is not ready",
       apiHead: options.moved ? "b".repeat(40) : head,
     });
     return options.moved ? 4 : 3;
@@ -386,10 +383,6 @@ describe("CI hold doctor evidence gathering", () => {
     [
       { timelineFailure: true },
       "timeline: gh api exited 1: authentication required",
-    ],
-    [
-      { reviewState: "UNSUPPORTED_CLI" },
-      "review evidence UNSUPPORTED_CLI: upgrade gh: headRefOid is unavailable",
     ],
     [
       { reviewState: "INDETERMINATE" },

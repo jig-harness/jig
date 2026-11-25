@@ -159,6 +159,18 @@ describe("jig send rearm", () => {
     expect(w.writes().map(([cmd]) => cmd)).toEqual(["api", "pr"]);
     expect(real.stdout).toContain("admitted account");
   });
+  it("says a MAX_ROUNDS stop's re-arm grants one more round budget, and only for that stop", async () => {
+    const w = world();
+    pullRequest(w, 12, [], [ledgerOn(701, stoppedLedger(12, 6))]);
+    const spent = await w.send([ADDRESS, "rearm", "--dry-run"]);
+    expectSpawnExit(spent, 0);
+    expect(spent.stdout).toContain("round budget (MAX_ROUNDS)");
+    expect(spent.stdout).toContain("one more round budget");
+    pullRequest(w, 12, [], [ledgerOn(701, stoppedLedger(12, 12))]);
+    const other = await w.send([ADDRESS, "rearm", "--dry-run"]);
+    expectSpawnExit(other, 0);
+    expect(other.stdout).not.toContain("round budget");
+  });
   it("rearms a stopped drive from its lock without starting CI hold diagnosis", async () => {
     const w = world();
     pullRequest(w, 12, [], [ledgerOn(701, stoppedLedger(12, 12))]);

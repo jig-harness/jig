@@ -14,6 +14,7 @@ export function hasUsableOptionalFields(s: Record<string, unknown>): boolean {
     isOptionalDrivenBranch(s.drivenBranch),
     isOptionalTakeovers(s.takeovers),
     isOptionalRetryCount(s.deadlineRetries),
+    isOptionalRetryCount(s.roundsGranted),
     isOptionalDecisions(s.decisions),
     isOptionalEvents(s.events),
     isOptionalCiActions(s.ciActions),

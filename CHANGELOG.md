@@ -404,6 +404,282 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.308.0] - 2026-11-24
+
+### Added
+
+- `pull_requests.trusted_automation` names the bots, such as Renovate and
+  Dependabot, whose converged pull requests count as the repository's own
+  for the Ready predicate, so they reach merge now instead of approve
+  first. A listed bot's pull request qualifies only when its head is in the
+  repository, every commit is the bot's own or a listed committer's, each signed for
+  the account it names unless the entry says `signed: false`, every
+  changed file, and the original path of a reported rename or copy, is
+  within the entry's paths (by default
+  `package.json` and the JavaScript lockfiles). Where the entry sets
+  `update_types`, every dependency edit must be covered by the allowed
+  types, and only a `package.json` is classified, by its dependency diff.
+  A rename or copy the forge reports for a `package.json` must pass the
+  path allowlist. Every changed `package.json`, those included, must show at
+  least one classifiable change to an existing dependency's version or
+  range, with no edit outside the recognized dependency-line shape, no
+  unclassifiable version change and no dependency added or removed; a
+  formatting-only edit to one manifest withholds the exception for the whole
+  pull request. Only the textual patch is read, so the operator reviews
+  what it cannot see: file modes are not compared, top-level dependency
+  section names and keys must be unique because a duplicate's effective
+  value cannot be determined, and a moved or copied manifest needs review of
+  the effective install configuration at both locations and of the
+  destination's whole contents, since unchanged fields such as
+  `packageManager` can change their effect. The classifier does not see what the
+  install consumes, and the drive host installs during a base merge or
+  conflict resolution, before the Ready decision; the
+  [configuration guide](plugin/CONFIGURATION.md#trusted-automation)
+  says what that leaves to the operator.
+  An entry without `update_types` skips manifest
+  classification, so such an edit can still qualify; with `update_types` set,
+  a direct top-level `packageManager` edit withholds the exception. Two-space and one-tab layouts are
+  supported; a layout whose root dependency section opener reads as nested
+  (such as four-space indentation), or unchanged context outside the
+  patch grammar (such as an inline array), withholds the exception, which
+  does not by itself decide the pull request's placement.
+  A rename or copy the forge reports to a
+  recognized lockfile needs a recognized lockfile name at its original
+  path; a copy the forge reports as a plain addition has no original name
+  and is judged on its destination alone. Any other destination is
+  refused. A lockfile may accompany a classified `package.json` update
+  without `lockfile` being listed; `lockfile` is needed only when
+  lockfiles alone change. The Ready predicate does not validate lockfile
+  contents, whether a lockfile accompanies a manifest update or is the only
+  change, and does not check it against the manifest. The refusals are in
+  [Trusted automation](plugin/CONFIGURATION.md#trusted-automation) in
+  the configuration guide. Any fact
+  that does not read withholds the exception, and the card's fact names
+  the rule. The list is read from the default branch by the board, `jig
+ask` and the drive's merge-ready announcement, never from the pull
+  request's own configuration, and the announcement takes the reviewer app,
+  its check pattern and both hold labels from there too for a listed bot. Where no reviewer app is named, a
+  person's approval is the witness and the exception grants nothing. A person still merges.
+  **Consumer action:** advised at instructions. Read the install warning in
+  the configuration guide before listing a bot. **Detect:** `config:pull_requests.trusted_automation`.
+- With `dispatch.adopt` on, a listed bot's pull request whose head is
+  known to be in the repository and that was updated within the adoption
+  window, with no hold, is adopted and driven to convergence while healthy,
+  and again when its head moves, whether or not `dispatch.adopt.authors`
+  names the bot.
+
+## [0.307.0] - 2026-11-24
+
+Skills now name a fallback for the forms only one agent program provides that
+the gate recognizes (the skill directory variable, the structured question and
+the review-arbiter hand-over), and `bun run gates` fails a skill page that does not, so a program without Claude Code's
+conveniences can run them.
+
+### Added
+
+- A gate (`scripts/check-skill-runtime-forms.ts`) over the `SKILL.md` and
+  reference pages under `plugin/skills` (not READMEs, tests, fixtures or templates).
+  It is a heuristic over the phrasings the plugin uses. It fails a page that uses `${CLAUDE_SKILL_DIR}` without saying
+  that another program's agent replaces it with the skill's directory, a path
+  under it that does not exist once the directory is filled in by hand, a
+  mention of `AskUserQuestion` with no plain-text numbered fallback and its
+  default beside it, and a hand-over to the `review-arbiter` agent that does
+  not say who rules where there are no subagents.
+
+### Changed
+
+- The structured question's fallback is stated the same way in every skill that
+  asks one: a plain-text numbered question, the recommended option first and
+  marked as the default where there is one (the reply `default` takes it),
+  then wait.
+- Where the program has no subagents, the calling session makes the
+  review-arbiter's rulings itself, with the same rubric and the agent's own
+  file as its instructions (`resolve-review-comments`, its triage rubric and
+  the agent definition say so).
+- `github-actions` and `promote-memory` now explain `${CLAUDE_SKILL_DIR}` as
+  every other skill does; `operator` states it in full; `do-item`'s epic-sweep
+  reference writes `<skill-dir>`, since a reference page is never substituted.
+
+## [0.306.4] - 2026-11-24
+
+### Fixed
+
+- `drive-pr` stops for a human decision when a standalone park is the remaining blocker. CI diagnosis can also cite an existing open park and hand the decision back to a person.
+
+## [0.306.3] - 2026-11-24
+
+### Fixed
+
+- A drive whose every pass failed to push (a pre-push gate the base branch
+  breaks, a remote that rejects the push) no longer stops as a plain
+  `STALLED` that the dispatcher re-drives onto the same refusal. The pass's
+  `PUSH_FAILED` reason now says why the push failed, a pre-push gate, the
+  remote's rejection, the connection, a timeout or an unconfirmed head, and
+  quotes the last lines the push wrote. The drive's stop event, its ledger
+  and its closing report carry that reason, and the closing report's next
+  step sends a person to fix what refuses the push before re-arming. The
+  dispatcher reads the stop as a person's need, with that reason, instead of
+  re-driving it on the same head; a push to the pull request re-drives it
+  once for the new head. **Consumer action:** none.
+
+## [0.306.2] - 2026-11-24
+
+### Fixed
+
+- Make the pull request drive tests more reliable under load by observing the
+  cancellation sequence and giving multi-round fixtures time to finish.
+
+## [0.306.1] - 2026-11-24
+
+### Fixed
+
+- `drive-pr`: a pass that met Claude Code's weekly usage limit now stops the
+  drive `QUOTA_PARKED` with the reset the notice states
+  (`You've hit your weekly limit · resets Nov 27, 11am (<zone>)`), so the
+  dispatcher walls the account until that reset rather than for its
+  `wall_backoff`. The drive reads the pass's own transcript by its session
+  id, so an account whose transcript tree is too large to walk within the
+  scan bounds no longer hides the wall and leaves the pull request stopped
+  as an ordinary pass failure. A pass failure whose scan was cut short before
+  it found a wall now says so in the drive's closing report, with cause
+  `unknown` and a next step that looks for the notice first.
+- Merge readiness uses each failing check's own required status and ignores superseded pending reviewer attempts when their order is known.
+
+## [0.306.0] - 2026-11-23
+
+### Changed
+
+- `drive-pr`'s status evaluation reads the pull request (state, draft, head
+  and base, mergeability and merge state) with one conditional REST read of
+  the pull document instead of `gh pr view`, for its opening snapshot and for
+  the recheck before a terminal verdict. An unchanged pull request answers
+  `304`, which costs nothing from the account's rate limit. A failed read, or
+  a kept reading that is incomplete, is followed by one full read (except after a rate limit, an auth failure or a
+  missing pull request, which a second request cannot clear), and is
+  never taken for an unchanged pull request. Mergeability GitHub has not
+  finished computing still reads as unknown. `drive-status.ts` resolves a
+  pull request given as a URL or branch to its number once, before it
+  evaluates, and refuses a URL naming another repository.
+- **Breaking:** [`drive-exits.md`](plugin/protocol/drive-exits.md), now
+  version 2, lists `UNSUPPORTED_CLI` as a `driver-only` exit: `drive.ts`
+  exits `2` when it refuses to start, and `drive-status.ts` no longer reports
+  it as a state, since every `gh` serves the evaluation's REST read. Its
+  `driveStatusExit` in
+  [data/drive-exits.json](plugin/protocol/data/drive-exits.json) is now
+  `null`; `drive-status.ts` still exits `2`, with no
+  report, on argument errors and when startup cannot resolve the repository or
+  the pull request selector (which may be a network or authentication failure). **Consumer action:** advised at instructions. A program that runs
+  `drive-status.ts` itself reads its exit `2` as a startup refusal with no
+  report, never as a state. **Detect:** `text:UNSUPPORTED_CLI`.
+
+## [0.305.0] - 2026-11-23
+
+### Added
+
+- The dispatch dashboard's Needs you shows needs whose decisions are identical apart from their own target as one card: the question once, how many targets it covers, and each target with its repository, link, age and its own evidence. One pick on the card answers every target listed, and Send posts each target's own answer, as you, so every station still checks it; leave out the targets you mean to settle differently, and they stay open. A target whose answer the tick refused, or whose facts changed, becomes its own card again. See [design/need-classes.md](design/need-classes.md#identical-questions-fold). **Consumer action:** none.
+- `jig ask --waiting --json` names each entry's `questionGroup`, the identity the dashboard's card carries, so another reader of Needs you's rules can show the same groups. **Consumer action:** none.
+
+## [0.304.5] - 2026-11-23
+
+### Fixed
+
+- Merge-readiness facts preserve a final fractional-second budget, reject malformed first check pages, and retain continuation-query diagnostics. **Consumer action:** none.
+- Merge-readiness facts keep a pull request out of the Ready lane when a null check rollup is not tied to its current head commit. **Consumer action:** none.
+- The Ready board, merge-ready announcement and `jig ask` read additional
+  pages of checks on the verified pull request head. A pull request with
+  more than 100 checks can reach the merge lane once all required checks
+  pass. The shared reader leaves the pull request partial if it cannot
+  read the full connection within four pages or its deadline.
+
+## [0.304.4] - 2026-11-23
+
+### Fixed
+
+- `jig dispatch`: a claimed item whose open pull request's drive is asked for
+  but not yet armed (a person's `drive` label, the completed pickup's
+  first-drive handoff, or `dispatch.adopt`) is now carried by that pull
+  request, shown with its drive waiting to be armed, instead of raised as a
+  stalled pickup whose pull request "has no drive" once it idles past
+  `dispatch.stalled_after`.
+- `jig dispatch`: a stalled pickup relaunched in its own tree
+  (`dispatch.stalled_relaunch: finish-once`) now keeps its workspace's
+  branch on its launch record, a retried relaunch included, so a relaunched
+  process pickup that opens its pull request and hands off the first drive
+  (`drive@`) gets that drive armed, as a first launch does.
+
+## [0.304.3] - 2026-11-23
+
+### Fixed
+
+- An explicit re-arm can restart a parked drive after its review thread is resolved on GitHub. When a park still needs attention, dispatch explains why the re-arm is held.
+
+## [0.304.2] - 2026-11-23
+
+### Fixed
+
+- The drive-pr suite's diagnosing CI repair tests no longer time out under a
+  loaded CI shard: the receipt rules (a tracker issue key or a filing parked
+  during the diagnosis) are unit tests against the driver's receipt reader,
+  and the end-to-end drives that remain have the 120-second headroom of the suite's
+  other multi-round drives. A drive behaves as before. **Consumer action:**
+  none.
+
+## [0.304.1] - 2026-11-23
+
+### Fixed
+
+- Re-arming a drive that stopped on its round budget (`MAX_ROUNDS`) now
+  runs review passes again instead of stopping with exit `6` on its first
+  check. A re-arm a person asks for (`jig send drive@<repo> <PR> rearm`) and
+  `arm-drive.ts --rearm-budget` grant the drive one more round budget:
+  `drive.max_rounds` (or `--max-rounds`) more distinct heads, counting the
+  head it resumes on, and a fresh count of passes on that head. The steward's
+  and the tick's re-drives never grant it. The grant is kept in the drive
+  state and published to the ledger so a restart or a takeover keeps it, and
+  is never renewed without another re-arm: the drive stops on `MAX_ROUNDS` again
+  once it spends it. `jig send … rearm` on such a stop says so.
+
+## [0.304.0] - 2026-11-23
+
+### Added
+
+- The dispatch dashboard's Send keeps one GitHub token per account in the browser, each naming the repository owners it answers for, and a card sends with the token for its target repository's owner, so answers on repositories reached as different accounts post as the right login. A token that names no owner answers for every owner no other token names, and a browser that kept one token keeps it that way. A card whose owner no token answers for has no Send and says so; Copy still works. The settings panel tests, shows and forgets each token on its own, and refuses a second token for one owner. The confirmation and the card's "Sent here" name the login that answered. Forgetting or replacing a token asks again for confirmation only on the cards it answered. The tokens still never reach the dashboard's server ([ADR-0019](docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md#which-token-a-card-sends-with)).
+
+## [0.303.1] - 2026-11-23
+
+### Fixed
+
+- `jig dispatch` no longer drops a stopped or parked pull request off the line's needs when a workspace joined to it has a terminal whose agent the session runtime cannot report, such as an idle shell or an editor. Its notification still goes out; a re-arm or takeover it cannot safely start becomes a need that names the workspace, and closing the terminals that run no agent lets the next tick act on it. A stopped pickup's need goes out the same way, and an agent the runtime reports working now holds its target even beside such a terminal. **Consumer action:** none.
+
+## [0.303.0] - 2026-11-23
+
+The dispatch dashboard's Needs you view now shows what left it: who settled each need and how.
+
+### Added
+
+- **Settled recently** on the dispatch dashboard's Needs you view: below the open cards, a section folded to one line with its count lists each need that left the line in the last 24 hours, newest first. Each entry gives the target and its link, the question or act it carried, when it left, by whom (the person's login, a rule of the tick, the steward's record, or no one because its facts changed), how, and a link to its History rows. An answer a station held or refused shows with its reason while its card stays open. **Consumer action:** none.
+- `jig ask --settled` (with `--json` and `--person`) lists the same entries for an agent or the panel's inbox, from the newest tick's line and with no forge or tracker call. **Consumer action:** none.
+- The tick records every need that leaves the line in a new `need_leaves` table, whatever its notify stage does, and keeps the rows for a week. A need that leaves and returns is two entries. **Consumer action:** none.
+
+## [0.302.0] - 2026-11-23
+
+### Changed
+
+- The dispatcher and `drive-pr` reach Claude Code and Codex through one agent-harness interface, with the two as its first implementations in `plugin/shared/agent-harness/` ([ADR-0026](docs/adr/ADR-0026-the-agent-harness-is-an-interface.md)). A pass's command, its model and effort words, the launch environment, the account's identity, the session id, the transcript, the resume command and the wall readers now come from the harness the account's `vendor` names. Every command a pass or a session runs is the same as before, so nothing changes for a host or a repository.
+
+## [0.301.5] - 2026-11-23
+
+### Fixed
+
+- Refresh the verified head of a merge-ready pull request after a clean base
+  merge and passing required checks, without running new review rounds.
+  The refresh rechecks the live head before deleting an older announcement,
+  and keeps that cleanup running when the current head becomes draft or red.
+  Conflicts still get a re-drive at each pair of heads and go to a person if
+  the re-drive leaves the conflict in place. **Consumer action:** none.
+- Show the person who investigates when a drive uses its round budget in
+  the outcome log, dashboard and `jig ask`. **Consumer action:** none.
+
 ## [0.301.4] - 2026-11-23
 
 ### Changed
@@ -10740,7 +11016,25 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.301.4...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.308.0...HEAD
+[0.308.0]: https://github.com/jig-harness/jig/compare/v0.307.0...v0.308.0
+[0.307.0]: https://github.com/jig-harness/jig/compare/v0.306.4...v0.307.0
+[0.306.4]: https://github.com/jig-harness/jig/compare/v0.306.3...v0.306.4
+[0.306.3]: https://github.com/jig-harness/jig/compare/v0.306.2...v0.306.3
+[0.306.2]: https://github.com/jig-harness/jig/compare/v0.306.1...v0.306.2
+[0.306.1]: https://github.com/jig-harness/jig/compare/v0.306.0...v0.306.1
+[0.306.0]: https://github.com/jig-harness/jig/compare/v0.305.0...v0.306.0
+[0.305.0]: https://github.com/jig-harness/jig/compare/v0.304.5...v0.305.0
+[0.304.5]: https://github.com/jig-harness/jig/compare/v0.304.4...v0.304.5
+[0.304.4]: https://github.com/jig-harness/jig/compare/v0.304.3...v0.304.4
+[0.304.3]: https://github.com/jig-harness/jig/compare/v0.304.2...v0.304.3
+[0.304.2]: https://github.com/jig-harness/jig/compare/v0.304.1...v0.304.2
+[0.304.1]: https://github.com/jig-harness/jig/compare/v0.304.0...v0.304.1
+[0.304.0]: https://github.com/jig-harness/jig/compare/v0.303.1...v0.304.0
+[0.303.1]: https://github.com/jig-harness/jig/compare/v0.303.0...v0.303.1
+[0.303.0]: https://github.com/jig-harness/jig/compare/v0.302.0...v0.303.0
+[0.302.0]: https://github.com/jig-harness/jig/compare/v0.301.5...v0.302.0
+[0.301.5]: https://github.com/jig-harness/jig/compare/v0.301.4...v0.301.5
 [0.301.4]: https://github.com/jig-harness/jig/compare/v0.301.3...v0.301.4
 [0.301.3]: https://github.com/jig-harness/jig/compare/v0.301.2...v0.301.3
 [0.301.2]: https://github.com/jig-harness/jig/compare/v0.301.1...v0.301.2

@@ -23,6 +23,7 @@ import { failed, ok, type Outcome } from "../shared/outcome.ts";
 import { run } from "../shared/proc.ts";
 import { MAX_TIMEOUT_SECONDS } from "../shared/resource-lock.ts";
 import { installedEntry, outsideCheckout } from "./launcher.ts";
+import { directoryVariables } from "../shared/agent-harness/index.ts";
 import type { JobSpec } from "./job-spec.ts";
 
 function cronMarker(spec: JobSpec): string {
@@ -317,11 +318,7 @@ function installedJob(spec: JobSpec, removing = false): Job {
       // The collector and dispatcher judge registry pressure by this limit.
       ...fixtureLimitEnvironment(),
       // The agent tools read their registries from these.
-      ...resolvedPaths([
-        "CLAUDE_CONFIG_DIR",
-        "CODEX_HOME",
-        "DRIVE_PR_STATE_DIR",
-      ]),
+      ...resolvedPaths([...directoryVariables(), "DRIVE_PR_STATE_DIR"]),
       ...specEnvironment(spec),
     },
     spec,

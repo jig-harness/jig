@@ -369,8 +369,7 @@ describe("finish-round.ts", () => {
   // A hold this drive released on a head whose unlabel CI never ran: GitHub
   // runs no `pull_request` workflow while the PR conflicts with its base, and
   // the push waiting here is the conflict resolution. `sentinels` are the
-  // fixture switches to arm (`push-fails`, `push-resolves-conflict`,
-  // `no-mergeability`).
+  // fixture switches to arm (`push-fails`, `push-resolves-conflict`).
   const releasedWithoutUnlabelCi = (
     mergeable: string,
     sentinels: string[] = [],
@@ -447,7 +446,7 @@ describe("finish-round.ts", () => {
     expect(state.ciHold).toMatchObject({ phase: "released", eventId: "LE_2" });
   });
 
-  it("still waits for the unlabel CI on a released head GitHub can run it on, or whose mergeability it cannot read", async () => {
+  it("still waits for the unlabel CI on a released head GitHub can run it on, or whose mergeability is not yet known or cannot be read", async () => {
     for (const [mergeable, sentinels] of [
       ["MERGEABLE", []],
       ["UNKNOWN", []],

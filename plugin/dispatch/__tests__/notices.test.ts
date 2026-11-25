@@ -45,6 +45,19 @@ test("a park message cut to its bound keeps the answer instructions and the URL"
   expect(text.endsWith("https://example.test/pull/9")).toBe(true);
 });
 
+test("an explicit re-arm refused by an unresolved park gets its own explanatory notice", () => {
+  const pr = parked([["decision"]]);
+  const before = parkNotice("o/r", pr);
+  pr.evidence = { ...pr.evidence, rearm: true, rearmRequestId: 702 };
+  pr.why =
+    "Stopped on thread PRRT_a. The explicit re-arm request 702 cannot proceed while a park still needs a current answer";
+  const refused = parkNotice("o/r", pr);
+  expect(refused.key).not.toBe(before.key);
+  expect(refused.key).toContain("refused rearm request 702");
+  expect(refused.text).toContain("explicit re-arm request 702 cannot proceed");
+  expect(refused.text).toContain("a park still needs a current answer");
+});
+
 test("a later disputed park stays visible beside an overflowing earlier decision", () => {
   const pr = parked([["x".repeat(8000)], ["Second question?"]]);
   const second = pr.waiting?.[1];

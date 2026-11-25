@@ -259,7 +259,9 @@ portable fallback applies there:
 | Capability | Claude Code | OpenAI Codex | Cursor | GitHub Copilot | pi | Portable fallback |
 |------------|-------------|--------------|--------|----------------|----|-------------------|
 | Running a skill | `/<name>` from `.claude/skills/`; a plugin's skill as `/<plugin>:<name>` | skills scanned from `.agents/skills/` ([the mirror](#cross-runtime-skill-discovery-the-symlink-mirror)); a plugin's skill asked for by name (`<plugin>:<name>`) | `/<name>` from `.agents/skills/`, `.cursor/skills/`, `.claude/skills/` or `.codex/skills/` | `.github/prompts/*.prompt.md` | not observed | read the skill's `SKILL.md` and follow it |
-| Asking the user | the built-in `AskUserQuestion` tool | not observed | not observed | not observed | not observed | a plain-text numbered question, then wait |
+| Asking the user | the built-in `AskUserQuestion` tool | not observed | not observed | not observed | none built in | a plain-text numbered question with the recommended option first and marked as the default where there is one, then wait |
+| A skill's own directory | `${CLAUDE_SKILL_DIR}` filled in `SKILL.md` | not filled in | not observed | not observed | not observed | the skill says what the variable stands for, and the agent replaces it with the absolute path of the directory containing `SKILL.md` |
+| A subagent (a second agent for one judgment) | the `Agent` tool (formerly `Task`, still an alias) and a plugin's agents | a subagent given the agent's file as its instructions | not observed | not observed | none built in | for a ruling such as the review arbiter's, the calling session makes the judgment itself with the same rubric; not where the step requires the judgment to stay out of the calling session |
 | Denying a command | `permissions.deny` in `.claude/settings.json` | `prefix_rule` in `.codex/rules/*.rules` | not observed | not observed | not observed | none: a written policy is a request, not a control |
 | A tool the host injects | present only in a session the injecting launcher or app started | the same | the same | the same | the same | the repository's own script or command |
 
@@ -304,7 +306,8 @@ A step that needs a person's answer asks in the first way that applies:
    branch that applies.
 3. **Any remaining interactive session** uses its own question tool where it
    has one and its permissions allow it; otherwise it asks a plain-text
-   numbered question and ends its turn.
+   numbered question, the recommended option first and marked as the default
+   where there is one (a reply of `default` takes it), and ends its turn.
 4. **A run with nobody to answer and no control plane** stops and states the
    question, rather than picking for the user.
 

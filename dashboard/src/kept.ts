@@ -1,6 +1,6 @@
 /**
  * What the page keeps in this browser alone: the theme a person chose, the
- * answers they pick or draft on a card, the GitHub token Send uses and what
+ * answers they pick or draft on a card, the GitHub tokens Send uses and what
  * it sent. Nothing here reaches the host. A
  * browser that refuses storage (a private window, a policy) keeps nothing,
  * and the page works as before.

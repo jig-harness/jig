@@ -72,6 +72,8 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "gc.worktree_roots",
   "gc.scratch_prefixes",
   "gc.regenerable_paths",
+  // The Ready predicate reads the list from the default branch alone.
+  "pull_requests.trusted_automation",
   // The dispatcher reads its section from the default branch alone.
   "dispatch.identity",
   "dispatch.states",

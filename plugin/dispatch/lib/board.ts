@@ -19,10 +19,16 @@
  * still being computed is read once more after `UNKNOWN_WAIT_MS`, within the
  * deadline, so the tick after a merge does not leave the list unread.
  *
+ * A converged pull request by a bot `pull_requests.trusted_automation`
+ * lists has its commits and files read at its head as well
+ * (`trusted-automation-read.ts`), within the same deadline, and kept between
+ * ticks, since a head's commits and files never change.
+ *
  * Update next holds one pull request per repository: the first behind its
  * base in Ready order; every other one behind its base is in Coming,
  * updated after it.
  */
+import { confirmCarriedReview } from "../../skills/drive-pr/scripts/lib/carried-review.ts";
 import {
   type FactsRead,
   readMergeFacts,
@@ -39,6 +45,12 @@ import {
   type WaitsOn,
 } from "../../skills/drive-pr/scripts/lib/merge-ready.ts";
 import { defaultReviewerCheckFor } from "../../skills/drive-pr/scripts/lib/overlay.ts";
+import { trustedAutomationOf } from "../../skills/drive-pr/scripts/lib/trusted-automation.ts";
+import {
+  automationFor,
+  AUTOMATION_CACHE_PREFIX,
+} from "../../skills/drive-pr/scripts/lib/trusted-automation-read.ts";
+import { pickupReads } from "./pickup-reads.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { isRecord } from "../../shared/guards.ts";
 import type { Contention } from "./contention.ts";
@@ -79,6 +91,23 @@ export interface BoardCard {
   since: string;
 }
 
+function carriedBoardReview(
+  input: BoardInput,
+  drive: DrivenPr,
+  facts: ForgeFacts,
+  rules: ReadyRules,
+): Promise<{ reviewCarriedFrom?: string }> {
+  if (input.ended?.() === true) return Promise.resolve({});
+  return confirmCarriedReview(
+    input.checkout,
+    input.slug,
+    drive.evidence.reviewCarriedFrom,
+    facts.head,
+    facts.base,
+    rules,
+  );
+}
+
 /** One repository's board read. */
 export interface BoardRead {
   /** Whether the read placed its converged pull requests; `false` with `reason` when it did not. */
@@ -98,6 +127,7 @@ export interface BoardRead {
 /** What a board read is given. */
 export interface BoardInput {
   slug: string;
+  checkout?: string;
   /** The repository's configuration on its default branch. */
   values: Record<string, unknown>;
   drives: readonly DrivenPr[];
@@ -118,12 +148,31 @@ export interface BoardIo {
     numbers: readonly number[],
     timeoutSec: number,
   ) => Promise<Outcome<FactsRead, "unreadable">>;
+  /** A trusted bot's commits and files at its head; `undefined` when the pull request needs none, or where the reader reads none. */
+  automation?: (
+    slug: string,
+    facts: ForgeFacts,
+    rules: ReadyRules,
+    timeoutSec: number,
+    ended?: () => boolean,
+  ) => ReturnType<typeof automationFor>;
+  /** Drop the kept reads of pull requests outside `numbers`. */
+  keepAutomation?: (slug: string, numbers: readonly number[]) => void;
   wait: (ms: number) => Promise<void>;
   now: () => number;
 }
 
 const realIo: BoardIo = {
   read: readMergeFacts,
+  automation: (slug, facts, rules, timeoutSec, ended) =>
+    automationFor(slug, facts, rules, timeoutSec, pickupReads, ended),
+  keepAutomation: (slug, numbers) => {
+    const prefix = `${AUTOMATION_CACHE_PREFIX}${slug}:`;
+    pickupReads.prune(
+      prefix,
+      numbers.map((n) => `${prefix}${n}`),
+    );
+  },
   wait: (ms) => new Promise((r) => setTimeout(r, ms)),
   now: () => currentMs(),
 };
@@ -148,6 +197,7 @@ export function rulesOf(values: Record<string, unknown>): ReadyRules {
         defaultReviewerCheckFor(reviewerApp),
     ),
     ciHoldLabel: setting(values, "ci", "hold_label"),
+    trustedAutomation: trustedAutomationOf(values),
   };
 }
 
@@ -240,23 +290,79 @@ async function readFacts(
   return read;
 }
 
+/** Read a trusted bot's commits and files within the board's remaining deadline. */
+async function boardAutomation(
+  io: BoardIo,
+  slug: string,
+  facts: ForgeFacts,
+  rules: ReadyRules,
+  startedMs: number,
+  ended?: () => boolean,
+): Promise<{
+  automation?: NonNullable<Awaited<ReturnType<typeof automationFor>>>;
+}> {
+  const left = BOARD_DEADLINE_MS - (io.now() - startedMs);
+  if (left < 1000 || io.automation === undefined) return {};
+  const automation = await io.automation(
+    slug,
+    facts,
+    rules,
+    Math.floor(left / 1000),
+    ended,
+  );
+  return automation === undefined ? {} : { automation };
+}
+
+/** Why a converged pull request cannot be placed this tick; `null` when it can. */
+function unreadReason(
+  number: number,
+  input: BoardInput,
+  read: FactsRead,
+  retryUnread: ReadonlyMap<number, string>,
+): string | null {
+  const retryFailure = retryUnread.get(number);
+  if (retryFailure !== undefined) return retryFailure;
+  const facts = read.pulls.get(number);
+  if (facts === undefined) return "the board read did not give it";
+  const listed = input.heads.get(number);
+  if (facts.head !== listed)
+    return `its head moved between the tick's reads (${String(listed).slice(0, 7)}, then ${facts.head.slice(0, 7)})`;
+  if (input.ended?.() === true)
+    return "the tick's bound ended before its commits and files were read";
+  return null;
+}
+
+/** A population read that finds no converged pull request: nothing to place, and every kept read retired. */
+function emptyRead(slug: string, io: BoardIo): BoardRead {
+  io.keepAutomation?.(slug, []);
+  return {
+    ok: true,
+    reason: null,
+    cards: [],
+    unread: [],
+    pending: [],
+    ms: 0,
+    cost: 0,
+    remaining: null,
+  };
+}
+
+/** A read whose last request ended past the deadline places nothing. */
+function pastDeadline(numbers: number[], ms: number): BoardRead {
+  return notRead(
+    `the board read ran past its ${BOARD_DEADLINE_MS / 1000} s deadline`,
+    numbers,
+    ms,
+  );
+}
+
 /** One repository's board read (see the module comment). */
 export async function readBoard(
   input: BoardInput,
   io: BoardIo = realIo,
 ): Promise<BoardRead> {
   const converged = convergedDrives(input.drives);
-  if (converged.length === 0)
-    return {
-      ok: true,
-      reason: null,
-      cards: [],
-      unread: [],
-      pending: [],
-      ms: 0,
-      cost: 0,
-      remaining: null,
-    };
+  if (converged.length === 0) return emptyRead(input.slug, io);
   const numbers = converged.map((d) => d.number);
   const floor = budgetFloor(input.budget);
   if (floor !== null) return notRead(floor, numbers);
@@ -271,12 +377,7 @@ export async function readBoard(
     );
   const read = facts.value;
   const ms = io.now() - startedMs;
-  if (ms > BOARD_DEADLINE_MS)
-    return notRead(
-      `the board read ran past its ${BOARD_DEADLINE_MS / 1000} s deadline`,
-      numbers,
-      ms,
-    );
+  if (ms > BOARD_DEADLINE_MS) return pastDeadline(numbers, ms);
   const checkedRules = attempt(
     "unreadable",
     "the board review rules are invalid",
@@ -288,35 +389,30 @@ export async function readBoard(
   const cards: BoardCard[] = [];
   const unread: BoardRead["unread"] = [];
   for (const drive of converged) {
-    const retryFailure = retryUnread.get(drive.number);
-    if (retryFailure !== undefined) {
-      unread.push({ number: drive.number, reason: retryFailure });
+    const why = unreadReason(drive.number, input, read, retryUnread);
+    if (why !== null) {
+      unread.push({ number: drive.number, reason: why });
       continue;
     }
-    const facts = read.pulls.get(drive.number);
-    const listed = input.heads.get(drive.number);
-    if (facts === undefined) {
-      unread.push({
-        number: drive.number,
-        reason: "the board read did not give it",
-      });
-      continue;
-    }
-    if (facts.head !== listed) {
-      unread.push({
-        number: drive.number,
-        reason: `its head moved between the tick's reads (${String(listed).slice(0, 7)}, then ${facts.head.slice(0, 7)})`,
-      });
-      continue;
-    }
+    const facts = read.pulls.get(drive.number) as ForgeFacts;
     const verifiedSha = String(drive.evidence.verifiedSha ?? "");
+    const automation = await boardAutomation(
+      io,
+      input.slug,
+      facts,
+      rules,
+      startedMs,
+      input.ended,
+    );
     const answer = readiness(
       {
         ...facts,
         slug: input.slug,
         converged: true,
         verifiedSha,
+        ...(await carriedBoardReview(input, drive, facts, rules)),
         held: input.held.has(drive.number),
+        ...automation,
       },
       rules,
     );
@@ -341,6 +437,9 @@ export async function readBoard(
       since: String(drive.evidence.heartbeat ?? ""),
     });
   }
+  const total = io.now() - startedMs;
+  if (total > BOARD_DEADLINE_MS) return pastDeadline(numbers, total);
+  io.keepAutomation?.(input.slug, numbers);
   return {
     ok: true,
     reason: null,
@@ -350,7 +449,7 @@ export async function readBoard(
       ...unread.map((u) => u.number),
       ...cards.filter((c) => c.place === "stay").map((c) => c.number),
     ],
-    ms,
+    ms: total,
     cost: read.cost,
     remaining: read.remaining,
   };

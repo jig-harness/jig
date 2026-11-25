@@ -8,13 +8,15 @@
  *   host's sessions open pull requests under;
  * - it was updated within the rule's window (`within`, a week by default);
  * - a bot opened it only where the rule names that bot, never through the
- *   default author;
+ *   default author, or where `pull_requests.trusted_automation` lists it;
  * - a person's `hold` label is not on it;
  * - an automation pull request (`automation.ts`: a bot's the rule does not
  *   name, or one carrying `automation` or an `automation:` label) needs
  *   work: a check fails, it
  *   conflicts with its base, or a review thread is unresolved. Being recent
- *   is not enough for one, so a healthy one is left for a person to merge.
+ *   is not enough for one, so a healthy one is left for a person to merge;
+ *   except a trusted bot's, which is driven to convergence so the Ready
+ *   predicate can place it (`trusted-automation.ts`).
  *
  * A draft is adopted like any other, since a pull request opens as a draft
  * and its drive marks it ready. Adoption reads only a pull request with no
@@ -23,6 +25,7 @@
  * head commit, on an admitted account, behind a serialized area's hold.
  */
 import {
+  idleAutomation,
   isAutomation,
   isBot,
   normalLogin,
@@ -39,6 +42,8 @@ export interface Adoption {
   /** Whether `authors` came from the repository's section, not from the dispatcher's own login. */
   named: boolean;
   withinMs: number;
+  /** The bots `pull_requests.trusted_automation` names, case folded. */
+  trusted: string[];
 }
 
 /** A pull request's author as the forge lists it. */
@@ -50,6 +55,8 @@ export interface Author {
 /** What the rule reads of an open pull request. */
 export interface Adoptable extends TroubleFacts {
   author?: Author;
+  /** Whether its head is in a fork; a trusted bot's pull request is adopted healthy only when this is `false`. */
+  isCrossRepository?: boolean;
   updatedAt?: string;
   labels?: string[];
 }
@@ -70,7 +77,33 @@ export function adoptionOf(
     ],
     named: rule.authors !== null,
     withinMs: rule.withinMs,
+    trusted: rule.trusted ?? [],
   };
+}
+
+/** Whether `pull_requests.trusted_automation` names the bot that opened the pull request. */
+export function trustedBot(
+  author: Author | undefined,
+  adoption: Pick<Adoption, "trusted"> | null,
+): boolean {
+  if (author === undefined || adoption === null || !isBot(author)) return false;
+  return adoption.trusted.includes(normalLogin(author.login));
+}
+
+/** Whether a pull request's drive is idle automation under `adoption`; a bot `pull_requests.trusted_automation` lists is never idle. */
+export function idleForAdoption(
+  pr: TroubleFacts & {
+    author?: Author;
+    labels?: readonly string[];
+    isCrossRepository?: boolean;
+  },
+  adoption: Adoption | null,
+  login: string | null,
+): { automationIdle?: true } {
+  // A trusted bot is exempt from idleness only while its head is known to be
+  // in the repository, as first adoption requires.
+  const trusted = pr.isCrossRepository === false ? adoption?.trusted : [];
+  return idleAutomation(pr, ownAuthors(adoption, login), trusted);
 }
 
 /** The host's own authors, whose pull requests are never automation by their author: the adoption rule's, else the login the dispatcher reads the forge as. */
@@ -88,10 +121,16 @@ export function adoptionNote(
   drives: ReadonlyArray<{ evidence: Record<string, unknown> }>,
 ): string {
   if (adoption === null) return "";
-  if (adoption.authors.length === 0)
+  if (adoption.authors.length === 0 && adoption.trusted.length === 0)
     return "; dispatch.adopt names no author and the dispatcher's forge login does not read, so it adopts none";
   const adopted = drives.filter((d) => typeof d.evidence.adopted === "string");
-  return `; ${adopted.length} adopted by dispatch.adopt (authors ${adoption.authors.join(", ")}, within ${shownWindow(adoption.withinMs)})`;
+  const who = [
+    ...adoption.authors,
+    ...adoption.trusted.map(
+      (t) => `${t} (trusted automation, same-repository only)`,
+    ),
+  ];
+  return `; ${adopted.length} adopted by dispatch.adopt (authors ${who.join(", ")}, within ${shownWindow(adoption.withinMs)})`;
 }
 
 /** A window in the duration grammar the section takes (`168h`, `90m`, `30s`). */
@@ -99,6 +138,23 @@ function shownWindow(ms: number): string {
   if (ms % 3_600_000 === 0) return `${ms / 3_600_000}h`;
   if (ms % 60_000 === 0) return `${ms / 60_000}m`;
   return `${Math.round(ms / 1000)}s`;
+}
+
+function botNote(author: Author, trusted: boolean): string {
+  if (trusted) return " (a bot pull_requests.trusted_automation lists)";
+  return isBot(author) ? " (a bot the rule names)" : "";
+}
+
+function eligibleAuthor(
+  author: Author,
+  adoption: Adoption,
+  trusted: boolean,
+): boolean {
+  if (trusted) return true;
+  const named = adoption.authors
+    .map(normalLogin)
+    .includes(normalLogin(author.login));
+  return named && (!isBot(author) || adoption.named);
 }
 
 /**
@@ -114,19 +170,19 @@ export function adopts(
   const author = pr.author;
   if (author === undefined || author.login === "") return null;
   if (labels !== null && hasCommand(labels, pr.labels, "hold")) return null;
-  const named = adoption.authors
-    .map(normalLogin)
-    .includes(normalLogin(author.login));
-  if (!named) return null;
-  if (isBot(author) && !adoption.named) return null;
+  const trusted =
+    pr.isCrossRepository === false && trustedBot(author, adoption);
+  if (!eligibleAuthor(author, adoption, trusted)) return null;
   const updated = parseMs(pr.updatedAt ?? "");
   if (!Number.isFinite(updated) || nowMs - updated > adoption.withinMs)
     return null;
-  const adopted = `dispatch.adopt: by ${author.login}${isBot(author) ? " (a bot the rule names)" : ""}, updated ${pr.updatedAt}, within its ${shownWindow(adoption.withinMs)} window`;
+  const adopted = `dispatch.adopt: by ${author.login}${botNote(author, trusted)}, updated ${pr.updatedAt}, within its ${shownWindow(adoption.withinMs)} window`;
   if (!isAutomation(pr, adoption.authors)) return adopted;
+  if (trusted)
+    return `${adopted}; trusted automation, driven to convergence while healthy`;
   const trouble = troubleOf(pr);
-  if (trouble !== null)
-    return `${adopted}; an automation pull request that needs work: ${trouble}`;
   // Only trouble observed admits an automation pull request: a fact the forge did not give in full is unknown, not trouble.
-  return null;
+  return trouble === null
+    ? null
+    : `${adopted}; an automation pull request that needs work: ${trouble}`;
 }

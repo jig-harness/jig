@@ -14,8 +14,12 @@
  * Merge now never rests on the drive's ledger alone. The ledger is a comment
  * any collaborator can write, so the forge must witness a review of the head:
  * the reviewer app's own check run on it, where the repository names an app,
- * else a person's approving review of that head. A pull request from outside
- * the repository needs a person's approval whatever the app says.
+ * else a person's approving review of that head. A clean base merge can
+ * carry an earlier app check once the caller independently confirms both the
+ * Git history and the app check. A pull request from outside
+ * the repository needs a person's approval whatever the app says, unless its
+ * author is trusted automation and every rule of `trusted-automation.ts`
+ * holds.
  *
  * The rows of the placement table are first match, and every blocker other
  * than an approval comes before the approval rows, so a pull request enters
@@ -25,7 +29,15 @@
  */
 
 /** The lanes of Ready to merge, in the order of the work they ask. */
+import type { Outcome } from "../../../../shared/outcome.ts";
 import { parseMs } from "../../../../shared/time.ts";
+import {
+  type AutomationFacts,
+  type TrustedList,
+  type TrustVerdict,
+  trustedEntryFor,
+  trustVerdict,
+} from "./trusted-automation.ts";
 
 export const LANES = ["merge-now", "approve-first", "update-next"] as const;
 export type Lane = (typeof LANES)[number];
@@ -98,6 +110,7 @@ export interface HeadReview {
 export interface ForgeFacts {
   number: number;
   head: string;
+  base?: string;
   draft: boolean;
   /** `MERGEABLE`, `CONFLICTING` or `UNKNOWN`. */
   mergeable: string;
@@ -109,6 +122,12 @@ export interface ForgeFacts {
   reviewDecision: string | null;
   /** Its author's association with the repository. */
   authorAssociation: string;
+  /** Its author's login, a bot's as `<name>[bot]`; absent when not read. */
+  author?: string;
+  /** Whether its head is in a fork; `null` or absent when not read. */
+  crossRepository?: boolean | null;
+  /** The commit that branch pointed at when the forge computed the pull request's diff; absent when not read. */
+  baseOid?: string;
   labels: string[];
   /** A truncated label connection cannot prove a pull request is outside the dispatch scope. */
   labelsPartial?: boolean;
@@ -131,8 +150,14 @@ export interface MergeFacts extends ForgeFacts {
   converged: boolean;
   /** The head the drive verified. */
   verifiedSha: string;
+  /** Earlier app review independently confirmed against the current Git history. */
+  reviewCarriedFrom?: string;
+  /** The historical review exists, but this reader has no checkout to prove its history. */
+  reviewCarriedUnavailable?: true;
   /** A person's hold label stands the dispatcher down from it. */
   held: boolean;
+  /** A trusted bot's commits and files at the head, or why they did not read; absent when not read. */
+  automation?: Outcome<AutomationFacts, "unreadable">;
 }
 
 /** The repository's rules the predicate applies. */
@@ -143,6 +168,8 @@ export interface ReadyRules {
   reviewerCheck: RegExp;
   /** The CI hold label, under which required checks fail on purpose; `null` where none is configured. */
   ciHoldLabel: string | null;
+  /** The bots whose pull requests count as the repository's own (`pull_requests.trusted_automation`), read from the default branch; absent for none. */
+  trustedAutomation?: TrustedList;
 }
 
 /** One Ready condition, met or not, with the fact behind it. */
@@ -205,16 +232,19 @@ function supersedes(a: HeadCheck, b: HeadCheck): boolean {
   return Number.isFinite(endA) && Number.isFinite(endB) && endA > endB;
 }
 
+function isReviewerCheck(check: HeadCheck, rules: ReadyRules): boolean {
+  return (
+    rules.reviewerApp !== null &&
+    check.app === rules.reviewerApp &&
+    rules.reviewerCheck.test(check.name)
+  );
+}
+
 /** Latest ordinary checks by name and posting app; unread order retains every possible blocker. */
 function latestChecks(facts: ForgeFacts, rules: ReadyRules): HeadCheck[] {
   return facts.checks.filter((check) => {
     // The review witness has its own stricter ordering by attempt id.
-    if (
-      rules.reviewerApp !== null &&
-      check.app === rules.reviewerApp &&
-      rules.reviewerCheck.test(check.name)
-    )
-      return true;
+    if (isReviewerCheck(check, rules)) return true;
     return !facts.checks.some(
       (other) =>
         other.name === check.name &&
@@ -228,21 +258,20 @@ function latestChecks(facts: ForgeFacts, rules: ReadyRules): HeadCheck[] {
 }
 
 /** The latest attempt per reviewer check name; unread attempt order withholds the witness. */
-function reviewerRuns(facts: ForgeFacts, rules: ReadyRules): HeadCheck[] {
+function reviewerRuns(
+  facts: ForgeFacts,
+  rules: ReadyRules,
+): HeadCheck[] | null {
   const grouped = new Map<string, HeadCheck[]>();
   for (const check of facts.checks) {
-    if (
-      check.app !== rules.reviewerApp ||
-      !rules.reviewerCheck.test(check.name)
-    )
-      continue;
+    if (!isReviewerCheck(check, rules)) continue;
     const attempts = grouped.get(check.name) ?? [];
     attempts.push(check);
     grouped.set(check.name, attempts);
   }
   const latest: HeadCheck[] = [];
   for (const attempts of grouped.values()) {
-    if (attempts.length > 1 && attempts.some((r) => r.id == null)) return [];
+    if (attempts.length > 1 && attempts.some((r) => r.id == null)) return null;
     attempts.sort((a, b) => (b.id ?? -1) - (a.id ?? -1));
     latest.push(...attempts.slice(0, 1));
   }
@@ -262,8 +291,9 @@ function approvedHere(facts: ForgeFacts): boolean {
 
 /** The witness of a review of the head: the reviewer app's check, else a person's approval. */
 function witness(
-  facts: ForgeFacts,
+  facts: MergeFacts,
   rules: ReadyRules,
+  runs: HeadCheck[] | null,
 ): { met: boolean; fact: string; byApp: boolean } {
   if (rules.reviewerApp === null)
     return approvedHere(facts)
@@ -273,11 +303,25 @@ function witness(
           fact: "no reviewer app is named and no person approved this head",
           byApp: false,
         };
-  const runs = reviewerRuns(facts, rules);
-  if (runs.length === 0)
+  if (
+    facts.reviewCarriedFrom !== undefined &&
+    facts.verifiedSha === facts.head &&
+    runs?.every((run) => run.state === "success" || run.state === "neutral")
+  )
+    return {
+      met: true,
+      fact: `the clean base merge preserved the change reviewed at ${facts.reviewCarriedFrom.slice(0, 7)}`,
+      byApp: true,
+    };
+  if (runs === null || runs.length === 0)
     return {
       met: false,
-      fact: `${rules.reviewerApp} posted no review check on this head`,
+      fact:
+        runs === null
+          ? `${rules.reviewerApp}'s review attempt order on this head could not be read`
+          : facts.reviewCarriedUnavailable
+            ? "the carried review could not be verified without a checkout"
+            : `${rules.reviewerApp} posted no review check on this head`,
       byApp: true,
     };
   const met = runs.every(
@@ -295,19 +339,9 @@ function witness(
   };
 }
 
-/** The checks failing on the head, the reviewer's own left to the witness. */
-function failingChecks(facts: ForgeFacts, rules: ReadyRules): string[] {
-  return facts.checks
-    .filter(
-      (c) =>
-        c.state === "failure" &&
-        !(
-          rules.reviewerApp !== null &&
-          c.app === rules.reviewerApp &&
-          rules.reviewerCheck.test(c.name)
-        ),
-    )
-    .map((c) => c.name);
+/** Whether condition 8 already holds without trusted automation: an own author association, or a qualifying approval. */
+export function authorSatisfied(facts: ForgeFacts): boolean {
+  return OWN.has(facts.authorAssociation) || approvedHere(facts);
 }
 
 /** What every row and condition reads of one pull request. */
@@ -315,10 +349,13 @@ interface Read {
   facts: MergeFacts;
   seen: ReturnType<typeof witness>;
   ciHeld: boolean;
-  failing: string[];
+  failing: HeadCheck[];
+  requiredPending: boolean;
   /** The forge's merge state, `null` where a merge queue decides instead. */
   state: string | null;
   own: boolean;
+  /** A trusted bot's verdict; `null` when the author is not a listed bot. */
+  trusted: TrustVerdict | null;
   approved: boolean;
 }
 
@@ -330,7 +367,10 @@ function protection(r: Read): boolean | null {
 
 /** Who wrote it, and who approved it. */
 function authorFact(r: Read): string {
-  if (r.own) return `author is ${r.facts.authorAssociation}`;
+  if (r.trusted?.met === true) return r.trusted.fact;
+  if (OWN.has(r.facts.authorAssociation))
+    return `author is ${r.facts.authorAssociation}`;
+  if (r.trusted !== null && !r.approved) return r.trusted.fact;
   return r.approved
     ? "outside author, approved by a person"
     : `outside author (${r.facts.authorAssociation})`;
@@ -531,23 +571,21 @@ const BLOCKERS: Array<(r: Read) => Row | null> = [
       `changes were requested${by}: that reviewer re-reviews, or the drive is re-armed to address them`,
     ];
   },
-  ({ facts, failing, state }) =>
+  ({ failing, state }) =>
     failing.length > 0 &&
     (state === null ||
       state === "BLOCKED" ||
       state === "UNSTABLE" ||
       // A stale CLEAN merge state cannot override a current required failure.
-      facts.checks.some(
-        (c) => c.required && c.state === "failure" && failing.includes(c.name),
-      ))
+      failing.some((c) => c.required))
       ? [
           "needs-you",
           person("re-run-check"),
-          `a check failed after the drive converged (${failing.join(", ")}): re-run it, or re-arm the drive`,
+          `a check failed after the drive converged (${failing.map((c) => c.name).join(", ")}): re-run it, or re-arm the drive`,
         ]
       : null,
-  ({ facts }) =>
-    facts.checks.some((c) => c.required && c.state === "pending")
+  ({ requiredPending }) =>
+    requiredPending
       ? ["stay", waiting("the checks running"), "the checks are still running"]
       : null,
   ({ facts, state }) =>
@@ -619,17 +657,51 @@ function mergeNow(
   return ["ready", person("merge"), says, "merge-now", built];
 }
 
+/**
+ * A trusted bot's verdict for the pull request: `null` when its author is
+ * a person, or a bot the list does not name; a verdict that is not met
+ * when the list itself does not read.
+ */
+function trustOf(facts: MergeFacts, rules: ReadyRules): TrustVerdict | null {
+  const list = rules.trustedAutomation;
+  if (list === undefined) return null;
+  if (!list.ok)
+    return facts.author?.endsWith("[bot]") === true
+      ? { met: false, fact: list.failure.reason }
+      : null;
+  const entry = trustedEntryFor(facts.author, list.value);
+  if (entry === null) return null;
+  if (rules.reviewerApp === null)
+    return {
+      met: false,
+      fact: `${entry.login} is trusted automation, but no reviewer app is named, so a person's approval is the review witness and its commits and files were not read`,
+    };
+  return trustVerdict(facts, entry);
+}
+
 /** What every row and condition reads, worked out once. */
 function readOf(facts: MergeFacts, rules: ReadyRules): Read {
-  facts = { ...facts, checks: latestChecks(facts, rules) };
+  const checks = latestChecks(facts, rules);
+  const runs = reviewerRuns(facts, rules);
+  const trusted = trustOf(facts, rules);
   return {
     facts,
-    seen: witness(facts, rules),
+    seen: witness(facts, rules, runs),
     ciHeld:
       rules.ciHoldLabel !== null && facts.labels.includes(rules.ciHoldLabel),
-    failing: failingChecks(facts, rules),
+    failing: checks.filter(
+      (c) => c.state === "failure" && !isReviewerCheck(c, rules),
+    ),
+    // Unread reviewer order cannot establish which pending attempts ended.
+    requiredPending: checks.some(
+      (c) =>
+        c.required &&
+        c.state === "pending" &&
+        (runs === null || !isReviewerCheck(c, rules) || runs.includes(c)),
+    ),
     state: facts.mergeQueue ? null : facts.mergeState,
-    own: OWN.has(facts.authorAssociation),
+    own: OWN.has(facts.authorAssociation) || trusted?.met === true,
+    trusted,
     approved: approvedHere(facts),
   };
 }
@@ -647,7 +719,7 @@ export function readiness(facts: MergeFacts, rules: ReadyRules): Readiness {
     waitsOn,
     ...built,
     conditions: CONDITIONS.map((condition) => condition(r)),
-    failing: r.failing,
+    failing: r.failing.map((c) => c.name),
     requested: facts.requested,
   };
 }
