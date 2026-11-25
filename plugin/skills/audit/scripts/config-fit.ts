@@ -2304,34 +2304,42 @@ const FACT_NAMED_ESCAPES: Record<string, string> = {
  * distinct values render alike.
  */
 function factText(value: string): string {
-  const start = /^\s*/.exec(value)![0].length;
-  let end = value.length;
-  while (end > start && /\s/.test(value[end - 1]!)) end--;
+  const chars = [...value];
+  let start = 0;
+  let end = chars.length;
+  while (start < end && factCharEdge(chars[start]!)) start++;
+  while (end > start && factCharEdge(chars[end - 1]!)) end--;
   let out = "";
-  let index = 0;
   let escaped = value.startsWith('"');
-  for (const char of value) {
-    const hidden = factCharHidden(char, index < start || index >= end);
-    index += char.length;
+  chars.forEach((char, index) => {
+    const hidden = index < start || index >= end || factCharHidden(char);
     escaped ||= hidden;
     out += escapeFactChar(char, hidden);
-  }
+  });
   return escaped ? `"${out}"` : value;
 }
 
-/** Whether a fact's character is invisible, or whitespace at an edge. */
-function factCharHidden(char: string, edge: boolean): boolean {
-  return edge || /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(char);
+/** Whether a fact's character is invisible: control, format, separator or default-ignorable. */
+function factCharHidden(char: string): boolean {
+  return /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u.test(
+    char,
+  );
 }
 
-/** One character of a quoted fact: `\uXXXX` when hidden, JSON-style otherwise. */
+/** Whether a character belongs to a fact's edge: whitespace or an invisible character. */
+function factCharEdge(char: string): boolean {
+  return /\s/u.test(char) || factCharHidden(char);
+}
+
+/** One character of a quoted fact: `\uXXXX` (UTF-16 units) when hidden, JSON-style otherwise. */
 function escapeFactChar(char: string, hidden: boolean): string {
   if (!hidden) return char === "\\" || char === '"' ? `\\${char}` : char;
-  const code = char.codePointAt(0)!.toString(16);
-  return (
-    FACT_NAMED_ESCAPES[char] ??
-    (code.length > 4 ? `\\u{${code}}` : `\\u${code.padStart(4, "0")}`)
-  );
+  const named = FACT_NAMED_ESCAPES[char];
+  if (named) return named;
+  let out = "";
+  for (let i = 0; i < char.length; i++)
+    out += `\\u${char.charCodeAt(i).toString(16).padStart(4, "0")}`;
+  return out;
 }
 
 export function render(report: FitReport): string {

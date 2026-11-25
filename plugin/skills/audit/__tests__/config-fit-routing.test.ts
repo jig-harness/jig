@@ -232,9 +232,9 @@ test("the Markdown rendering keeps a fact on one line and escapes controls", () 
     }).split("\n");
     const from = lines.indexOf("## Facts");
     const rest = lines.slice(from + 2);
-    const section = rest.slice(0, rest.indexOf(""));
-    expect(section).toHaveLength(1);
-    return section[0];
+    // Everything between the heading and the report footer.
+    expect(rest.slice(1)).toEqual(["", "Nothing to fix.", ""]);
+    return rest[0];
   };
   expect(fact("a\rb\u202Ec")).toBe('- integration_branch: "a\\\\rb\\\\u202ec"');
   expect(fact("main\r")).toBe('- integration_branch: "main\\\\r"');
@@ -260,10 +260,22 @@ test("the Markdown rendering keeps a fact on one line and escapes controls", () 
   expect(fact("\u2060main")).toBe('- integration_branch: "\\\\u2060main"');
   expect(fact("ma\u200Bin")).toBe('- integration_branch: "ma\\\\u200bin"');
   expect(fact("ma\u200Bin")).not.toBe(fact("main"));
-  expect(fact("a\u{E0001}b")).toBe('- integration_branch: "a\\\\u{e0001}b"');
+  expect(fact("a\u{E0001}b")).toBe(
+    '- integration_branch: "a\\\\udb40\\\\udc01b"',
+  );
+  expect(fact("ma\u034Fin")).toBe('- integration_branch: "ma\\\\u034fin"');
+  expect(fact("ma\uFE0Fin")).toBe('- integration_branch: "ma\\\\ufe0fin"');
+  expect(fact("main \u200B")).toBe(
+    '- integration_branch: "main\\\\u0020\\\\u200b"',
+  );
+  expect(fact("main  \u200B")).not.toBe(fact("main \u200B"));
   const started = performance.now();
-  fact(`z${" ".repeat(200000)}\u200B`);
-  fact(" ".repeat(200000));
+  expect(fact(`z${" ".repeat(200000)}\u200B`)).toBe(
+    `- integration_branch: "z${"\\\\u0020".repeat(200000)}\\\\u200b"`,
+  );
+  expect(fact(" ".repeat(200000))).toBe(
+    `- integration_branch: "${"\\\\u0020".repeat(200000)}"`,
+  );
   expect(performance.now() - started).toBeLessThan(5000);
   const marker = `z${" ".repeat(200000)}z`;
   expect(fact(marker)).toBe(`- integration_branch: z${" ".repeat(200000)}z`);

@@ -313,16 +313,20 @@ export function repositoryConfigPath(
   return nonEmpty(env.JIG_OVERLAY) ?? join(root, OVERLAY_RELPATH);
 }
 
+const INVISIBLE_DISPLAY =
+  /[\p{Cc}\p{Cf}\p{Bidi_Control}\p{Default_Ignorable_Code_Point}\u2028\u2029]/u;
+
 const escapeDisplayControls = (value: string): string =>
-  value.replace(
-    /[\p{Cc}\p{Bidi_Control}\u2028\u2029]/gu,
-    (character) =>
-      `\\u${character.codePointAt(0)?.toString(16).padStart(4, "0")}`,
+  value.replace(new RegExp(INVISIBLE_DISPLAY.source, "gu"), (character) =>
+    Array.from(
+      { length: character.length },
+      (_, i) => `\\u${character.charCodeAt(i).toString(16).padStart(4, "0")}`,
+    ).join(""),
   );
 
 /** A value for a diagnostic, with invisible controls escaped but ordinary text unchanged. */
 export function formatDisplayValue(value: string): string {
-  return /[\p{Cc}\p{Bidi_Control}\u2028\u2029]/u.test(value)
+  return INVISIBLE_DISPLAY.test(value)
     ? escapeDisplayControls(JSON.stringify(value))
     : value;
 }
