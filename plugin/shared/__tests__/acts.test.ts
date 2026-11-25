@@ -32,6 +32,10 @@ describe("actOfClass", () => {
     expect(actOfClass("human-thread")).toBe("Reply");
   });
 
+  it("lists the drive's own structural-churn park as a decision", () => {
+    expect(listedActOfClass("structural-churn")).toBe("Decide");
+  });
+
   it("reads a class of a repository's own, or none, as Decide", () => {
     expect(actOfClass("pricing")).toBe("Decide");
     expect(actOfClass(null)).toBe("Decide");

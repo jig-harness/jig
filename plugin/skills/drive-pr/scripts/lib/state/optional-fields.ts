@@ -23,6 +23,12 @@ export function hasUsableOptionalFields(s: Record<string, unknown>): boolean {
     isOptionalResolvedParks(s.resolvedParks),
     s.resolvedParksLost === undefined ||
       typeof s.resolvedParksLost === "boolean",
+    s.churnAckRound === undefined ||
+      (typeof s.churnAckRound === "number" &&
+        Number.isInteger(s.churnAckRound) &&
+        s.churnAckRound >= 0 &&
+        typeof s.rounds === "number" &&
+        s.churnAckRound <= s.rounds),
     s.ledgerGeneration === undefined ||
       (typeof s.ledgerGeneration === "number" &&
         Number.isInteger(s.ledgerGeneration) &&

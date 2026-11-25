@@ -51,6 +51,8 @@
  *   drive-state.ts reflected    [PR]                 # round a /reflect was last recorded at
  *   drive-state.ts set-reflected [PR]                # record a completed /reflect at the current round
  *   drive-state.ts park         [PR] --key K --kind thread|finding --class C  < record.md
+ *   drive-state.ts park-churn   [PR] --round R  < decision.json  # the structural-churn brake's park
+ *   drive-state.ts class-parked-keys [PR] --class C  # keys of the parks under one class
  *   drive-state.ts record-decision [PR]  < {"class","what","reverse","record"?,"key"?,"outcome"?}
  *   drive-state.ts reverse-decision [PR] < {"key","by","url","at"}
  *   drive-state.ts record-event [PR]     < {"kind","cause"}
@@ -222,6 +224,8 @@ import {
 } from "./lib/state/ledger-mirror.ts";
 import { quotaPark } from "./lib/state/quota-park.ts";
 import { framedPark } from "./lib/state/framed-park.ts";
+import { parkChurn } from "./lib/state/churn-park.ts";
+import { recordPathsCommand } from "./lib/state/record-paths.ts";
 import * as decisions from "./lib/state/decisions.ts";
 import { recordEvent } from "./lib/state/events.ts";
 import { recordRuling } from "./lib/state/rulings.ts";
@@ -274,11 +278,8 @@ import {
 import {
   type DriveState,
   ESCALATION_INVARIANT_MAX_LENGTH,
-  foldRoundPaths,
-  normalizeRoundPathsUncapped,
   PROGRESS_PHASES,
   pruneRoundPaths,
-  ROUND_PATHS_MAX_PER_ROUND,
   structuralEscalationArmed,
   withProgress,
 } from "./lib/state/schema.ts";
@@ -328,10 +329,12 @@ function usage(): void {
   set-reflected [PR]                record a completed /reflect at the current round
                                     (also discharges any armed structural
                                     escalation — a /reflect IS the step-back)
-  record-paths [PR] [--path P]... | [--stdin]
+  record-paths [PR] [--path P]... | [--stdin] | [--stdin-json]
                                     record THIS round's reviewer-finding anchor
                                     paths (--stdin: newline-delimited on stdin
-                                    instead); replaces the entry for the current
+                                    instead; --stdin-json: {"paths","severe"?,
+                                    "blobs"?} on stdin, the facts the
+                                    structural-churn brake reads); replaces the entry for the current
                                     round, so a re-read of one head cannot
                                     double-count it. NO --path and no --stdin
                                     records an EMPTY round, which is a real
@@ -352,6 +355,8 @@ function usage(): void {
 . Omitting it clears any prior
                                     claim rather than preserving it.
   park         [PR] --key K --kind thread|finding --class C  (decision record on stdin)
+  park-churn   [PR] --round R      the structural-churn brake's park (decision record on
+                                    stdin), consuming the round evidence up to R
   record-decision [PR]              a decision the agent took, JSON on stdin
   claim-advisory-repair [PR]        charge one answered fix receipt, {key,resolvedAt} on stdin
   reverse-decision [PR]             a person's reversal of a provisional decision, JSON on stdin
@@ -359,6 +364,7 @@ function usage(): void {
   rule         [PR]                 the arbiter's ruling on a thread, JSON on stdin
   unpark       [PR] --key K [--key K …] [--stdin]  every key, or none when one is not parked (--stdin: the consumed verdicts, JSON, for receipts)
   parked-keys  [PR]                 newline-delimited keys (reversal-parked-keys: reversed provisional decisions'')
+  class-parked-keys [PR] --class C  newline-delimited keys of the parks under class C
   hold        [PR] --key K --kind thread|finding --outcome accepted|moot
                [--comment-url URL] [--unconfirmed]
                     (--kind finding also requires the reason body on stdin)
@@ -464,6 +470,8 @@ interface Args {
   paths: string[];
   /** `--stdin`: read newline-delimited paths from stdin instead of `--path`. */
   stdin: boolean;
+  /** `--stdin-json`: read one round's paths and facts as JSON from stdin. */
+  stdinJson: boolean;
   /** `set-escalated --invariant "<one sentence>"`; `''` if omitted. */
   invariant: string;
   /**
@@ -547,6 +555,7 @@ const ARG_DEFAULTS: Omit<Args, "cmd" | "paths" | "keys" | "parkedAts"> = {
   createdAt: "",
   checkRunWatermark: "",
   stdin: false,
+  stdinJson: false,
   invariant: "",
   phaseArg: "",
   vendor: "",
@@ -608,6 +617,9 @@ function parseArgs(argv: string[]): Args {
         break;
       case "--stdin":
         a.stdin = true;
+        break;
+      case "--stdin-json":
+        a.stdinJson = true;
         break;
       case "--all":
         a.all = true;
@@ -703,6 +715,7 @@ async function main(): Promise<number> {
     "record-paths",
     "set-escalated",
     "park",
+    "park-churn",
     "unpark",
     "record-decision",
     "claim-advisory-repair",
@@ -1061,72 +1074,8 @@ async function main(): Promise<number> {
     // for the reason `reflectDepthPastLast` gives for living there: three
     // divergent formulations of one duty drift apart, and this signal has the
     // same two consumers.
-    case "record-paths": {
-      // Keyed to the CURRENT round rather than to a `--round` argument, and
-      // read inside the same locked update that writes it. A caller-supplied
-      // round could name one that never happened, or straddle a concurrent
-      // `bump-round` and file this round's anchors under the last one — which
-      // would fabricate a same-file pair out of one round's findings read
-      // twice, the single false positive this signal cannot afford.
-      //
-      // Replace-not-append for the same reason `bump-round` counts heads: a
-      // second pass on an unmoved head re-enumerates the SAME threads, and an
-      // appended second entry for one round would let a drive that pushed
-      // nothing arm an escalation against itself.
-      //
-      // Reading stdin is behind an EXPLICIT `--stdin`, never inferred from
-      // "no `--path` was given". Inferring it makes two indistinguishable
-      // cases ambiguous — a round that genuinely found nothing on any file,
-      // and a caller that meant to pipe paths — and resolves them by BLOCKING
-      // on whatever descriptor happens to be attached: an inherited pipe that
-      // never closes hangs the command with no output to say why, and a
-      // terminal hangs it forever. An empty `--path` list is a real answer
-      // here, so it must not be the trigger for asking a different source.
-      if (a.stdin && a.paths.length > 0) {
-        fail(2, "record-paths takes --path or --stdin, not both");
-      }
-      // Round 0 is not a counted round — `freshState` starts there and
-      // `bump-round`/`bump-attempt` is what advances past it. Recording anchors
-      // under it would store a `{round: 0, ...}` entry that becomes adjacent to
-      // round 1's real entry the moment counting begins, letting
-      // `structuralEscalationArmed` treat a pre-counting call and the actual
-      // first round as a false two-round recurrence on any shared path.
-      // `drive-status.ts`'s own path here always bumps first, so this only ever
-      // refuses a direct, out-of-order call.
-      if (store.read().state.rounds < 1) {
-        fail(
-          2,
-          `record-paths: #${pr} has not counted a round yet (rounds=0) — run drive-status.ts (which bumps first) or drive-state.ts bump-round/bump-attempt before recording anchors`,
-        );
-      }
-      const raw = a.stdin ? (await readStdinAll()).split("\n") : a.paths;
-      // The cap `foldRoundPaths` applies is silent by construction — sort,
-      // then slice — so a round with genuinely more distinct anchor paths
-      // than the cap loses the overflow with nothing in the stored state
-      // recording that it happened. Measured here, before the write, against
-      // the SAME filtering `foldRoundPaths` itself applies (never a
-      // hand-rolled trim/dedupe that could drift from it), so the warning is
-      // never wrong about what the cap actually dropped.
-      const distinct = normalizeRoundPathsUncapped(raw);
-      if (distinct.length > ROUND_PATHS_MAX_PER_ROUND) {
-        console.error(
-          `record-paths: #${pr} round ${store.read().state.rounds} has ${distinct.length} distinct anchor path(s), exceeding the ${ROUND_PATHS_MAX_PER_ROUND}-path cap — ${distinct.length - ROUND_PATHS_MAX_PER_ROUND} dropped and will not feed structuralEscalationDue`,
-        );
-      }
-      await store.update((s) => ({
-        ...s,
-        roundPaths: foldRoundPaths(
-          s.roundPaths,
-          s.rounds,
-          raw,
-          s.lastEscalatedRound,
-        ),
-      }));
-      process.stdout.write(
-        `${JSON.stringify(store.read().state.roundPaths)}\n`,
-      );
-      return 0;
-    }
+    case "record-paths":
+      return recordPathsCommand(store, pr, a);
 
     case "round-paths": {
       process.stdout.write(
@@ -1709,6 +1658,18 @@ async function main(): Promise<number> {
       await mirrorLedger(pr, store);
       return parked;
     }
+
+    case "park-churn": {
+      const parked = await parkChurn(store, a);
+      await mirrorLedger(pr, store);
+      return parked;
+    }
+
+    case "class-parked-keys":
+      if (a.parkClass === "") fail(2, "class-parked-keys requires --class C");
+      for (const p of store.read().state.parked)
+        if (p.class === a.parkClass) process.stdout.write(`${p.key}\n`);
+      return 0;
 
     case "unpark":
       return unparkCommand(store, a);

@@ -52,6 +52,29 @@ rearm also starts a drive. Whenever a drive spends its round budget
 (`MAX_ROUNDS`, exit `6`), the ended row hands it to a person to investigate
 using the closing-report instruction below.
 
+## When the drive parks itself on structural churn
+
+A drive's head can keep moving while it converges on nothing, so the
+`STALLED` stop never fires. Its structural-churn brake stops that churn.
+After a counting `drive-status.ts` gate that found work, before the round's
+pass runs, the gate judges the rounds recorded since the brake last
+parked. It parks the drive when one file drew findings in each of the last
+`drive.churn_rounds` consecutive rounds (4 by default, `0` turns the brake
+off), none of those rounds carrying a `high` or `blocker` finding, and the
+file was rewritten between each; or when a file's content at one round's
+head came back at a later round's head after a different one in between,
+whatever the severity. A round with a `high` or `blocker` finding never
+counts toward the same-file streak.
+
+The park carries a framed decision under the `structural-churn`
+[decision class](needs-and-answers.md), keyed `structural-churn-r<round>`:
+the question names the files and the rounds, and the options are to ship
+as is and defer the rest, to constrain the scope, or to continue driving.
+The gate then reports `HITL_PARKED` (exit `8`). While that park stands,
+every gate reports `HITL_PARKED`, even with work left. If the park could
+not be recorded the gate reports `INDETERMINATE` (exit `1`), and the round
+is run again. A repository's `autonomy.park_classes` cannot remove the class.
+
 ## The states and exits of `drive-status.ts` and `drive.ts`
 
 <!-- protocol:generated source=plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts#TERMINAL_STATES,DRIVE_EXIT -->
@@ -71,7 +94,7 @@ using the closing-report instruction below.
 | `PR_NOT_OPEN` | state | 5 | 5 | yes | The pull request was merged or closed. Stop, and push nothing to it. |
 | `MAX_ROUNDS` | driver-only | — | 6 | yes | The drive spent its round budget (`--max-rounds`, with any rounds a re-arm granted) without converging. Read the handoff file before re-arming: a re-arm a person asks for grants one more round budget. |
 | `REVIEWER_FAILED` | state | 7 | 7 | yes | The reviewer's check failed or says the review did not complete. The drive stops. The dispatcher can retry a neutral check that reports an incomplete review and escalate repeated stops on that head. |
-| `HITL_PARKED` | state | 8 | 8 | yes | Everything left waits on a person's decision, each framed on its thread. The drive does not wake itself: once every one is answered, re-arm it. |
+| `HITL_PARKED` | state | 8 | 8 | yes | Everything left waits on a person's decision, each framed on its thread, or the drive parked itself on structural churn (class `structural-churn`), a park that holds even live work. The drive does not wake itself: once every one is answered, re-arm it. |
 | `PR_CONFLICTING` | state | 9 | 9 | yes | The pull request conflicts with its base and has nothing else to work on; `drive.ts` ends with it once its conflict-repair passes are spent. Merge the base in, then re-arm. |
 | `RETIRED` | tombstone | — | — | — | Withdrawn: it once stopped a drive on a draft pull request, which is now driven like any other. Never exited, and never given another meaning. |
 | `SESSION_LEASE_HELD` | state | 11 | 11 | yes | Another live session in this working tree holds the drive's lease for this pull request. Nothing was changed: wait for it, or clear its lease once its process is gone. |

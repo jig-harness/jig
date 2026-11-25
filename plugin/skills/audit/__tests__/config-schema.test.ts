@@ -61,6 +61,7 @@ import {
 } from "../../drive-pr/scripts/lib/codex-pass-args.ts";
 import { readStatusPolling } from "../../drive-pr/scripts/lib/status/poll-pacing.ts";
 import { CI_REPAIR_ROUNDS_DEFAULT } from "../../drive-pr/scripts/lib/driver/settings.ts";
+import { DEFAULT_CHURN_ROUNDS } from "../../drive-pr/scripts/lib/state/churn.ts";
 import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
 import { SKILL_NAME_PATTERN } from "../../../shared/ci-status.ts";
 import { DEFAULT_REMOTE } from "../../../shared/consumer.ts";
@@ -506,6 +507,7 @@ describe("the reading skills", () => {
       "drive.status_poll.waiting_share": statusPolling.waitingShare,
       "drive.status_poll.max_interval_seconds":
         statusPolling.maxIntervalSeconds,
+      "drive.churn_rounds": DEFAULT_CHURN_ROUNDS,
       "drive.pass_deadline_retries": DEFAULT_PASS_DEADLINE_RETRIES,
       "drive.ci_repair_rounds": CI_REPAIR_ROUNDS_DEFAULT,
       "drive.pass_model": DEFAULT_PASS_MODEL,

@@ -305,7 +305,7 @@ export const TERMINAL_STATES: Readonly<
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
     meaning:
-      "Everything left waits on a person's decision, each framed on its thread. The drive does not wake itself: once every one is answered, re-arm it.",
+      "Everything left waits on a person's decision, each framed on its thread, or the drive parked itself on structural churn (class `structural-churn`), a park that holds even live work. The drive does not wake itself: once every one is answered, re-arm it.",
     report: {
       stop: "parked: a decision waits for a person",
       cause: "needs-person",

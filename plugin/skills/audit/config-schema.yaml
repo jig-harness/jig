@@ -688,6 +688,13 @@ fields:
     default: 10
     since: 0.33.0
     read_by: [drive-pr]
+  drive.churn_rounds:
+    type: integer
+    min: 0
+    max: 12
+    default: 4
+    since: next
+    read_by: [drive-pr]
   drive.pass_deadline_retries:
     type: integer
     min: 0

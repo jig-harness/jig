@@ -296,6 +296,8 @@ import {
   type StatusReport,
 } from "./lib/status/evaluate.ts";
 import { takeInheritedHead } from "./lib/status/inherited-head.ts";
+import { runChurnBrake } from "./lib/status/churn-brake.ts";
+import { readRoundBlobs } from "./lib/status/round-blobs.ts";
 import { setProbeFailure } from "./lib/status/probe-stop.ts";
 // `report.state` and the emitted/returned exit code for these two
 // out-of-band states are derived from ONE lookup — see
@@ -804,15 +806,25 @@ async function main(): Promise<number> {
     if (noCount) return;
     const paths = report.openThreadPaths;
     if (paths === null) return;
-    // `--stdin` rather than one `--path` argument per path: a round with
+    // On stdin rather than one `--path` argument per path: a round with
     // enough long paths can push the child's argv past the ~32KB Windows
     // command-line limit, silently failing to record this round's anchors.
-    const args = ["record-paths", pr, "--stdin"];
+    // The JSON form carries the structural-churn brake's facts too.
+    const blobs = await readRoundBlobs(
+      report.apiHead,
+      paths,
+      ctx.helperTimeoutSec,
+    );
+    const args = ["record-paths", pr, "--stdin-json"];
     const r = await run(tsArgv(ctx.driveStateScript, args), {
       stdout: "ignore",
       stderr: "inherit",
       timeoutSec: ctx.helperTimeoutSec,
-      stdin: paths.length > 0 ? `${paths.join("\n")}\n` : "",
+      stdin: JSON.stringify({
+        paths,
+        blobs,
+        ...(report.roundSevere === null ? {} : { severe: report.roundSevere }),
+      }),
     });
     if (r.code !== 0) {
       process.stderr.write(
@@ -1845,6 +1857,13 @@ async function main(): Promise<number> {
         // This round's finding anchors, filed against the round the bump above
         // just counted. Best-effort and advisory; see the function.
         await recordRoundPaths();
+        // The structural-churn brake: park before the pass when the recorded
+        // rounds churn (`lib/status/churn-brake.ts`); never on a re-read.
+        const braked = noCount ? null : await runChurnBrake(ctx, report);
+        if (braked !== null) {
+          await emit(braked);
+          return braked;
+        }
         // `--bump-attempt`: record this PASS before `emit` computes
         // `reflectDue`, so the field it reports is never one pass stale. This
         // is what the flag exists for — see its own doc comment above for the

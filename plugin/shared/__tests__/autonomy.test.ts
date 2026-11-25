@@ -458,6 +458,7 @@ describe("the park classes", () => {
   test("default to the registry rows plus escalated and human-decision", () => {
     expect(classes({})).toEqual([...DEFAULT_PARK_CLASSES]);
     expect(classes({})).toContain("human-decision");
+    expect(classes({})).toContain("structural-churn");
   });
 
   test("a repository's own list keeps the arbiter's classes", () => {
@@ -471,6 +472,7 @@ describe("the park classes", () => {
       "escalated",
       "human-decision",
       "human-thread",
+      "structural-churn",
     ]);
   });
 
@@ -591,7 +593,12 @@ describe("a driver pass reads its policy from the base branch", () => {
     const { root, env } = setup(c);
     expect(
       parkClasses(loadLayeredConfig(root, env), env, snapshotOf(c)),
-    ).toEqual(["escalated", "human-decision", "human-thread"]);
+    ).toEqual([
+      "escalated",
+      "human-decision",
+      "human-thread",
+      "structural-churn",
+    ]);
   });
 
   test("a person's session reads the working tree's policy, as before", () => {
@@ -851,6 +858,7 @@ describe("the command line", () => {
       "escalated",
       "human-decision",
       "human-thread",
+      "structural-churn",
     ]);
   });
 });
