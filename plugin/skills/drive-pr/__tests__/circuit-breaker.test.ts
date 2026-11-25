@@ -34,6 +34,15 @@ import {
   wallClockSpent,
   withRoundFindings,
 } from "../scripts/lib/state/circuit-breaker.ts";
+import {
+  type CircuitLimits,
+  passDeadlineUnderCap,
+} from "../scripts/lib/driver/circuit-breaker.ts";
+import {
+  LEDGER_MARKER,
+  ledgerFromState,
+  parseLedger,
+} from "../scripts/lib/state/ledger.ts";
 import { rearmGrant } from "../scripts/lib/state/round-grant.ts";
 import type { PendingVerdict } from "../scripts/lib/state/pass-handoff.ts";
 import { freshState } from "../scripts/lib/state/schema.ts";
@@ -495,5 +504,52 @@ console.log(JSON.stringify({ override: pastCeilingAnswered(), history: state.rou
       key: ROUND_CEILING_PARK,
       choice: "Finish by hand",
     });
+  });
+});
+
+describe("an in-flight pass under the wall-clock cap", () => {
+  const limits = (hoursAgo: number, cap: number | null): CircuitLimits => ({
+    pr: "1",
+    maxTotal: { value: 8, source: "default" },
+    raised: 0,
+    ceiling: 8,
+    wallClock: cap === null ? null : { value: cap, source: "default" },
+    raisedHours: 0,
+    firstDrivenAt: new Date(Date.now() - hoursAgo * 3_600_000).toISOString(),
+    block: 10,
+  });
+
+  it("cuts the pass deadline to the time the cap has left, and gives a disabled deadline that bound", () => {
+    const sec = passDeadlineUnderCap(limits(0.9, 1), 5400);
+    expect(sec).toBeGreaterThan(0);
+    expect(sec).toBeLessThanOrEqual(360);
+    expect(passDeadlineUnderCap(limits(0.9, 1), 0)).toBeLessThanOrEqual(360);
+  });
+
+  it("leaves the configured deadline when no cap binds sooner, and never reaches zero", () => {
+    expect(passDeadlineUnderCap(limits(0, 100), 5400)).toBe(5400);
+    expect(passDeadlineUnderCap(limits(0, null), 5400)).toBe(5400);
+    expect(passDeadlineUnderCap(undefined, 0)).toBe(0);
+    expect(passDeadlineUnderCap(limits(5, 1), 5400)).toBe(1);
+  });
+});
+
+describe("a ledger with a malformed circuit stop", () => {
+  it("is refused, since dropping it would resume a drive a person stopped", () => {
+    const ledger = ledgerFromState(freshState(999), {
+      generation: 1,
+      claims: [],
+      narrative: [],
+      driver: {
+        actor: "wt-aaaaaaaaaaaaaaaa",
+        clone: "clone-a",
+        heartbeat: "2026-11-20T00:00:00.000Z",
+        state: "running",
+      },
+    });
+    const parsed = parseLedger(
+      `${LEDGER_MARKER}\n<!-- drive-pr-ledger-data\n${JSON.stringify({ ...ledger, circuitStop: { key: 1 } })}\n-->\n`,
+    );
+    expect(parsed?.kind).toBe("malformed");
   });
 });

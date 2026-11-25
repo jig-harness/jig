@@ -260,6 +260,23 @@ export function wallClockReached(limits: CircuitLimits): boolean {
 }
 
 /**
+ * A pass's deadline under the wall-clock cap: the configured deadline, cut to
+ * the time the cap has left so an in-flight pass cannot outrun it (`0` there
+ * means the pass has no deadline of its own). At least one second, since `0`
+ * would disable the deadline; with no cap, the configured deadline.
+ */
+export function passDeadlineUnderCap(
+  limits: CircuitLimits | undefined,
+  configuredSec: number,
+): number {
+  if (limits === undefined || limits.wallClock === null) return configuredSec;
+  const leftHours =
+    limits.wallClock.value + limits.raisedHours - drivenHours(limits);
+  const leftSec = Math.max(1, Math.ceil(leftHours * 3600));
+  return configuredSec > 0 ? Math.min(configuredSec, leftSec) : leftSec;
+}
+
+/**
  * Stop on the round ceiling or the wall-clock cap: park `round-ceiling`,
  * print its decision and return `HITL_PARKED`; `MAX_ROUNDS` when the park
  * could not be recorded, so the drive stops all the same.

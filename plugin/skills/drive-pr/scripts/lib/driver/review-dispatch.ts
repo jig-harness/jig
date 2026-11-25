@@ -39,6 +39,7 @@ import { unpushedNoticeFor } from "./unpushed.ts";
 import { resolveStateDir } from "./../state/store.ts";
 
 import { fail } from "./../cli.ts";
+import { passDeadlineUnderCap } from "./circuit-breaker.ts";
 
 import { span } from "./../../../../../shared/trace.ts";
 
@@ -93,7 +94,10 @@ export async function prepareReviewPass(
   // accessor for exactly this (one spawned helper, whole-invocation bound,
   // 120s default); expiring it is the same bounded loss as any other
   // failure on this best-effort path.
-  const passDeadlineSec = passTimeoutSeconds();
+  const passDeadlineSec = passDeadlineUnderCap(
+    context.circuit,
+    passTimeoutSeconds(),
+  );
   // One more refresh, immediately before THIS spawn — not only at the
   // PRIOR pass's exit. The exit-time call closes the gap up to that
   // instant, but everything between it and here (triage, fixes, the full

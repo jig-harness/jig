@@ -618,12 +618,13 @@ export function parseLedger(body: string): ParsedLedger | null {
   )
     delete ledger.reviewCarriedFrom;
   for (const f of circuit.malformedLedgerCircuit(read.fields)) {
-    // The wall-clock cap is measured from this moment: dropping it would
-    // give a takeover a whole new window, so the ledger is not read.
-    if (f === "firstDrivenAt")
+    // Dropping the first launch would give a takeover a whole new wall-clock
+    // window, and dropping a person's stop would resume a drive they stopped,
+    // so a ledger with either ill-formed is not read.
+    if (f === "firstDrivenAt" || f === "circuitStop")
       return {
         kind: "malformed",
-        reason: "ill-formed field(s): firstDrivenAt is not a timestamp",
+        reason: `ill-formed field(s): ${f} is not ${f === "firstDrivenAt" ? "a timestamp" : "a circuit stop"}`,
       };
     delete ledger[f];
   }
