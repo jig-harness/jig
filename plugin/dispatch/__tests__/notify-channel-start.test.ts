@@ -357,6 +357,20 @@ describe("a channel new to the host", () => {
     expect(channelStarted("phone", SLUG, h.root)).toBe(false);
   });
 
+  it("counts a cause once when its earlier silent record has come due again", async () => {
+    const h = host();
+    stateDb(h.root)
+      .query(
+        "INSERT INTO notices (repo, key, target, workspace, at, lasting, channel) VALUES (?, ?, 'PR #1', 'channel start', '2026-01-01T00:00:00.000Z', 0, 'phone')",
+      )
+      .run(SLUG, `phone:${keyOf(1)}`);
+    setSystemTime(new Date("2026-01-03T00:00:00.000Z"));
+    const phone = fakeChannel("phone");
+    const started = await tick(h, [phone], causes(1), h.state(), h.repo, HOUR);
+    expect(phone.calls).toEqual([]);
+    expect(started.channelStarts).toEqual([{ channel: "phone", causes: 1 }]);
+  });
+
   it("does not resend the standing causes of a renamed channel", async () => {
     const h = host();
     const old = fakeChannel("phone");

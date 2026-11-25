@@ -669,8 +669,12 @@ function startFrom(
   const repeats: Cause[] = [];
   // Causes an earlier, incomplete start already recorded silently belong to this start's total.
   const earlierSilent = readSuppressions(channel, scope.repo.slug, scope.root);
+  const counted = new Set<string>();
   for (const c of scope.causes)
-    if (earlierSilent.get(c.notice.key)?.workspace === SILENT_START) causes++;
+    if (earlierSilent.get(c.notice.key)?.workspace === SILENT_START) {
+      causes++;
+      counted.add(c.notice.key);
+    }
   // A target the tick could not observe may hold a standing cause it never saw, so the start waits for a tick that sees it.
   let complete =
     scope.report.records.every((r) => r.ok) &&
@@ -690,7 +694,11 @@ function startFrom(
       complete = false;
       continue;
     }
-    causes++;
+    // A silent repeat of a record already counted above is one cause, counted once.
+    if (!counted.has(c.notice.key)) {
+      counted.add(c.notice.key);
+      causes++;
+    }
     scope.report.notifications.push(
       outcomeFor(
         channel,
