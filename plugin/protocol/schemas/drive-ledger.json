@@ -180,7 +180,13 @@
                     "type": "string"
                   },
                   "outcome": {
-                    "enum": ["accepted", "moot"]
+                    "enum": [
+                      "accepted",
+                      "rejected",
+                      "wont-fix",
+                      "deferred",
+                      "moot"
+                    ]
                   },
                   "commentUrl": {
                     "type": "string"
@@ -1027,7 +1033,7 @@
                 "type": "string"
               },
               "outcome": {
-                "enum": ["accepted", "moot"]
+                "enum": ["accepted", "rejected", "wont-fix", "deferred", "moot"]
               },
               "commentUrl": {
                 "type": "string"

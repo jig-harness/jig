@@ -157,7 +157,20 @@
       "version": 0,
       "key": null,
       "writtenBy": "Jig",
-      "meaning": "The drive's answer to a review finding the reviewer could not anchor to a line of the diff, one marker per finding with its fingerprint. A finding whose marker a trusted author wrote counts as answered, and is not answered again."
+      "meaning": "The drive's answer to a review finding the reviewer could not anchor to a line of the diff. A round groups its answers in one comment, with a distinct outcome, reason and fingerprint marker for each finding. Trusted markers let a retry skip delivered answers."
+    },
+    {
+      "kind": "active",
+      "name": "summary-answer",
+      "part": "marker",
+      "marker": "drive-pr-summary-answer",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "forge",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "The drive's answer to a review finding the reviewer could not anchor to a line of the diff. A round groups its answers in one comment, with a distinct outcome, reason and fingerprint marker for each finding. Trusted markers let a retry skip delivered answers."
     },
     {
       "kind": "active",
@@ -261,7 +274,7 @@
       "version": 0,
       "key": null,
       "writtenBy": "the repository's AI reviewer",
-      "meaning": "The review round a reviewer's comment belongs to, and the findings the reviewer held out of its threads, which the drive counts as summary findings to answer."
+      "meaning": "The review round a reviewer's comment belongs to, and the findings the reviewer held out of its threads. The drive reports explicitly non-blocking entries for inspection and counts blocking entries as summary findings to answer."
     },
     {
       "kind": "active",
@@ -274,7 +287,7 @@
       "version": 0,
       "key": null,
       "writtenBy": "the repository's AI reviewer",
-      "meaning": "The review round a reviewer's comment belongs to, and the findings the reviewer held out of its threads, which the drive counts as summary findings to answer."
+      "meaning": "The review round a reviewer's comment belongs to, and the findings the reviewer held out of its threads. The drive reports explicitly non-blocking entries for inspection and counts blocking entries as summary findings to answer."
     },
     {
       "kind": "active",
@@ -984,7 +997,13 @@
                         "type": "string"
                       },
                       "outcome": {
-                        "enum": ["accepted", "moot"]
+                        "enum": [
+                          "accepted",
+                          "rejected",
+                          "wont-fix",
+                          "deferred",
+                          "moot"
+                        ]
                       },
                       "commentUrl": {
                         "type": "string"
@@ -1831,7 +1850,13 @@
                     "type": "string"
                   },
                   "outcome": {
-                    "enum": ["accepted", "moot"]
+                    "enum": [
+                      "accepted",
+                      "rejected",
+                      "wont-fix",
+                      "deferred",
+                      "moot"
+                    ]
                   },
                   "commentUrl": {
                     "type": "string"
