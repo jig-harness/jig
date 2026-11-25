@@ -74,7 +74,7 @@ export function churnDecision(
           id: "defer",
           name: "Ship as is and defer the rest",
           summary:
-            "The next pass defers each open non-blocking finding through the deferral protocol and lets the drive converge on the pull request as it stands; blocker and high findings are still fixed.",
+            "The next pass runs ordinary triage and the decline ladder, defers the confirmed non-blocking findings they leave eligible through the deferral protocol, and lets the drive converge on the pull request as it stands; false positives, duplicates, findings of unknown severity, and blocker and high findings keep their ordinary handling.",
           pay: [
             "The deferred findings wait in the backlog instead of being fixed in this pull request.",
           ],

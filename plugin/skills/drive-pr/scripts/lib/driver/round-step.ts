@@ -377,6 +377,17 @@ function parkedCancelled(status: Record<string, unknown>): boolean {
   return Array.isArray(keys) && keys.includes(CANCELLED_CI_KEY);
 }
 
+/** Whether the parked set holds a structural-churn park and no cancelled-CI one. */
+function parkedChurnOnly(status: Record<string, unknown>): boolean {
+  const work = status.work as { parkedKeys?: unknown } | undefined;
+  const keys = work?.parkedKeys;
+  return (
+    Array.isArray(keys) &&
+    !keys.includes(CANCELLED_CI_KEY) &&
+    keys.some((k) => typeof k === "string" && k.startsWith("structural-churn-"))
+  );
+}
+
 /**
  * Recover initial cancellation before spending a pass that cannot push; clear
  * resolved parks before convergence. A timed-out job is left to the final
@@ -402,6 +413,9 @@ export async function recoverBeforePass(
     (code === 3 && String(status.ci ?? "").startsWith("failing:"))
   )
     return null;
+  // A structural-churn park goes to the terminal handler first; the recovery
+  // runs only for a gate that holds the cancelled-CI park itself.
+  if (code === 8 && parkedChurnOnly(status)) return null;
   const head = String((status.head as { api?: string } | undefined)?.api ?? "");
   if (head === "") return null;
   const recovery = await recover(context.pr, head);

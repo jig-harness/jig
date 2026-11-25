@@ -39,6 +39,7 @@ import {
 } from "../state/churn.ts";
 import { churnDecision, churnWhat } from "../state/churn-decision.ts";
 import { terminal } from "./terminal-states.ts";
+import { readPrSnapshot } from "./pr-snapshot.ts";
 
 /** The environment variable that overrides `drive.churn_rounds` for one run. */
 export const CHURN_ROUNDS_VARIABLE = "DRIVE_PR_CHURN_ROUNDS";
@@ -92,6 +93,22 @@ export function churnRoundsSetting(
     if (!read.ok) return read;
     values = read.value;
   }
+  const own = valueIn(values);
+  if (!own.ok || policy.from !== "base" || policy.bound === undefined)
+    return own;
+  // A stacked pull request's immediate base is itself unreviewed: the
+  // integration branch's setting is the floor, and the base may only tighten
+  // it. An integration branch with the brake off leaves the base's value.
+  const floor = valueIn(policy.bound.values);
+  if (!floor.ok) return floor;
+  if (floor.value === 0) return own;
+  return ok(own.value === 0 ? floor.value : Math.min(own.value, floor.value));
+}
+
+/** `drive.churn_rounds` as one policy file's values hold it. */
+function valueIn(
+  values: Record<string, unknown>,
+): Outcome<number, "churn-rounds-invalid"> {
   if (!Object.hasOwn(values, "drive")) return ok(DEFAULT_CHURN_ROUNDS);
   const drive = values.drive;
   if (!isRecord(drive))
@@ -132,6 +149,8 @@ export function churnParkReason(
 
 interface BrakeContext {
   pr: string;
+  owner?: string;
+  repo?: string;
   driveStateScript: string;
   helperTimeoutSec: number;
 }
@@ -145,6 +164,7 @@ interface BrakeReport {
   mergeStateStatus: string;
   apiHead: string;
   baseRefName: string;
+  baseHead?: string;
 }
 
 /** The last non-empty line of a child's error output, or `''`. */
@@ -234,6 +254,32 @@ export async function runChurnBrake(
       `${describeTrip(trip)}, but the replied-thread reconciliation sweep did not complete on #${ctx.pr}, so the ${CHURN_CLASS} park is withheld; the drive stops here, so re-arm it for a counting pass`,
     );
   const round = state.value.rounds;
+  // The verdict above was reached before the blob and state reads: park only
+  // while the reviewed head and base are still the pull request's.
+  if (ctx.owner !== undefined && ctx.repo !== undefined) {
+    const now = await readPrSnapshot(
+      ctx.owner,
+      ctx.repo,
+      ctx.pr,
+      "still-on-head",
+    );
+    if (!now.ok)
+      return indeterminate(
+        report,
+        `${describeTrip(trip)}, but #${ctx.pr}'s head and base could not be re-read before the park (${now.reason}); re-arm the drive`,
+      );
+    if (
+      now.snapshot.state !== "OPEN" ||
+      now.snapshot.headRefOid !== report.apiHead ||
+      (report.baseHead !== undefined &&
+        now.snapshot.baseRefOid !== report.baseHead)
+    )
+      return terminal(
+        report,
+        "HEAD_MOVED",
+        `#${ctx.pr} changed (state ${now.snapshot.state}, head ${now.snapshot.headRefOid}) while the ${CHURN_CLASS} verdict was reached, so the park for round ${round} is withheld`,
+      );
+  }
   const park = await run(
     tsArgv(ctx.driveStateScript, [
       "park-churn",

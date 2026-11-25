@@ -54,7 +54,7 @@ const head = git("rev-parse", "HEAD");
 
 describe("readRoundBlobs", () => {
   it("keeps a path named __proto__ as an own entry", async () => {
-    const blobs = await readRoundBlobs(head, ["__proto__"], 30, repo);
+    const { blobs } = await readRoundBlobs(head, ["__proto__"], 30, repo);
     expect(Object.hasOwn(blobs, "__proto__")).toBe(true);
     expect(Object.keys(blobs)).toEqual(["__proto__"]);
   });
@@ -70,16 +70,17 @@ console.log(JSON.stringify(await readRoundBlobs(${JSON.stringify(head)}, ["a.ts"
       { exitCode: r.status, stdout: r.stdout, stderr: r.stderr },
       0,
     );
-    expect(Object.keys(JSON.parse(r.stdout))).toEqual(["a.ts"]);
+    expect(Object.keys(JSON.parse(r.stdout).blobs)).toEqual(["a.ts"]);
   });
 
   it("reads each present path's blob and leaves a missing path out", async () => {
-    const blobs = await readRoundBlobs(
+    const { blobs, failed } = await readRoundBlobs(
       head,
       ["a.ts", "gone.ts", "b c.ts"],
       30,
       repo,
     );
+    expect(failed).toBe(false);
     expect(blobs).toEqual({
       "a.ts": git("rev-parse", `${head}:a.ts`),
       "b c.ts": git("rev-parse", `${head}:b c.ts`),
@@ -93,7 +94,10 @@ console.log(JSON.stringify(await readRoundBlobs(${JSON.stringify(head)}, ["a.ts"
       return true;
     });
     try {
-      expect(await readRoundBlobs(head, ["a.ts"], 30, notRepo)).toEqual({});
+      expect(await readRoundBlobs(head, ["a.ts"], 30, notRepo)).toEqual({
+        blobs: {},
+        failed: true,
+      });
     } finally {
       spy.mockRestore();
     }

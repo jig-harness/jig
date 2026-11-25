@@ -136,6 +136,7 @@ async function stored(
 ): Promise<{
   parked: StoredPark[];
   churnAckRound?: number;
+  roundPaths?: { severe?: boolean; blobs?: Record<string, string> }[];
 }> {
   return JSON.parse((await driveState(stateDir, ["get", "999"], cwd)).stdout);
 }
@@ -169,7 +170,7 @@ describe("drive-status.ts structural-churn brake", () => {
     expect(park?.decision?.call.recommended).toBe("defer");
   });
 
-  it("withholds a new park while the replied-thread sweep is suppressed", async () => {
+  it("records an unreconciled round without facts, so it never trips the brake", async () => {
     const { stateDir, repo } = await rounds(
       ["medium", "low", "medium"],
       history(4),
@@ -181,10 +182,13 @@ describe("drive-status.ts structural-churn brake", () => {
       cwd: repo.cwd,
       reconcile: false,
     });
-    expectSpawnExit(exitOf(r), 1);
-    expect(r.state).toBe("INDETERMINATE");
-    expect(r.json.reason).toContain("reconciliation sweep did not complete");
-    expect((await stored(stateDir, repo.cwd)).parked).toEqual([]);
+    expectSpawnExit(exitOf(r), 0);
+    expect(r.state).toBe("ROUND_READY");
+    const state = await stored(stateDir, repo.cwd);
+    expect(state.parked).toEqual([]);
+    const entry = state.roundPaths?.at(-1);
+    expect(entry?.severe).toBeUndefined();
+    expect(entry?.blobs).toBeUndefined();
   });
 
   it("holds live work while its park stands", async () => {

@@ -130,7 +130,7 @@ const DRIVER_MEANINGS: Record<string, string> = {
   CONVERGED:
     "the review settled: read its provisional decisions below, then merge it",
   HITL_PARKED:
-    "only the parked decisions below remain: answer each (on its thread, or as a pull-request comment `answer <key>: …`), then re-arm",
+    "the parked decisions below hold the drive: answer each (on its thread, or as a pull-request comment `answer <key>: …`), then re-arm; review work may still be open behind a structural-churn park",
   QUOTA_PARKED:
     "stopped at a usage wall: re-arm from a session on another account, or after the reset",
   MAX_ROUNDS:

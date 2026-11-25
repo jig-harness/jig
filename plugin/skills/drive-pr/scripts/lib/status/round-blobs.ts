@@ -16,18 +16,31 @@ import { isObjectId } from "../state/churn-facts.ts";
 import { gitIdentityEnv } from "../../../../../shared/git-env.ts";
 import { git } from "../proc.ts";
 
+/**
+ * The blobs read, and whether the read failed as a whole: a failed batch is
+ * not the same answer as paths that are absent at the head.
+ */
+export interface RoundBlobs {
+  blobs: Record<string, string>;
+  failed: boolean;
+}
+
 export async function readRoundBlobs(
   head: string,
   paths: readonly string[],
   timeoutSec: number,
   cwd?: string,
-): Promise<Record<string, string>> {
+): Promise<RoundBlobs> {
   // One line per path in and out: a path holding a line break would shift
   // every answer after it, and the stored round never records one anyway.
   const asked = paths.filter((p) => !/[\n\r]/.test(p));
-  if (head === "" || asked.length === 0) return {};
+  if (head === "" || asked.length === 0) return { blobs: {}, failed: false };
   const r = await git(
-    ["cat-file", "--batch-check=%(objectname) %(objecttype)"],
+    [
+      "--no-replace-objects",
+      "cat-file",
+      "--batch-check=%(objectname) %(objecttype)",
+    ],
     {
       stdin: asked.map((p) => `${head}:${p}\n`).join(""),
       stdout: "pipe",
@@ -43,7 +56,7 @@ export async function readRoundBlobs(
     process.stderr.write(
       `drive-status: git cat-file exited ${r.code} reading this round's file contents at ${head}${why === "" ? "" : ` (${why})`}; the structural-churn brake has no file contents to judge this round\n`,
     );
-    return {};
+    return { blobs: {}, failed: true };
   }
   const lines = r.stdout.split("\n");
   // Entries, not assignments: a path named `__proto__` is an own key here.
@@ -52,5 +65,5 @@ export async function readRoundBlobs(
     const [id, type] = (lines[i] ?? "").split(" ");
     if (type === "blob" && isObjectId(id)) entries.push([path, id]);
   });
-  return Object.fromEntries(entries);
+  return { blobs: Object.fromEntries(entries), failed: false };
 }

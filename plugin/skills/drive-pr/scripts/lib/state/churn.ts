@@ -146,6 +146,7 @@ export function structuralChurn(
   const since = s.churnAckRound ?? 0;
   const entries = [...(s.roundPaths ?? [])]
     .filter((e) => e.round > since)
-    .sort((a, b) => a.round - b.round);
+    .sort((a, b) => a.round - b.round)
+    .slice(-ROUND_PATHS_WINDOW);
   return sameFile(entries, opts.rounds) ?? oscillation(entries);
 }

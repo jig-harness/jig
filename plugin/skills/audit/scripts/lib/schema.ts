@@ -244,6 +244,15 @@ const ENTRY_CHECKS: ((entry: Entry) => string | null)[] = [
       !e.excluded.every((n) => Number.isSafeInteger(n)))
       ? "excluded must be a list of whole numbers on an integer"
       : null,
+  (e) =>
+    Array.isArray(e.excluded) &&
+    e.excluded.some(
+      (n) =>
+        (typeof e.min === "number" && n < e.min) ||
+        (typeof e.max === "number" && n > e.max),
+    )
+      ? "excluded must lie within min and max"
+      : null,
   (e) => patternProblem(e.type, e.pattern),
   (e) =>
     e.keys !== undefined && !stringList(e.keys) ? "keys must be a list" : null,

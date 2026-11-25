@@ -296,8 +296,9 @@ import {
   type StatusReport,
 } from "./lib/status/evaluate.ts";
 import { takeInheritedHead } from "./lib/status/inherited-head.ts";
-import { runChurnBrake } from "./lib/status/churn-brake.ts";
+import { churnRoundsSetting, runChurnBrake } from "./lib/status/churn-brake.ts";
 import { readRoundBlobs } from "./lib/status/round-blobs.ts";
+import { normalizeRoundPaths } from "./lib/state/round-paths.ts";
 import { setProbeFailure } from "./lib/status/probe-stop.ts";
 // `report.state` and the emitted/returned exit code for these two
 // out-of-band states are derived from ONE lookup — see
@@ -808,11 +809,21 @@ async function main(): Promise<number> {
     // enough long paths can push the child's argv past the ~32KB Windows
     // command-line limit, silently failing to record this round's anchors.
     // The JSON form carries the structural-churn brake's facts too.
-    const blobs = await readRoundBlobs(
-      report.apiHead,
-      paths,
-      ctx.helperTimeoutSec,
-    );
+    // The brake's setting first: with the brake off no file content is read,
+    // and only the paths the writer retains are measured.
+    const setting = churnRoundsSetting();
+    const brakeOn = !setting.ok || setting.value > 0;
+    // A round the replied-thread sweep did not reconcile carries no facts, so
+    // the brake never counts it toward a streak or a return.
+    const withFacts = brakeOn && sweepReconciled;
+    const read = withFacts
+      ? await readRoundBlobs(
+          report.apiHead,
+          normalizeRoundPaths(paths),
+          ctx.helperTimeoutSec,
+        )
+      : { blobs: {}, failed: false };
+    const blobs = read.blobs;
     const args = ["record-paths", pr, "--stdin-json"];
     const r = await run(tsArgv(ctx.driveStateScript, args), {
       stdout: "ignore",
@@ -821,13 +832,23 @@ async function main(): Promise<number> {
       stdin: JSON.stringify({
         paths,
         blobs,
-        ...(report.roundSevere === null ? {} : { severe: report.roundSevere }),
+        ...(!withFacts || read.failed || report.roundSevere === null
+          ? {}
+          : { severe: report.roundSevere }),
       }),
     });
     if (r.code !== 0) {
       process.stderr.write(
         `drive-status: could not record this round's finding anchors for #${pr} (record-paths exited ${r.code}) — structuralEscalationDue is reporting the previous round's durable state, not this one, and the structural-churn brake cannot judge this round\n`,
       );
+    }
+    // A failed blob batch leaves the round without facts and, with the brake
+    // on, ends the gate: the round could be the one that completes a streak.
+    if (r.code === 0 && read.failed) {
+      process.stderr.write(
+        `drive-status: the structural-churn brake has no file contents for #${pr}'s round, so it cannot judge it\n`,
+      );
+      return false;
     }
     return r.code === 0;
   }

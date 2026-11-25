@@ -2862,7 +2862,10 @@ itself, before the round's pass, when either holds:
 
 The gate then records a framed decision under the `structural-churn` class
 (key `structural-churn-r<round>`, the files and the rounds in its question)
-and exits `8` (`HITL_PARKED`). While that park stands, every gate exits `8`,
+and exits `8` (`HITL_PARKED`). While that park stands, every gate exits `8`
+(unless the reconciliation guard degrades that read to `1`, `INDETERMINATE`, when
+its replied-thread sweep did not complete, `--no-count` included; the park
+stays live),
 even with live work: re-arming without an answer runs no round. On a pull
 request that conflicts with its base, the gate that parks and every gate
 after it exit `9` (`PR_CONFLICTING`) instead, as for any park, so conflict

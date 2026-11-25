@@ -390,3 +390,24 @@ describe("parseRoundInput", () => {
     }
   });
 });
+
+describe("structuralChurn window", () => {
+  it("reads an oscillation only within the stored window", () => {
+    // A, B, A across rounds 1-3, then many quiet rounds on other files: the
+    // return spans evidence older than the window and must not trip the brake.
+    const early = [
+      round(1, ["a.ts"], { blobs: { "a.ts": 1 } }),
+      round(2, ["a.ts"], { blobs: { "a.ts": 2 } }),
+      round(3, ["a.ts"], { blobs: { "a.ts": 1 } }),
+    ];
+    const later = Array.from({ length: 12 }, (_, i) =>
+      round(4 + i, ["z.ts"], { severe: true }),
+    );
+    expect(
+      structuralChurn({ roundPaths: [...early, ...later] }, { rounds: 4 }),
+    ).toBeNull();
+    expect(structuralChurn({ roundPaths: early }, { rounds: 4 })?.kind).toBe(
+      "oscillation",
+    );
+  });
+});

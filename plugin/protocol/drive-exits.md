@@ -71,7 +71,7 @@ The park carries a framed decision under the `structural-churn`
 the question names the files and the rounds, and the options are to ship
 as is and defer the rest, to constrain the scope, or to continue driving.
 The gate then reports `HITL_PARKED` (exit `8`). While that park stands,
-every gate reports `HITL_PARKED`, even with work left. On a pull request
+every gate reports `HITL_PARKED`, even with work left, unless the reconciliation guard degrades that read to `INDETERMINATE` (a status read that did not complete the replied-thread sweep, `--no-count` included); the park stays live either way. On a pull request
 that conflicts with its base, those gates report `PR_CONFLICTING` (exit
 `9`) instead, as they do before any park. If the round's evidence or the
 park could not be recorded, or a trip meets a replied-thread sweep that did not
