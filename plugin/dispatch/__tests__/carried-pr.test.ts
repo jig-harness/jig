@@ -416,37 +416,56 @@ describe("a claimed item an open pull request carries", () => {
 });
 
 describe("a claimed sibling of a whole-batch question whose anchor an open pull request carries", () => {
-  it("raises the batch question itself, since its anchor cannot show it", () => {
+  function carriedBatchPlan(claimed: ClaimedItem[]) {
     const batch = endedPickup(
       "20261114T145000Z-abcdef12",
       "2026-11-14T14:54:00Z",
     );
     Object.assign(batch.record, {
-      batchItems: [{ key: "#12" }, { key: "#13" }],
-      claimedItems: ["#12", "#13"],
+      batchItems: [{ key: "#12" }, { key: "#13" }, { key: "#14" }],
+      claimedItems: ["#12", "#13", "#14"],
     });
     if (batch.state.kind === "ended")
       batch.state.exit.said =
         "Question: Should the batch follow the shared approach?\n";
     const base = input(stalled([pr()], [LIVE]));
-    const plan = planPickups({
+    return planPickups({
       ...base,
-      claimed: [
-        { key: "#12", title: "issue 12", state: "In Progress" },
-        { key: "#13", title: "issue 13", state: "In Progress" },
-      ],
+      claimed,
       launches: [batch],
-      idleSince: new Map([
-        ["#12", NOW - 2 * HOUR],
-        ["#13", NOW - 2 * HOUR],
-      ]),
+      idleSince: new Map(claimed.map((item) => [item.key, NOW - 2 * HOUR])),
     });
+  }
+
+  it("surfaces one question on the anchor so its answer settles the batch", () => {
+    const plan = carriedBatchPlan([
+      { key: "#12", title: "issue 12", state: "In Progress" },
+      { key: "#13", title: "issue 13", state: "In Progress" },
+      { key: "#14", title: "issue 14", state: "In Progress" },
+    ]);
     expect(plan.quiet).toContainEqual(
       expect.objectContaining({ target: "#12", class: "claimed-carried" }),
     );
     expect(
       plan.actions.filter((a) => a.cause === "pickup-question"),
-    ).toMatchObject([{ target: "#13" }]);
+    ).toMatchObject([{ target: "#12" }]);
+    expect(
+      plan.quiet.filter((q) => q.why.includes("waits on the question")),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ target: "#13" }),
+        expect.objectContaining({ target: "#14" }),
+      ]),
+    );
+  });
+
+  it("surfaces the question when only its carried anchor remains claimed", () => {
+    const plan = carriedBatchPlan([
+      { key: "#12", title: "issue 12", state: "In Progress" },
+    ]);
+    expect(
+      plan.actions.filter((a) => a.cause === "pickup-question"),
+    ).toMatchObject([{ target: "#12" }]);
   });
 });
 
