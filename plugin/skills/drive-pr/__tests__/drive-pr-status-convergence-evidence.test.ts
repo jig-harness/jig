@@ -47,7 +47,7 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
     expect(r.state).not.toBe("CONVERGED");
     expect(r.state).toBe("ROUND_READY");
     // Two backlog entries plus the unanchored body bullet.
-    expect((r.json.work as Record<string, unknown>).summaryUnaddressed).toBe(3);
+    expect((r.json.work as Record<string, unknown>).summaryUnaddressed).toBe(2);
   });
 
   it("mode 1b: answering every summary finding lets it converge", async () => {

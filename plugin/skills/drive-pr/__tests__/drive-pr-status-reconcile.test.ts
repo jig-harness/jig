@@ -375,31 +375,6 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     expect(r.stderr).toContain("exited");
   });
 
-  // NOT COVERED HERE, and deliberately: a first cut of this fix's own gate
-  // used `!sweepSuppressed && !sweepReconciled` for "the sweep ran and
-  // failed", which is also true whenever the sweep never got a turn at all —
-  // the loop-top spent-budget skip and the "liveness read just spent the
-  // budget" skip both leave `sweepSuppressed` false too, since neither
-  // `--no-count` nor `--no-reconcile` was passed. That produced a false
-  // INDETERMINATE on a genuinely converged PR whose sweep was merely SKIPPED,
-  // which is why `sweepRanAndFailed` below is a
-  // dedicated flag set at exactly one call site — immediately after the
-  // sweep subprocess itself exits nonzero — and nowhere else, including
-  // neither skip branch. A black-box probe for the skip side of that
-  // distinction needs `budgetLeftMs() <= 0` on the very first iteration, but
-  // both `--timeout` and `--interval` are floored at `MIN_INTERVAL` (5s) by
-  // the CLI's own validation, and the one call whose OWN kill-timeout could
-  // be raced against that budget (`ghCall`'s liveness read, a few lines
-  // above `sweepRanAndFailed`'s call site) clamps its `timeoutSec` to
-  // `budgetLeftMs()` itself — so hanging it via `DRIVE_PR_STUB_HANG` either
-  // finishes under the clamp (budget still positive, skip never fires) or
-  // gets killed BY the clamp (a genuinely unreadable read, a different
-  // branch entirely). There is no window to land the hang exactly on the
-  // budget boundary without a wall-clock race this suite's existing hang
-  // mechanism cannot avoid, so this fix's skip-path correctness rests on
-  // `sweepRanAndFailed` having exactly one set site — reviewed, not
-  // black-box tested.
-
   it("a failing sweep is re-attempted on EVERY poll, not a bounded few", async () => {
     // The docs say the sweep is re-attempted on each poll, which is what makes
     // a `4` returned after the whole `--timeout` window mean something. A
@@ -410,12 +385,6 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // Counted via the sweep's OWN liveness probe (`--json state`, that field
     // alone), which is one per attempt. `4` is the verdict of every
     // evaluation, so this measures the retry rather than any degrade path.
-    // The window can still end on one of the two deadline guards instead,
-    // each stopping as INDETERMINATE: the post-sweep overrun guard, when the
-    // deadline expires *during* a sweep, and the loop-top guard, when a
-    // scheduling delay carries a permitted sleep past it. Which stop ends the
-    // run is wall-clock timing, not behaviour, so all three are accepted —
-    // exit 1 only with one of those guards' own diagnostics.
     const { dir, stateDir } = writeFixture({
       threads: [repliedThread("PRRT_retry_forever", "**rejected**")],
       checkRuns: [DORMANT_ARM],
@@ -437,13 +406,8 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
       },
     );
 
-    if (r.exitCode === 1) {
-      expect(r.stderr).toMatch(
-        /budget was spent (by the replied-thread reconciliation sweep|before this iteration could reconcile and judge)/,
-      );
-    } else {
-      expect(r.exitCode).toBe(4);
-    }
+    expectSpawnExit({ ...r, stdout: JSON.stringify(r.json) }, 4);
+    expect(r.json.reason).toContain("gave up after 12s");
     const attempts = Number.parseInt(
       readFileSync(join(dir, "live-probes"), "utf8"),
       10,

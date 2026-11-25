@@ -35,6 +35,14 @@ const PARK: ParkedItem = {
     "Question: which retry budget should the client keep?\nOptions: (a) three retries; (b) five retries\nRecommended: (a), the budget the timeout was sized for",
 };
 
+const LATER_PARK: ParkedItem = {
+  ...PARK,
+  key: "F2",
+  reason: "Which timeout should the client keep?",
+  record:
+    "Question: which timeout should the client keep?\nOptions: (a) ten seconds; (b) thirty seconds\nRecommended: (a), the budget the retries were sized for",
+};
+
 let current: World | null = null;
 const servers: Array<ReturnType<typeof Bun.serve>> = [];
 afterEach(() => {
@@ -44,7 +52,7 @@ afterEach(() => {
 });
 
 it.skipIf(process.platform === "win32")(
-  "posts a parked drive's notice to the machine file's webhook, once, and writes no card",
+  "starts a new webhook from the notice already standing, then posts a later one once, and writes no card",
   async () => {
     const posts: string[] = [];
     const server = Bun.serve({
@@ -96,18 +104,31 @@ it.skipIf(process.platform === "win32")(
     };
 
     const first = await tick();
-    const notified = first.repos[0]?.notifications ?? [];
+    const started = first.repos[0];
+    expect(started?.channelStarts).toEqual([{ channel: "phone", causes: 1 }]);
+    expect(
+      (started?.notifications ?? []).map((n) => [n.channel, n.outcome]),
+    ).toEqual([["phone", "suppressed"]]);
+    expect(posts).toEqual([]);
+    expect(notifyWrites(w)).toEqual([]);
+
+    w.setComments(7, [
+      ledgerComment(702, stoppedLedger(7, 8, { parked: [LATER_PARK] })),
+    ]);
+    const second = await tick();
+    const notified = second.repos[0]?.notifications ?? [];
     expect(notified.map((n) => [n.channel, n.cause, n.outcome])).toEqual([
       ["phone", "parked", "sent"],
     ]);
+    expect(second.repos[0]?.channelStarts).toBeUndefined();
     expect(posts).toHaveLength(1);
     expect(posts[0]).toContain(`${SLUG} PR #7 parked`);
-    expect(first.repos[0]?.noticesWorkspace).toBeUndefined();
+    expect(second.repos[0]?.noticesWorkspace).toBeUndefined();
     expect(notifyWrites(w)).toEqual([]);
 
-    const second = await tick();
+    const third = await tick();
     expect(
-      (second.repos[0]?.notifications ?? []).map((n) => [n.channel, n.outcome]),
+      (third.repos[0]?.notifications ?? []).map((n) => [n.channel, n.outcome]),
     ).toEqual([["phone", "suppressed"]]);
     expect(posts).toHaveLength(1);
   },

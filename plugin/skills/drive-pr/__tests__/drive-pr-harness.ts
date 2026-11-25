@@ -65,7 +65,11 @@ export const WORKTREE_LOCK = await worktreeLockName();
  * that genuinely needs git to answer uses instead, and
  * `the head tokens are not objects in this repository` pins the property.
  */
-import { HEAD, stickyBody } from "./drive-pr-sticky-fixture.ts";
+import {
+  HEAD,
+  type StickyBacklog,
+  stickyBody,
+} from "./drive-pr-sticky-fixture.ts";
 export { HEAD, stickyBody } from "./drive-pr-sticky-fixture.ts";
 export const PREV = "7bd2ca906c111111111111111111111111111111";
 // Keep the fake git push contract independent of guarded-push.ts's own
@@ -338,7 +342,8 @@ export interface Fixture {
   stateChangesAfter?: number;
   /** Extra reviewer comments that are NOT the sticky (no ai-code-review marker). */
   decoyReviewerComments?: string[];
-  backlog?: boolean;
+  backlog?: StickyBacklog;
+  unanchoredSummary?: number;
   /**
    * GitHub's mergeability verdict: `MERGEABLE`, `CONFLICTING`, or `UNKNOWN`
    * while it recomputes. Defaults to `MERGEABLE`.
@@ -1224,6 +1229,7 @@ if [ -n "$rest_pr" ]; then
     if [ "$a" = "X-Drive-Pr-Caller: snapshot" ] && [ -f "$F/snapshot-unreadable" ]; then
       printf '%s\\n' "$*" >> "$F/snapshot-reads"
       printf 'HTTP/2.0 502 Bad Gateway\\r\\n\\r\\n'
+      echo "gh: HTTP 502" >&2
       exit 1
     fi
   done
@@ -2578,6 +2584,9 @@ export function writeFixture(
       body: stickyBody({
         sha: f.reviewedSha ?? head,
         backlog: f.backlog ?? false,
+        ...(f.unanchoredSummary === undefined
+          ? {}
+          : { unanchored: f.unanchoredSummary }),
         ...(f.stickyRound === null ? { round: null } : {}),
       }),
       user: { login: "example-review[bot]" },
@@ -2676,52 +2685,55 @@ export async function probeIn(
   extraArgs: string[] = [],
   opts: {
     once?: boolean;
+    preload?: string;
     reconcile?: boolean;
     env?: Record<string, string>;
     /** The pull request argument: a number, a URL or a branch. */
     pr?: string;
   } = {},
 ): Promise<ProbeResult> {
-  const proc = Bun.spawn(
-    scriptArgv(
-      join(SCRIPTS, "drive-status.ts"),
-      opts.pr ?? "999",
-      "--json",
-      ...(opts.once === false ? [] : ["--once"]),
-      // The sweep is on in production, so it is on HERE, and a probe
-      // that wants an isolated status evaluation opts out explicitly. This
-      // used to be inverted, on the theory that making every probe pay for a
-      // `reconcile-replied-threads.ts` spawn would push the `drive-pr-selftest`
-      // hook past a budget it has already outgrown once.
-      //
-      // Both halves of that were wrong, and the second was MEASURED wrong on
-      // this suite. Correctness first: an inverted
-      // default silently moves every pre-existing probe onto the exceptional
-      // path, so a change to sweep ordering, output, failure handling or state
-      // mutation can break ordinary production invocations while the suite
-      // stays green — which is exactly what happened when `--no-reconcile`
-      // stopped vouching for a sweep it suppressed, and every probe reaching a
-      // terminal verdict turned out to have been asserting the flagged path
-      // all along. Then cost: flipping it measured FASTER, 346s against 426s
-      // on the same machine, because the degrade those probes were taking
-      // polls and retries where a real sweep just runs.  <!-- measured -->
-      ...(opts.reconcile === false ? ["--no-reconcile"] : []),
-      "--head",
-      head,
-      ...extraArgs,
-    ),
-    {
-      env: {
-        ...gitCleanEnv(),
-        PATH: `${binDir}${delimiter}${process.env.PATH}`,
-        DRIVE_PR_FIXTURES: dir,
-        DRIVE_PR_STATE_DIR: stateDir,
-        ...opts.env,
-      },
-      stdout: "pipe",
-      stderr: "pipe",
+  const args = [
+    opts.pr ?? "999",
+    "--json",
+    ...(opts.once === false ? [] : ["--once"]),
+    // The sweep is on in production, so it is on HERE, and a probe
+    // that wants an isolated status evaluation opts out explicitly. This
+    // used to be inverted, on the theory that making every probe pay for a
+    // `reconcile-replied-threads.ts` spawn would push the `drive-pr-selftest`
+    // hook past a budget it has already outgrown once.
+    //
+    // Both halves of that were wrong, and the second was MEASURED wrong on
+    // this suite. Correctness first: an inverted
+    // default silently moves every pre-existing probe onto the exceptional
+    // path, so a change to sweep ordering, output, failure handling or state
+    // mutation can break ordinary production invocations while the suite
+    // stays green — which is exactly what happened when `--no-reconcile`
+    // stopped vouching for a sweep it suppressed, and every probe reaching a
+    // terminal verdict turned out to have been asserting the flagged path
+    // all along. Then cost: flipping it measured FASTER, 346s against 426s
+    // on the same machine, because the degrade those probes were taking
+    // polls and retries where a real sweep just runs.  <!-- measured -->
+    ...(opts.reconcile === false ? ["--no-reconcile"] : []),
+    "--head",
+    head,
+    ...extraArgs,
+  ];
+  const script = join(SCRIPTS, "drive-status.ts");
+  const argv =
+    opts.preload === undefined
+      ? scriptArgv(script, ...args)
+      : [process.execPath, "--preload", opts.preload, script, ...args];
+  const proc = Bun.spawn(argv, {
+    env: {
+      ...gitCleanEnv(),
+      PATH: `${binDir}${delimiter}${process.env.PATH}`,
+      DRIVE_PR_FIXTURES: dir,
+      DRIVE_PR_STATE_DIR: stateDir,
+      ...opts.env,
     },
-  );
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const [out, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),

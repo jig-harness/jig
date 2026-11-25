@@ -1,4 +1,16 @@
 import type { Ledger } from "../../../skills/drive-pr/scripts/lib/state/ledger.ts";
+import { probeFailure } from "../../../skills/drive-pr/scripts/lib/status/probe-stop.ts";
+import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
+
+/** Whether the stopped ledger's exit 1 came from a status read. */
+export function stoppedOnProbeRead(ledger: Ledger): boolean {
+  const { driver } = ledger;
+  return (
+    driver.exit === DRIVE_EXIT.INDETERMINATE &&
+    driver.probe !== undefined &&
+    probeFailure(driver.probe) === "read"
+  );
+}
 
 /** What a needs-person reason adds when the pull request conflicts with its base. */
 export function conflictNote(mergeable: unknown): string {

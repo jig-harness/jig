@@ -5,7 +5,7 @@
 
 export const HEAD = "a91d4f7c05444444444444444444444444444444";
 
-const backlogJson = JSON.stringify([
+const backlogEntries = [
   {
     fingerprint: "b9a7a18089043564",
     path: "AGENTS.md",
@@ -37,18 +37,27 @@ const backlogJson = JSON.stringify([
     comment:
       "hand-maintains the count of the four bullets immediately below it.",
   },
-]);
+];
+
+export type StickyBacklog = boolean | "winddown-only" | "blocking-only";
 
 export function stickyBody(
   opts: {
     sha?: string;
-    backlog?: boolean;
+    backlog?: StickyBacklog;
     unanchored?: number;
     /** `null` omits the `ai-review-round` marker, as a format regression would. */
     round?: number | null;
   } = {},
 ): string {
   const sha = opts.sha ?? HEAD;
+  const entries =
+    opts.backlog === "winddown-only"
+      ? backlogEntries.slice(0, 1)
+      : opts.backlog === "blocking-only"
+        ? backlogEntries.map((entry) => ({ ...entry, blocking: true }))
+        : backlogEntries;
+  const backlogBlob = Buffer.from(JSON.stringify(entries)).toString("base64");
   return [
     "<!-- ai-code-review -->",
     "### 🟡 Some headline",
@@ -81,8 +90,6 @@ export function stickyBody(
       : [`<!-- ai-review-round: ${opts.round ?? 7} -->`]),
     ...(opts.backlog === false
       ? []
-      : [
-          `<!-- ai-review-backlog: ${Buffer.from(backlogJson).toString("base64")} -->`,
-        ]),
+      : [`<!-- ai-review-backlog: ${backlogBlob} -->`]),
   ].join("\n");
 }

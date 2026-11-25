@@ -35,6 +35,7 @@
  */
 
 import { isGitSha } from "../cli.ts";
+import { isFixDependentOutcome, isOutcome, type Outcome } from "../outcome.ts";
 import { isActorId } from "./actor.ts";
 import type { DrivenBranch } from "./driven-branch.ts";
 import { isAccountHash } from "../identity.ts";
@@ -102,7 +103,7 @@ export interface RoundPaths {
 export interface HeldItem {
   key: string;
   kind: "thread" | "finding";
-  outcome: "accepted" | "moot";
+  outcome: Outcome;
   round: number;
   /**
    * The qualifying comment's own permalink — REQUIRED for `kind: 'thread'` on
@@ -743,7 +744,7 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
     // an item nobody held.
     if (/[\n\r]/.test(e.key)) return false;
     if (e.kind !== "thread" && e.kind !== "finding") return false;
-    if (e.outcome !== "accepted" && e.outcome !== "moot") return false;
+    if (!isOutcome(e.outcome)) return false;
     // An INTEGER, but not a `isCount` one: `hold --unconfirmed` deliberately
     // writes `round: -1`, a position `claim-held` can never match, so a
     // reply found already posted stays unresolved until a live pass re-holds
@@ -760,6 +761,7 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
     // validator restates the writer's invariant rather than tolerating a
     // record no consumer can use.
     if (e.kind === "thread") {
+      if (!isFixDependentOutcome(e.outcome)) return false;
       if (typeof e.commentUrl !== "string" || e.commentUrl.length === 0)
         return false;
     }
