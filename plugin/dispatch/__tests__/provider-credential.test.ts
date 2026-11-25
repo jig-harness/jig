@@ -1,6 +1,6 @@
 /** A provider account's credential, resolved through the host's command, and what a refusal holds. */
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -285,10 +285,10 @@ describe("resolving a credential reference", () => {
   it("does not relay a failed credential command's stderr to its parent", async () => {
     const stderrOnly = "opaque-stderr-diagnostic-1234";
     const stdoutSentinel = "credential-command-ran-1234";
-    const sentinelPath = join(
-      mkdtempSync(join(tmpdir(), "provider-credential-")),
-      "ran",
+    const sentinelDirectory = mkdtempSync(
+      join(tmpdir(), "provider-credential-"),
     );
+    const sentinelPath = join(sentinelDirectory, "ran");
     const credentialModule = new URL(
       "../lib/provider-credential.ts",
       import.meta.url,
@@ -297,7 +297,7 @@ describe("resolving a credential reference", () => {
       import { resolveCredential } from ${JSON.stringify(credentialModule)};
       const result = await resolveCredential({
         credentialCommand: [process.execPath, "--no-env-file", "-e", ${JSON.stringify(
-          `require("node:fs").writeFileSync(${JSON.stringify(sentinelPath)}, ${JSON.stringify(stdoutSentinel)}); process.stderr.write(${JSON.stringify(stderrOnly)}); process.exit(43)`,
+          `require("node:fs").writeSync(2, ${JSON.stringify(stderrOnly)}); require("node:fs").writeFileSync(${JSON.stringify(sentinelPath)}, ${JSON.stringify(stdoutSentinel)}); process.exit(43)`,
         )}],
         credentialTimeoutMs: 10_000,
         credentialEnv: [],
@@ -306,28 +306,35 @@ describe("resolving a credential reference", () => {
       if (result.ok) throw new Error("expected credential command failure");
       console.log(result.failure.reason);
     `;
-    const child = Bun.spawn([process.execPath, "--no-env-file", "-e", source], {
-      stdout: "pipe",
-      stderr: "pipe",
-      env: { PATH: process.env.PATH ?? "" },
-      timeout: 15_000,
-    });
-    const [exitCode, stdout, stderr] = await Promise.all([
-      child.exited,
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-    ]);
-    expectSpawnExit(
-      { exitCode, stdout, stderr },
-      0,
-      "credential resolver child",
-    );
-    expect(stdout).toBe(
-      "the credential command exited 43; its error output is not recorded\n",
-    );
-    expect(readFileSync(sentinelPath, "utf8")).toBe(stdoutSentinel);
-    expect(stdout).not.toContain(stderrOnly);
-    expect(stderr).not.toContain(stderrOnly);
+    try {
+      const child = Bun.spawn(
+        [process.execPath, "--no-env-file", "-e", source],
+        {
+          stdout: "pipe",
+          stderr: "pipe",
+          env: { PATH: process.env.PATH ?? "" },
+          timeout: 15_000,
+        },
+      );
+      const [exitCode, stdout, stderr] = await Promise.all([
+        child.exited,
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
+      expectSpawnExit(
+        { exitCode, stdout, stderr },
+        0,
+        "credential resolver child",
+      );
+      expect(stdout).toBe(
+        "the credential command exited 43; its error output is not recorded\n",
+      );
+      expect(readFileSync(sentinelPath, "utf8")).toBe(stdoutSentinel);
+      expect(stdout).not.toContain(stderrOnly);
+      expect(stderr).toBe("");
+    } finally {
+      rmSync(sentinelDirectory, { recursive: true, force: true });
+    }
   }, 20_000);
 
   it("is unreachable when the command does not answer in time", async () => {
