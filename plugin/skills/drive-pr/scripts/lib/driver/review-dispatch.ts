@@ -39,7 +39,11 @@ import { unpushedNoticeFor } from "./unpushed.ts";
 import { resolveStateDir } from "./../state/store.ts";
 
 import { fail } from "./../cli.ts";
-import { passDeadlineUnderCap } from "./circuit-breaker.ts";
+import {
+  passDeadlineUnderCap,
+  stopAtCeiling,
+  wallClockReached,
+} from "./circuit-breaker.ts";
 
 import { span } from "./../../../../../shared/trace.ts";
 
@@ -208,7 +212,6 @@ export async function dispatchReviewPass(
   round: number,
   prepared: PreparedSpawn | null,
   baseEnv: NodeJS.ProcessEnv,
-  passDeadlineSec: number,
 ): Promise<
   | number
   | "continue"
@@ -238,6 +241,12 @@ export async function dispatchReviewPass(
   // caught before this dispatch, only at the next checkpoint — accepted
   // deliberately, because closing it would need the charge and the spawn
   // to be literally the same operation, which they cannot be.
+  // The wall-clock cap is read again here, after every await above, so the
+  // time those reads took is not lost to the pass: a spent cap stops the
+  // drive before any budget is charged.
+  if (context.circuit !== undefined && wallClockReached(context.circuit)) {
+    return await stopAtCeiling(context.circuit, "wall-clock", round, false);
+  }
   context.passes += 1;
   const bump = await run(
     tsArgv(driveState, ["bump-attempt", context.pr, "--head", apiHead]),
@@ -267,6 +276,12 @@ export async function dispatchReviewPass(
   }
   context.passIdentity = resolveAccountIdentity(context.agent);
   const session = prepared?.correlation.sessionId ?? null;
+  // Recalculated immediately before the spawn: the preparation, the mailbox
+  // checkpoint and the attempt write all ran after the first calculation.
+  const spawnDeadlineSec = passDeadlineUnderCap(
+    context.circuit,
+    passTimeoutSeconds(),
+  );
   const passRes = await span("pass", { round }, () =>
     runRoundPass(
       prepared?.argv ?? context.agent,
@@ -275,7 +290,7 @@ export async function dispatchReviewPass(
         env: prepared?.env ?? baseEnv,
         // `0` disables, matching every other deadline knob in this skill; `run()`
         // takes the absence of the field as "no deadline" rather than a zero.
-        ...(passDeadlineSec > 0 ? { timeoutSec: passDeadlineSec } : {}),
+        ...(spawnDeadlineSec > 0 ? { timeoutSec: spawnDeadlineSec } : {}),
         onSpawn: () => {
           passSpawnProgressStamp = run(
             tsArgv(driveState, [
