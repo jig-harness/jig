@@ -495,8 +495,9 @@ effective tree before the drive installs.
 Restart a stopped drive by the procedure for its stop (answer every parked
 decision; for a usage-limit stop, follow "Picking up a stopped drive" in the drive-pr skill: a pass that
 bills a known, different account may pick the drive up now, while the same
-account or an unresolvable one waits for the reset unless a person knows the
-window reopened and passes `--window-reopened`; grant a spent
+account or an unresolvable one is admitted once the recorded reset has passed,
+or earlier when a person who knows the window reopened passes
+`--window-reopened`; grant a spent
 round budget). What needs a restart depends on how the drive ended:
 
 - A drive a person stopped stays stopped.
@@ -509,12 +510,18 @@ round budget). What needs a restart depends on how the drive ended:
   proof, an applicable review witness, passing checks on the new head and a
   standing announcement on the previously verified head. The refresh runs only
   while the pull request is open, not a draft, mergeable, and neither held nor
-  busy; when one of those fails, resolve it before deciding whether a restart is
-  needed. Until the refresh records the convergence the head is stale, and
+  busy, in a repository listed on the owning host with the `rearm` stage
+  enabled, from an apply tick of that host's dispatcher that reads the forge
+  successfully; it skips disputed and out-of-scope pull requests. Check that
+  scope before waiting for a refresh. When the pull request is held or busy,
+  release the hold or wait for the busy drive; when it is not mergeable, a new
+  conflict is a new stop and follows the restart rules below instead of waiting.
+  Until the refresh records the convergence the head is stale, and
   dispatch can withhold a re-drive while verification of the new head is
   pending. A refresh that is still unresolved (verification pending, a held
-  drive slot, an unconfirmed ledger write) can show as `unplaced`: check again
-  rather than restarting.
+  drive slot, an unconfirmed ledger write) can show as `unplaced`, but so can a
+  fallback that leaves the drive `stale`: read the row's reason and check the
+  canonical ledger before choosing between waiting and a manual restart.
 - When a refresh falls back, check the canonical ledger before restarting: a
   fallback can follow a ledger that already carries the new verified head, in
   which case the convergence holds. When the ledger still shows the old head,
