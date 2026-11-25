@@ -132,7 +132,10 @@ describe("the stop's comment", () => {
         REVIEWER_FAILED_EXIT,
         "stopped: the posting reviewer's check reported a failure",
       ],
-      [9, "stopped: it conflicts with its base and has nothing left to work"],
+      [
+        9,
+        "stopped: it conflicts with its base and has nothing left that the drive can work (work held by a park waits for its answer)",
+      ],
       [22, "stopped: the reviewer skipped its head and will not review it"],
       [
         WORKTREE_UNCLEAN_EXIT,

@@ -35,6 +35,7 @@
  */
 
 import { isGitSha } from "../cli.ts";
+import { isFixDependentOutcome, isOutcome, type Outcome } from "../outcome.ts";
 import { isActorId } from "./actor.ts";
 import type { DrivenBranch } from "./driven-branch.ts";
 import { isAccountHash } from "../identity.ts";
@@ -48,6 +49,20 @@ import type { ArbiterRuling } from "./rulings.ts";
 import type { RecordedLadderVerdict } from "./ladder-verdict-model.ts";
 import { hasUsableOptionalFields } from "./optional-fields.ts";
 import { isoOf, parseMs } from "../../../../../shared/time.ts";
+import { isUsableRoundPaths, type RoundPaths } from "./round-paths.ts";
+export {
+  type EscalationState,
+  foldRoundPaths,
+  normalizeRoundPaths,
+  normalizeRoundPathsUncapped,
+  pruneRoundPaths,
+  ROUND_PATH_MAX_LENGTH,
+  ROUND_PATHS_MAX_PER_ROUND,
+  ROUND_PATHS_WINDOW,
+  type RoundPaths,
+  structuralEscalationArmed,
+  structuralEscalationInvariant,
+} from "./round-paths.ts";
 
 /**
  * The persisted shape of a recorded quota park — what
@@ -79,30 +94,10 @@ export interface QuotaParkRecord {
   account?: string;
 }
 
-/**
- * Which files this PR's reviewer findings anchored to, in one round — the
- * durable evidence `structuralEscalationDue` is derived from.
- *
- * A ROUND-KEYED RECORD rather than a running set, because the question the
- * signal asks is about CONSECUTIVENESS ("the same file two rounds running"),
- * which a flattened set cannot answer: a file found in rounds 1 and 7 with
- * five clean rounds between them is a different fact from a file found in
- * rounds 6 and 7, and only the second is evidence that the last round's own
- * fix drew the next finding.
- *
- * `paths` is a SET, stored sorted and de-duplicated — three findings on one
- * file in one round is one file, not three, and the comparison the predicate
- * makes is set intersection.
- */
-export interface RoundPaths {
-  round: number;
-  paths: string[];
-}
-
 export interface HeldItem {
   key: string;
   kind: "thread" | "finding";
-  outcome: "accepted" | "moot";
+  outcome: Outcome;
   round: number;
   /**
    * The qualifying comment's own permalink — REQUIRED for `kind: 'thread'` on
@@ -389,6 +384,12 @@ export interface DriveState {
    * the reviewer's own round ceiling (`pruneRoundPaths`'s own header).
    */
   roundPaths: RoundPaths[];
+  /**
+   * The round the structural-churn brake last parked at (`churn.ts`): the
+   * round evidence at or before it is consumed, so the brake fires again only
+   * on rounds recorded after it. Absent until the brake first parks.
+   */
+  churnAckRound?: number;
   /** The tree the last attach prepared, `null` before one (`driven-branch.ts`). */
   drivenBranch?: DrivenBranch | null;
   /** Every `drive.ts --take-over` of this drive, oldest first (`takeover.ts`). */
@@ -410,24 +411,9 @@ export interface DriveState {
   ladderVerdicts?: RecordedLadderVerdict[];
   resolvedParks?: import("./resolution-receipt.ts").ResolutionReceipt[];
   resolvedParksLost?: boolean; // receipts evicted or cut: absence proves nothing
+  churnEvidenceLost?: boolean; // unacknowledged roundPaths cut: brake fails closed
   [extra: string]: unknown;
 }
-
-/**
- * How many rounds of finding anchors to keep, once every entry outside the
- * window is safely ACKNOWLEDGED (`foldRoundPaths` below). The predicate reads
- * exactly two adjacent entries, so anything ≥2 is behaviourally sufficient;
- * the surplus is for a human reading `drive-state.ts round-paths` (or the
- * stored state), who wants the shape of the whole drive rather than only its
- * last two rounds. This is a floor, not a hard cap — see `foldRoundPaths`.
- */
-export const ROUND_PATHS_WINDOW = 12;
-
-/** Cap on distinct anchor paths recorded per round. */
-export const ROUND_PATHS_MAX_PER_ROUND = 200;
-
-/** Cap on a single recorded path's length. */
-export const ROUND_PATH_MAX_LENGTH = 512;
 
 /**
  * Cap on `lastEscalatedInvariant`'s length — generous for "one
@@ -440,55 +426,6 @@ export const ROUND_PATH_MAX_LENGTH = 512;
  * channel, so refusing is the only fail-closed option).
  */
 export const ESCALATION_INVARIANT_MAX_LENGTH = 500;
-
-/**
- * Normalize one round's raw anchor paths into the stored form: trimmed,
- * newline-free, non-empty, length-capped, de-duplicated, sorted, count-capped.
- *
- * The newline ban is the same one `parked`/`held` keys carry, though for a
- * weaker reason than theirs: those keys travel on line-delimited channels
- * (`parked-keys`, `held-keys`), where a newline is read back as two tokens and
- * the phantom second one suppresses live work nobody parked. Nothing reads
- * `paths` line-delimited today — `round-paths` emits JSON, and the handoff
- * does not render them at all. It is banned anyway because the ONE consumer
- * that would want a line-delimited channel is the `--stdin` writer that
- * already exists, and a value it could not round-trip has no business being
- * stored by the flag-based one either.
- *
- * Shared by the writer (`record-paths`) and the validator, so a stored value
- * can never be one the writer would not have produced.
- */
-export function normalizeRoundPaths(raw: readonly string[]): string[] {
-  return normalizeRoundPathsUncapped(raw).slice(0, ROUND_PATHS_MAX_PER_ROUND);
-}
-
-/**
- * The same trim/empty/newline/length filtering and de-duplication as
- * `normalizeRoundPaths`, but WITHOUT the `ROUND_PATHS_MAX_PER_ROUND` cap —
- * so a caller that needs to know whether the cap actually dropped anything
- * can compare this length against the capped one, rather than re-deriving
- * the same filtering by hand and risking it drift from the writer's real
- * rule. `record-paths` uses this to warn when a round's real anchor count
- * exceeds what gets stored: sorting then slicing is silent by construction,
- * so without this comparison a truncated round drops real evidence with
- * nothing in state or the report recording that it happened.
- */
-export function normalizeRoundPathsUncapped(raw: readonly string[]): string[] {
-  const seen = new Set<string>();
-  for (const p of raw) {
-    // `.trim()` is used ONLY to test for a whitespace-only/oversized entry —
-    // the ORIGINAL, untrimmed `p` is what gets stored. Two legitimate,
-    // distinct repository paths can differ only by leading or trailing
-    // whitespace (`a.ts` vs ` a.ts`); storing the trimmed form would alias
-    // them to the same recurrence key, arming `structuralEscalationDue` on
-    // findings from two different files — the same identity bug
-    // `evaluate.ts`'s `openThreadPaths` had.
-    if (p.trim() === "" || p.length > ROUND_PATH_MAX_LENGTH) continue;
-    if (/[\n\r]/.test(p)) continue;
-    seen.add(p);
-  }
-  return [...seen].sort();
-}
 
 /**
  * Every counter in this state is a NON-NEGATIVE INTEGER — round positions,
@@ -677,62 +614,14 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
   )
     return false;
   if (s.quotaPark !== null && !isQuotaParkRecord(s.quotaPark)) return false;
-  if (!Array.isArray(s.roundPaths)) return false;
-  // Collection-level invariants, restating `foldRoundPaths`'s own writer
-  // contract rather than a weaker one the validator could drift from — the
-  // same reason the per-entry `paths` check below re-derives its expectation
-  // from `normalizeRoundPaths`. `foldRoundPaths` never produces a round
-  // beyond the state's own `rounds`, and never two entries for one round —
-  // it replaces, sorted ascending. A hand-edited file violating either of
-  // those changes what `structuralEscalationArmed`'s adjacency check is even
-  // looking at: duplicate or descending rounds can make two SNAPSHOTS of one
-  // round look like consecutive ones, and a future round beyond `s.rounds`
-  // can pre-arm a recurrence nothing has measured yet.
-  //
-  // The length itself is NOT capped at `ROUND_PATHS_WINDOW` outright:
-  // `foldRoundPaths` only evicts an entry outside the window once it is
-  // acknowledged (`round <= lastEscalatedRound`) — an unacknowledged entry
-  // beyond the window is exactly what keeps `structuralEscalationArmed` honest
-  // past round `ROUND_PATHS_WINDOW`. So the per-entry check below restates THAT
-  // invariant instead: an entry outside the window is refused only when it
-  // could no longer have a legitimate reason to survive.
-  const roundPathsArr = s.roundPaths as unknown[];
-  const windowCut = roundPathsArr.length - ROUND_PATHS_WINDOW;
-  const lastEscalatedRound = s.lastEscalatedRound as number;
-  let lastRound = -1;
-  for (let i = 0; i < roundPathsArr.length; i++) {
-    const rp = roundPathsArr[i];
-    if (typeof rp !== "object" || rp === null || Array.isArray(rp))
-      return false;
-    const e = rp as Record<string, unknown>;
-    if (!isCount(e.round)) return false;
-    const round = e.round as number;
-    // Round 0 is not a counted round (`freshState`'s own baseline, before
-    // `bump-round`/`bump-attempt` ever runs) and `record-paths` now refuses
-    // to write one — so an entry naming it can only be a hand-edited or
-    // pre-guard file, and admitting it would let round 1's real entry look
-    // adjacent to a round that measured nothing.
-    if (round < 1) return false;
-    if (round > (s.rounds as number)) return false;
-    if (round <= lastRound) return false;
-    lastRound = round;
-    if (i < windowCut && round <= lastEscalatedRound) return false;
-    if (!Array.isArray(e.paths)) return false;
-    for (const p of e.paths as unknown[]) {
-      if (typeof p !== "string") return false;
-    }
-    // The validator restates the WRITER's invariant rather than a weaker one
-    // it could drift from — the same rule `parked` follows. Comparing against
-    // `normalizeRoundPaths` output is the strongest available form of that:
-    // sorted, de-duplicated, newline-free, capped. A hand-edited file carrying
-    // an unsorted or duplicated list is refused, because the predicate's set
-    // intersection is only as trustworthy as the sets it reads.
-    const norm = normalizeRoundPaths(e.paths as string[]);
-    if (norm.length !== (e.paths as string[]).length) return false;
-    for (let i = 0; i < norm.length; i++) {
-      if (norm[i] !== (e.paths as string[])[i]) return false;
-    }
-  }
+  if (
+    !isUsableRoundPaths(
+      s.roundPaths,
+      s.rounds as number,
+      s.lastEscalatedRound as number,
+    )
+  )
+    return false;
   if (!Array.isArray(s.held)) return false;
   for (const h of s.held as unknown[]) {
     if (typeof h !== "object" || h === null) return false;
@@ -743,7 +632,7 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
     // an item nobody held.
     if (/[\n\r]/.test(e.key)) return false;
     if (e.kind !== "thread" && e.kind !== "finding") return false;
-    if (e.outcome !== "accepted" && e.outcome !== "moot") return false;
+    if (!isOutcome(e.outcome)) return false;
     // An INTEGER, but not a `isCount` one: `hold --unconfirmed` deliberately
     // writes `round: -1`, a position `claim-held` can never match, so a
     // reply found already posted stays unresolved until a live pass re-holds
@@ -760,6 +649,7 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
     // validator restates the writer's invariant rather than tolerating a
     // record no consumer can use.
     if (e.kind === "thread") {
+      if (!isFixDependentOutcome(e.outcome)) return false;
       if (typeof e.commentUrl !== "string" || e.commentUrl.length === 0)
         return false;
     }
@@ -878,157 +768,6 @@ export function withProgress(
     phase: phase === "" ? s.phase : phase,
     quotaPark: null,
   };
-}
-
-/**
- * An INPUT contract, the same shape and for the same reason as
- * `ReflectCounters`: a caller legitimately holds a partial set (drive-status
- * reads it back out of `drive-state.ts get`'s stdout), and tolerating absence
- * at a FUNCTION boundary is not the accepts-both-stored-shapes tolerance
- * `DriveState` documents rejecting. Nothing here decides whether a stored STATE
- * is usable.
- */
-export interface EscalationState {
-  roundPaths?: RoundPaths[];
-  lastEscalatedRound?: number;
-  lastEscalatedInvariant?: string;
-}
-
-/**
- * Is a structural escalation owed — has a reviewer finding landed on the same
- * file in two CONSECUTIVE rounds since the last acknowledgment?
- *
- * Deliberately SHARPER than `reflectDue`'s round-depth trigger, and the
- * sharpness is the point. `reflectDue` fires on depth — "this drive has run
- * long" — which was measured arriving at round 4 when the signal had been
- * unambiguous since round 2. This one fires on RECURRENCE, so it arms while
- * there is one narrow fix to reconsider rather than three. The two do not
- * substitute for each other and neither is derived from the other.
- *
- * What it does NOT try to be: a claim that the recurrence is self-inflicted.
- * That question is answered per-finding, against the commits, by
- * `self-inflicted.ts` — a file drawing findings two rounds running is evidence
- * enough to stop and ask, whoever wrote the line.
- *
- * ARMED-UNTIL-DISCHARGED, mirroring `reflectDue`: once a qualifying pair
- * exists it keeps answering true until `set-escalated` (or a `/reflect`, which
- * subsumes it) stamps a round past it. A signal that un-armed itself on the
- * next round would be silent exactly when the pattern is worst — the round
- * after the one that should have stopped to generalize.
- *
- * The acknowledgment comparison is against the pair's LATER round, strictly:
- * an escalation acknowledged at round 3 is not re-armed by the (2,3) pair it
- * was raised on, but IS re-armed by (3,4), because round 4 is new evidence
- * that the acknowledgment did not settle the class.
- */
-export function structuralEscalationArmed(s: EscalationState): boolean {
-  const entries = [...(s.roundPaths ?? [])].sort((a, b) => a.round - b.round);
-  const since = s.lastEscalatedRound ?? 0;
-  for (let i = 1; i < entries.length; i++) {
-    const prev = entries[i - 1];
-    const cur = entries[i];
-    if (prev === undefined || cur === undefined) continue;
-    if (cur.round !== prev.round + 1) continue;
-    if (cur.round <= since) continue;
-    const prevSet = new Set(prev.paths);
-    if (cur.paths.some((p) => prevSet.has(p))) return true;
-  }
-  return false;
-}
-
-/**
- * The claim the last `set-escalated --invariant` recorded, echoed back ONLY
- * while {@link structuralEscalationArmed} is true — never while
- * the duty it was recorded against is discharged, which is what would happen
- * if this read `lastEscalatedInvariant` unconditionally: a drive that is
- * currently clean on every file would surface a sentence about a recurrence
- * that is no longer live, reading as active guidance for a round that owes
- * nothing.
- *
- * `null`, not `''`, both when nothing is armed and when it is armed but the
- * acknowledging round stated no invariant — the same "null is not the
- * positive claim of an empty measurement" convention `drive-status.ts`'s own
- * JSON payload documents for `drift`/`draft`. A consumer branching on this
- * field never needs to distinguish the two `null` causes: either way, there
- * is no prior claim for this round to check its own finding against.
- *
- * PR-GLOBAL, not per-file, for the reason `lastEscalatedInvariant`'s own doc
- * gives — a non-null result is "what the last acknowledgment believed it
- * closed," not a guarantee that it was about the specific file the CURRENT
- * arming's finding anchors to.
- */
-export function structuralEscalationInvariant(
-  s: EscalationState,
-): string | null {
-  if (!structuralEscalationArmed(s)) return null;
-  const text = s.lastEscalatedInvariant ?? "";
-  return text === "" ? null : text;
-}
-
-/**
- * Keep the newest `ROUND_PATHS_WINDOW` entries — PLUS any entry more recent
- * than `lastEscalatedRound`, whichever is more. `entries` must already be
- * sorted ascending by round, the shape both callers below maintain.
- *
- * That second clause is not an enlargement of the window for its own sake:
- * without it, a drive that runs past `ROUND_PATHS_WINDOW` rounds while an
- * escalation from its early rounds sits unacknowledged has that evidence
- * evicted out from under `structuralEscalationArmed` — the qualifying pair
- * simply falls off the stored history, and the ARMED-UNTIL-DISCHARGED duty
- * that function documents goes silent with no `set-escalated` or `/reflect`
- * ever having discharged it. An entry at
- * or before `lastEscalatedRound` carries no such risk — `set-escalated`
- * already silenced every pair ending at or before it — so ONLY those are
- * still safe to prune once the window is full; the acknowledgment is what
- * makes eviction sound, not the passage of rounds by itself. A drive that
- * never acknowledges therefore grows `roundPaths` without the window bound —
- * accepted, because the same drive is already bounded by the reviewer's own
- * round ceiling (SKILL.md § "When the reviewer will not answer") long before
- * this could matter in practice.
- *
- * Exported separately from `foldRoundPaths` (not just inlined there) because
- * `drive-state.ts`'s `set-reflected`/`set-escalated` need to re-apply this SAME
- * filter the instant they advance `lastEscalatedRound`, not only on the next
- * `record-paths` call. Advancing the acknowledgment without re-pruning left a
- * state `isUsableState` immediately rejected: a drive retaining more than the
- * window's worth of unacknowledged entries writes `lastEscalatedRound:
- * s.rounds`, and on the very next read `isUsableState`'s own invariant — an
- * entry outside the window with `round <= lastEscalatedRound` is refused — now
- * condemns the entries THIS update just newly acknowledged, because nothing
- * pruned them in the same write. Every acknowledging writer must therefore
- * prune in the same update that advances the acknowledgment, not rely on the
- * next fold.
- */
-export function pruneRoundPaths(
-  entries: readonly RoundPaths[],
-  lastEscalatedRound: number,
-): RoundPaths[] {
-  const windowCut = entries.length - ROUND_PATHS_WINDOW;
-  return entries.filter(
-    (e, i) => i >= windowCut || e.round > lastEscalatedRound,
-  );
-}
-
-/**
- * Fold one round's anchor paths into the stored window: replace the entry for
- * that round if it already exists (a second pass on an unmoved head re-reads
- * the same threads and must not create a second entry for one round), append
- * otherwise, then prune via {@link pruneRoundPaths}.
- *
- * Lives here rather than in the CLI command for the reason
- * `reflectDepthPastLast` does: the writer and the validator have to agree
- * about what a stored entry looks like, and two copies of that would drift.
- */
-export function foldRoundPaths(
-  existing: readonly RoundPaths[],
-  round: number,
-  paths: readonly string[],
-  lastEscalatedRound = 0,
-): RoundPaths[] {
-  const entry: RoundPaths = { round, paths: normalizeRoundPaths(paths) };
-  const kept = existing.filter((e) => e.round !== round);
-  const merged = [...kept, entry].sort((a, b) => a.round - b.round);
-  return pruneRoundPaths(merged, lastEscalatedRound);
 }
 
 /**

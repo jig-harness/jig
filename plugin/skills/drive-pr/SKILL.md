@@ -194,8 +194,8 @@ consumer polling `--json` for one of these states will never see it there.
 |---|---|---|
 | `CONVERGED` | 3 (`drive.ts`: 0) | Where the repository names an AI reviewer (`review.reviewer_app` or `review.reviewer_check_pattern`): the posting reviewer completed on **this exact head** and its recorded reviewed-SHA equals that head; for a reviewer that submits pull-request reviews (`review.reviewer_evidence: review_object`, CodeRabbit's profile), its newest review names the head or its check run completed on the head after its newest review. On a draft that reviewer skips, the draft converges on its own work and `drive.ts` marks it Ready and waits for that review (exit `4` when the drive keeps it a draft). Where it names none, no reviewer evidence is required. Either way: zero unresolved threads, zero unaddressed summary-only findings. `drive.ts` additionally removes only the CI-hold transition it owns (when the repository has a hold label), waits for exact-head full CI, records the global verified SHA, and exits 0 only over a **clean worktree**; uncommitted leftovers exit 12 instead. |
 | `PR_NOT_OPEN` | 5 | Merged or closed — detected **before** any push, so nothing lands on an orphaned branch |
-| `HITL_PARKED` | 8 | Everything still open awaits a human decision; the driver hands back with the decisions framed. A re-arm unparks items once **every** parked item has an answer from an owner, member or collaborator, later than the park (§ Picking up a stopped drive). A conflicting PR reports `PR_CONFLICTING` before the park, allowing conflict repair while the questions remain parked; `jig dispatch` re-drives it once per pair of its head and its base branch's head |
-| `PR_CONFLICTING` | 9 | The PR conflicts with its base **and** has nothing left to work, **and** the conflict-repair budget is spent. A conflict with live findings is still a workable `ROUND_READY` — merge the base in as part of that round |
+| `HITL_PARKED` | 8 | Everything still open awaits a human decision, or the drive parked itself on structural churn (§ 3, The structural-churn park), which holds even live work; the driver hands back with the decisions framed. A re-arm unparks items once **every** parked item has an answer from an owner, member or collaborator, later than the park (§ Picking up a stopped drive). A conflicting PR reports `PR_CONFLICTING` before the park, allowing conflict repair while the questions remain parked; `jig dispatch` re-drives it once per pair of its head and its base branch's head |
+| `PR_CONFLICTING` | 9 | The PR conflicts with its base **and** has nothing left to work, **and** the conflict-repair budget is spent. A conflict with live findings is still a workable `ROUND_READY` — merge the base in as part of that round — except while the drive's own structural-churn park holds those findings: the gate then reports exit 9 at once, the findings stay held and the driver may still spend conflict-repair budget on the merge |
 | `REVIEW_SKIPPED` | 22 | The reviewer's skip notice names this head, and its review of an earlier head does not cover it: the pull request's diff changed; or a review-object reviewer's check run on the head reads `Review paused…` or `Review skipped…` (a draft skip is not one: on a draft it converges provisionally, on a Ready PR it waits for the review), the reason naming which and quoting the title. No review of this head will come; a person reviews the change and has the reviewer review the head (or resume its reviews), or pushes a commit it reviews, then re-arms. A skipped head whose diff is unchanged converges on the earlier review instead ([terminal-states.md § The reviewer skips a head](references/terminal-states.md)) |
 | `CHECK_RUNS_UNREADABLE` | 25 | The head's check-runs listing ran into a deadline or its page bound: each page may take `GH_CALL_TIMEOUT`, the whole listing four times that, and a read at most 100 pages (with `JIG_FORGE_BUDGET=off`, `gh` pages a fresh listing itself under the whole-read bound, with no page bound). Nothing was judged, and the reason names the pages read. `drive-status.ts` retries it as it retries `INDETERMINATE`, except at the page bound; `drive.ts` also ends with it when the cancelled-run recovery, the CI hold's release or the final CI proof cannot read the listing, and when a review pass's `finish-round.ts` reports it in the finish record bound to that pass's launch and round, whatever the pass process exited (except a pass the driver's own timeout ended, whose earlier record never masks the cancellation). Under `jig dispatch` the dispatcher re-drives it once per head commit, and a second such stop on that head goes to a person as a systematic read failure |
 | `PASS_DEADLINE` | 15 | The pass hit `$DRIVE_PR_PASS_TIMEOUT` (default 90m) and was sent a kill signal — witnessed-terminated before the locks release where the POSIX group-based witness *can* see the survivor, held instead in that case; a descendant that escaped the process group is an unhandled false-witness gap, not a covered case (see [terminal-states.md](references/terminal-states.md)). `drive.ts` only — the one stop here that can fire while a round is still *in flight*, which is where the hangs are. The driver **restarts** from a witnessed kill, leaving what the pass left in the tree for the next pass, up to `drive.pass_deadline_retries` (default 2) per drive (§ Running it); this exit is the deadline recurring past that budget, and says so, or a kill that could not be witnessed, which exits here at once with the locks held and spends no budget. Under `jig dispatch` the dispatcher re-drives this stop once per head commit, in the tree it stopped in when it left work there, and a drive re-armed in that tree inherits those edits as its own to finish |
@@ -208,8 +208,13 @@ consumer polling `--json` for one of these states will never see it there.
 | `TAKEN_OVER` | 20 | Another clone took the drive over: a takeover claim in force, newer than this driver's own, was on the PR at a round boundary or during a quota sleep or mailbox pause, and the driver stopped without another pass; or this driver's own `--take-over` claim lost to a rival's earlier claim on the same ledger generation. `drive.ts` only. That clone drives now; do not re-arm beside it (§ Picking up a stopped drive) |
 
 When the driver passes through the status probe's exit, its log, handoff and
-ledger record the probe's state and reason. Read that reason when diagnosing
-the stop.
+ledger record the probe's state and reason. A pull-request read skipped
+because the poll budget expired reports `POLL_BUDGET_SPENT` (exit
+`4`), as does an iteration the probe could not start. A request that was
+sent and failed keeps its diagnostic, including the failure class or
+HTTP status. When the probe stops with exit `1` marked as a read failure,
+the dispatcher re-drives it once per pull-request head and hands a second
+such stop on that head to a person.
 
 In an [Orca](https://www.onorca.dev) worktree, `drive.ts` shows a stop a
 person must settle on the workspace card: a park, a usage-limit stop and
@@ -1923,7 +1928,10 @@ below is already correct for the pass you are about to run. Nothing further to
 bump or recheck; see § 3.
 
 The gate also files **this round's finding anchors** into the same durable
-state on exit `0`, and derives `structuralEscalationDue` from them.
+state on exit `0`, with whether any live finding is `high` or `blocker` and
+each anchored file's blob at the head, and derives `structuralEscalationDue`
+from them. The same evidence feeds the structural-churn brake, which can
+turn the exit into `8` (§ 3, The structural-churn park).
 It arms when a finding lands on the same *file* in two **consecutive** rounds,
 and it is deliberately sharper than `reflectDue`'s round-depth trigger: it
 fires while there is one narrow fix to reconsider rather than three.
@@ -2156,7 +2164,17 @@ producer and the measurement filter directly, with bounded subprocesses and
 without a shell pipeline. A failed producer or filter returns its failure and
 publishes no findings, including any partial output.
 
-Both are open work. A finding the reviewer could not anchor to a diff line
+Both enumerations report open work. An entry is informational when the sticky marks it
+`blocking: false` or `reason: "winddown-deferred"`, or explicitly marks its
+Beyond this PR backlog section non-blocking **and the rendered bullet identifies
+that exact backlog fingerprint**. An explicit `blocking: true` or a fresh body
+bullet with the same fingerprint takes precedence. Abbreviated or ambiguous
+renderings remain blocking. The report lists skipped entries under `ignoredBacklog`
+and status JSON lists their fingerprints under `work.summaryIgnoredBacklogKeys`.
+These entries need no answer. Body bullets, unaccounted slots and backlog
+entries without an explicit non-blocking disposition still count as work.
+
+A finding the reviewer could not anchor to a diff line
 creates **no thread** — thread count reads zero while it sits live, so a
 thread count alone reports such a PR converged. It also has no `threadId`, so
 `reply-to-thread.ts` cannot answer it. For a review-object reviewer
@@ -2672,7 +2690,8 @@ The two signals do not substitute for each other and neither is derived from
 the other: `reflectDue` measures **depth** ("this drive has run long"),
 `structuralEscalationDue` measures **recurrence** ("this file keeps coming
 back"). Skipping `set-escalated` re-arms the duty every round against an
-escalation that was already answered.
+escalation that was already answered. Neither stops the drive; the
+structural-churn brake below does, when the recurrence goes on.
 
 `selfInflicted` from step 2 is the per-finding counterpart, and it sharpens the
 same triage rather than duplicating it: a `true` label says the anchor line was
@@ -2699,36 +2718,15 @@ a `not`/`no`/`never` word — a word-only change with neither (`pending` →
 no sibling exists for that kind of correction. Search manually for siblings of
 a claim, value, or status change outside those shapes.
 
-Summary-only findings answer differently, because there is no thread:
+Hold each decided summary-only finding with its outcome and reason. Step 6
+posts the round's answers in one top-level PR comment. Each answer keeps its
+own closed-vocabulary outcome and fingerprint marker. When the outcome is
+`deferred`, file the follow-up first and carry its link in the reason.
 
-**exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
-
-Write `.context/scratch/finding-reason.md` with the file editor:
-
-```text
-valid, but a docs-polish item on an unchanged file; declined per the triage rubric (docs tier).
-```
-
-```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/finding-reason.md -- bun "${CLAUDE_SKILL_DIR}/scripts/answer-summary-finding.ts"  --outcome wont-fix --fingerprint b9a7a18089043564 [PR]
-```
-
-The outcome is a **flag**, and the body is composed for you — so the closed
-vocabulary is enforced by exact match rather than by a second copy of
-`reply-to-thread.ts`'s parser. Several findings sharing one decision take
-repeated `--fingerprint` flags and answer in a single comment.
-
-The **fix-dependent** outcomes — `accepted` and `moot` — are **held exactly like
-an accepted thread**, with one difference: a thread's reply is already posted
-to GitHub by hold time, so its text survives independently of this state.
-A finding's is not — `bun "${CLAUDE_SKILL_DIR}/scripts/answer-summary-finding.ts" --pushed-sha` can't legally run
-until step 6, after the push, so at hold time the reasoning exists nowhere but
-your own context. `hold` needs it on stdin, not just `--outcome` — and that
-stdin is the **reason alone, with no leading outcome token**. Unlike a thread
-reply, whose whole text you write, the token here is composed from `--outcome`
-at answer time; one in the held reason too posts a doubled token, which a
-reviewer-scoring harvester, where the repository runs one, reads as malformed. `answer-summary-finding.ts`
-refuses such a body, but the fix belongs at the `hold` call:
+Pass the **reason alone** on stdin. The posting script adds the outcome
+token, and a second token in the reason makes the reply malformed for
+downstream scoring. For a fix-dependent outcome (`accepted` or `moot`),
+hold it before the push so the round can bind the answer to the pushed head.
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
@@ -2746,7 +2744,7 @@ Their marker is proof the finding is answered, so it may not exist before the
 change that answers it does. The script enforces the ordering rather than
 trusting it: both require `--pushed-sha`, verified against the PR's live head
 *and* this worktree's clean HEAD, so they can only be posted in step 6 after
-the push has landed. `finish-round.ts` brackets each one with a claim; when you
+the push has landed. `finish-round.ts` claims each finding before posting the batch; when you
 post a held finding by hand instead (settling one of its refusals), do the same
 — `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" claim-held --kind finding` before `answer-summary-finding.ts`,
 `release-held --key K --token T` after (§ Guardrails).
@@ -2768,8 +2766,7 @@ set it deliberately holds out of inline review and carries forward by the
 entry's original `firstRound` rather than re-deriving from the diff, so its
 re-emission at the fix's head judges nothing. A body bullet at that same head
 *is* a fresh judgment, so it still expires — including when the sticky emits
-one fingerprint **both** ways, where the fresh judgment wins and neither this
-grace nor the round budget below applies to it. A fingerprint is one global
+one fingerprint **both** ways, where the fresh judgment takes precedence and the grace expires. A fingerprint is one global
 key, so there is no clearing "the backlog copy" alone.
 
 That `at` case is not an edge: step 6 orders push → `stamp-held` → status →
@@ -2779,24 +2776,6 @@ verified-fixed finding is re-answered round after round, and a drive
 can end `HITL_PARKED` instead of `CONVERGED` purely because of it. The grace
 is exactly one head wide: any later push moves the
 reviewed SHA off the marked one, so a reverted or regressed fix is re-asked.
-
-Past that one head, one narrower exemption keeps running, itself bounded — and
-bounded along a different axis, which is why the one-head rule above does not
-replace it: a backlog entry the reviewer carries with
-`reason: "winddown-deferred"` is forwarded unconditionally by its original
-round, never re-verified against the diff, so its re-emission falsifies nothing
-— a dated `accepted`/`moot` marker for one survives the expiry (without
-that, the expiry re-asks the same verified-fixed finding every round). It
-survives it for `WINDDOWN_EXEMPTION_ROUNDS` further rounds, not
-forever: the same absent signal means a later round that *reverts* the fix
-re-emits the identical fingerprint under the identical reason, which an
-unbounded exemption would suppress permanently. The marker therefore
-carries the round it was posted in, and past the bound the finding is re-asked
-once. Bounded in rounds and nothing else — that clause ignores the reviewer's
-**position** by design, but not the marker's **dating**: a SHA git cannot
-resolve to a commit gets no exemption at all, since a marker naming nothing
-datable can never be checked. The clauses live in `collectAddressed` in
-`summary-findings.ts`, which is the rule; this is a summary of it.
 
 And one limit to plan around, stated rather than gated: a fix applied **only**
 to the PR description (`gh pr edit`) produces no commit, so its
@@ -2813,9 +2792,8 @@ findings held in one round share it) is a proxy and must not be presented as
 proof. Do not add one — and an exemption keyed on a pre-existing artifact the
 gate itself did not emit is a bypass, not a compatibility measure.
 
-What limits a wrong answer **between** rounds is the **expiry** above: one head
-for the `at` grace, `WINDDOWN_EXEMPTION_ROUNDS` for a winddown-deferred entry,
-then the finding is re-asked. Do not read that as a bound on the last round.
+What limits a wrong answer **between** rounds is the **expiry** above: the marked head
+for the `at` grace. A later review that repeats the finding reopens it. Do not read that as a bound on the last round.
 At the head a drive converges on, no later reviewer pass runs, so nothing
 expires the marker and the answer stands on the driver's word. That residual is accepted rather than closed: it is not specific to a
 description-only fix — a code commit that does not actually fix the finding
@@ -2838,6 +2816,63 @@ that `CONVERGED` cannot be declared over. That is a reviewer pass over the fix,
 not proof of one — silence has other causes — so the announcement says pass, not
 proof.
 
+#### The structural-churn park
+
+`structuralEscalationDue` asks the pass to step back; it changes no state
+and no exit. The **structural-churn brake** is the mechanical stop behind
+it. On a counting exit-`0` gate, after filing the round's anchors, the gate
+judges the recorded rounds since the brake last parked and parks the drive
+itself, before the round's pass, when either holds:
+
+- **same-file**: a file drew findings in each of the last
+  `drive.churn_rounds` consecutive rounds (4 by default;
+  `DRIVE_PR_CHURN_ROUNDS` for one run; `0` turns the brake off), none of
+  those rounds carried a `high` or `blocker` finding, and the file was
+  rewritten between each of them. A round with a `high` or `blocker` finding
+  never counts toward the streak.
+- **oscillation**: a file's content at one round's head came back at a
+  later round's head after a different content in between (A, B, A),
+  whatever the findings' severity Contents are recorded only for
+  the files that drew a finding in a round, so a return is seen only among
+  the rounds in which the file drew one; a file with no finding at the
+  middle or the returning head is not caught.
+
+The gate then records a framed decision under the `structural-churn` class
+(key `structural-churn-r<round>`, the files and the rounds in its question)
+and exits `8` (`HITL_PARKED`). While that park stands, every gate exits `8`
+(unless the reconciliation guard degrades that read to `1`, `INDETERMINATE`, when
+its replied-thread sweep did not complete, `--no-count` included; the park
+stays live),
+even with live work: re-arming without an answer runs no round. On a pull
+request that conflicts with its base, the gate that parks and every gate
+after it exit `9` (`PR_CONFLICTING`) instead, as for any park, so conflict
+repair runs while the decision waits; never `0`. If this round's evidence
+or the park cannot be recorded, or a trip meets a replied-thread sweep that
+did not complete, the gate exits `1` (`INDETERMINATE`). That exit ends
+`drive.ts`: the drive stops there, and a person re-arms it once the failure is
+addressed.
+The class is kept whatever the repository's `autonomy.park_classes` lists.
+
+A person answers it like any park, and the re-arm hands the answer to the
+first pass. Carry out the chosen option in that pass:
+
+- **Ship as is and defer the rest** (`defer`): triage each open finding as
+  usual first, with its severity read and the decline ladder run; a false
+  positive, a duplicate or a finding of unknown severity gets its ordinary
+  outcome. Apply the person's choice to the confirmed non-blocking findings
+  that are real work: defer each through the deferral protocol
+  (`/jig:resolve-review-comments`), replying `**deferred**` with the
+  follow-up issue. Still fix any `high` or `blocker` finding; then finish the
+  round so the drive can converge.
+- **Constrain the scope** (`narrow`): the person's note names what the pull
+  request keeps. Revert the rest, or defer it through the same protocol, and
+  say in the round's summary what was cut. A note that cannot be applied is
+  parked again with the note quoted.
+- **Continue driving** (`continue`): work the round as usual. The brake
+  consumed the evidence up to the parked round: a same-file streak needs
+  `drive.churn_rounds` more rounds to park it again, an oscillation at
+  least three.
+
 ### 4. Park what needs a human
 
 **judgment** — Decide which unresolved question is a person's under the registry's classes and frame that decision; record it with the exact command below.
@@ -2847,11 +2882,13 @@ human-in-the-loop registry, `autonomy.park_classes` (`bun "${CLAUDE_SKILL_DIR}/.
 lists them): by default the registry template's rows (`ready`, `merge`,
 `release`, `scope`, `human-thread`, `reviewer-posture`, `next-item`,
 `reopen-or-waive`, `dark-dial`, `rules`, `destructive`, `legal`, `copy`),
-`escalated` for a product or stakeholder call the arbiter or `decide`
+`structural-churn` for the drive's own churn park (§ 3), kept whatever the
+repository lists, `escalated` for a product or stakeholder call the arbiter or `decide`
 escalates, and `human-decision` for a value the pull request records as a
 person's decision or a rule inside a human-decided span. In a pass the list
 is the base branch's; while its policy cannot be read it is `escalated`,
-`human-decision` and `human-thread` only, and every decision is parked under
+`human-decision`, `human-thread` and `structural-churn` only, and every
+decision is parked under
 `human-decision`. Record every
 arbiter ruling on a thread as it arrives, its verdict, its `class:` and its
 `human-decision:` answer as one JSON object on stdin
@@ -3331,11 +3368,11 @@ That is the whole of step 6. It performs, in this exact order:
    load-bearing, and omitting it stales every hold before the drain reads it
    back). The head is still counted exactly once — by § 1's gate at the top of
    the next round;
-6. drains the held batch from a **fresh** `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" held` read, one item
-   at a time — a `thread` through `resolve-held-thread.ts`, a `finding`
-   through claim → `answer-summary-finding.ts` → release, giving a claim back
-   on a failed dispatch — releasing each key the instant its own external
-   operation succeeds, never accumulating into an end-of-batch `--all`.
+6. drains a fresh held batch. It resolves threads through
+   `resolve-held-thread.ts` and claims summary findings for a single comment
+   through `answer-summary-finding.ts`. After delivery it releases each
+   completed finding's claim and gives back claims on failed dispatches.
+   A retry reads existing trusted markers and posts only outstanding answers.
 
 Each of those orderings is one an agent gets wrong by hand, which is why
 they are a script and not a checklist.

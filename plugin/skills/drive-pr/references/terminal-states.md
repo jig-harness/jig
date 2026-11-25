@@ -700,6 +700,30 @@ that evidence, including the first status read before the round is counted.
 Repeated reads or reviewer reruns on the same head do not advance this local
 round counter. An unreadable hold or round is counted conservatively.
 
+**A third guard catches the spin the stall stop cannot see**: a drive whose
+head keeps moving while it converges on nothing. Each counting
+`ROUND_READY` gate records the round's live finding paths, whether any live
+finding is `high` or `blocker`, and each path's blob at the reviewed head
+(`lib/state/churn-facts.ts`), then judges the rounds recorded since the
+brake last parked (`lib/state/churn.ts`). It parks the drive under the
+`structural-churn` class and reports [`HITL_PARKED`](../../../protocol/drive-exits.md)
+before the round's pass when one file drew findings in each of the last
+`drive.churn_rounds` consecutive rounds (`DRIVE_PR_CHURN_ROUNDS`; default 4;
+`0` off), none of them `high` or `blocker`, and was rewritten between each
+(an unknown blob counts as rewritten, so a missing blob cannot hide churn);
+or when a file's blob returned to an earlier value after a different one
+(oscillation, whatever the severity). The park (the `park-churn` command of
+`drive-state.ts`) and `churnAckRound`, which consumes the evidence up to that round, land in
+one state update; a park that does not land, or a round whose evidence
+`record-paths` did not record, ends the gate
+[`INDETERMINATE`](../../../protocol/drive-exits.md). An unanswered
+`structural-churn` park reports `HITL_PARKED` even with live work, so a
+re-arm without an answer runs no round; on a pull request that conflicts
+with its base it reports [`PR_CONFLICTING`](../../../protocol/drive-exits.md)
+first, as every park does, and never `ROUND_READY`. The decision offers deferring the
+rest, constraining the scope and continuing; SKILL.md § 3, The
+structural-churn park, says what the next pass does for each.
+
 The counters below share that one bound, because neither covers the other's runaway
 and **both are durable**. `rounds` counts distinct reviewed heads, so it cannot
 see a pass that never pushes; `attempts` counts passes on the current head, and
@@ -1569,9 +1593,9 @@ because the change answering them is not on the PR. SKILL.md § 3 records each
 one at reply time through the `hold` command of `drive-state.ts`, supplying its
 key, kind and outcome; § 6 reads them back (`held`), resolves them after the push, and
 releases each key immediately after its own resolve succeeds
-(`release-held --key K --token T`, the token from `claim-held`) — a `finding`
-answer is not idempotent, so batching every release to one end-of-batch `--all`
-call would re-post duplicate comments for a crash mid-batch. `release-held
+(`release-held --key K --token T`, the token from `claim-held`) — a summary answer can release its hold as soon as the trusted marker is
+confirmed. A retry reads back delivered markers before posting outstanding
+answers. `release-held
 --key` also refuses a key that isn't actually in the batch (a typo or an
 already-released key) rather than succeeding as a silent no-op, since that
 success would read as "released" while the real item stays held.
@@ -1580,8 +1604,8 @@ A `finding` hold additionally requires the reply reason on stdin — a thread's
 reply is already posted to GitHub by hold time and survives independently, but
 a finding's answer can't post until step 6, so the reasoning exists nowhere
 else until then. `STATE_SCHEMA` validates every held entry's full shape (a
-non-empty `key`, `kind` in `thread|finding`, `outcome` in `accepted|moot`, a
-numeric `round`, a non-empty `actor`), not just that `.held` is an array — a
+non-empty `key`, `kind` in `thread|finding`, a closed-vocabulary
+`outcome` allowed for that kind, a numeric `round`, a non-empty `actor`), not just that `.held` is an array — a
 well-formed array of ill-shaped entries would otherwise pass the check while
 being unusable by `held-keys` or the release path.
 
@@ -1600,12 +1624,9 @@ never resolved returns next round as an unfixed finding, or the agent re-replies
 and puts two outcome tokens on one thread — corrupting the reviewer-scoring
 sample the outcome vocabulary exists to feed.
 
-Only the fix-dependent outcomes are holdable; `hold` rejects the rest. `rejected`
-/ `wont-fix` / `deferred` are claims about the finding's **merit**, which no
-later commit changes, so they are replied to and resolved in one step and have no
-waiting period to survive. That is the same split `answer-summary-finding.ts`
-enforces with `--pushed-sha`, so a compaction-confused agent is stopped on the
-thread path exactly as on the summary-finding path.
+Threads hold only the fix-dependent outcomes. A summary finding can hold
+any outcome so the round can deliver all its summary answers together.
+`accepted` and `moot` still require pushed-head evidence before posting.
 
 ### The parked entry shape check
 
@@ -1796,20 +1817,21 @@ Related orderings, all enforced rather than documented:
   for one the reviewer is carrying forward in its own backlog blob — and every
   other position, including cannot-tell on a shallow clone, expires it rather
   than restoring the suppression.
-- Past that, one class of finding is exempt from the expiry for longer, and the
-  exemption is itself
-  bounded. The reviewer forwards its `winddown-deferred` backlog entries by
-  their original round without re-verifying them, so re-emission at a fix's head
-  falsifies nothing, and expiring their markers re-asked a verified-fixed
-  finding every round. The same missing signal is why the
-  exemption cannot be permanent: a later round that *reverts* the fix re-emits the
-  identical fingerprint under the identical reason, indistinguishable from a
-  routine carry-forward, and an unbounded exemption suppresses it forever. The marker therefore also carries the round it was posted in
-  (`<fingerprint>@<sha>#<round>`), and the exemption holds through round
-  `<posted-round> + WINDDOWN_EXEMPTION_ROUNDS` inclusive, lapsing the round
-  after that — bounding silent suppression at a known size instead of trading
-  it against an unwinnable loop. A marker with no round, or a sticky with none
-  to measure against, gets no exemption at all.
+- The sticky's backlog reports an entry as informational when it marks the
+  entry `blocking: false` or `reason: "winddown-deferred"`, or explicitly
+  declares the Beyond this PR backlog non-blocking and renders that entry with
+  its full fingerprint (abbreviated or unmatched renderings stay blocking unless
+  the entry carries an explicit non-blocking field). An explicit
+  `blocking: true` takes precedence. Fresh body bullets remain subject to the
+  usual thread-anchoring and answer rules, including when a backlog entry
+  shares their fingerprint. The summary JSON exposes skipped entries in
+  `ignoredBacklog`, and status exposes their fingerprints in
+  `work.summaryIgnoredBacklogKeys`. They require no replies and do not block
+  convergence.
+- A round groups its held summary answers in one comment, keeping each
+  finding's outcome, reason and fingerprint marker. Delivery retries respect
+  trusted markers already on the PR. Markers for fix-dependent outcomes
+  include the pushed SHA and reviewer round when available.
 - `unaccounted-…` slot keys are scoped to the reviewed **head**, not the sticky
   comment id. The sticky is upserted, so its id never changes; keying a slot on
   it means a later round's unidentifiable finding inherits an older answer.

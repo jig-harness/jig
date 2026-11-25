@@ -6,6 +6,7 @@
  */
 import { ghJson } from "../../../../shared/detect.ts";
 import { isRecord } from "../../../../shared/guards.ts";
+import { dispatchSection } from "../../../../dispatch/lib/section.ts";
 import { trustedAutomationOf } from "../../../drive-pr/scripts/lib/trusted-automation.ts";
 import { labelFindings } from "./label-fit.ts";
 import { at, type Finding } from "./schema.ts";
@@ -58,13 +59,19 @@ export async function policyFindings(
   ];
 }
 
+const TRUSTED_AUTOMATION_PROCEDURE =
+  "the Trusted automation section of CONFIGURATION.md at the installed plugin's root";
+
 /**
  * What `pull_requests.trusted_automation` does in this configuration: a list
  * that does not read trusts nobody; with no `review.reviewer_app` a person's
  * approval is still the review witness, so the list changes no approval
- * requirement; and with `dispatch.adopt` off a listed bot's healthy pull
- * request is not adopted on its own, so it is driven only where a person
- * labels it `drive` or arms a drive by hand.
+ * requirement; and when adoption or its trusted-bot rule is off, a
+ * listed bot's pull request with no ledger is not adopted by its author.
+ * With only author-based adoption off (no opt-out), a person's label (where
+ * labels are on), a hand-armed drive or an eligible pickup handoff can still
+ * start its first drive. With the explicit opt-out, none of those starts is
+ * left: a person starts every listed bot's drive, directly.
  */
 export function trustedFit(config: Config): Finding[] {
   if (at(config, "pull_requests.trusted_automation") === undefined) return [];
@@ -87,12 +94,24 @@ export function trustedFit(config: Config): Finding[] {
       message:
         "pull_requests.trusted_automation does not change the approval requirement for merge now without review.reviewer_app: a person's approval is then the witness of every review and also satisfies the author condition",
     });
-  if (at(config, "dispatch.adopt.enabled") !== true)
+  const dispatch = dispatchSection(config);
+  if (!dispatch.ok) return findings;
+  const { adopt, labels } = dispatch.value;
+  if (adopt.excludeTrusted === true)
     findings.push({
       id: "derivation:pull_requests.trusted_automation:adopt",
       severity: "info",
-      message:
-        "dispatch.adopt is off, so a listed bot's healthy pull request is not adopted automatically: a person labels it drive or arms a drive by hand before it can reach Ready to merge",
+      message: `dispatch.adopt.trusted_automation is false: no automatic start is left for a listed bot's pull request. Its first drive, a restart of an eligible stopped drive after a head that moved (a drive a person stopped stays stopped; a head moved by a clean base merge can be refreshed automatically on an eligible mergeable pull request) and a conflict repair all wait for a person, and a converged drive left stale by a conflict needs a manual re-drive, and a pickup handoff cannot start it. Before switching, pause dispatch on every host that dispatches this repository, let active ticks finish, stop any drive already running on a listed bot's pull request and retire every outstanding drive and rearm request${
+        labels.enabled ? "" : " (labels are off, so no label starts a drive)"
+      }. Review the install inputs and every command a start or restart would run, then, for each listed bot's pull request you decide should be driven, start its first drive directly, and restart each stopped drive directly where the procedure's restart rules call for one (they say which stops need none and how a head moved by a clean base merge is refreshed); resume dispatch once the policy is in effect on every host. The full procedure, which names the trusted baseline and the restart rules, is in ${TRUSTED_AUTOMATION_PROCEDURE}`,
+    });
+  else if (!adopt.enabled)
+    findings.push({
+      id: "derivation:pull_requests.trusted_automation:adopt",
+      severity: "info",
+      message: `Author-based adoption is off, so a listed bot's pull request with no ledger is not adopted by its author. Its first drive starts when a person ${
+        labels.enabled ? "labels it drive or " : ""
+      }arms it by hand, or when a completed process pickup starts it for its own same-repository pull request; a drive that stopped in an eligible state can restart from its ledger. Set dispatch.adopt.trusted_automation: false to require a person to start every listed bot's drive, and review its install inputs first.`,
     });
   return findings;
 }

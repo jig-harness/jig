@@ -98,6 +98,7 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "dispatch.adopt.enabled",
   "dispatch.adopt.authors",
   "dispatch.adopt.within",
+  "dispatch.adopt.trusted_automation",
   "dispatch.pool.states",
   "dispatch.epic_width",
   "dispatch.overlap.max_per_file",

@@ -1,4 +1,5 @@
 /** The ledger's JSON fields, shared by its reader and the stable marker schema. */
+import { OUTCOMES } from "../outcome.ts";
 import { type Infer, s } from "../../../../../shared/shapes.ts";
 import { AUTONOMY_LEVELS } from "../../../../../shared/autonomy-values.ts";
 import type { ProbeStop } from "../status/probe-stop.ts";
@@ -27,7 +28,7 @@ export const LEDGER_HELD_SHAPE = s.object({
   kind: s.enum(["thread", "finding"]),
   round: s.integer({ minimum: -1, maximum: Number.MAX_VALUE }),
   actor: text,
-  outcome: s.optional(s.enum(["accepted", "moot"])),
+  outcome: s.optional(s.enum(OUTCOMES)),
   commentUrl: s.optional(text),
   reason: s.optional(text),
   verifiedSha: s.optional(text),
@@ -235,6 +236,10 @@ export const LEDGER_PAYLOAD_FIELDS = {
   ciActions: s.optional(s.array(ciAction, { maxItems: 10 })),
   rulings: s.optional(s.array(ruling)),
   resolvedParks: s.optional(s.array(receipt)),
+  // Published unrestricted on v1, as the stable ledger accepted unknown keys
+  // before these fields existed; the reader checks both (`ledger-churn.ts`).
+  roundPaths: s.optional(s.unknown()),
+  churnAckRound: s.optional(s.unknown()),
   driver: LEDGER_DRIVER_SHAPE,
   narrative: texts,
   cut: texts,

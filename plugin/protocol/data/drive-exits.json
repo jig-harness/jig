@@ -118,7 +118,7 @@
       "driveStatusExit": 1,
       "driveExit": 1,
       "endsDrive": true,
-      "meaning": "The state could not be read, or a step failed: `drive.ts` also ends with it when a pass fails. Never a settled state; read what the drive printed before re-arming.",
+      "meaning": "The state could not be read, or a step failed: `drive.ts` also ends with it when a pass fails. A probe stop marked as a read failure keeps the read diagnostic, and the dispatcher re-drives it once per pull-request head. A second such stop on the same head needs a person.",
       "stop": "stopped on a failure; the drive's log says what failed",
       "cause": "tool-failed",
       "nextOwner": "person",
@@ -198,6 +198,15 @@
       "meaning": "The forge has not yet worked out whether the pull request merges cleanly. Read again."
     },
     {
+      "name": "POLL_BUDGET_SPENT",
+      "kind": "state",
+      "exit": 4,
+      "driveStatusExit": 4,
+      "driveExit": 4,
+      "endsDrive": false,
+      "meaning": "The poll budget ended before the next iteration or before a pull-request read could start. The probe reports how long it waited. A request that was sent and failed retains its read failure."
+    },
+    {
       "name": "NOT_SETTLED",
       "kind": "class-label",
       "exit": 4,
@@ -256,12 +265,12 @@
       "driveStatusExit": 8,
       "driveExit": 8,
       "endsDrive": true,
-      "meaning": "Everything left waits on a person's decision, each framed on its thread. The drive does not wake itself: once every one is answered, re-arm it.",
+      "meaning": "Everything left waits on a person's decision, each framed on its thread or, for a park with no thread, as a pull-request comment `answer <key>`, or the drive parked itself on structural churn (class `structural-churn`), a park that holds even live work. The drive does not wake itself: once every one is answered, re-arm it.",
       "stop": "parked: a decision waits for a person",
       "cause": "needs-person",
       "nextOwner": "person",
       "nextAct": "Decide",
-      "nextStep": "Answer each parked decision on its thread, then re-arm the drive."
+      "nextStep": "Answer each parked decision (on its thread, or in a pull-request comment `answer <key>: …`), then re-arm the drive."
     },
     {
       "name": "PR_CONFLICTING",
@@ -270,8 +279,8 @@
       "driveStatusExit": 9,
       "driveExit": 9,
       "endsDrive": true,
-      "meaning": "The pull request conflicts with its base and has nothing else to work on; `drive.ts` ends with it once its conflict-repair passes are spent. Merge the base in, then re-arm.",
-      "stop": "stopped: it conflicts with its base and has nothing left to work",
+      "meaning": "The pull request conflicts with its base and has no other workable finding, or the drive parked itself on structural churn on a conflicting pull request, whose live work then waits for that answer; `drive.ts` ends with it once its conflict-repair passes are spent. Merge the base in, then re-arm.",
+      "stop": "stopped: it conflicts with its base and has nothing left that the drive can work (work held by a park waits for its answer)",
       "cause": "needs-person",
       "nextOwner": "person",
       "nextAct": "Do",

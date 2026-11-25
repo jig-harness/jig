@@ -15,7 +15,7 @@ import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { hostLabel } from "../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { currentIso } from "../../shared/time.ts";
-import { readRecord } from "../lib/launches.ts";
+import { readEnded, readRecord } from "../lib/launches.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
   HEAD_SHA,
@@ -178,6 +178,61 @@ describe("jig dispatch --apply re-drives a stall and a spent CI-repair budget", 
     }, 180_000);
   }
 
+  it("re-drives a failed status read once per head, retaining the forge failure", async () => {
+    const exit = DRIVE_EXIT.INDETERMINATE;
+    const probe = {
+      code: exit,
+      state: "INDETERMINATE",
+      failure: "read" as const,
+      reason: "cannot read PR #7 (too-costly: HTTP 502)",
+    };
+    const ledger = (generation: number) =>
+      stop(exit, generation, {
+        driver: { ...stoppedLedger(7, exit).driver, probe },
+        events: [
+          {
+            at: new Date().toISOString(),
+            round: generation,
+            kind: "stop",
+            cause: String(exit),
+            leftWork: false,
+          },
+        ],
+      });
+    const { w } = fixture({ mergeable: "CONFLICTING" }, () => ledger(3));
+    writeFileSync(
+      join(w.dir, "drive-stderr"),
+      `drive.ts: status probe stopped: ${JSON.stringify(probe)}\n`,
+    );
+    const record = await redrive(w, exit);
+    expect(readEnded(record, dispatchState(w))).toMatchObject({
+      record: {
+        redrive: {
+          change: `head ${HEAD_SHA}, stopped ${exit}`,
+          mechanicalStop: "probe-read",
+        },
+      },
+      state: {
+        kind: "ended",
+        exit: { context: expect.stringContaining(probe.reason) },
+      },
+    });
+
+    w.setComments(7, [ledgerComment(701, ledger(4))]);
+    const second = await tick(w);
+    expect(launches(second)).toEqual([]);
+    expect(notified(second)).toEqual([["PR #7", "needs-person", "sent"]]);
+    const notice = second.repos[0]?.actions[0]?.notice?.text;
+    expect(notice).toContain("a systematic read failure");
+    expect(notice).toContain(probe.reason);
+
+    w.setPrs("open", [openPr(7, HEAD, { headRefOid: MOVED })]);
+    const again = await redrive(w, exit);
+    expect(readRecord(again, dispatchState(w))?.redrive?.change).toBe(
+      `head ${MOVED}, stopped ${exit}`,
+    );
+  }, 180_000);
+
   it("keeps a generic exit 1 a person's", async () => {
     const { w } = fixture({ mergeable: "MERGEABLE" }, () => stop(1, 3));
     const r = await tick(w);
@@ -269,5 +324,68 @@ describe("jig dispatch --apply re-drives an in-pass check-runs listing stop", ()
     expect(launches(second)).toEqual([]);
     expect(notified(second)).toEqual([["PR #7", "needs-person", "sent"]]);
     expect(driveRuns(w)).toHaveLength(1);
+  }, 180_000);
+});
+
+describe("jig dispatch --apply re-drives an unmeasured status probe read stop", () => {
+  // A status probe stop never measures the tree it left, so its stop event
+  // omits `leftWork`: the re-drive is bound to the workspace it stopped in.
+  const exit = DRIVE_EXIT.INDETERMINATE;
+  const probe = {
+    code: exit,
+    state: "INDETERMINATE",
+    failure: "read" as const,
+    reason: "cannot read PR #7 (too-costly: HTTP 502)",
+  };
+  const ledger =
+    (generation: number, actor: (ws: string) => string) => (ws: string) =>
+      stop(exit, generation, {
+        events: [
+          {
+            at: currentIso(),
+            round: generation,
+            kind: "stop",
+            cause: String(exit),
+          },
+        ],
+        driver: {
+          ...stoppedLedger(7, exit).driver,
+          probe,
+          actor: actor(ws),
+          clone: `clone-a@${hostLabel()}`,
+        },
+      });
+
+  it("launches the retry in the stopped tree, once for its head", async () => {
+    const own = fixture(
+      { mergeable: "MERGEABLE" },
+      ledger(3, (ws) => `wt-${worktreePathKey(ws)}`),
+    );
+    writeFileSync(
+      join(own.w.dir, "drive-stderr"),
+      `drive.ts: status probe stopped: ${JSON.stringify(probe)}\n`,
+    );
+    const record = await redrive(own.w, exit);
+    const kept = readRecord(record, dispatchState(own.w));
+    expect(kept?.workspace?.path).toBe(own.ws);
+    expect(kept?.redrive).toMatchObject({
+      change: `head ${HEAD_SHA}, stopped ${exit}`,
+      mechanicalStop: "probe-read",
+      tree: { actor: `wt-${worktreePathKey(own.ws)}`, here: true },
+    });
+    current?.close();
+  }, 180_000);
+
+  it("tells a person when no open workspace holds the stopped tree", async () => {
+    const gone = fixture(
+      { mergeable: "MERGEABLE" },
+      ledger(3, () => "wt-0123456789abcdef"),
+    );
+    const r = await tick(gone.w);
+    expect(launches(r)).toEqual([]);
+    expect(notified(r)).toEqual([["PR #7", "needs-person", "sent"]]);
+    expect(r.repos[0]?.actions[0]?.notice?.text).toContain(
+      "which no open workspace on this host holds",
+    );
   }, 180_000);
 });

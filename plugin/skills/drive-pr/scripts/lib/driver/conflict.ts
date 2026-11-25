@@ -88,7 +88,7 @@ export async function runConflictPhase(
     if (repairExit !== undefined) return repairExit;
   }
   console.error(
-    `PR #${context.pr} conflicts with its base and has nothing left to work — stopping.`,
+    `PR #${context.pr} conflicts with its base and has nothing left that the drive can work — stopping.`,
   );
   console.error(reasonLine);
   if ((await mergeOpen()) === true)
@@ -124,7 +124,7 @@ async function attemptConflictRepair(
     return mailboxBeforeConflictRepair;
   if (mailboxBeforeConflictRepair === "resumed") return "continue";
   console.error(
-    `PR #${context.pr} conflicts with its base and has nothing left to work.`,
+    `PR #${context.pr} conflicts with its base and has nothing left that the drive can work.`,
   );
   console.error(reasonLine);
   console.error(

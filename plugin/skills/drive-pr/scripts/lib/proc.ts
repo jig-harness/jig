@@ -304,6 +304,33 @@ export function driveStatusOnceTimeoutSeconds(): number {
   return Math.min(totalSeconds, Math.floor(2_147_483_647 / 1000));
 }
 
+/** Whole reconciliation helper, including the fresh repo and comment-list reads. */
+export function summaryAnswerReconcileTimeoutSeconds(): number {
+  const callGrace = KILL_ESCALATE_MS / 1000;
+  const seconds =
+    helperTimeoutSeconds() + 2 * (ghCallTimeoutSeconds() + callGrace);
+  return Math.min(seconds, Math.floor(2_147_483_647 / 1000));
+}
+
+/** Whole held-answer invocation, through both mutation fences and the POST. */
+export function summaryAnswerTimeoutSeconds(): number {
+  // PR head plus POST, HEAD plus status, and up to three local Git reads to
+  // resolve the common directory, state path, and owning worktree.
+  const GH_CALLS = 2;
+  const GIT_CALLS = 5;
+  // The PR and tree mutation locks each cap at LOCK_ACQUIRE_MAX_SEC; keep
+  // this timeout layer independent of state/lock.ts.
+  const MUTATION_LOCK_SECONDS = 600;
+  const callGrace = KILL_ESCALATE_MS / 1000;
+  const seconds =
+    summaryAnswerReconcileTimeoutSeconds() +
+    callGrace +
+    GH_CALLS * (ghCallTimeoutSeconds() + callGrace) +
+    GIT_CALLS * (gitCallTimeoutSeconds() + callGrace) +
+    MUTATION_LOCK_SECONDS;
+  return Math.min(seconds, Math.floor(2_147_483_647 / 1000));
+}
+
 export interface RunResult {
   /** The child's exit code; 124 when the deadline killed it (GNU timeout's code). */
   code: number;

@@ -10,6 +10,7 @@
  * not inside a round. After the write the body is read back and the change
  * confirmed in it. Every forge call carries the plugin's `gh` deadline.
  */
+import { summaryAnswerBlocks } from "../../../../shared/summary-answer-blocks.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { ghCall } from "../../../../shared/proc.ts";
 import { TRUSTED_ASSOCIATIONS } from "../../../../shared/trusted-authors.ts";
@@ -113,20 +114,24 @@ export function deferredReplies(
   prUrl: string,
 ): DeferredReply[] {
   return answers
-    .filter(
-      (a) =>
-        TRUSTED_ASSOCIATIONS.has(a.association) &&
-        a.body.startsWith("**deferred**") &&
-        linksSection(a.body, prUrl),
-    )
-    .flatMap((a): DeferredReply[] =>
-      a.thread !== undefined
-        ? [{ thread: a.thread, reply: a.url }]
-        : [...a.body.matchAll(ADDRESSED_MARKER)].map((m) => ({
+    .filter((answer) => TRUSTED_ASSOCIATIONS.has(answer.association))
+    .flatMap((answer): DeferredReply[] => {
+      const isDeferred = (body: string): boolean =>
+        body.startsWith("**deferred**") && linksSection(body, prUrl);
+      if (answer.thread !== undefined) {
+        return isDeferred(answer.body)
+          ? [{ thread: answer.thread, reply: answer.url }]
+          : [];
+      }
+      return summaryAnswerBlocks(answer.body)
+        .filter(isDeferred)
+        .flatMap((body) =>
+          [...body.matchAll(ADDRESSED_MARKER)].map((m) => ({
             fingerprint: m[1] ?? "",
-            reply: a.url,
+            reply: answer.url,
           })),
-    );
+        );
+    });
 }
 
 /** The review threads, each with its comments' urls, bodies and authors. */
