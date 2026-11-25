@@ -2,7 +2,7 @@
  * The stale ledgers a re-drive settles once per change, after which a
  * person does: a stop on a conflict, an unclean tree, a stall, a spent
  * CI-repair budget, a pass deadline, a check-runs listing cut short, a
- * failure on a conflicting pull request, an infrastructure failure after its
+ * status probe read failure, a failure on a conflicting pull request, an infrastructure failure after its
  * backoff, or the forge's spent rate limit after its reset. This machine's
  * launch records settle them in `actions/drive-hold.ts`, another host's
  * launch claims in `shared-launches.ts`, both in these words.
@@ -30,10 +30,16 @@ export function settledWhy(pr: DrivenPr, by: string): string {
     pr.stale?.conflictStop === true
       ? "its head or its base moves"
       : "its head moves";
+  const kind = pr.stale?.mechanicalStop;
+  const readFailure = kind === "check-runs" || kind === "probe-read";
+  const detail =
+    kind === "probe-read" && pr.evidence.probeReason
+      ? ` (${pr.evidence.probeReason})`
+      : "";
   const stopped =
     pr.evidence.exit === DRIVE_EXIT.PR_CONFLICTING
       ? "stopped on a conflict with its base"
-      : `${pr.stale?.mechanicalStop === "check-runs" ? "a systematic read failure: " : ""}${pr.stale?.cause ?? pr.why}`;
+      : `${readFailure ? "a systematic read failure: " : ""}${pr.stale?.cause ?? pr.why}${detail}`;
   const conflict =
     pr.stale?.conflictStop === true ? "" : conflictNote(pr.evidence.mergeable);
   return `${stopped}, and ${by}: only a person settles it until ${until}${conflict} (see the drive's handoff)`;
