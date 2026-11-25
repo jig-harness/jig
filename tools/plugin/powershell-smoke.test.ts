@@ -130,6 +130,8 @@ function fixtureEnvironment(
     JIG_GH_CACHE: "0",
     DRIVE_PR_MAILBOX_POLL_MS: "50",
     DRIVE_PR_STALL_ROUNDS: "0",
+    // The fake origin URL cannot be fetched for base-branch policy reads.
+    DRIVE_PR_CHURN_ROUNDS: "0",
     // The fake forge's PR has no head branch on a remote to attach.
     DRIVE_PR_ATTACH: "off",
     GH_CALL_TIMEOUT: "20",

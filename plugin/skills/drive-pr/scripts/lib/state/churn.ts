@@ -120,7 +120,9 @@ function returnOf(
 }
 
 function oscillation(entries: readonly RoundPaths[]): ChurnTrip | null {
-  const paths = [...new Set(entries.flatMap((e) => e.paths))].sort();
+  const paths = [...new Set(entries.flatMap((e) => e.paths))].sort((a, b) =>
+    a.localeCompare(b),
+  );
   const found = paths.flatMap((path) => {
     const rounds = returnOf(entries, path);
     return rounds === null ? [] : [{ path, rounds }];
@@ -133,6 +135,15 @@ function oscillation(entries: readonly RoundPaths[]): ChurnTrip | null {
   };
 }
 
+/** Unacknowledged rounds in ascending order, bounded to the stored window. */
+function unacknowledgedEntries(s: ChurnEvidence): RoundPaths[] {
+  const since = s.churnAckRound ?? 0;
+  return [...(s.roundPaths ?? [])]
+    .filter((e) => e.round > since)
+    .sort((a, b) => a.round - b.round)
+    .slice(-ROUND_PATHS_WINDOW);
+}
+
 /**
  * Whether the evidence after `churnAckRound` trips the brake with a same-file
  * streak of `rounds` rounds, or an oscillation; `null` when it does not, or
@@ -143,11 +154,7 @@ export function structuralChurn(
   opts: { rounds: number },
 ): ChurnTrip | null {
   if (opts.rounds < MIN_CHURN_ROUNDS) return null;
-  const since = s.churnAckRound ?? 0;
-  const entries = [...(s.roundPaths ?? [])]
-    .filter((e) => e.round > since)
-    .sort((a, b) => a.round - b.round)
-    .slice(-ROUND_PATHS_WINDOW);
+  const entries = unacknowledgedEntries(s);
   return sameFile(entries, opts.rounds) ?? oscillation(entries);
 }
 
@@ -210,11 +217,7 @@ export function churnUnmeasured(
   opts: { rounds: number },
 ): boolean {
   if (opts.rounds < MIN_CHURN_ROUNDS) return false;
-  const since = s.churnAckRound ?? 0;
-  const entries = [...(s.roundPaths ?? [])]
-    .filter((e) => e.round > since)
-    .sort((a, b) => a.round - b.round)
-    .slice(-ROUND_PATHS_WINDOW);
+  const entries = unacknowledgedEntries(s);
   const last = entries.at(-1);
   if (last === undefined || last.severe !== undefined) return false;
   return (

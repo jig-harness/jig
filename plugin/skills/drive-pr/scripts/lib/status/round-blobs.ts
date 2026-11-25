@@ -25,6 +25,38 @@ export interface RoundBlobs {
   failed: boolean;
 }
 
+const BATCH_ANSWER = /^([0-9a-f]+) (\w+)$/;
+
+function reportUnusable(head: string, why: string): RoundBlobs {
+  process.stderr.write(
+    `drive-status: git cat-file's answer for ${head} is ${why}; the structural-churn brake has no file contents to judge this round\n`,
+  );
+  return { blobs: {}, failed: true };
+}
+
+/** Parse `<id> <type>` or `<spec> missing` lines after the commit line. */
+function parseBlobEntries(
+  head: string,
+  asked: readonly string[],
+  lines: readonly string[],
+): { entries: [string, string][] } | { problem: string } {
+  // Entries, not assignments: a path named `__proto__` is an own key here.
+  const entries: [string, string][] = [];
+  for (const [i, path] of asked.entries()) {
+    const line = lines[i + 1] ?? "";
+    const m = BATCH_ANSWER.exec(line);
+    if (m === null) {
+      // Only the answer to this very question counts as its absence.
+      if (line !== `${head}:${path} missing`) return { problem: "malformed" };
+      continue;
+    }
+    if (!isObjectId(m[1]))
+      return { problem: "malformed (an object id of no supported width)" };
+    if (m[2] === "blob") entries.push([path, m[1]]);
+  }
+  return { entries };
+}
+
 export async function readRoundBlobs(
   head: string,
   paths: readonly string[],
@@ -67,33 +99,15 @@ export async function readRoundBlobs(
   const lines = r.stdout.endsWith("\n")
     ? r.stdout.slice(0, -1).split("\n")
     : r.stdout.split("\n");
-  const answer = /^([0-9a-f]+) (\w+)$/;
-  const unusable = (why: string): RoundBlobs => {
-    process.stderr.write(
-      `drive-status: git cat-file's answer for ${head} is ${why}; the structural-churn brake has no file contents to judge this round\n`,
-    );
-    return { blobs: {}, failed: true };
-  };
   if (lines.length !== asked.length + 1)
-    return unusable(
+    return reportUnusable(
+      head,
       `malformed (${lines.length} lines for ${asked.length + 1} questions)`,
     );
-  const commit = answer.exec(lines[0] ?? "");
+  const commit = BATCH_ANSWER.exec(lines[0] ?? "");
   if (commit?.[2] !== "commit" || !isObjectId(commit[1]))
-    return unusable("missing the reviewed commit");
-  // Entries, not assignments: a path named `__proto__` is an own key here.
-  const entries: [string, string][] = [];
-  for (const [i, path] of asked.entries()) {
-    const line = lines[i + 1] ?? "";
-    const m = answer.exec(line);
-    if (m === null) {
-      // Only the answer to this very question counts as its absence.
-      if (line !== `${head}:${path} missing`) return unusable("malformed");
-      continue;
-    }
-    if (!isObjectId(m[1]))
-      return unusable("malformed (an object id of no supported width)");
-    if (m[2] === "blob") entries.push([path, m[1]]);
-  }
-  return { blobs: Object.fromEntries(entries), failed: false };
+    return reportUnusable(head, "missing the reviewed commit");
+  const parsed = parseBlobEntries(head, asked, lines);
+  if ("problem" in parsed) return reportUnusable(head, parsed.problem);
+  return { blobs: Object.fromEntries(parsed.entries), failed: false };
 }

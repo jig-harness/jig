@@ -115,8 +115,14 @@ export async function recordPathsCommand(
   const sameFacts = (e: RoundPaths): boolean =>
     judged === undefined ||
     (e.severe === judged.severe &&
-      JSON.stringify(Object.entries(e.blobs ?? {}).sort()) ===
-        JSON.stringify(Object.entries(judged.blobs ?? {}).sort()));
+      JSON.stringify(
+        Object.entries(e.blobs ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+      ) ===
+        JSON.stringify(
+          Object.entries(judged.blobs ?? {}).sort(([a], [b]) =>
+            a.localeCompare(b),
+          ),
+        ));
   const hasFacts = (s: { roundPaths: readonly RoundPaths[] }): boolean =>
     s.roundPaths.some(
       (e) =>

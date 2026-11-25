@@ -278,6 +278,7 @@ describe("drive-status.ts structural-churn brake", () => {
     const head = repo.heads[3] as string;
     const fx = writeFixture({
       head,
+      mergeable: "CONFLICTING",
       reviewedSha: "1".repeat(40),
       threads: [finding("PRRT_3", "low")],
     });
@@ -338,6 +339,9 @@ describe("drive-status.ts structural-churn brake", () => {
         cwd,
       });
       expectSpawnExit(exitOf(r), 0);
+      expect(r.state).toBe("ROUND_READY");
     }
+    const state = await stored(stateDir, cwd);
+    expect(state.parked).toEqual([]);
   });
 });

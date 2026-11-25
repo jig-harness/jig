@@ -1131,7 +1131,9 @@ async function evaluateFresh(
   // re-arming without answering it must not run the rounds it stopped. A
   // conflict is still reported first, as for any park, so conflict repair
   // runs while the decision waits.
-  report.churnParkKeys = [...parked.selfParked].sort();
+  report.churnParkKeys = [...parked.selfParked].sort((a, b) =>
+    a.localeCompare(b),
+  );
   const braked = churnParkReason(parked.selfParked);
   if (braked !== null) {
     const rc = await stillOnHead();

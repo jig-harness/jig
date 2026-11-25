@@ -55,7 +55,10 @@ export function roundEvidence(
             typeof p === "string" && p.trim() !== "" && p !== "(unknown)",
         ),
     ]),
-  ].sort();
+  ].sort((a, b) => {
+    if (a < b) return -1;
+    return a > b ? 1 : 0;
+  });
   const severe =
     threads.some((t) => SEVERE.has(severityOfRecord(t as LabelledRecord))) ||
     summary.some((f) => SEVERE.has(f.severity));

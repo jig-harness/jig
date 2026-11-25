@@ -53,7 +53,7 @@ describe("drive-status.ts structuralEscalationDue", () => {
     expect(r.json.structuralEscalationDue).toBe(false);
     expect(
       JSON.parse((await driveState(stateDir, ["round-paths", "999"])).stdout),
-    ).toEqual([{ round: 1, paths: ["a.ts", "b.ts"], severe: false }]);
+    ).toEqual([{ round: 1, paths: ["a.ts", "b.ts"] }]);
   });
 
   // Regression: `a.ts` and ` a.ts` are two

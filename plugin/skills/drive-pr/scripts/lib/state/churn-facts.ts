@@ -95,6 +95,17 @@ function blobsProblem(blobs: unknown, paths: readonly string[]): string | null {
   return null;
 }
 
+/** Why `judged` in `--stdin-json` is malformed, or `null`. */
+function judgedProblem(judged: unknown): string | null {
+  if (judged === undefined) return null;
+  if (!isRecord(judged)) return "judged must be an object";
+  if (judged.severe !== undefined && typeof judged.severe !== "boolean")
+    return "judged.severe must be true or false";
+  if (judged.blobs !== undefined && !isRecord(judged.blobs))
+    return "judged.blobs must map each path to an object id";
+  return null;
+}
+
 /**
  * Read the JSON form of `record-paths --stdin-json`: `{"paths": [...],
  * "severe"?: bool, "blobs"?: {path: id}, "round"?: n}`, or the problem that makes the
@@ -117,17 +128,10 @@ export function parseRoundInput(text: string):
     };
   }
   if (!isRecord(value)) return { problem: "not a JSON object" };
-  const problem = inputProblem(value);
+  const problem = inputProblem(value) ?? judgedProblem(value.judged);
   if (problem !== null) return { problem };
   const { severe, blobs } = value as RoundFacts;
   const judged = value.judged;
-  if (judged !== undefined) {
-    if (!isRecord(judged)) return { problem: "judged must be an object" };
-    if (judged.severe !== undefined && typeof judged.severe !== "boolean")
-      return { problem: "judged.severe must be true or false" };
-    if (judged.blobs !== undefined && !isRecord(judged.blobs))
-      return { problem: "judged.blobs must map each path to an object id" };
-  }
   return {
     paths: value.paths as string[],
     ...(judged === undefined ? {} : { judged: judged as RoundFacts }),

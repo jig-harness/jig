@@ -87,6 +87,12 @@ export function normalizeRoundPaths(raw: readonly string[]): string[] {
  * so without this comparison a truncated round drops real evidence with
  * nothing in state or the report recording that it happened.
  */
+/** Deterministic UTF-16 code-unit order, matching stored `roundPaths`. */
+function compareCodeUnits(a: string, b: string): number {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+}
+
 export function normalizeRoundPathsUncapped(raw: readonly string[]): string[] {
   const seen = new Set<string>();
   for (const p of raw) {
@@ -101,7 +107,7 @@ export function normalizeRoundPathsUncapped(raw: readonly string[]): string[] {
     if (/[\n\r]/.test(p)) continue;
     seen.add(p);
   }
-  return [...seen].sort();
+  return [...seen].sort(compareCodeUnits);
 }
 
 /** A count as the stored state holds one: a non-negative integer. */

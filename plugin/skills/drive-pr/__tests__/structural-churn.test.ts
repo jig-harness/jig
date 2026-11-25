@@ -35,7 +35,10 @@ function round(
 ): RoundPaths {
   return {
     round: r,
-    paths: [...paths].sort(),
+    paths: [...paths].sort((a, b) => {
+      if (a < b) return -1;
+      return a > b ? 1 : 0;
+    }),
     ...(opts.severe === undefined ? {} : { severe: opts.severe }),
     ...(opts.blobs === undefined
       ? {}
