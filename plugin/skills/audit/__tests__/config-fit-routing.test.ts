@@ -286,3 +286,21 @@ test("the Markdown rendering keeps a fact on one line and escapes controls", () 
   const marker = `z${" ".repeat(200000)}z`;
   expect(fact(marker)).toBe(`- integration_branch: z${" ".repeat(200000)}z`);
 });
+
+test("a routing declaration with invisible characters reaches the JSON report escaped", () => {
+  const config = [
+    "routing:",
+    "  models:",
+    '    codex: {complex: "outside\\u2800model"}',
+    "  model_tiers:",
+    "    codex:",
+    '      "outside\\u2800model": {tier: strategic, reason: "keep\\u2800this"}',
+    "",
+  ].join("\n");
+  const messages = findings(config)
+    .map((f) => f.message)
+    .join("\n");
+  expect(messages).not.toContain("⠀");
+  expect(messages).not.toMatch(/[\uD800-\uDFFF]/);
+  expect(messages).toContain("\\u2800");
+});

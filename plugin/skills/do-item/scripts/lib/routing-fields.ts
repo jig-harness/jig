@@ -49,10 +49,11 @@ const RUNTIME_NAME = /^[a-z][a-z0-9_-]*$/;
  * in a driver log. Kept here so every routing and pass-model entry point
  * applies the same boundary.
  */
-export const MODEL_TOKEN_PATTERN = /^(?!-)[^\p{Cc}\p{Bidi_Control}\s,;=]+$/u;
+export const MODEL_TOKEN_PATTERN =
+  /^(?!-)[^\p{Cc}\p{Cs}\p{Bidi_Control}\s,;=]+$/u;
 
 /** A declared model name, which need not itself be an argv operand. */
-export const DECLARATION_TOKEN_PATTERN = /^[^\s,;=\0]+$/;
+export const DECLARATION_TOKEN_PATTERN = /^[^\p{Cs}\s,;=\0]+$/u;
 
 export function oneOf<T extends string>(
   value: unknown,

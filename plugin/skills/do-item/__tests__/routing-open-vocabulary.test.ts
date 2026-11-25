@@ -103,6 +103,16 @@ describe("a model outside the families", () => {
     );
   });
 
+  it("refuses an unpaired surrogate in a selected model but keeps a valid pair", () => {
+    for (const selected of ["model\uD800", "model\uD801"])
+      expect(() =>
+        rules({ routing: { models: { codex: { complex: selected } } } }),
+      ).toThrow("routing.models.codex.complex must be a model");
+    expect(() =>
+      rules({ routing: { models: { codex: { complex: "model\u{1F600}" } } } }),
+    ).not.toThrow("must be a model");
+  });
+
   it("reports non-string selected models without coercing configuration values", () => {
     const hostile = {
       toString: () => {
