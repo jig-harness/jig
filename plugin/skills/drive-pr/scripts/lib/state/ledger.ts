@@ -92,6 +92,16 @@ import {
   redactedReceipt,
   type ResolutionReceipt,
 } from "./resolution-receipt.ts";
+import {
+  cutRoundPathsToFit,
+  isOptionalChurnAckRound,
+  isOptionalLedgerRoundPaths,
+  ledgerChurnFields,
+  OLDER_ROUND_PATHS_CUT,
+  ROUND_PATHS_CUT,
+  seedChurnFields,
+} from "./ledger-churn.ts";
+import type { RoundPaths } from "./round-paths.ts";
 import { decisionAnswerLines } from "./park-frame.ts";
 import { parseMs } from "../../../../../shared/time.ts";
 import * as circuit from "./circuit-breaker.ts";
@@ -166,6 +176,10 @@ export interface Ledger extends circuit.LedgerCircuit {
   rulings?: ArbiterRuling[];
   /** The resolution receipts of the parks re-arms unparked (`resolution-receipt.ts`); absent in a ledger written before them. */
   resolvedParks?: ResolutionReceipt[];
+  /** The structural-churn brake's bounded per-round evidence window (`round-paths.ts`). */
+  roundPaths?: RoundPaths[];
+  /** The round at which the brake's evidence was last consumed by a churn park. */
+  churnAckRound?: number;
   driver: LedgerDriver;
   /** The handoff narrative's last lines. */
   narrative: string[];
@@ -249,9 +263,13 @@ export function ledgerFromState(
         ? { ...receipt, outcome: "answered" as const }
         : receipt;
     }),
+    ...ledgerChurnFields(s),
     driver: ledgerDriverWithProbe(s, opts.driver),
     narrative: opts.narrative.slice(-NARRATIVE_LINES).map(redact),
-    cut: s.resolvedParksLost === true ? [OLDER_PARKS_CUT] : [],
+    cut: [
+      ...(s.resolvedParksLost === true ? [OLDER_PARKS_CUT] : []),
+      ...(s.churnEvidenceLost === true ? [OLDER_ROUND_PATHS_CUT] : []),
+    ],
   };
 }
 
@@ -413,9 +431,13 @@ export function renderLedger(
       ledger.driver.personStop === undefined
         ? ledger.ledgerVersion
         : OPERATOR_STOP_LEDGER_VERSION,
-    // A receipt loss the state already carries stays named, whatever this render drops.
+    // A receipt or churn-evidence loss the state already carries stays named, whatever this render drops.
     cut: ledger.cut.filter(
-      (c) => c === RESOLVED_PARKS_CUT || c === OLDER_PARKS_CUT,
+      (c) =>
+        c === RESOLVED_PARKS_CUT ||
+        c === OLDER_PARKS_CUT ||
+        c === ROUND_PATHS_CUT ||
+        c === OLDER_ROUND_PATHS_CUT,
     ),
   };
   let body = ledgerBody(l, true, writer);
@@ -453,6 +475,12 @@ export function renderLedger(
   l = { ...l, narrative: [], cut: [...l.cut, "the narrative"] };
   body = ledgerBody(l, true, writer);
   if (bytes(body) <= limit) return { body, ledger: l };
+  const trimmedPaths = cutRoundPathsToFit(l, limit, (candidate) => {
+    const rendered = ledgerBody(candidate, true, writer);
+    return { body: rendered, bytes: bytes(rendered) };
+  });
+  l = trimmedPaths.ledger;
+  if ("body" in trimmedPaths) return { body: trimmedPaths.body, ledger: l };
   l = { ...l, cut: [...l.cut, "the visible list of parked decisions"] };
   body = ledgerBody(l, false, writer);
   if (bytes(body) <= limit) return { body, ledger: l };
@@ -501,6 +529,8 @@ function ledgerFault(v: Record<string, unknown>): string {
     ciActions: () => isOptionalCiActions(v.ciActions),
     rulings: () => isOptionalRulings(v.rulings),
     resolvedParks: () => isOptionalResolvedParks(v.resolvedParks),
+    roundPaths: () => isOptionalLedgerRoundPaths(v.roundPaths, v.round),
+    churnAckRound: () => isOptionalChurnAckRound(v.churnAckRound, v.round),
     roundsGranted: () => isOptionalRetryCount(v.roundsGranted),
     driver: () => isLedgerDriver(v.driver),
   };
@@ -968,8 +998,8 @@ export function heldFromLedger(held: readonly LedgerHeld[]): {
  * round count (another clone reset the drive and published afresh) is a
  * different round history, so the local records positioned in the old one
  * (the reflect and escalation positions, the escalation's claim, the
- * per-round finding paths) are cleared rather than carried past the rounds
- * they would then exceed.
+ * per-round finding paths, the structural-churn acknowledgment) are cleared
+ * rather than carried past the rounds they would then exceed.
  */
 export function seedFromLedger(
   local: DriveState,
@@ -987,12 +1017,17 @@ export function seedFromLedger(
           lastReflectedAttempts: 0,
           lastEscalatedRound: 0,
           lastEscalatedInvariant: "",
-          roundPaths: [],
         }
       : {};
+  const {
+    churnAckRound: _churnAck,
+    churnEvidenceLost: _churnLost,
+    ...base
+  } = local;
   const state: DriveState = {
-    ...local,
+    ...base,
     ...rewound,
+    ...seedChurnFields(local, l),
     rounds: l.round,
     attempts: l.attempts,
     attemptsHead: l.attemptsHead,

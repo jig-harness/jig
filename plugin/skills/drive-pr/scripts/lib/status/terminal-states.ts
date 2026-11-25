@@ -314,12 +314,12 @@ export const TERMINAL_STATES: Readonly<
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
     meaning:
-      "Everything left waits on a person's decision, each framed on its thread. The drive does not wake itself: once every one is answered, re-arm it.",
+      "Everything left waits on a person's decision, each framed on its thread or, for a park with no thread, as a pull-request comment `answer <key>`, or the drive parked itself on structural churn (class `structural-churn`), a park that holds even live work. The drive does not wake itself: once every one is answered, re-arm it.",
     report: {
       stop: "parked: a decision waits for a person",
       cause: "needs-person",
       next: {
-        step: "Answer each parked decision on its thread, then re-arm the drive.",
+        step: "Answer each parked decision (on its thread, or in a pull-request comment `answer <key>: …`), then re-arm the drive.",
         owner: "person",
         act: "Decide",
       },
@@ -331,9 +331,9 @@ export const TERMINAL_STATES: Readonly<
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
     meaning:
-      "The pull request conflicts with its base and has nothing else to work on; `drive.ts` ends with it once its conflict-repair passes are spent. Merge the base in, then re-arm.",
+      "The pull request conflicts with its base and has no other workable finding, or the drive parked itself on structural churn on a conflicting pull request, whose live work then waits for that answer; `drive.ts` ends with it once its conflict-repair passes are spent. Merge the base in, then re-arm.",
     report: {
-      stop: "stopped: it conflicts with its base and has nothing left to work",
+      stop: "stopped: it conflicts with its base and has nothing left that the drive can work (work held by a park waits for its answer)",
       cause: "needs-person",
       next: {
         step: "Merge the base in and resolve the conflicts, then re-arm the drive.",

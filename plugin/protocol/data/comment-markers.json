@@ -1646,6 +1646,8 @@
                     "additionalProperties": true
                   }
                 },
+                "roundPaths": true,
+                "churnAckRound": true,
                 "driver": {
                   "type": "object",
                   "properties": {
@@ -2504,6 +2506,8 @@
                 "additionalProperties": true
               }
             },
+            "roundPaths": true,
+            "churnAckRound": true,
             "driver": {
               "type": "object",
               "properties": {

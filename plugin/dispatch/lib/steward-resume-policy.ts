@@ -1,5 +1,5 @@
 /** A routine recommendation is evidence; a registry-class decision stays a person's. */
-import { DEFAULT_PARK_CLASSES } from "../../shared/autonomy.ts";
+import { DEFAULT_PARK_CLASSES, KEPT_CLASSES } from "../../shared/autonomy.ts";
 import type { PoolIssue } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { queueHold } from "./queue-rank.ts";
 
@@ -46,9 +46,7 @@ function checkedClasses(classes: unknown): string[] | null {
     )
   )
     return null;
-  return [
-    ...new Set([...classes, "escalated", "human-decision", "human-thread"]),
-  ];
+  return [...new Set([...classes, ...KEPT_CLASSES])];
 }
 
 function registryQuestion(

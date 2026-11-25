@@ -53,6 +53,8 @@ test("the ledger shape preserves legacy optional fields and unconstrained quota 
     ciActions: _c,
     rulings: _r,
     resolvedParks: _p,
+    roundPaths: _rp,
+    churnAckRound: _ca,
     ...legacy
   } = ledger();
   expect(matches(LEDGER_PAYLOAD_SHAPE, legacy)).toBe(true);

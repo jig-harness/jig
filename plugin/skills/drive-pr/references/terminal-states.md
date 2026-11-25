@@ -721,6 +721,30 @@ that evidence, including the first status read before the round is counted.
 Repeated reads or reviewer reruns on the same head do not advance this local
 round counter. An unreadable hold or round is counted conservatively.
 
+**A third guard catches the spin the stall stop cannot see**: a drive whose
+head keeps moving while it converges on nothing. Each counting
+`ROUND_READY` gate records the round's live finding paths, whether any live
+finding is `high` or `blocker`, and each path's blob at the reviewed head
+(`lib/state/churn-facts.ts`), then judges the rounds recorded since the
+brake last parked (`lib/state/churn.ts`). It parks the drive under the
+`structural-churn` class and reports [`HITL_PARKED`](../../../protocol/drive-exits.md)
+before the round's pass when one file drew findings in each of the last
+`drive.churn_rounds` consecutive rounds (`DRIVE_PR_CHURN_ROUNDS`; default 4;
+`0` off), none of them `high` or `blocker`, and was rewritten between each
+(an unknown blob counts as rewritten, so a missing blob cannot hide churn);
+or when a file's blob returned to an earlier value after a different one
+(oscillation, whatever the severity). The park (the `park-churn` command of
+`drive-state.ts`) and `churnAckRound`, which consumes the evidence up to that round, land in
+one state update; a park that does not land, or a round whose evidence
+`record-paths` did not record, ends the gate
+[`INDETERMINATE`](../../../protocol/drive-exits.md). An unanswered
+`structural-churn` park reports `HITL_PARKED` even with live work, so a
+re-arm without an answer runs no round; on a pull request that conflicts
+with its base it reports [`PR_CONFLICTING`](../../../protocol/drive-exits.md)
+first, as every park does, and never `ROUND_READY`. The decision offers deferring the
+rest, constraining the scope and continuing; SKILL.md § 3, The
+structural-churn park, says what the next pass does for each.
+
 The counters below share that one bound, because neither covers the other's runaway
 and **both are durable**. `rounds` counts distinct reviewed heads, so it cannot
 see a pass that never pushes; `attempts` counts passes on the current head, and

@@ -986,7 +986,7 @@ export DRIVE_PR_STUB_GH_NESTED=1
       'pr view:number'|'pr view:state'|'pr view:headRefOid'|'pr view:mergeable'|\
       'pr view:baseRefName'|'pr view:baseRefName,url'|'pr view:state,isDraft'|\
       'pr view:labels'|'pr view:state,headRefOid,labels'|\
-      'pr view:state,headRefOid,baseRefOid'|\
+      'pr view:state,headRefOid,baseRefOid'|'pr view:state,headRefOid,baseRefOid,baseRefName'|\
       'pr view:state,baseRefName,headRefName,headRefOid'|\
       'pr view:state,headRefName,headRepositoryOwner,headRepository'|'pr view:state,headRefName,headRepositoryOwner,headRepository,url'|\
       'pr view:state,headRefName,title,body'|\
@@ -1160,7 +1160,7 @@ fi
 if [ "\${1:-} \${2:-}" = "pr view" ] && [ -z "\${DRIVE_PR_STUB_INNER:-}" ]; then
   for a in "$@"; do
     case "$a" in
-      state,isDraft,headRefOid,mergeable,mergeStateStatus,baseRefName,headRefName,baseRefOid|state,headRefOid,baseRefOid)
+      state,isDraft,headRefOid,mergeable,mergeStateStatus,baseRefName,headRefName,baseRefOid|state,headRefOid,baseRefOid|state,headRefOid,baseRefOid,baseRefName)
         printf '%s\\n' "$*" >> "$F/graphql-pull-reads" ;;
     esac
   done
@@ -1210,7 +1210,7 @@ if [ -n "$rest_pr" ]; then
         rest_read=(--json state,isDraft,headRefOid,mergeable,mergeStateStatus,baseRefName,headRefName,baseRefOid)
         rest_doc=1 ;;
       "X-Drive-Pr-Caller: still-on-head")
-        rest_read=(--json state,headRefOid,baseRefOid)
+        rest_read=(--json state,headRefOid,baseRefOid,baseRefName)
         rest_doc=1 ;;
     esac
   done
@@ -2689,6 +2689,8 @@ export async function probeIn(
     env?: Record<string, string>;
     /** The pull request argument: a number, a URL or a branch. */
     pr?: string;
+    /** The working directory of the probe: a repository holding the heads. */
+    cwd?: string;
   } = {},
 ): Promise<ProbeResult> {
   const args = [
@@ -2728,8 +2730,13 @@ export async function probeIn(
       PATH: `${binDir}${delimiter}${process.env.PATH}`,
       DRIVE_PR_FIXTURES: dir,
       DRIVE_PR_STATE_DIR: stateDir,
+      // Probes without a real repository cwd use synthetic HEAD/PREV tokens
+      // that are not git objects, so disable the churn brake's blob read
+      // unless the caller supplies a cwd or overrides DRIVE_PR_CHURN_ROUNDS.
+      ...(opts.cwd === undefined ? { DRIVE_PR_CHURN_ROUNDS: "0" } : {}),
       ...opts.env,
     },
+    ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }),
     stdout: "pipe",
     stderr: "pipe",
   });
