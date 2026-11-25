@@ -296,6 +296,7 @@ describe("a channel new to the host", () => {
     faulty.unplaced.push({
       target: "the other notification channel",
       record: "runtime",
+      channelFault: true,
       reason: "its address is unset",
     });
     await applyNotices(
@@ -306,6 +307,44 @@ describe("a channel new to the host", () => {
       { branch: null, lingerMs: HOUR, renotifyAfterMs: 0, channels: [phone] },
     );
     expect(channelStarted("phone", SLUG, h.root)).toBe(true);
+  });
+
+  it("waits while a target's own runtime uncertainty is on the report", async () => {
+    const h = host();
+    const phone = fakeChannel("phone");
+    const uncertain = report(h.repo, causes(2));
+    uncertain.unplaced.push({
+      target: "PR #9",
+      record: "runtime",
+      reason: "its state could not be determined",
+    });
+    await applyNotices(
+      h.state(),
+      h.repo,
+      uncertain,
+      { ok: true, source: "test", workspaces: [h.workspace] },
+      { branch: null, lingerMs: HOUR, renotifyAfterMs: 0, channels: [phone] },
+    );
+    expect(channelStarted("phone", SLUG, h.root)).toBe(false);
+    expect(phone.calls).toEqual([]);
+  });
+
+  it("waits while a converged pull request's place is pending on the board", async () => {
+    const h = host();
+    const phone = fakeChannel("phone");
+    const pending = report(h.repo, causes(2));
+    pending.board = { pending: [9] } as unknown as NonNullable<
+      typeof pending.board
+    >;
+    await applyNotices(
+      h.state(),
+      h.repo,
+      pending,
+      { ok: true, source: "test", workspaces: [h.workspace] },
+      { branch: null, lingerMs: HOUR, renotifyAfterMs: 0, channels: [phone] },
+    );
+    expect(channelStarted("phone", SLUG, h.root)).toBe(false);
+    expect(phone.calls).toEqual([]);
   });
 
   it("counts the silent records of an incomplete start as no start", async () => {

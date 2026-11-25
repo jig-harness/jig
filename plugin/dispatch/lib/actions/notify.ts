@@ -616,6 +616,7 @@ function dueOn(
     scope.report.unplaced.push({
       target: `the ${name} notification channel`,
       record: "runtime",
+      channelFault: true,
       reason: why,
     });
   }
@@ -638,6 +639,7 @@ function startingChannel(
     report.unplaced.push({
       target: `the ${channel} notification channel`,
       record: "runtime",
+      channelFault: true,
       reason: `its start state could not be read or written, so nothing is sent on it until a later tick reads it: ${failureText(error)}`,
     });
   }
@@ -668,9 +670,11 @@ function startFrom(
   // A target the tick could not observe may hold a standing cause it never saw, so the start waits for a tick that sees it.
   let complete =
     scope.report.records.every((r) => r.ok) &&
-    // A channel's own fault (`runtime`) says nothing about this repository's causes.
-    scope.report.unplaced.every((u) => u.record === "runtime") &&
-    (scope.report.withheld ?? []).length === 0;
+    // Only a notification channel's own fault says nothing about this repository's causes; any other unplaced target may hold one.
+    scope.report.unplaced.every((u) => u.channelFault === true) &&
+    (scope.report.withheld ?? []).length === 0 &&
+    // A converged pull request whose place the board read could not tell may hold a cause not yet seen.
+    (scope.report.board?.pending ?? []).length === 0;
   for (const c of due) {
     // A repeat refers to a real delivery, possibly at another repository: it stays due, never rewritten as silent.
     if (repeatedAt.has(c)) {
@@ -692,7 +696,8 @@ function startFrom(
       ),
     );
   }
-  if (!complete) return repeats;
+  // A repeat is delivered only once the start is complete: an incomplete start keeps it due for the tick that finishes it.
+  if (!complete) return [];
   try {
     markChannelStarted(channel, scope.repo.slug, currentIso(), scope.root);
   } catch (error) {
@@ -701,7 +706,7 @@ function startFrom(
       `the start of the ${channel} channel`,
       error,
     );
-    return repeats;
+    return [];
   }
   // The receipt tells a start only once its marker is durable.
   state.channelStarts ??= new Map();
@@ -712,7 +717,8 @@ function startFrom(
     scope.report.channelStarts = [...(scope.report.channelStarts ?? []), start];
   }
   start.causes += causes;
-  return repeats;
+  // A repeat that is sent keeps the failure ledger's wait, as it does on a channel that has started.
+  return notBackingOff(channel, repeats, scope.settings.book, scope.report);
 }
 
 /** The causes due on `channel`: new there, or due again; the rest reported suppressed. */
@@ -814,6 +820,7 @@ function answered(
       report.unplaced.push({
         target: `the ${name} notification channel`,
         record: "runtime",
+        channelFault: true,
         reason: `it answered for ${answer.key}, which was not due on it or was answered already`,
       });
       continue;
@@ -909,6 +916,7 @@ async function answersOf(
         report.unplaced.push({
           target: `the ${channel.name} notification channel`,
           record: "runtime",
+          channelFault: true,
           reason:
             "it returned malformed delivery answers; valid answers were retained and missing causes count as lost",
         });
@@ -916,6 +924,7 @@ async function answersOf(
         report.unplaced.push({
           target: `the ${channel.name} notification channel`,
           record: "runtime",
+          channelFault: true,
           reason: `${expiredNote}; the answers it settled with during cancellation were retained`,
         });
       return valid;
@@ -936,6 +945,7 @@ function lostAnswers(
   report.unplaced.push({
     target: `the ${channel.name} notification channel`,
     record: "runtime",
+    channelFault: true,
     reason: `its delivery failed, and its batch counts as lost: ${why}`,
   });
   return batch.map((c) => ({

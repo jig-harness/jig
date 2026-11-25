@@ -33,6 +33,7 @@ export function reportUnreachable(
     report.unplaced.push({
       target: `the ${channel.name} notification channel`,
       record: "runtime",
+      channelFault: true,
       reason: `${why}, so every notification on it waits; this host's machine file or the tick's environment must be corrected`,
     });
   }

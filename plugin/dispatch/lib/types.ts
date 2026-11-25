@@ -367,6 +367,8 @@ export interface Unplaced {
   target: string;
   record: RecordName;
   reason: string;
+  /** Set only for a notification channel's own fault, which says nothing about whether this repository's causes were observed. */
+  channelFault?: true;
   /** For an item the tracker listing returned: its title and link, which the line and the outcome log show beside its key. */
   title?: string;
   url?: string | null;

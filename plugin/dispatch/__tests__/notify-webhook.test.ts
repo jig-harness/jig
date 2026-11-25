@@ -295,6 +295,7 @@ describe.skipIf(process.platform === "win32")("on runtime: process", () => {
       {
         target: "the phone notification channel",
         record: "runtime",
+        channelFault: true,
         reason: expect.stringContaining(
           "JIG_TEST_PHONE_URL is not set in the tick's environment",
         ),
