@@ -131,7 +131,20 @@ export async function reviewedShaGate(
     }
     report.reviewedSha = markerFull;
   }
-  if (markerFull === report.apiHead) return null;
+  if (markerFull === report.apiHead) {
+    // A stamp and a skip notice that both name this head contradict each
+    // other: neither shows which one the reviewer meant, so fail closed.
+    if (
+      skip !== null &&
+      (await resolveMarkerSha(skip.head)) === report.apiHead
+    ) {
+      return {
+        state: "STALE_REVIEW",
+        reason: `${reviewerLabel()} recorded reviewing the PR head ${report.apiHead} and also a skip notice naming it ("${skip.text}") — contradictory evidence, so no review of this head is taken as proven. Have this head reviewed again, then re-arm`,
+      };
+    }
+    return null;
+  }
   const named = marker === markerFull ? marker : `${marker} (${markerFull})`;
   const stale: ReviewedShaStop = {
     state: "STALE_REVIEW",

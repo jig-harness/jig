@@ -387,7 +387,10 @@ export function reviewerStickyIn(
         sticky = {
           sha: bodySha,
           round,
-          updatedAt: String((raw as Record<string, unknown>).updated_at ?? ""),
+          // The edit that added the skip moved `updated_at`, so it does not
+          // date the stamp's publication: leave it undatable, which the
+          // stranded-run guard reads as not fresh.
+          updatedAt: "",
           skip,
         };
         continue;

@@ -647,6 +647,17 @@ describe("drive-status.ts over a head the reviewer skipped", () => {
     expect(r.reason).toBe(without.reason);
   });
 
+  it("fails closed when the stamp and the skip notice both name the current head", async () => {
+    const repo = pullRequestRepo("skipped-and-stamped");
+    const fixture = { ...at(repo, repo.merged), reviewedSha: repo.merged };
+    const without = await gate(repo.dir, fixture, null);
+    expect(without.state).not.toBe("STALE_REVIEW");
+    const r = await gate(repo.dir, fixture, skipNotice(repo.merged));
+    expectSpawnExit(r, 4);
+    expect(r.state).toBe("STALE_REVIEW");
+    expect(r.reason).toContain("contradictory");
+  });
+
   it("reads the notice under the marker the repository configures", async () => {
     const repo = pullRequestRepo("skipped-custom-marker");
     const fixture = at(repo, repo.merged);
