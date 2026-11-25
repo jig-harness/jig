@@ -81,7 +81,7 @@ export function hubHome(env: Record<string, string | undefined> = process.env) {
 }
 
 /** The feed's socket when the settings name none: beside the hub's own directory, not in it. */
-export function defaultFeedSocket(
+function defaultFeedSocket(
   env: Record<string, string | undefined> = process.env,
 ): string {
   return join(jigHome(env), "hub-feed", "feed.sock");

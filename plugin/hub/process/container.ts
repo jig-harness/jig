@@ -128,17 +128,17 @@ export function runCommand(
 }
 
 /** The command that tells whether a container of the hub's name is there. */
-export function containerExistsCommand(runtime: ContainerRuntime): string[] {
+function containerExistsCommand(runtime: ContainerRuntime): string[] {
   return [runtime, "container", "inspect", CONTAINER_NAME];
 }
 
 /** The command that removes a container of the hub's name, stopping it first. */
-export function removeCommand(runtime: ContainerRuntime): string[] {
+function removeCommand(runtime: ContainerRuntime): string[] {
   return [runtime, "rm", "--force", CONTAINER_NAME];
 }
 
 /** The command that stops the running container. */
-export function stopCommand(runtime: ContainerRuntime): string[] {
+function stopCommand(runtime: ContainerRuntime): string[] {
   return [runtime, "stop", "--time", "10", CONTAINER_NAME];
 }
 

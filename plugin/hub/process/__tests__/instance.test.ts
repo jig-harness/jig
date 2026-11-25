@@ -16,7 +16,7 @@ import { stopRunningHub, withServeLock } from "../instance.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "hub-instance-"));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
-const HOLDER = join(import.meta.dir, "hold-serve-lock.ts");
+const HOLDER = join(import.meta.dir, "fixtures", "hold-serve-lock.ts");
 const JIG = join(import.meta.dir, "..", "..", "..", "jig.ts");
 let homes = 0;
 let holders: ReturnType<typeof Bun.spawn>[] = [];

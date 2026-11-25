@@ -117,3 +117,17 @@ export function prepareHostPaths(
         ],
   );
 }
+
+/** `prepareHostPaths`, its warnings and failure printed under `who`: whether the paths are ready. */
+export function prepareHostPathsReporting(
+  settings: Pick<HubSettings, "database" | "feed">,
+  who: string,
+): boolean {
+  const prepared = prepareHostPaths(settings);
+  if (!prepared.ok) {
+    console.error(`${who}: ${prepared.failure.reason}`);
+    return false;
+  }
+  for (const warning of prepared.value) console.error(`${who}: ${warning}`);
+  return true;
+}

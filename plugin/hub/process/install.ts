@@ -51,7 +51,7 @@ import {
   containerRuntime,
   removeContainer,
 } from "./container.ts";
-import { prepareHostPaths } from "./host-paths.ts";
+import { prepareHostPathsReporting } from "./host-paths.ts";
 import { stopRunningHub } from "./instance.ts";
 import {
   checkPrivate,
@@ -321,13 +321,7 @@ export async function installHub(
     console.error(`jig install hub: ${settings.failure.reason}`);
     return 1;
   }
-  const prepared = prepareHostPaths(settings.value);
-  if (!prepared.ok) {
-    console.error(`jig install hub: ${prepared.failure.reason}`);
-    return 1;
-  }
-  for (const warning of prepared.value)
-    console.error(`jig install hub: ${warning}`);
+  if (!prepareHostPathsReporting(settings.value, "jig install hub")) return 1;
   if (runtime !== null) {
     const built = await buildImage(runtime, dirname(request.script));
     if (!built.ok) {

@@ -5,11 +5,11 @@
  * settings, so a bare `jig doctor` passes where no hub is set up. Later
  * steps add their own checks beside these.
  */
-import { lstatSync } from "node:fs";
+import { lstatSync, type Stats } from "node:fs";
 import { dirname } from "node:path";
 import type { DoctorCheck } from "../../runtime/component.ts";
 import { errnoCode } from "../../shared/errors.ts";
-import { attempt, type Outcome } from "../../shared/outcome.ts";
+import { attempt, ok, type Outcome } from "../../shared/outcome.ts";
 import { containerRuntime, type ContainerRuntime } from "./container.ts";
 import { feedDirectoryMode, feedPathBlocks, groupId } from "./host-paths.ts";
 import { readServeRecord } from "./serve.ts";
@@ -98,66 +98,77 @@ function interfacesCheck(settings: HubSettings): DoctorCheck {
   );
 }
 
+const FEED_CHECK = "hub:feed";
+const REMAKE_FEED = "run jig install hub --yes again, which makes it";
+
+/** The feed socket's directory as it stands: its owner, mode and group, then whether the front's group reaches it. */
+function socketDirectoryCheck(
+  feed: { readonly socket: string; readonly group: string | null },
+  stats: Pick<Stats, "mode" | "uid" | "gid">,
+  uid: number,
+): DoctorCheck {
+  const directory = dirname(feed.socket);
+  const wanted = feedDirectoryMode(feed.group);
+  const gid = feed.group === null ? ok(null) : groupId(feed.group);
+  if (!gid.ok)
+    return check(
+      FEED_CHECK,
+      "fail",
+      gid.failure.reason,
+      "create the front's group, or remove feed.group",
+    );
+  const owned = stats.uid === uid && (stats.mode & 0o777) === wanted;
+  if (!owned || (gid.value !== null && stats.gid !== gid.value))
+    return check(
+      FEED_CHECK,
+      "fail",
+      `the feed socket directory ${directory} is not the hub user's with mode ${wanted.toString(8).padStart(4, "0")}${feed.group === null ? "" : ` and the group ${feed.group}`}`,
+      REMAKE_FEED,
+    );
+  if (gid.value === null)
+    return check(
+      FEED_CHECK,
+      "pass",
+      `the feed socket ${feed.socket} is the hub user's alone`,
+    );
+  const blocks = feedPathBlocks(feed.socket, gid.value);
+  return blocks.length === 0
+    ? check(
+        FEED_CHECK,
+        "pass",
+        `the front's group ${feed.group} reaches the feed socket ${feed.socket}`,
+      )
+    : check(
+        FEED_CHECK,
+        "warn",
+        `the front's group ${feed.group} cannot pass ${blocks.join(", ")} on the way to the feed socket`,
+        "give each the others' search permission (chmod o+x), or set feed.socket under a directory it can pass",
+      );
+}
+
 /** The feed socket's directory: the hub user's, mode 0700, or 0710 and the front's group, which can reach it. */
 function feedCheck(settings: HubSettings, probes: DoctorProbes): DoctorCheck {
-  const id = "hub:feed";
   const { feed } = settings;
   if (!("socket" in feed))
     return check(
-      id,
+      FEED_CHECK,
       "pass",
       `the feed listens on ${feed.listen.host}:${feed.listen.port} with the front's secret`,
     );
   const directory = dirname(feed.socket);
-  const reinstall = "run jig install hub --yes again, which makes it";
   const stats = attempt("unreadable", `cannot read ${directory}`, () =>
     probes.stat(directory),
   );
   if (!stats.ok)
     return check(
-      id,
+      FEED_CHECK,
       "warn",
       errnoCode(stats.failure.cause) === "ENOENT"
         ? `no feed socket directory ${directory} yet`
         : stats.failure.reason,
-      reinstall,
+      REMAKE_FEED,
     );
-  const mode = stats.value.mode & 0o777;
-  const wanted = feedDirectoryMode(feed.group);
-  const gid = feed.group === null ? null : groupId(feed.group);
-  if (gid !== null && !gid.ok)
-    return check(
-      id,
-      "fail",
-      gid.failure.reason,
-      "create the front's group, or remove feed.group",
-    );
-  const wrong =
-    stats.value.uid !== probes.identity.uid ||
-    mode !== wanted ||
-    (gid?.ok === true && stats.value.gid !== gid.value);
-  if (wrong)
-    return check(
-      id,
-      "fail",
-      `the feed socket directory ${directory} is not the hub user's with mode ${wanted.toString(8).padStart(4, "0")}${feed.group === null ? "" : ` and the group ${feed.group}`}`,
-      reinstall,
-    );
-  const blocks = gid?.ok ? feedPathBlocks(feed.socket, gid.value) : [];
-  return blocks.length === 0
-    ? check(
-        id,
-        "pass",
-        feed.group === null
-          ? `the feed socket ${feed.socket} is the hub user's alone`
-          : `the front's group ${feed.group} reaches the feed socket ${feed.socket}`,
-      )
-    : check(
-        id,
-        "warn",
-        `the front's group ${feed.group} cannot pass ${blocks.join(", ")} on the way to the feed socket`,
-        "give each the others' search permission (chmod o+x), or set feed.socket under a directory it can pass",
-      );
+  return socketDirectoryCheck(feed, stats.value, probes.identity.uid);
 }
 
 /** Every check of `jig doctor hub`. */

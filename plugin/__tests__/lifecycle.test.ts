@@ -155,6 +155,7 @@ test.skipIf(onWindows).each(SCHEDULERS)(
           "hub",
           "process",
           "__tests__",
+          "fixtures",
           "hold-serve-lock.ts",
         ),
       ],

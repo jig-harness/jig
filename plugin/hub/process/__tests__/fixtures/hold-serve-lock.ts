@@ -3,7 +3,7 @@
  * under `JIG_HOME` and prints `held`, until a terminate signal; with
  * `stubborn`, it ignores that signal and holds until killed.
  */
-import { withServeLock } from "../instance.ts";
+import { withServeLock } from "../../instance.ts";
 
 const stubborn = process.argv.includes("stubborn");
 const ended = Promise.withResolvers<void>();
