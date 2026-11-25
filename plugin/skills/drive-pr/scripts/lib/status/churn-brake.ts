@@ -72,7 +72,6 @@ function parseEnvChurnRounds(
 /** Resolve the policy values for `drive.churn_rounds` and any integration-branch floor. */
 function readChurnPolicyValues(
   env: Record<string, string | undefined>,
-  observedBase?: string,
 ): Outcome<
   {
     values: Record<string, unknown>;
@@ -91,14 +90,6 @@ function readChurnPolicyValues(
       `the base branch's policy cannot be read (${policy.reason}), so drive.churn_rounds cannot be trusted`,
     );
   if (policy.from === "base") {
-    // The snapshot is the driver's, read before the pass; the gate judges the
-    // base it observed now. A base that moved or a retarget between the two
-    // would apply the previous target's setting.
-    if (observedBase !== undefined && policy.commit !== observedBase)
-      return failed(
-        "churn-rounds-invalid",
-        `the policy snapshot (${policy.commit}) is not the base this gate observed (${observedBase}), so drive.churn_rounds cannot be trusted; re-arm the drive`,
-      );
     return ok({
       values: policy.values,
       ...(policy.bound === undefined
@@ -121,11 +112,10 @@ function readChurnPolicyValues(
  */
 export function churnRoundsSetting(
   env: Record<string, string | undefined> = process.env,
-  observedBase?: string,
 ): Outcome<number, "churn-rounds-invalid"> {
   const raw = env[CHURN_ROUNDS_VARIABLE];
   if (raw !== undefined && raw.trim() !== "") return parseEnvChurnRounds(raw);
-  const policy = readChurnPolicyValues(env, observedBase);
+  const policy = readChurnPolicyValues(env);
   if (!policy.ok) return policy;
   const own = valueIn(policy.value.values);
   if (!own.ok || policy.value.boundValues === undefined) return own;
@@ -429,7 +419,7 @@ export async function runChurnBrake(
   reconciled: boolean,
   env: Record<string, string | undefined> = process.env,
 ): Promise<number | null> {
-  const setting = churnRoundsSetting(env, report.baseHead);
+  const setting = churnRoundsSetting(env);
   if (!setting.ok)
     return indeterminate(
       report,

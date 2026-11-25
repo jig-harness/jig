@@ -1234,9 +1234,10 @@ that opened it: that one is adopted and driven to convergence (when its
 head is known to be in the repository, it was updated recently and carries no
 hold; the commit, path and update-type rules apply later, at placement), so the board
 can place it (see `pull_requests.trusted_automation` in
-[CONFIGURATION.md](CONFIGURATION.md#pull_requests)). A person can still ask
-the dispatcher to drive it. Each
-run reports every pull request the rule adopted, with the reason.
+[CONFIGURATION.md](CONFIGURATION.md#pull_requests)). Set
+`dispatch.adopt.trusted_automation: false` to leave those bots' drive starts
+and restarts to a person while adoption continues for other eligible authors. Each run
+reports every pull request the rule adopted, with the reason.
 
 **Serialized areas.** Some pull requests conflict with each other whenever
 two move at once: two migrations, two edits to one schema. An area of the
