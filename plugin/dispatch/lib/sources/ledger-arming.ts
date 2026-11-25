@@ -1,4 +1,4 @@
-import { type Adoption, adopts } from "../adopt.ts";
+import { type Adoption, adopts, requiresManualTrustedDrive } from "../adopt.ts";
 import { hasCommand, type LabelConfig } from "../labels.ts";
 import { pickupAsked, type PickupArms } from "../pickup-arms.ts";
 import type { DrivenPr } from "../types.ts";
@@ -48,6 +48,7 @@ function askedToArm(
   const { labels, adoption } = r;
   if (labels !== null && hasCommand(labels, pr.labels, "drive"))
     return { asks: "a person's drive label asks for one", evidence: {} };
+  if (requiresManualTrustedDrive(pr.author, adoption)) return null;
   if (pickupAsked(r.pickupArms, pr))
     return {
       asks: "its completed process pickup handed off the first drive",
