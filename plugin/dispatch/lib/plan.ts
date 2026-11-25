@@ -51,6 +51,7 @@ import { parkNotice, stopNotice, unreportedNotice } from "./notices.ts";
 import { goneUnlaunched } from "./recovery-facts.ts";
 import { automationStartBlock } from "./automation.ts";
 import { backingOff } from "./infra-backoff.ts";
+import { retryWaiting } from "./repeated-ends.ts";
 import { conflictNote } from "./sources/ledger-probe.ts";
 import { requestedTree, workspaceOfTree } from "./stall-tree.ts";
 import { planFollowups } from "./plan-followups.ts";
@@ -675,7 +676,7 @@ function unplacedDrive(target: string, pr: DrivenPr): Unplaced {
 /**
  * The drive as this host plans it, or `null` once it is reported quiet
  * because nothing is launched for it yet: its work is in a tree on another
- * host, its re-drive waits out a backoff, or it is an automation pull
+ * host, its re-drive, re-arm or takeover waits out a backoff, or it is an automation pull
  * request that needs no work.
  */
 function plannable(
@@ -700,6 +701,7 @@ function plannable(
   // (planDrive), only the takeover is withheld.
   const waiting =
     backingOff(pr, input.nowMs) ??
+    retryWaiting(pr, input.nowMs) ??
     (startsBlocked === null ||
     (pr.class === "silent" && pr.evidence.trustedDriveManual === true)
       ? null

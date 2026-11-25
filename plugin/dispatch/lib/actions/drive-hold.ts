@@ -162,7 +162,7 @@ export function driveHold(pr: DrivenPr, records: ReadRecord[]): DriveHold {
     .filter((r) => isDrive(r.record) && r.record.pr === pr.number)
     .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt));
   if (pr.class === "silent") return silentHold(pr, mine);
-  const holding = mine.find((r) => holds(r.state));
+  const holding = mine.find((r) => holds(r.state) && !wedgedOwner(pr, r));
   if (holding !== undefined)
     return { kind: "held", record: holding, why: describe(holding) };
   if (pr.evidence.rearm === true) return pendingRequest(mine);
@@ -223,6 +223,20 @@ function silentHold(pr: DrivenPr, mine: ReadRecord[]): DriveHold {
   return owner === undefined
     ? { kind: "none" }
     : { kind: "takeover", record: owner };
+}
+
+/**
+ * Whether `r` is the still-running launch that started a silent driver whose
+ * takeovers kept failing (`repeated-ends.ts`): as for a silent drive, a
+ * running record on older ledger facts does not hold it, so the person is
+ * notified rather than the drive shown running.
+ */
+function wedgedOwner(pr: DrivenPr, r: ReadRecord): boolean {
+  return (
+    typeof pr.evidence.failedTakeover === "string" &&
+    r.state.kind === "alive" &&
+    !sameFacts(r.record.facts, factsOf(pr))
+  );
 }
 
 /** A delivered request stays held until its label removal is acknowledged. */

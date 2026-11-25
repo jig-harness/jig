@@ -305,6 +305,8 @@ export interface DrivenPr {
   failure?: ReadFailure;
   /** The pull request's head commit and its branch's head on the forge, read only where a failed re-arm is weighed (`failed-rearms.ts`). */
   heads?: RearmHeads;
+  /** When the next launch of a drive whose launches keep ending the same way may start, an instant (`repeated-ends.ts`). */
+  retryAfter?: string;
 }
 
 /** A pull request's head commit, as the forge reports it with the pull request, and its branch's head on the forge. */

@@ -628,6 +628,7 @@ describe("actionableParkKeys", () => {
     const sets = {
       keys: new Set(["standalone", "resolved", "open"]),
       reversals: new Set<string>(),
+      selfParked: new Set<string>(),
     };
     expect(actionableParkKeys(sets)).toEqual([
       "open",

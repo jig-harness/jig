@@ -296,6 +296,9 @@ import {
   type StatusReport,
 } from "./lib/status/evaluate.ts";
 import { takeInheritedHead } from "./lib/status/inherited-head.ts";
+import { churnRoundsSetting, runChurnBrake } from "./lib/status/churn-brake.ts";
+import { readRoundBlobs } from "./lib/status/round-blobs.ts";
+import { normalizeRoundPaths } from "./lib/state/round-paths.ts";
 import { setProbeFailure } from "./lib/status/probe-stop.ts";
 // `report.state` and the emitted/returned exit code for these two
 // out-of-band states are derived from ONE lookup — see
@@ -781,18 +784,16 @@ async function main(): Promise<number> {
    *   consecutive-round chain on evidence nobody gathered, which silences the
    *   signal rather than merely failing to arm it.
    *
-   *   BEST-EFFORT. A failed write costs a deferred signal on an advisory field,
-   *   never a verdict; the round bump above already hard-stops on the durable
-   *   state being unwritable, so this cannot be the first place that fault is
-   *   discovered. "Best-effort" means the failure does not block the round, not
-   *   that it is invisible: `bump-round` hard-stopping on the SAME class of
-   *   fault does not prove THIS write succeeded — it is a separate call, with
-   *   its own lease and timeout window, and a report reaching
-   *   `structuralEscalationDue` afterwards reads whatever durable state already
-   *   had, silently stale by exactly this round's missing entry. So a non-zero
-   *   exit here is reported on stderr — not escalated to a state or exit-code
-   *   change, which would turn an advisory field into a gate over a network
-   *   call.
+   *   REPORTED, NOT THROWN. It returns whether the write landed (`true` when
+   *   none was owed). For `structuralEscalationDue` a failed write only
+   *   defers an advisory signal: the report reads whatever durable state
+   *   already had, stale by exactly this round's missing entry, and the
+   *   failure is said on stderr. The structural-churn brake cannot judge on
+   *   that window, since the missing round could be the one that trips it,
+   *   so with the brake on case 0 ends the gate `INDETERMINATE` instead
+   *   (`lib/status/churn-brake.ts`). `bump-round` hard-stopping on the same
+   *   class of fault does not prove THIS write succeeded: it is a separate
+   *   call, with its own lease and timeout window.
    *
    *   `record-paths`'s OWN stderr is PASSED THROUGH, not discarded — the same
    *   convention `parked-keys` above uses, and for the same reason: a
@@ -804,25 +805,60 @@ async function main(): Promise<number> {
    *   repeated file sorted outside the retained 200 paths silently vanish
    *   from the recurrence signal with nothing anywhere saying so.
    */
-  async function recordRoundPaths(): Promise<void> {
-    if (noCount) return;
+  async function recordRoundPaths(): Promise<boolean> {
+    if (noCount) return true;
     const paths = report.openThreadPaths;
-    if (paths === null) return;
-    // `--stdin` rather than one `--path` argument per path: a round with
+    if (paths === null) return true;
+    // On stdin rather than one `--path` argument per path: a round with
     // enough long paths can push the child's argv past the ~32KB Windows
     // command-line limit, silently failing to record this round's anchors.
-    const args = ["record-paths", pr, "--stdin"];
+    // The JSON form carries the structural-churn brake's facts too.
+    // The brake's setting first: with the brake off no file content is read,
+    // and only the paths the writer retains are measured.
+    const setting = churnRoundsSetting(process.env, report.baseHead);
+    const brakeOn = !setting.ok || setting.value > 0;
+    // A round the replied-thread sweep did not reconcile carries no facts, so
+    // the brake never counts it toward a streak or a return.
+    // Nor does a head the reviewer has not reviewed: its findings predate the
+    // head (a conflicting PR keeps them workable), so file contents read at
+    // this head would pass an unrelated rewrite off as a round of review.
+    const withFacts =
+      brakeOn && sweepReconciled && report.reviewedSha === report.apiHead;
+    const read = withFacts
+      ? await readRoundBlobs(
+          report.apiHead,
+          normalizeRoundPaths(paths),
+          ctx.helperTimeoutSec,
+        )
+      : { blobs: {}, failed: false };
+    const blobs = read.blobs;
+    const args = ["record-paths", pr, "--stdin-json"];
     const r = await run(tsArgv(ctx.driveStateScript, args), {
       stdout: "ignore",
       stderr: "inherit",
       timeoutSec: ctx.helperTimeoutSec,
-      stdin: paths.length > 0 ? `${paths.join("\n")}\n` : "",
+      stdin: JSON.stringify({
+        paths,
+        blobs,
+        ...(!withFacts || read.failed || report.roundSevere === null
+          ? {}
+          : { severe: report.roundSevere }),
+      }),
     });
     if (r.code !== 0) {
       process.stderr.write(
-        `drive-status: could not record this round's finding anchors for #${pr} (record-paths exited ${r.code}) — structuralEscalationDue is reporting the previous round's durable state, not this one\n`,
+        `drive-status: could not record this round's finding anchors for #${pr} (record-paths exited ${r.code}) — structuralEscalationDue is reporting the previous round's durable state, not this one, and the structural-churn brake cannot judge this round\n`,
       );
     }
+    // A failed blob batch leaves the round without facts and, with the brake
+    // on, ends the gate: the round could be the one that completes a streak.
+    if (r.code === 0 && read.failed) {
+      process.stderr.write(
+        `drive-status: the structural-churn brake has no file contents for #${pr}'s round, so it cannot judge it\n`,
+      );
+      return false;
+    }
+    return r.code === 0;
   }
 
   /**
@@ -1013,6 +1049,7 @@ async function main(): Promise<number> {
             summaryHeldUndispatchedKeys: report.summaryHeldUndispatchedKeys,
             parkedKeys: report.parkedItemKeys,
             actionableParkKeys: report.actionableParkKeys,
+            churnParkKeys: report.churnParkKeys,
             // The evidence `structuralEscalationDue` above is derived from —
             // published for visibility, the same reason the key sets beside
             // it are. NOT the recurrence result itself: this is only THIS
@@ -1801,8 +1838,18 @@ async function main(): Promise<number> {
           }
         }
         // This round's finding anchors, filed against the round the bump above
-        // just counted. Best-effort and advisory; see the function.
-        await recordRoundPaths();
+        // just counted; see the function for what a failed write costs.
+        const recorded = await recordRoundPaths();
+        // The structural-churn brake: park before the pass when the recorded
+        // rounds churn, and stop when this round's evidence did not land
+        // (`lib/status/churn-brake.ts`); never on a re-read.
+        const braked = noCount
+          ? null
+          : await runChurnBrake(ctx, report, recorded, sweepReconciled);
+        if (braked !== null) {
+          await emit(braked);
+          return braked;
+        }
         // `--bump-attempt`: record this PASS before `emit` computes
         // `reflectDue`, so the field it reports is never one pass stale. This
         // is what the flag exists for — see its own doc comment above for the
