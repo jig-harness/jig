@@ -659,20 +659,20 @@ function startFrom(
   state: ApplyState,
   due: readonly Cause[],
 ): Cause[] {
-  state.channelStarts ??= new Map();
-  let start = state.channelStarts.get(channel);
-  if (start === undefined) {
-    start = { channel, causes: 0 };
-    state.channelStarts.set(channel, start);
-    scope.report.channelStarts = [...(scope.report.channelStarts ?? []), start];
-  }
-  let complete = scope.report.records.every((r) => r.ok);
+  let causes = 0;
+  // A target the tick could not observe may hold a standing cause it never saw, so the start waits for a tick that sees it.
+  let complete =
+    scope.report.records.every((r) => r.ok) &&
+    scope.report.unplaced.length === 0 &&
+    (scope.report.withheld ?? []).length === 0;
   for (const c of due) {
+    // A repeat refers to a real delivery, possibly at another repository: it stays due, never rewritten as silent.
+    if (repeatedAt.has(c)) continue;
     if (!recordSent(channel, c, "", scope, true)) {
       complete = false;
       continue;
     }
-    start.causes++;
+    causes++;
     scope.report.notifications.push(
       outcomeFor(
         channel,
@@ -692,7 +692,17 @@ function startFrom(
       `the start of the ${channel} channel`,
       error,
     );
+    return [];
   }
+  // The receipt tells a start only once its marker is durable.
+  state.channelStarts ??= new Map();
+  let start = state.channelStarts.get(channel);
+  if (start === undefined) {
+    start = { channel, causes: 0 };
+    state.channelStarts.set(channel, start);
+    scope.report.channelStarts = [...(scope.report.channelStarts ?? []), start];
+  }
+  start.causes += causes;
   return [];
 }
 
@@ -719,9 +729,11 @@ function dueThere(
           c,
           "suppressed",
           earlier.workspace,
-          earlier.sentAt === earlier.at
-            ? `sent ${earlier.at}`
-            : `sent ${earlier.at}, again ${earlier.sentAt}`,
+          earlier.workspace === SILENT_START
+            ? `known since ${earlier.at}, recorded without sending`
+            : earlier.sentAt === earlier.at
+              ? `sent ${earlier.at}`
+              : `sent ${earlier.at}, again ${earlier.sentAt}`,
         ),
       );
   }

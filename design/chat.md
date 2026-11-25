@@ -107,7 +107,7 @@ only what appears or changes afterwards, so adding a channel to a host with a
 backlog does not send the backlog one message at a time. A repository first
 reached on a later tick starts the same way. The dashboard's Needs you is where
 the backlog is read. A start row in the `notices` table (no repository, the key
-`channel started <repository>`) says the channel has begun on that repository,
+`channel started <repository>`, stored as `<channel>:channel started <repository>`) says the channel has begun on that repository,
 so a channel that had nothing to carry there is not mistaken for a new one when
 its first cause appears; so does a record of a send at that repository. The
 silent records of a start that did not complete count for neither, and the
