@@ -1,7 +1,11 @@
 /** Which launch records pruning keeps as the only evidence of what was already done. */
 import { cancelledBeforeExecution } from "./cancellation.ts";
-import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
+import {
+  DRIVE_EXIT,
+  DRIVER_REFUSAL_EXITS,
+} from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import type { ReadRecord } from "./launches.ts";
+import { FAILED_TAKEOVERS, NOT_SETTLED_REARMS } from "./repeated-end-caps.ts";
 
 const isDrive = (action: string): boolean =>
   action === "rearm" || action === "takeover";
@@ -81,11 +85,57 @@ export function latestUsageRefusals(records: ReadRecord[]): Set<string> {
   );
 }
 
-/** The ids of the drive records whose refusal holds their drive: a failed re-arm and a usage refusal. */
+/** Whether a drive record ended the way `repeated-ends.ts` counts: a re-arm at recorded heads that stopped `NOT_SETTLED`, or a takeover that failed on an exit no other rule answers. */
+function repeatedEnd(r: ReadRecord): boolean {
+  if (r.state.kind !== "ended") return false;
+  const code = r.state.exit.code;
+  if (r.record.action === "rearm")
+    return code === DRIVE_EXIT.NOT_SETTLED && r.record.heads != null;
+  return (
+    r.record.action === "takeover" &&
+    code !== null &&
+    code !== 0 &&
+    code !== DRIVE_EXIT.UNSUPPORTED_CLI &&
+    code !== DRIVE_EXIT.QUOTA_PARKED &&
+    code !== DRIVE_EXIT.FORGE_RATE_LIMITED &&
+    !DRIVER_REFUSAL_EXITS.has(code)
+  );
+}
+
+/**
+ * The ids of each pull request's drive records (re-arms and takeovers, not
+ * cancelled before they ran) at the tail of its drive records that ended the
+ * way `repeated-ends.ts` counts, as many as its longest cap: the only
+ * evidence of how many launches in a row ended so, kept until a later launch
+ * ends the run.
+ */
+export function latestRepeatedEnds(records: ReadRecord[]): Set<string> {
+  const cap = Math.max(NOT_SETTLED_REARMS, FAILED_TAKEOVERS);
+  const byPr = new Map<string, ReadRecord[]>();
+  for (const r of records) {
+    if (!isDrive(r.record.action) || cancelledBeforeExecution(r)) continue;
+    const key = `${r.record.repo}#${String(r.record.pr)}`;
+    byPr.set(key, [...(byPr.get(key) ?? []), r]);
+  }
+  const kept = new Set<string>();
+  for (const mine of byPr.values()) {
+    const newest = [...mine].sort((a, b) =>
+      b.record.createdAt.localeCompare(a.record.createdAt),
+    );
+    for (const r of newest.slice(0, cap)) {
+      if (!repeatedEnd(r)) break;
+      kept.add(r.record.id);
+    }
+  }
+  return kept;
+}
+
+/** The ids of the drive records whose refusal holds their drive: a failed re-arm, a usage refusal and a run of repeated ends. */
 export function latestDriveRefusals(records: ReadRecord[]): Set<string> {
   return new Set([
     ...latestFailedRearms(records),
     ...latestUsageRefusals(records),
+    ...latestRepeatedEnds(records),
   ]);
 }
 

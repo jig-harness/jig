@@ -87,7 +87,10 @@ export function isLasting(c: Cause): boolean {
     (c.cause === "stopped-unknown" && c.evidence.noCause === true) ||
     typeof c.evidence.failedRearm === "string" ||
     typeof c.evidence.reviewerFailureHead === "string" ||
-    typeof c.evidence.usageRefusal === "string"
+    typeof c.evidence.usageRefusal === "string" ||
+    (c.cause === "needs-person" &&
+      (typeof c.evidence.failedTakeover === "string" ||
+        typeof c.evidence.notSettledRecord === "string"))
   );
 }
 
