@@ -2065,7 +2065,6 @@ describe("summary-findings parsing", () => {
         }),
       ]).toEqual(["fp1"]);
     });
-
     it("keeps the ordinary unconditional match for a winddown fingerprint when the sticky carries NO round", () => {
       // With no `opts.currentRound`, `exemptFromExpiry` fails closed to "not
       // exempt" unconditionally — if that alone triggered the stale-refresh
@@ -2090,7 +2089,6 @@ describe("summary-findings parsing", () => {
       ]).toEqual(["fp1"]);
     });
   });
-
   it("excludes a body finding whose path DID receive an inline comment", () => {
     const r = classify({
       pr: 1,
@@ -2103,7 +2101,6 @@ describe("summary-findings parsing", () => {
     expect(r.ignoredBacklog).toHaveLength(1);
     expect(r.findings.every((f) => f.source === "backlog")).toBe(true);
   });
-
   it("counts an UNANCHORED body finding as summary-only work", () => {
     const r = classify({
       pr: 1,
@@ -2116,7 +2113,6 @@ describe("summary-findings parsing", () => {
     expect(r.findings.filter((f) => f.source === "body")).toHaveLength(1);
     expect(r.unaddressed).toHaveLength(2);
   });
-
   it("marks a finding addressed only via its drive-pr-addressed marker", () => {
     const r = classify({
       pr: 1,
@@ -2129,7 +2125,6 @@ describe("summary-findings parsing", () => {
     expect(r.findings[0]?.addressed).toBe(true);
     expect(r.unaddressed).toEqual([]);
   });
-
   it("honors explicit non-blocking dispositions without suppressing blocking backlog or a fresh body bullet", () => {
     const path = "fresh.ts";
     const text = "This is a fresh finding.";
@@ -2188,7 +2183,6 @@ describe("summary-findings parsing", () => {
       countMismatch.unaddressed.map((entry) => entry.fingerprint),
     ).toContain(sectionFingerprint);
   });
-
   it("honors a Beyond this PR disposition when it renders every backlog entry", () => {
     const entries = [
       { path: "one.ts", line: 1, comment: "One held finding." },
@@ -2219,7 +2213,6 @@ describe("summary-findings parsing", () => {
     );
     expect(r.unaddressed).toEqual([]);
   });
-
   it("keeps abbreviated Beyond this PR renderings blocking", () => {
     const entries = [
       {
@@ -2259,7 +2252,6 @@ describe("summary-findings parsing", () => {
       entries.map((entry) => entry.fingerprint),
     );
   });
-
   it("keeps an ambiguous abbreviated Beyond this PR rendering blocking", () => {
     const entries = [
       "The shared prefix, first finding.",
@@ -2291,7 +2283,6 @@ describe("summary-findings parsing", () => {
       entries.map((entry) => entry.fingerprint),
     );
   });
-
   it("does not treat distinct same-anchor backlog findings as rendered", () => {
     const entries = ["The rendered finding.", "The hidden finding."].map(
       (comment) => ({
@@ -2322,7 +2313,6 @@ describe("summary-findings parsing", () => {
       entries.map((entry) => entry.fingerprint),
     );
   });
-
   it("does not let a matching Beyond this PR count suppress a different backlog entry", () => {
     const renderedPath = "rendered.ts";
     const renderedText = "This entry is explicitly shown as non-blocking.";
@@ -2365,7 +2355,6 @@ describe("summary-findings parsing", () => {
       hidden.fingerprint,
     ]);
   });
-
   it("reports a shortfall when the declared count exceeds what was classified", () => {
     // Fail closed: an unexplained gap between what the reviewer says it could
     // not anchor and what we could find must block convergence, not round down.
@@ -2382,7 +2371,6 @@ describe("summary-findings parsing", () => {
     );
     expect(r.unaddressed).toHaveLength(3);
   });
-
   it("does not manufacture a phantom slot for a blocking backlog finding", () => {
     const r = classify({
       pr: 1,
@@ -2398,7 +2386,6 @@ describe("summary-findings parsing", () => {
     ]);
     expect(r.ignoredBacklog).toHaveLength(1);
   });
-
   it("keeps an unexplained slot open alongside ignored wind-down backlog", () => {
     const r = classify({
       pr: 1,
@@ -2413,7 +2400,6 @@ describe("summary-findings parsing", () => {
     ]);
     expect(r.ignoredBacklog).toHaveLength(1);
   });
-
   it("inline comments anchor a `path:line` group ENTIRELY or not at all", () => {
     // `path:line` is a position, not an identity. Two findings can share one,
     // and a membership test then calls both anchored — the unthreaded sibling
@@ -2458,7 +2444,6 @@ describe("summary-findings parsing", () => {
     // Still fail-closed when the combined total falls short.
     expect(at(["a.ts"])).toHaveLength(2);
   });
-
   it("does not spend one file’s bare-path slot on two different lines", () => {
     // The bare-path pool is shared by every group on the file, so combining the
     // pools must still COUNT: one outdated comment cannot cover a bullet on
@@ -2490,7 +2475,6 @@ describe("summary-findings parsing", () => {
     // exact one is not wasted on the group that could have used the bare slot.
     expect(at(["a.ts:99", "a.ts"])).toHaveLength(0);
   });
-
   it("an OUTDATED anchor covers a file’s leftovers only when it covers them ALL", () => {
     // An inline comment whose anchor went outdated reports no line, so its key
     // is the bare path. Treated as membership, it hides every bullet on that
@@ -2519,7 +2503,6 @@ describe("summary-findings parsing", () => {
     // A different file's outdated anchor covers nothing here.
     expect(at([two[0] ?? ""], ["b.ts"])).toHaveLength(1);
   });
-
   it("the unaccounted slot reports the count the shortfall was measured against", () => {
     // The shortfall is measured against every classified finding, so quoting
     // the body-bullet count in the slot text can claim zero were classified
@@ -2544,7 +2527,6 @@ describe("summary-findings parsing", () => {
       expect(s.text).toContain("only 2 could be classified");
     }
   });
-
   it("scopes unaccounted slot keys to the reviewed HEAD, not the sticky id", () => {
     // The sticky comment is upserted, so its id is constant across every round.
     // Keying a slot on it means slot 1 of a later round silently inherits the
@@ -2562,7 +2544,6 @@ describe("summary-findings parsing", () => {
     expect(at(HEAD)).toContain(HEAD.slice(0, 12));
   });
 });
-
 describe("fixture head tokens", () => {
   it("are not objects in this repository, at full length OR abbreviated", async () => {
     // The invariant the module constants' own comment states, mechanized: a
@@ -2616,7 +2597,6 @@ describe("fixture head tokens", () => {
       .map((line) => line.replace(/ (?:missing|ambiguous)$/, " unresolved"));
     expect(answers).toEqual(revs.map((rev) => `${rev} unresolved`));
   });
-
   it("realHead() resolves, so the probes that need git get a real answer", async () => {
     // The other half: the escape hatch has to actually work, or a probe
     // switched to it fails closed to `past`/unresolvable and passes for the
