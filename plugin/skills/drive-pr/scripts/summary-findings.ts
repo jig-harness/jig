@@ -1385,8 +1385,18 @@ export function reviewerSticky(
     if (
       hasInvalidReviewRound(body) ||
       hasInvalidReviewedSha(body, reviewedShaMarker())
-    )
+    ) {
+      // A malformed replacement may still carry live work. Skipping the
+      // comment would make an older clean summary look current and could
+      // converge over findings that were never safely ordered.
+      if (
+        decodeBacklog(body).length > 0 ||
+        parseBodyFindings(body).length > 0 ||
+        parseDeclaredUnanchored(body) > 0
+      )
+        throw new Error("reviewer summary protocol evidence is unreadable");
       continue;
+    }
     const round = parseReviewRound(body);
     const reviewedSha = reviewedShaIn(body, reviewedShaMarker());
     // A lower-round candidate cannot affect the selected summary, including

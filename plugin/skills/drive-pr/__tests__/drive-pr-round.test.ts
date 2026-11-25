@@ -1677,6 +1677,11 @@ describe("summary-findings marker overrides", () => {
            firstUnstampedSkipStandsAlone: s.reviewerStickyIn([
              { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- ai-review-skip-notice -->\\n\`def5678\` skipped\\n<!-- /ai-review-skip-notice -->', updated_at: '2026-11-24T11:00:00Z' },
            ], (login) => login === 'reviewer[bot]', '<!-- other-review -->', 'custom+sha'),
+           lowerRoundUnstampedSkipDoesNotReplace: s.reviewerStickyIn([
+             { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- ai-review-skip-notice -->\\n\`abc1234\` skipped\\n<!-- /ai-review-skip-notice -->\\n<!-- ai-review-round: 2 -->', updated_at: '2026-11-24T10:00:00Z' },
+             { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- ai-review-skip-notice -->\\n\`def5678\` skipped\\n<!-- /ai-review-skip-notice -->\\n<!-- ai-review-round: 1 -->', updated_at: '2026-11-24T11:00:00Z' },
+           ], (login) => login === 'reviewer[bot]', '<!-- other-review -->', 'custom+sha'),
+           fencedSkipPayload: s.structuralSkipNotices('<!-- ai-review-skip-notice -->\\n\`\`\`\\nexample\\n\`\`\`\\n\`def5678\` skipped\\n<!-- /ai-review-skip-notice -->', 'ai-review-skip-notice'),
            initialSkipDoesNotHideFindings: m.reviewerSticky([
              { id: 21, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- ai-review-round: 3 -->\\n<!-- ai-review-skip-notice -->\\n\`abc1234\` skipped\\n<!-- /ai-review-skip-notice -->' },
              { id: 22, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: def5678 -->\\n<!-- ai-review-round: 2 -->\\n- \`a.ts\` — finding' },
@@ -1767,6 +1772,13 @@ describe("summary-findings marker overrides", () => {
       round: null,
       skip: { head: "def5678" },
     });
+    expect(got.lowerRoundUnstampedSkipDoesNotReplace).toMatchObject({
+      sha: "",
+      round: null,
+      skip: { head: "abc1234" },
+    });
+    expect(got.fencedSkipPayload).toContain("`def5678` skipped");
+    expect(got.fencedSkipPayload).not.toContain("example");
     expect(got.initialSkipDoesNotHideFindings).toBe(22);
     expect(got.ignoresExamples).toBeNull();
     // And the reviewed SHA is actually extracted under the custom name — it

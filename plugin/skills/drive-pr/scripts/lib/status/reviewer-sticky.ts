@@ -248,9 +248,7 @@ export function structuralSkipNotices(body: string, marker: string): string {
       token.length >= fence.length &&
       /^[ \t]*$/.test(line.slice(line.indexOf(token) + token.length))
     ) {
-      if (open) kept.push(line);
       fence = null;
-      if (open && closer.test(line)) open = false;
       continue;
     }
     if (fence !== null || indentation.columns >= 4 || /^ {0,3}>/.test(line)) {
@@ -333,7 +331,8 @@ export function reviewerStickyIn(
         ((bodySha === "" && sticky.sha === "") ||
           (bodySha !== "" &&
             sameReviewedHead(bodySha, sticky.sha) &&
-            !lowerRound))
+            !lowerRound)) &&
+        !lowerRound
       )
         sticky = { ...sticky, skip };
       // A skip does not replace review evidence, but its explicit ordering
