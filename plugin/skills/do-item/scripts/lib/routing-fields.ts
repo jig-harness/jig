@@ -56,7 +56,7 @@ export const MODEL_TOKEN_PATTERN =
 export const DECLARATION_TOKEN_PATTERN = /^[^\p{Cs}\s,;=\0]+$/u;
 
 /** The declaration grammar `routing.family_tiers` has always had: surrogates are not refused. */
-export const LEGACY_DECLARATION_TOKEN_PATTERN = /^[^\s,;=\0]+$/;
+export const LEGACY_DECLARATION_TOKEN_PATTERN = /^[^\s,;=]+$/;
 
 export function oneOf<T extends string>(
   value: unknown,
@@ -89,6 +89,22 @@ export function token(value: unknown, field: string, what: string): string {
   return value;
 }
 
+/** A runtime's name for an effort: the grammar `routing.efforts` has always had. */
+export function effortToken(
+  value: unknown,
+  field: string,
+  what: string,
+): string {
+  if (
+    typeof value !== "string" ||
+    !LEGACY_DECLARATION_TOKEN_PATTERN.test(value)
+  )
+    throw new RoutingError(
+      `${field} must be ${what}: one word, with no space, comma, semicolon or equals sign`,
+    );
+  return value;
+}
+
 /** Read a declaration key without applying the selected-model argv boundary. */
 export function declarationToken(
   value: unknown,
@@ -101,7 +117,7 @@ export function declarationToken(
     : DECLARATION_TOKEN_PATTERN;
   if (typeof value !== "string" || !pattern.test(value))
     throw new RoutingError(
-      `${field} must be ${what}: one word that contains no NUL${legacy ? "" : ", unpaired surrogate"}, whitespace, comma, semicolon or equals sign`,
+      `${field} must be ${what}: one word that contains no ${legacy ? "" : "NUL, unpaired surrogate, "}whitespace, comma, semicolon or equals sign`,
     );
   return value;
 }

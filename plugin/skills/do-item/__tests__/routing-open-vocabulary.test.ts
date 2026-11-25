@@ -133,6 +133,21 @@ describe("a model outside the families", () => {
     ).not.toThrow();
   });
 
+  it("keeps NUL in a family_tiers key and the old grammar for effort names", () => {
+    const entry = { tier: "strategic", reason: "declared" };
+    expect(() =>
+      rules({ routing: { family_tiers: { codex: { "legacy\0key": entry } } } }),
+    ).not.toThrow();
+    expect(() =>
+      rules({
+        routing: { efforts: { codex: { low: "-low", high: "a\uD800" } } },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      rules({ routing: { efforts: { codex: { low: "has space" } } } }),
+    ).toThrow("routing.efforts.codex.low");
+  });
+
   it("reports non-string selected models without coercing configuration values", () => {
     const hostile = {
       toString: () => {

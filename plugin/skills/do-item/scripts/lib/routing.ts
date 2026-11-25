@@ -35,6 +35,7 @@ import { ruleField, ruleList } from "../../../../shared/rule-matcher.ts";
 import {
   EFFORTS,
   type Effort,
+  effortToken,
   mapping,
   oneOf,
   RoutingError,
@@ -43,7 +44,6 @@ import {
   TIERS,
   type Tier,
   tierNamed,
-  token,
 } from "./routing-fields.ts";
 import {
   declaredTiers,
@@ -358,7 +358,7 @@ function parseEfforts(raw: unknown): RoutingRules["efforts"] {
     refuseUnknownKeys(row, EFFORTS, at);
     const names: Partial<Record<Effort, string>> = {};
     for (const [effort, name] of Object.entries(row))
-      names[effort as Effort] = token(
+      names[effort as Effort] = effortToken(
         name,
         `${at}.${effort}`,
         "the runtime's name for the effort",

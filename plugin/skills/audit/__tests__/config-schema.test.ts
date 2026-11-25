@@ -412,6 +412,16 @@ describe("the reading skills", () => {
         ]);
       }
     }
+    // Each lone surrogate is refused on its own, independent of the other pattern.
+    for (const value of [
+      "model\uDC00",
+      "\uDC00model",
+      "a\uD800\u{10400}",
+      "\u{10400}\uDC00",
+    ]) {
+      expect(schemaPassModel.test(value)).toBe(false);
+      expect(PASS_MODEL_PATTERN.test(value)).toBe(false);
+    }
     // A non-ASCII letter is an ordinary model character: both validators accept it.
     expect(schemaPassModel.test("模型")).toBe(true);
     expect(PASS_MODEL_PATTERN.test("模型")).toBe(true);
