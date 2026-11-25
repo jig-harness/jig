@@ -15,7 +15,7 @@
  * front's secret.
  */
 import { createHash, timingSafeEqual } from "node:crypto";
-import { chmodSync, lstatSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import type { HubPorts } from "../core/ports.ts";
@@ -151,6 +151,31 @@ function clearStaleSocket(path: string): void {
   if (found.ok && found.value.isSocket()) rmSync(path, { force: true });
 }
 
+/**
+ * An open socket's directory is what keeps other users out, so it must be
+ * this user's own and grant others nothing; anything else refuses the bind.
+ */
+function guardingDirectory(directory: string): Outcome<void, "unavailable"> {
+  const found = attempt(
+    "unavailable",
+    `cannot read the feed socket's directory ${directory}`,
+    () => statSync(directory),
+  );
+  if (!found.ok) return found;
+  const uid = process.getuid?.();
+  if (uid !== undefined && found.value.uid !== uid)
+    return failed(
+      "unavailable",
+      `the feed socket's directory ${directory} belongs to another user; with feed.group set it must be the hub user's own`,
+    );
+  if ((found.value.mode & 0o007) !== 0)
+    return failed(
+      "unavailable",
+      `the feed socket's directory ${directory} is open to every user (mode ${(found.value.mode & 0o777).toString(8)}); with feed.group set it must grant others nothing (0710)`,
+    );
+  return ok(undefined);
+}
+
 /** Binds a Unix socket created 0600, or 0666 for its directory to guard; stops it again when its mode cannot be set. */
 function serveSocket(
   bind: Extract<Bind, { unix: string }>,
@@ -163,6 +188,10 @@ function serveSocket(
     () => mkdirSync(dirname(bind.unix), { recursive: true, mode: 0o700 }),
   );
   if (!made.ok) return made;
+  if (bind.open) {
+    const guarded = guardingDirectory(dirname(bind.unix));
+    if (!guarded.ok) return guarded;
+  }
   clearStaleSocket(bind.unix);
   const before = process.umask(0o177);
   const started = attempt("unavailable", `cannot bind ${where}`, () =>

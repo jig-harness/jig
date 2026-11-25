@@ -43,11 +43,25 @@ import { defaultSettingsPath, readHubSettings } from "./settings.ts";
 const WATCH_MS = 1_000;
 const COPY_CHECK_MS = 60_000;
 
-/** The signal that aborts on an interrupt or a terminate. */
+/**
+ * The signal that aborts on an interrupt or a terminate. Its listeners stay
+ * registered while the hub stops, so the shared cleanup registry
+ * (`shared/cleanup.ts`) sees a handler and leaves the stop to the hub; a
+ * second signal while it stops ends the process as the signal would.
+ */
 function signalled(): AbortController {
   const stop = new AbortController();
-  for (const signal of ["SIGINT", "SIGTERM"] as const)
-    process.once(signal, () => stop.abort(signal));
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    const onSignal = () => {
+      if (!stop.signal.aborted) {
+        stop.abort(signal);
+        return;
+      }
+      process.off(signal, onSignal);
+      process.kill(process.pid, signal);
+    };
+    process.on(signal, onSignal);
+  }
   return stop;
 }
 
@@ -202,6 +216,8 @@ async function serveInContainer(
     console.error(`jig hub serve: ${command.failure.reason}`);
     return 1;
   }
+  // A stop asked for while the image was built or checked starts nothing.
+  if (stop.aborted) return 0;
   console.log(`jig hub serve: ${command.value.join(" ")}`);
   const child = Bun.spawn(command.value, {
     stdio: ["ignore", "inherit", "inherit"],

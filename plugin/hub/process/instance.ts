@@ -40,11 +40,26 @@ export async function withServeLock<T>(
     () => mkdirSync(options.root, { recursive: true, mode: 0o700 }),
   );
   if (!made.ok) return made;
-  return ok(
-    await withFileLock(hubHome(env), body, {
-      ...options,
-      waitMs: LOCK_WAIT_MS,
-    }),
+  // The lock helper throws when its file cannot be written; a throw from
+  // `body` itself passes on to the caller's defect boundary.
+  let entered = false;
+  const enter = () => {
+    entered = true;
+    return body();
+  };
+  return withFileLock(hubHome(env), enter, {
+    ...options,
+    waitMs: LOCK_WAIT_MS,
+  }).then(
+    (held) => ok(held),
+    (cause: unknown) =>
+      entered
+        ? Promise.reject(cause)
+        : failed(
+            "unavailable",
+            `cannot take the hub's lock in ${options.root}`,
+            cause,
+          ),
   );
 }
 

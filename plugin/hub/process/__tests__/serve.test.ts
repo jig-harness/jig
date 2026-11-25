@@ -149,6 +149,20 @@ test("a feed opened to the front's group leaves the socket to its directory to g
   expect(answer.status).toBe(404);
 });
 
+test("a feed opened to the front's group refuses a socket directory every user can open", async () => {
+  const settings = settingsIn(`${SOCKET_FEED}\n  group: no-such-group-here`);
+  const directory = join(settings.database, "..", "feed");
+  mkdirSync(directory, { mode: 0o755 });
+  chmodSync(directory, 0o755);
+  const stop = new AbortController();
+  stops.push(stop);
+  const started = await startHub({ settings, identity, stop: stop.signal });
+  expect(started.ok).toBe(false);
+  if (!started.ok)
+    expect(started.failure.reason).toContain("open to every user");
+  expect(existsSync(join(directory, "feed.sock"))).toBe(false);
+});
+
 test("a feed on loopback answers 401 without the front's secret", async () => {
   const secret = "s".repeat(40);
   const hub = await start(

@@ -4,8 +4,8 @@
  * stops the one that holds it, or says it could not within its wait.
  */
 import { afterAll, afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import {
   expectSpawnExit,
@@ -41,17 +41,30 @@ async function holder(
     stderr: "pipe",
   });
   holders.push(child);
+  expect(await readUntil(child, "held")).toContain("held");
+  return child;
+}
+
+/** What `child` printed until it printed `needle`, it closed its output, or 20 seconds passed. */
+async function readUntil(
+  child: ReturnType<typeof Bun.spawn>,
+  needle: string,
+): Promise<string> {
   const reader = (child.stdout as ReadableStream<Uint8Array>).getReader();
   const deadline = currentMs() + 20_000;
   let text = "";
-  while (!text.includes("held") && currentMs() < deadline) {
-    const chunk = await reader.read();
-    if (chunk.done) break;
+  while (!text.includes(needle) && currentMs() < deadline) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), deadline - currentMs());
+    });
+    const chunk = await Promise.race([reader.read(), late]);
+    clearTimeout(timer);
+    if (chunk === null || chunk.done) break;
     text += new TextDecoder().decode(chunk.value);
   }
   reader.releaseLock();
-  expect(text).toContain("held");
-  return child;
+  return text;
 }
 
 test("a second start leaves at once while a live process holds the lock", async () => {
@@ -101,4 +114,32 @@ test("stopping the hub fails when it is still running at the deadline", async ()
   expect(stopped.ok ? null : stopped.failure.reason).toContain("still running");
   // It still runs: a signal check reaches it.
   expect(() => process.kill(child.pid, 0)).not.toThrow();
+});
+
+test("a foreground jig hub serve stops its listeners and exits 0 on a terminate signal", async () => {
+  const env = home();
+  const root = join(env.HOME as string, "hub");
+  mkdirSync(root, { recursive: true, mode: 0o700 });
+  const settings = join(root, "settings.yaml");
+  writeFileSync(
+    settings,
+    `user: ${userInfo().username}
+database: ${join(root, "data")}
+host:
+  listen: [127.0.0.1:0]
+webhooks:
+  listen: 127.0.0.1:0
+feed:
+  socket: ${join(root, "feed", "feed.sock")}
+`,
+    { mode: 0o600 },
+  );
+  const child = Bun.spawn(
+    ["bun", JIG, "hub", "serve", "--settings", settings],
+    { env: { ...process.env, ...env }, stdout: "pipe", stderr: "pipe" },
+  );
+  holders.push(child);
+  expect(await readUntil(child, "webhook:")).toContain("webhook:");
+  child.kill("SIGTERM");
+  await expectSpawnExited(child, 0, "jig hub serve");
 });
