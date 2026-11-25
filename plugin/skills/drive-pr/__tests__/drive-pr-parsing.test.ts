@@ -2220,7 +2220,7 @@ describe("summary-findings parsing", () => {
     expect(r.unaddressed).toEqual([]);
   });
 
-  it("keeps abbreviated Beyond this PR renderings blocking", () => {
+  it("accepts abbreviated Beyond this PR renderings at unique anchors", () => {
     const entries = [
       {
         path: "AGENTS.md",
@@ -2254,10 +2254,10 @@ describe("summary-findings parsing", () => {
       anchoredKeys: [],
       addressedFingerprints: new Set(),
     });
-    expect(r.ignoredBacklog).toEqual([]);
-    expect(r.unaddressed.map((entry) => entry.fingerprint)).toEqual(
+    expect(r.ignoredBacklog.map((entry) => entry.fingerprint)).toEqual(
       entries.map((entry) => entry.fingerprint),
     );
+    expect(r.unaddressed).toEqual([]);
   });
 
   it("does not treat distinct same-anchor backlog findings as rendered", () => {

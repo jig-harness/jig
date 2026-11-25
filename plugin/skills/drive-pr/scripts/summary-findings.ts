@@ -667,11 +667,10 @@ function partitionBacklog(
     /<details><summary>🗂️ <b>Beyond this PR<\/b> — (\d+) finding\(s\) for triage \(not posted inline\)<\/summary>\r?\n[ \t\r\n]*Held out of the inline threads so this PR can converge — \*\*not blocking\*\*\.([\s\S]*?)<\/details>/,
   );
   const rendered = section ? parseBodyFindings(section[2] ?? "") : [];
-  // An anchor is only a location, not a finding identity. Two findings can
-  // share one path and line, so the rendered text must reproduce each
-  // backlog fingerprint exactly before the section can make entries
-  // informational. An abbreviated rendering has no such evidence and stays
-  // blocking rather than suppressing a different finding at the same anchor.
+  // A fingerprint is authoritative whenever the renderer preserves the full
+  // text. The renderer is also allowed to abbreviate its backlog bullets; a
+  // unique anchor then identifies the one entry it can describe. Never use an
+  // anchor that names multiple entries: it is a location, not an identity.
   const renderedFingerprints = new Map<string, number>();
   for (const finding of rendered) {
     const fingerprint = fingerprintOf(finding.path, finding.line, finding.text);
@@ -681,19 +680,29 @@ function partitionBacklog(
     );
   }
   const backlogFingerprints = new Map<string, number>();
+  const renderedAnchors = new Map<string, number>();
+  const backlogAnchors = new Map<string, number>();
+  for (const finding of rendered) {
+    const key = anchorKey(finding.path, finding.line);
+    renderedAnchors.set(key, (renderedAnchors.get(key) ?? 0) + 1);
+  }
   for (const entry of backlog) {
     backlogFingerprints.set(
       entry.fingerprint,
       (backlogFingerprints.get(entry.fingerprint) ?? 0) + 1,
     );
+    const key = anchorKey(entry.path, entry.line);
+    backlogAnchors.set(key, (backlogAnchors.get(key) ?? 0) + 1);
   }
   const sectionCoversBacklog =
     Number(section?.[1]) === backlog.length &&
     rendered.length === backlog.length &&
-    renderedFingerprints.size === backlogFingerprints.size &&
-    [...backlogFingerprints].every(
-      ([fingerprint, count]) => renderedFingerprints.get(fingerprint) === count,
-    );
+    [...backlog].every((entry) => {
+      const fingerprintCount = renderedFingerprints.get(entry.fingerprint);
+      if (fingerprintCount === 1) return true;
+      const key = anchorKey(entry.path, entry.line);
+      return backlogAnchors.get(key) === 1 && renderedAnchors.get(key) === 1;
+    });
   const freshFingerprints = new Set(
     bullets.map((f) => fingerprintOf(f.path, f.line, f.text)),
   );
