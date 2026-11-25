@@ -53,7 +53,9 @@ export function logStageDefect(
     writeRow(
       {
         kind: "event",
-        key: `defect ${repo} ${defect.stage} ${at}`,
+        // Separate defects may occur in one clock millisecond. Their log keys
+        // must remain distinct so the outcome record retains each one.
+        key: `defect ${repo} ${defect.stage} ${at} ${crypto.randomUUID()}`,
         at,
         repo,
         stage: defect.stage,
