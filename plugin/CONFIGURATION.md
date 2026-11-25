@@ -1906,8 +1906,12 @@ session ended without claiming the item is not started again until the
 item leaves the dispatch states or its assignment for one run and comes
 back, or a person answers the need it raises (pick it up again, or leave
 it); a batch pickup that ended after claiming some of its members holds
-only those, so the members it never claimed are wanted again at once,
-unless its pass ended on a question, which holds them until it is answered. A
+only those, so the members it never claimed are wanted again at once;
+one that ended on a question holds the members the question names, and
+releases the unclaimed rest at once, whether or not it claimed any. A
+question that names no member is about the whole batch: it is one need, on
+the batch's anchor, the other members wait on it with no need of their own,
+and answering it releases every member the pass never claimed. A
 person's label (`jig:hold`, the human-in-the-loop or
 manual-operations label) that holds the item, in a served person's queue or
 the ready pool, while it is not claimed releases its record too: once the

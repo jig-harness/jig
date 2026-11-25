@@ -147,10 +147,27 @@ it("holds a pending batch whose secondary member lost its priority", async () =>
   expect(block).toContain("no priority");
   expect(block).toContain("#2");
 });
+function endedBatch(
+  w: ReturnType<typeof world>,
+  init: Parameters<typeof earlierRecord>[1],
+) {
+  const record = earlierRecord(w, init);
+  const read: ReadRecord = {
+    record,
+    state: {
+      kind: "ended",
+      exit: { at: "2026-11-09T00:00:00Z", code: 0, signal: null },
+      process: null,
+    },
+    result: "failed",
+  };
+  return { record, read };
+}
+
 it("releases an ended batch when its returned member is ready to retry", () => {
   const w = world();
   try {
-    const record = earlierRecord(w, {
+    const { record, read } = endedBatch(w, {
       id: "2026-11-09T00-00-00-000Z-test",
       account: "a",
       action: "pickup",
@@ -162,15 +179,6 @@ it("releases an ended batch when its returned member is ready to retry", () => {
         { key: "#2", person: "alex" },
       ],
     });
-    const read: ReadRecord = {
-      record,
-      state: {
-        kind: "ended",
-        exit: { at: "2026-11-09T00:00:00Z", code: 0, signal: null },
-        process: null,
-      },
-      result: "failed",
-    };
     releaseEnded(
       [read],
       SLUG,
@@ -189,7 +197,7 @@ it("releases an ended batch when its returned member is ready to retry", () => {
 it("releases an unclaimed batch member once a sibling was claimed, and keeps the claimed one", () => {
   const w = world();
   try {
-    const record = earlierRecord(w, {
+    const { record, read } = endedBatch(w, {
       id: "2026-11-09T00-00-00-000Z-unclaimed-member",
       account: "a",
       action: "pickup",
@@ -200,15 +208,6 @@ it("releases an unclaimed batch member once a sibling was claimed, and keeps the
         { key: "#2", person: "alex" },
       ],
     });
-    const read: ReadRecord = {
-      record,
-      state: {
-        kind: "ended",
-        exit: { at: "2026-11-09T00:00:00Z", code: 0, signal: null },
-        process: null,
-      },
-      result: "failed",
-    };
     for (let tick = 0; tick < 2; tick++)
       releaseEnded(
         [read],
@@ -230,7 +229,7 @@ it("releases an unclaimed batch member once a sibling was claimed, and keeps the
 it("holds the unanswered members of a batch when one member is released alone", () => {
   const w = world();
   try {
-    const record = earlierRecord(w, {
+    const { record, read } = endedBatch(w, {
       id: "2026-11-09T00-00-01-000Z-test",
       account: "a",
       action: "pickup",
@@ -241,17 +240,40 @@ it("holds the unanswered members of a batch when one member is released alone", 
         { key: "#2", person: "alex" },
       ],
     });
-    const read: ReadRecord = {
-      record,
-      state: {
-        kind: "ended",
-        exit: { at: "2026-11-09T00:00:00Z", code: 0, signal: null },
-        process: null,
-      },
-      result: "failed",
-    };
     record.releasedItems = ["#1"];
     expect(pickupHold("#1", [read]).kind).toBe("none");
+    expect(pickupHold("#2", [read]).kind).toBe("ended");
+  } finally {
+    w.close();
+  }
+});
+
+it("keeps a legacy record's unclaimed members after one claimed member is observed", () => {
+  const w = world();
+  try {
+    const { record, read } = endedBatch(w, {
+      id: "2026-11-09T00-00-00-000Z-legacy-observed",
+      account: "a",
+      action: "pickup",
+      pr: null,
+      item: "#1",
+      claimedSeen: true,
+      batchItems: [
+        { key: "#1", person: "alex" },
+        { key: "#2", person: "alex" },
+        { key: "#3", person: "alex" },
+      ],
+    });
+    releaseEnded(
+      [read],
+      SLUG,
+      new Set(["#1", "#2", "#3"]),
+      new Set(["#1"]),
+      new Set(),
+      dispatchState(w),
+    );
+    expect(record.released).toBeFalsy();
+    expect(record.releasedItems ?? []).toEqual([]);
     expect(pickupHold("#2", [read]).kind).toBe("ended");
   } finally {
     w.close();
