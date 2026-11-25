@@ -67,6 +67,7 @@ import {
 } from "./lib/section-validation.ts";
 import { lit } from "../../decide/scripts/sheet-kit/markdown.ts";
 import {
+  formatDisplayValue,
   isMapping as isRecord,
   readConfigFile,
 } from "../../../shared/config-layers.ts";
@@ -2286,6 +2287,19 @@ const SECTIONS: [Finding["severity"], string][] = [
   ["info", "Information"],
 ];
 
+/**
+ * A fact on one line: line breaks of any kind collapse to a space in a single
+ * linear pass, and any other control or bidirectional character is escaped.
+ */
+function factText(value: string): string {
+  const oneLine = value
+    .split(/[\r\n\u2028\u2029]+/)
+    .map((part) => part.trim())
+    .filter((part) => part !== "")
+    .join(" ");
+  return formatDisplayValue(oneLine);
+}
+
 export function render(report: FitReport): string {
   const lines = [`# Configuration fit: ${report.file}`, ""];
   if (!report.configured)
@@ -2296,9 +2310,7 @@ export function render(report: FitReport): string {
     lines.push(
       "## Facts",
       "",
-      ...facts.map(
-        ([k, v]) => `- ${k}: ${lit(String(v).replace(/\s*\n\s*/g, " "))}`,
-      ),
+      ...facts.map(([k, v]) => `- ${k}: ${lit(factText(String(v)))}`),
       "",
     );
   }

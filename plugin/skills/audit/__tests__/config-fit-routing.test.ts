@@ -213,3 +213,23 @@ test("the Markdown rendering leaves configured autolink forms literal", () => {
     "reason `https://example.org/model-notes` and `https://example.org/next`, `ftp://example.org/model-notes`, `www.example.org`, `team@my_host.example`, `mailto:team@example.org` and `xmpp:team@example.org`",
   );
 });
+
+test("the Markdown rendering keeps a fact on one line and escapes controls", () => {
+  const report: FitReport = {
+    file: ".config/jig.yaml",
+    configured: true,
+    forge: "offline",
+    facts: { integration_branch: "a\rb‮c" },
+    findings: [],
+    declined: [],
+    suggestions: [],
+  };
+  const out = render(report);
+  expect(out).not.toContain("\r");
+  expect(out).not.toContain("‮");
+  const long = render({
+    ...report,
+    facts: { integration_branch: " ".repeat(200000) },
+  });
+  expect(long).toContain("- integration_branch:");
+});
