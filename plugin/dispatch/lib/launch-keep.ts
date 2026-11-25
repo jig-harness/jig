@@ -1,11 +1,12 @@
 /** Which launch records pruning keeps as the only evidence of what was already done. */
 import { cancelledBeforeExecution } from "./cancellation.ts";
-import {
-  DRIVE_EXIT,
-  DRIVER_REFUSAL_EXITS,
-} from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
+import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import type { ReadRecord } from "./launches.ts";
-import { FAILED_TAKEOVERS, NOT_SETTLED_REARMS } from "./repeated-end-caps.ts";
+import {
+  FAILED_TAKEOVERS,
+  failedTakeoverExit,
+  NOT_SETTLED_REARMS,
+} from "./repeated-end-caps.ts";
 
 const isDrive = (action: string): boolean =>
   action === "rearm" || action === "takeover";
@@ -89,17 +90,9 @@ export function latestUsageRefusals(records: ReadRecord[]): Set<string> {
 function repeatedEnd(r: ReadRecord): boolean {
   if (r.state.kind !== "ended") return false;
   const code = r.state.exit.code;
-  if (r.record.action === "rearm")
-    return code === DRIVE_EXIT.NOT_SETTLED && r.record.heads != null;
-  return (
-    r.record.action === "takeover" &&
-    code !== null &&
-    code !== 0 &&
-    code !== DRIVE_EXIT.UNSUPPORTED_CLI &&
-    code !== DRIVE_EXIT.QUOTA_PARKED &&
-    code !== DRIVE_EXIT.FORGE_RATE_LIMITED &&
-    !DRIVER_REFUSAL_EXITS.has(code)
-  );
+  return r.record.action === "rearm"
+    ? code === DRIVE_EXIT.NOT_SETTLED && r.record.heads != null
+    : r.record.action === "takeover" && failedTakeoverExit(code);
 }
 
 /**

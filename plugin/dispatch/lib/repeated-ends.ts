@@ -25,23 +25,24 @@
  * A record of any other kind, a new head or moved ledger facts ends the run,
  * so the count starts again and normal recovery proceeds.
  */
-import {
-  DRIVE_EXIT,
-  DRIVER_REFUSAL_EXITS,
-} from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
+import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { isoFromMs, parseMs } from "../../shared/time.ts";
 import { driveHold, drivesOf, factsOf } from "./actions/drive-hold.ts";
 import { prHeadOf } from "./failed-rearms.ts";
 import type { ReadRecord } from "./launches.ts";
 import { sameFacts } from "./recovery-facts.ts";
 import type { DrivenPr } from "./types.ts";
-import { FAILED_TAKEOVERS, NOT_SETTLED_REARMS } from "./repeated-end-caps.ts";
+import {
+  FAILED_TAKEOVERS,
+  failedTakeoverExit,
+  NOT_SETTLED_REARMS,
+} from "./repeated-end-caps.ts";
 
 export { FAILED_TAKEOVERS, NOT_SETTLED_REARMS } from "./repeated-end-caps.ts";
 /** The wait after the first `NOT_SETTLED` re-arm on a head, doubling with each. */
-export const NOT_SETTLED_BACKOFF_MS = 15 * 60_000;
+const NOT_SETTLED_BACKOFF_MS = 15 * 60_000;
 /** The wait after the first failed takeover on the same facts, doubling with each. */
-export const TAKEOVER_BACKOFF_MS = 10 * 60_000;
+const TAKEOVER_BACKOFF_MS = 10 * 60_000;
 
 /** The drive records at the tail of `mine` that `counts`, newest first. */
 function trailing(
@@ -78,22 +79,19 @@ function notSettledAt(head: string): (r: ReadRecord) => boolean {
 
 /** A takeover that failed on `facts` without a cause answered elsewhere. */
 function takeoverFailedOn(facts: string): (r: ReadRecord) => boolean {
-  return (r) => {
-    const code = endCode(r);
-    return (
-      r.record.action === "takeover" &&
-      r.state.kind === "ended" &&
-      code !== null &&
-      code !== 0 &&
-      code !== DRIVE_EXIT.UNSUPPORTED_CLI &&
-      code !== DRIVE_EXIT.QUOTA_PARKED &&
-      code !== DRIVE_EXIT.FORGE_RATE_LIMITED &&
-      r.state.exit.startup !== "quota" &&
-      r.state.exit.wallUnrecorded !== true &&
-      !DRIVER_REFUSAL_EXITS.has(code) &&
-      sameFacts(r.record.facts, facts)
-    );
-  };
+  return (r) =>
+    r.record.action === "takeover" &&
+    failedTakeoverExit(endCode(r)) &&
+    !endedOnWall(r) &&
+    sameFacts(r.record.facts, facts);
+}
+
+/** Whether the launch ended on the account's wall, as its wrapper recorded it apart from the exit. */
+function endedOnWall(r: ReadRecord): boolean {
+  return (
+    r.state.kind === "ended" &&
+    (r.state.exit.startup === "quota" || r.state.exit.wallUnrecorded === true)
+  );
 }
 
 function ids(run: readonly ReadRecord[]): string {
