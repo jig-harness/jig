@@ -382,6 +382,7 @@ describe("the reading skills", () => {
       "has;semicolon",
       "has=equals",
       "模型",
+      "\u{10400}-model",
       "has\u2003em",
       ...[
         0x00a0, 0x1680, 0x2000, 0x2007, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000,
@@ -411,6 +412,9 @@ describe("the reading skills", () => {
     expect(schemaPassModel.test("模型")).toBe(true);
     expect(PASS_MODEL_PATTERN.test("模型")).toBe(true);
     expect(checkConfig({ drive: { pass_model: "模型" } }, schema)).toEqual([]);
+    // A supplementary-plane letter is an ordinary model character too.
+    expect(schemaPassModel.test("\u{10400}-model")).toBe(true);
+    expect(PASS_MODEL_PATTERN.test("\u{10400}-model")).toBe(true);
     expect(field("ci.repair_skill")?.pattern).toBe(SKILL_NAME_PATTERN.source);
     expect(field("drive.pass_args")?.items).toEqual({
       type: "string",
