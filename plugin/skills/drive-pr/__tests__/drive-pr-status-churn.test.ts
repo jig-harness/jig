@@ -266,7 +266,9 @@ describe("drive-status.ts structural-churn brake", () => {
   });
 
   it("parks on a file whose content returned to an earlier one (A, B, A)", async () => {
-    const head = "c4a".padEnd(40, "4");
+    // A real repository: the gate reads file contents at the head it judges.
+    const repo = history(4);
+    const head = repo.heads[3] as string;
     const fx = writeFixture({ head, threads: [finding("PRRT_live", "high")] });
     seedRounds(fx.stateDir, 3, "c4a".padEnd(40, "3"));
     const blob = (c: string) => c.repeat(40);
@@ -282,6 +284,7 @@ describe("drive-status.ts structural-churn brake", () => {
     });
     const r = await probeIn(fx.dir, fx.stateDir, head, ["--bump-attempt"], {
       env: ENV,
+      cwd: repo.cwd,
     });
     expectSpawnExit(exitOf(r), 8);
     expect(r.state).toBe("HITL_PARKED");

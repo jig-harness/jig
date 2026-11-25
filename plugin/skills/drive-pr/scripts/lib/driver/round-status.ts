@@ -28,14 +28,19 @@ async function previewConflictingRound(
   const parkedThreads = num(work.parkedThreads);
   const summaryUnaddressed = num(work.summaryUnaddressed);
   const parkedSummaryFindings = num(work.parkedSummaryFindings);
+  const churnParked =
+    Array.isArray(work.churnParkKeys) && work.churnParkKeys.length > 0;
   if (
     merge.mergeable === "CONFLICTING" &&
     unresolvedThreads !== null &&
     parkedThreads !== null &&
     summaryUnaddressed !== null &&
     parkedSummaryFindings !== null &&
-    unresolvedThreads - parkedThreads <= 0 &&
-    summaryUnaddressed - parkedSummaryFindings <= 0
+    // The drive's own churn park holds whatever work is live, and a
+    // conflict is still reported first, so the preview matches it.
+    (churnParked ||
+      (unresolvedThreads - parkedThreads <= 0 &&
+        summaryUnaddressed - parkedSummaryFindings <= 0))
   ) {
     const base = String(
       (status.base as Record<string, unknown> | undefined)?.refName ?? "",

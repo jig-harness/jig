@@ -815,7 +815,11 @@ async function main(): Promise<number> {
     const brakeOn = !setting.ok || setting.value > 0;
     // A round the replied-thread sweep did not reconcile carries no facts, so
     // the brake never counts it toward a streak or a return.
-    const withFacts = brakeOn && sweepReconciled;
+    // Nor does a head the reviewer has not reviewed: its findings predate the
+    // head (a conflicting PR keeps them workable), so file contents read at
+    // this head would pass an unrelated rewrite off as a round of review.
+    const withFacts =
+      brakeOn && sweepReconciled && report.reviewedSha === report.apiHead;
     const read = withFacts
       ? await readRoundBlobs(
           report.apiHead,

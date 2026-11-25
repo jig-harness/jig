@@ -3,14 +3,14 @@
  * on, for the structural-churn brake: what tells a file rewritten between
  * rounds from one left alone, and a return to an earlier content.
  *
- * Best-effort by design. One `git cat-file --batch-check` reads every path
- * from stdin (no argument list to outgrow), bounded by the helper deadline;
- * a head this clone does not have, a path absent at it, or any failure
- * leaves that path out, which the brake reads as no evidence either way: a
- * missing blob never shows a rewrite and never a return to an earlier
- * content, so unmeasured rounds cannot park a drive. A failed read is said on
- * stderr, with git's exit and its last error line, so a brake that judges
- * without blobs never does so silently.
+ * One `git cat-file --batch-check` reads every path from stdin (no argument
+ * list to outgrow), bounded by the helper deadline. A path absent at the
+ * head is left out, which the brake reads as no evidence either way: a
+ * missing blob never shows a rewrite or a return to an earlier content. A
+ * head this clone lacks, a failed batch or a malformed answer is `failed:
+ * true` instead: the round is recorded without facts, said on stderr with
+ * git's exit and its last error line, and with the brake on the counting
+ * gate ends `INDETERMINATE` (`recordRoundPaths`, `runChurnBrake`).
  */
 import { isObjectId } from "../state/churn-facts.ts";
 import { gitIdentityEnv } from "../../../../../shared/git-env.ts";

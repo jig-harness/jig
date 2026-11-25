@@ -3,7 +3,9 @@
  * `ROUND_READY` gate has recorded the round's evidence, judge it
  * (`state/churn.ts`) and, when it trips, park the drive under the
  * `structural-churn` class with a framed decision (`state/churn-decision.ts`)
- * and end the gate `HITL_PARKED` before the round's pass runs.
+ * and end the gate `HITL_PARKED` before the round's pass runs (`PR_CONFLICTING`,
+ * exit `9`, when the pull request conflicts with its base: the park is
+ * recorded all the same).
  *
  * A failure is never a silent pass: an unreadable setting, an unreadable
  * state, a round whose evidence did not land, a trip before the replied-thread
@@ -179,6 +181,8 @@ interface BrakeReport {
   apiHead: string;
   baseRefName: string;
   baseHead?: string;
+  reviewedSha?: string | null;
+  openThreadPaths?: string[] | null;
 }
 
 /** The last non-empty line of a child's error output, or `''`. */
@@ -247,6 +251,9 @@ export async function runChurnBrake(
     );
   const n = setting.value;
   if (n === 0) return null;
+  // A head the reviewer has not reviewed carries findings from an earlier
+  // head: the round recorded no facts and is no round of review churn to judge.
+  if (report.reviewedSha !== report.apiHead) return null;
   if (!recorded)
     return indeterminate(
       report,
@@ -301,12 +308,31 @@ export async function runChurnBrake(
         now.snapshot.baseRefOid !== report.baseHead) ||
       (report.baseRefName !== "" &&
         now.snapshot.baseRefName !== report.baseRefName)
-    )
+    ) {
+      // The verdict is withheld, so the facts it rested on must not stay
+      // durable: a later gate would judge an entry nothing certified.
+      const withdrawn = await run(
+        tsArgv(ctx.driveStateScript, ["record-paths", ctx.pr, "--stdin-json"]),
+        {
+          stdin: JSON.stringify({ paths: report.openThreadPaths ?? [] }),
+          stdout: "ignore",
+          stderr: "pipe",
+          timeoutSec: ctx.helperTimeoutSec,
+        },
+      );
+      if (withdrawn.code !== 0) {
+        if (withdrawn.stderr) process.stderr.write(withdrawn.stderr);
+        return indeterminate(
+          report,
+          `#${ctx.pr} changed while the ${CHURN_CLASS} verdict was reached, and round ${round}'s evidence could not be withdrawn (record-paths exited ${withdrawn.code}); re-arm the drive once it is addressed`,
+        );
+      }
       return terminal(
         report,
         "HEAD_MOVED",
         `#${ctx.pr} changed (state ${now.snapshot.state}, head ${now.snapshot.headRefOid}) while the ${CHURN_CLASS} verdict was reached, so the park for round ${round} is withheld`,
       );
+    }
   }
   const park = await run(
     tsArgv(ctx.driveStateScript, [

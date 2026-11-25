@@ -10,13 +10,16 @@ release: minor
   file drew findings in each of the last `drive.churn_rounds` consecutive
   rounds (4 by default), none of them `high` or `blocker`, and each round
   rewrote it. It also parks when a file returned to an earlier content after
-  a different one. A round with a `high` or `blocker` finding never counts
+  a different one, judged over the rounds whose file contents were read (a
+  round whose contents could not be read is no evidence either way). A head
+  the reviewer has not reviewed is never judged. A round with a `high` or `blocker` finding never counts
   toward the same-file streak. The park's framed decision names the files and
   the rounds and offers **Ship as is and defer the rest**, **Constrain the
   scope** and **Continue driving**. Nothing is deferred until a person chooses.
   While the park stands, the drive runs no round, even with findings open;
   a pull request that conflicts with its base reports `PR_CONFLICTING`
-  first, as with any park
+  before the park, and the park that a conflicting round trips is recorded
+  alongside it, as with any park
   ([drive-pr](../plugin/skills/drive-pr/README.md#the-structural-churn-park),
   [drive end states](../plugin/protocol/drive-exits.md#when-the-drive-parks-itself-on-structural-churn)).
 - `drive.churn_rounds` in `.config/jig.yaml` sets the brake: `0` turns it

@@ -166,14 +166,16 @@ function couldCompleteStreak(
   return last.paths.some(
     (path) =>
       earlier.every((e) => e.paths.includes(path)) &&
-      // A pair of earlier rounds known to have left the file alone already
-      // breaks the streak, whatever the newest round would measure.
+      // `sameFile` needs a positive rewrite between every adjacent pair, so
+      // an earlier pair with an unknown blob, or one that left the file
+      // alone, already breaks the streak, and the newest round must follow a
+      // round whose blob is known.
       earlier.every((e, i) => {
         const next = earlier[i + 1];
-        if (next === undefined) return true;
         const a = blobOf(e, path);
+        if (next === undefined) return a !== undefined;
         const b = blobOf(next, path);
-        return a === undefined || b === undefined || a !== b;
+        return a !== undefined && b !== undefined && a !== b;
       }),
   );
 }
