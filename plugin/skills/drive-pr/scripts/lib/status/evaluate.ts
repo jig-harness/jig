@@ -165,6 +165,8 @@ export interface StatusReport extends CiReport {
   parkedItemKeys: string[] | null;
   /** The parked keys a `HITL_PARKED` stop waits on; `null` when not measured. */
   actionableParkKeys: string[] | null;
+  /** The parks of the brake's own decision class, as the drive state classes them. */
+  churnParkKeys: string[] | null;
   /**
    * WHICH FILES this round's open findings anchor to — threads AND
    * summary-only findings both, sorted, de-duplicated, `null` when nothing
@@ -246,6 +248,7 @@ export function emptyReport(): StatusReport {
     summaryHeldUndispatchedKeys: null,
     parkedItemKeys: null,
     actionableParkKeys: null,
+    churnParkKeys: null,
     openThreadPaths: null,
     roundSevere: null,
     ci: "",
@@ -1119,6 +1122,7 @@ async function evaluateFresh(
   // re-arming without answering it must not run the rounds it stopped. A
   // conflict is still reported first, as for any park, so conflict repair
   // runs while the decision waits.
+  report.churnParkKeys = [...parked.selfParked].sort();
   const braked = churnParkReason(parked.selfParked);
   if (braked !== null) {
     const rc = await stillOnHead();

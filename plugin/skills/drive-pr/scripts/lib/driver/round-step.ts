@@ -377,22 +377,22 @@ function parkedCancelled(status: Record<string, unknown>): boolean {
   return Array.isArray(keys) && keys.includes(CANCELLED_CI_KEY);
 }
 
-/** Whether the parked set holds a structural-churn park and no cancelled-CI one. */
+/**
+ * Whether the parked set holds a structural-churn park and no cancelled-CI
+ * one. The gate reports the churn parks by their recorded decision class, so
+ * an ordinary park whose key merely looks alike is not the brake's.
+ */
 function parkedChurnOnly(status: Record<string, unknown>): boolean {
   const work = status.work as
-    | { parkedKeys?: unknown; actionableParkKeys?: unknown }
+    | { parkedKeys?: unknown; churnParkKeys?: unknown }
     | undefined;
   const keys = work?.parkedKeys;
-  const actionable = work?.actionableParkKeys;
-  // The brake's own key shape (`churnKey`), and an actionable park: a key that
-  // merely begins alike, or one a person answered, is not the brake's.
+  const churn = work?.churnParkKeys;
   return (
     Array.isArray(keys) &&
-    Array.isArray(actionable) &&
+    Array.isArray(churn) &&
     !keys.includes(CANCELLED_CI_KEY) &&
-    actionable.some(
-      (k) => typeof k === "string" && /^structural-churn-r\d+$/.test(k),
-    )
+    churn.some((k) => typeof k === "string" && keys.includes(k))
   );
 }
 

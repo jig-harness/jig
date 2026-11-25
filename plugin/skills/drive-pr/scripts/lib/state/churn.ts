@@ -151,12 +151,57 @@ export function structuralChurn(
   return sameFile(entries, opts.rounds) ?? oscillation(entries);
 }
 
+/** The unmeasured newest round's file could still complete a same-file streak. */
+function couldCompleteStreak(
+  entries: readonly RoundPaths[],
+  n: number,
+  last: RoundPaths,
+): boolean {
+  if (entries.length < n) return false;
+  const streak = entries.slice(-n);
+  for (let i = 1; i < streak.length; i++)
+    if (streak[i]?.round !== (streak[i - 1]?.round ?? -2) + 1) return false;
+  const earlier = streak.slice(0, -1);
+  if (earlier.some((e) => e.severe !== false)) return false;
+  return last.paths.some(
+    (path) =>
+      earlier.every((e) => e.paths.includes(path)) &&
+      // A pair of earlier rounds known to have left the file alone already
+      // breaks the streak, whatever the newest round would measure.
+      earlier.every((e, i) => {
+        const next = earlier[i + 1];
+        if (next === undefined) return true;
+        const a = blobOf(e, path);
+        const b = blobOf(next, path);
+        return a === undefined || b === undefined || a !== b;
+      }),
+  );
+}
+
+/** The unmeasured newest round's file could still complete an oscillation. */
+function couldCompleteReturn(
+  entries: readonly RoundPaths[],
+  last: RoundPaths,
+): boolean {
+  const earlier = entries.slice(0, -1);
+  return last.paths.some(
+    (path) =>
+      new Set(
+        earlier.flatMap((e) => {
+          const blob = blobOf(e, path);
+          return blob === undefined ? [] : [blob];
+        }),
+      ).size >= 2,
+  );
+}
+
 /**
- * Whether the newest recorded round is unmeasured (no severity fact) and the
- * rounds before it would make a same-file streak with it were it measured
- * clean: consecutive, none severe, sharing a file. Such a round is no
- * measured non-trip: the gate must not let it run as though the brake had
- * judged it.
+ * Whether the newest recorded round is unmeasured (no severity fact) and
+ * measuring it could change either verdict: it could complete a same-file
+ * streak with the rounds before it (consecutive, none severe, sharing a file
+ * those rounds did not leave alone), or return a file to an earlier content.
+ * Such a round is no measured non-trip: the gate must not let it run as
+ * though the brake had judged it.
  */
 export function churnUnmeasured(
   s: ChurnEvidence,
@@ -168,12 +213,10 @@ export function churnUnmeasured(
     .filter((e) => e.round > since)
     .sort((a, b) => a.round - b.round)
     .slice(-ROUND_PATHS_WINDOW);
-  if (entries.length < opts.rounds) return false;
-  const streak = entries.slice(-opts.rounds);
-  const last = streak.at(-1);
+  const last = entries.at(-1);
   if (last === undefined || last.severe !== undefined) return false;
-  for (let i = 1; i < streak.length; i++)
-    if (streak[i]?.round !== (streak[i - 1]?.round ?? -2) + 1) return false;
-  if (streak.slice(0, -1).some((e) => e.severe !== false)) return false;
-  return last.paths.some((path) => streak.every((e) => e.paths.includes(path)));
+  return (
+    couldCompleteStreak(entries, opts.rounds, last) ||
+    couldCompleteReturn(entries, last)
+  );
 }

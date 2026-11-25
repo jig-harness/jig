@@ -434,9 +434,9 @@ describe("churnUnmeasured", () => {
       churnUnmeasured(
         {
           roundPaths: [
-            clean(1),
+            round(1, ["a.ts"], { severe: false, blobs: { "a.ts": 1 } }),
             round(2, ["a.ts"], { severe: true }),
-            clean(3),
+            round(3, ["a.ts"], { severe: false, blobs: { "a.ts": 1 } }),
             round(4, ["a.ts"]),
           ],
         },
@@ -449,5 +449,17 @@ describe("churnUnmeasured", () => {
         { rounds: 4 },
       ),
     ).toBe(false);
+  });
+
+  it("flags an unmeasured round that could complete an oscillation", () => {
+    const roundPaths = [clean(1), clean(2), round(3, ["a.ts"])];
+    expect(churnUnmeasured({ roundPaths }, { rounds: 4 })).toBe(true);
+  });
+
+  it("does not flag a round whose earlier rounds already left the file alone", () => {
+    const same = (r: number) =>
+      round(r, ["a.ts"], { severe: false, blobs: { "a.ts": 1 } });
+    const roundPaths = [same(1), same(2), same(3), round(4, ["a.ts"])];
+    expect(churnUnmeasured({ roundPaths }, { rounds: 4 })).toBe(false);
   });
 });

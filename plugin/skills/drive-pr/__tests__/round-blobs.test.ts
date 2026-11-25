@@ -122,6 +122,7 @@ describe("runChurnBrake", () => {
       reason: "",
       parkedItemKeys: null,
       actionableParkKeys: null,
+      churnParkKeys: null,
       mergeable: "MERGEABLE",
       mergeStateStatus: "CLEAN",
       apiHead: head,

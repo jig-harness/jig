@@ -173,6 +173,7 @@ interface BrakeReport {
   reason: string;
   parkedItemKeys: string[] | null;
   actionableParkKeys: string[] | null;
+  churnParkKeys: string[] | null;
   mergeable: string;
   mergeStateStatus: string;
   apiHead: string;
@@ -335,6 +336,7 @@ export async function runChurnBrake(
     ...(report.actionableParkKeys ?? []),
     key,
   ].sort();
+  report.churnParkKeys = [...(report.churnParkKeys ?? []), key].sort();
   const parked = `${describeTrip(trip)}; the drive parked itself before round ${round}'s pass under ${CHURN_CLASS} (${key})`;
   if (report.mergeable === "CONFLICTING")
     return terminal(

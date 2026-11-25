@@ -1040,6 +1040,7 @@ async function main(): Promise<number> {
             summaryHeldUndispatchedKeys: report.summaryHeldUndispatchedKeys,
             parkedKeys: report.parkedItemKeys,
             actionableParkKeys: report.actionableParkKeys,
+            churnParkKeys: report.churnParkKeys,
             // The evidence `structuralEscalationDue` above is derived from —
             // published for visibility, the same reason the key sets beside
             // it are. NOT the recurrence result itself: this is only THIS

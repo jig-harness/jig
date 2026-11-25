@@ -170,7 +170,7 @@ describe("drive-status.ts structural-churn brake", () => {
     expect(park?.decision?.call.recommended).toBe("defer");
   });
 
-  it("records an unreconciled round without facts, so it never trips the brake", async () => {
+  it("records an unreconciled round without facts and stops rather than judging it", async () => {
     const { stateDir, repo } = await rounds(
       ["medium", "low", "medium"],
       history(4),
@@ -182,8 +182,8 @@ describe("drive-status.ts structural-churn brake", () => {
       cwd: repo.cwd,
       reconcile: false,
     });
-    expectSpawnExit(exitOf(r), 0);
-    expect(r.state).toBe("ROUND_READY");
+    expectSpawnExit(exitOf(r), 1);
+    expect(r.state).toBe("INDETERMINATE");
     const state = await stored(stateDir, repo.cwd);
     expect(state.parked).toEqual([]);
     const entry = state.roundPaths?.at(-1);

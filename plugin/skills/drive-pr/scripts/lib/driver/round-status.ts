@@ -1,4 +1,5 @@
 /** Read the live round report and preview conflicts from positively measured dry-run evidence. */
+import { announcePolicyBase } from "./policy-base.ts";
 import type { DriveRoundContext } from "./round-context.ts";
 
 import {
@@ -88,6 +89,10 @@ export async function readRoundStatus(
     context.inheritedHead === ""
       ? []
       : ["--inherited-head", context.inheritedHead];
+  // The gate judges the base it observes now against the policy snapshot the
+  // driver exported: refresh the snapshot first, so a base that advanced
+  // between rounds does not read as an unreadable policy.
+  await announcePolicyBase(context.pr);
   const statusRes = await run(
     tsArgv(driveStatus, [
       context.pr,
