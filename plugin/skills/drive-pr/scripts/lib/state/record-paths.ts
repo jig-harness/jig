@@ -4,7 +4,10 @@
  *
  * Three input forms: repeated `--path`, newline-delimited paths on stdin
  * (`--stdin`), or one JSON object on stdin (`--stdin-json`:
- * `{"paths": [...], "severe"?: bool, "blobs"?: {path: id}}`, `churn-facts.ts`).
+ * `{"paths": [...], "severe"?: bool, "blobs"?: {path: id}, "round"?: n}`,
+ * `churn-facts.ts`). A `round` binds the write to that round: when a later
+ * round was counted, the entry is kept and the judged round's facts are
+ * stripped (exit 3) so evidence the recheck rejected cannot be judged later.
  * The first two record paths alone, as they always have; only the JSON form
  * records the facts.
  */
@@ -15,6 +18,7 @@ import {
   normalizeRoundPathsUncapped,
   ROUND_PATHS_MAX_PER_ROUND,
 } from "./round-paths.ts";
+import type { RoundPaths } from "./round-paths.ts";
 import type { StateStore } from "./store.ts";
 
 interface RecordPathsArgs {
@@ -97,9 +101,36 @@ export async function recordPathsCommand(
   // round, the entry it meant to replace is already gone, and writing now
   // would overwrite the newer observation with the older one.
   let stale = false;
+  const hasFacts = (s: { roundPaths: readonly RoundPaths[] }): boolean =>
+    s.roundPaths.some(
+      (e) =>
+        e.round === expectedRound &&
+        (e.severe !== undefined || e.blobs !== undefined),
+    );
+  if (
+    expectedRound !== undefined &&
+    store.read().state.rounds !== expectedRound &&
+    !hasFacts(store.read().state)
+  ) {
+    console.error(
+      `record-paths: #${pr} is at round ${store.read().state.rounds}, not the round ${expectedRound} this write was bound to — the judged round's facts were withdrawn`,
+    );
+    return 3;
+  }
   await store.update((s) => {
     stale = expectedRound !== undefined && s.rounds !== expectedRound;
-    if (stale) return s;
+    // A later round was counted: keep its entry, and strip the judged
+    // round's facts so a later gate cannot park on evidence the recheck
+    // rejected.
+    if (stale)
+      return {
+        ...s,
+        roundPaths: s.roundPaths.map((e) => {
+          if (e.round !== expectedRound) return e;
+          const { severe: _s, blobs: _b, ...rest } = e;
+          return rest;
+        }),
+      };
     return {
       ...s,
       roundPaths: foldRoundPaths(
@@ -113,7 +144,7 @@ export async function recordPathsCommand(
   });
   if (stale) {
     console.error(
-      `record-paths: #${pr} is at round ${store.read().state.rounds}, not the round ${expectedRound} this write was bound to — nothing was written`,
+      `record-paths: #${pr} is at round ${store.read().state.rounds}, not the round ${expectedRound} this write was bound to — the judged round's facts were withdrawn`,
     );
     return 3;
   }
