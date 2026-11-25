@@ -245,28 +245,48 @@ export function reviewerStickyBody(
     : null;
 }
 
-type Fence = { character: "`" | "~"; length: number } | null;
+type Fence = {
+  character: "`" | "~";
+  length: number;
+  /** Content column of the list item the fence opened in; 0 outside a list. */
+  indent: number;
+} | null;
 
 /**
  * One line's effect on a Markdown code fence. Fences are structural only at
  * Markdown's permitted indentation, and their delimiter length is remembered:
  * three backticks inside a four-backtick block are content, not its closing
  * fence. An opening fence may carry an info string; a closing one admits
- * whitespace only.
+ * whitespace only. A fence may open on the same line as a list marker; it then
+ * closes at up to three columns beyond that item's content column.
  */
 function fenceStep(
   line: string,
   fence: Fence,
 ): { fence: Fence; delimiter: boolean; columns: number } {
   const { columns } = markdownIndentation(line);
-  const token = columns <= 3 ? (/^\s*(`{3,}|~{3,})/.exec(line)?.[1] ?? "") : "";
+  let text = line;
+  let indent = fence?.indent ?? 0;
+  let relative = columns - indent;
+  if (fence === null) {
+    const item = /^( {0,3})([-+*]|\d{1,9}[.)])([ \t]+)(?=\S)/.exec(line);
+    if (item !== null) {
+      indent = item[0].length;
+      text = line.slice(indent);
+      relative = 0;
+    }
+  }
+  const token =
+    relative >= 0 && relative <= 3
+      ? (/^\s*(`{3,}|~{3,})/.exec(text)?.[1] ?? "")
+      : "";
   if (token === "") return { fence, delimiter: false, columns };
-  const rest = line.slice(line.indexOf(token) + token.length);
+  const rest = text.slice(text.indexOf(token) + token.length);
   if (fence === null) {
     const opens = token[0] === "~" || !rest.includes("`");
     return {
       fence: opens
-        ? { character: token[0] as "`" | "~", length: token.length }
+        ? { character: token[0] as "`" | "~", length: token.length, indent }
         : null,
       delimiter: true,
       columns,

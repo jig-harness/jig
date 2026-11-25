@@ -49,6 +49,7 @@ export function selectReviewerSticky<
   let selected: T | undefined;
   let selectedRound: number | null = null;
   let selectedReviewedSha: string | null = null;
+  let selectedCarriesFindings = false;
   let highestExplicitRound: number | null = null;
   // Keep every malformed finding-bearing summary. A later malformed comment
   // must not overwrite a stronger ordering constraint from an earlier one.
@@ -107,6 +108,14 @@ export function selectReviewerSticky<
     // not establish the initial selection or an ordering watermark that hides
     // a later affirmative review with findings.
     if (skipOnly) continue;
+    // A round number alone never retires findings: a clean replacement of a
+    // finding-bearing summary must carry its own reviewed-head stamp.
+    if (
+      selectedCarriesFindings &&
+      !carriesFindingEvidence &&
+      reviewedSha === ""
+    )
+      continue;
     // A malformed finding-bearing summary remains unreadable until a later
     // clean summary proves it supersedes that summary by its explicit round.
     // A different SHA alone cannot establish ordering, and a skip-only
@@ -148,6 +157,7 @@ export function selectReviewerSticky<
       selected = comment;
       selectedRound = round;
       selectedReviewedSha = reviewedSha;
+      selectedCarriesFindings = carriesFindingEvidence;
     }
   }
   if (malformedFindingEvidence.length > 0)
@@ -176,7 +186,7 @@ export function parseDeclaredUnanchored(body: string): number {
   // spans without changing line structure so a quoted sample cannot affect the
   // synthetic-work count.
   const prose = withoutFencedExamples(body)
-    .split(/(\r?\n\r?\n)/)
+    .split(/(\r?\n[ \t]*\r?\n)/)
     .map((block) =>
       block.replace(/(`+)(?:[^`]|`(?!\1))*\1/g, (span) =>
         span.replace(/[^\r\n]/g, " "),
