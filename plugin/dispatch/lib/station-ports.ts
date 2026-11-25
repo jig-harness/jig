@@ -263,36 +263,6 @@ export function releaseRecord(
   return null;
 }
 
-/**
- * Settle the unclaimed members of a whole-batch question whose anchor remains
- * carried by an open pull request. The carrying claim is deliberately kept.
- */
-function settleCarriedBatchRecord(
-  inputs: StationInputs,
-  item: string,
-  id: string,
-): string | null | undefined {
-  const root = inputs.root ?? stateRoot();
-  const ended = readEnded(id, root);
-  if (ended === null) return `launch record ${id} is not an ended record`;
-  const { record } = ended;
-  if (record.action !== "pickup" || record.repo !== inputs.repo.slug)
-    return `launch record ${id} is not a pickup of ${inputs.repo.slug}`;
-  if (!wholeBatchQuestion(ended) || record.item !== item) return undefined;
-  const members = record.batchItems?.map((member) => member.key) ?? [];
-  // This answers the batch question, not the carried claim.  Keeping the
-  // claim is what prevents a second session from taking the anchor, while
-  // recording every member as settled prevents the same question resurfacing
-  // on the next planning tick.
-  const settled = members;
-  record.releasedItems = [
-    ...new Set([...(record.releasedItems ?? []), ...settled]),
-  ];
-  record.released = true;
-  writeRecord(record, root);
-  return null;
-}
-
 /** Whether an open pull request carries `item`; an unreadable link is never carriage. */
 function carryFault(
   inputs: StationInputs,
@@ -359,16 +329,9 @@ async function releasePickup(
   const carriedBy = carryFault(inputs, item);
   if (carriedBy !== null) {
     if (carriedBy.kind === "unreadable") return refused(carriedBy.reason);
-    const settled =
-      recordId === null
-        ? undefined
-        : settleCarriedBatchRecord(inputs, item, recordId);
-    if (settled === null)
-      return ok(
-        `${carriedBy.reason}; kept its carried claim and settled the whole-batch question`,
-      );
-    if (settled !== undefined) return refused(settled);
-    return refused(carriedBy.reason);
+    return refused(
+      `${carriedBy.reason}; its answer cannot start a successor session while the anchor remains carried`,
+    );
   }
   const held = await sessionHolds(inputs, (w) => w.items.includes(item), item);
   if (held !== null) return refused(held);

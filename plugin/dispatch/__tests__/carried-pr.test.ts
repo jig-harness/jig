@@ -467,6 +467,39 @@ describe("a claimed sibling of a whole-batch question whose anchor an open pull 
       plan.actions.filter((a) => a.cause === "pickup-question"),
     ).toMatchObject([{ target: "#12" }]);
   });
+
+  it("does not surface the batch question when its anchor is merely pr-open", () => {
+    const batch = endedPickup(
+      "20261114T145000Z-abcdef12",
+      "2026-11-14T14:54:00Z",
+    );
+    Object.assign(batch.record, {
+      batchItems: [{ key: "#12" }, { key: "#13" }],
+      claimedItems: ["#12", "#13"],
+    });
+    if (batch.state.kind === "ended")
+      batch.state.exit.said =
+        "Question: Should the batch follow the shared approach?\\n";
+    const base = input({
+      ...stalled([pr()], [LIVE]),
+      prOpen: () => "In Progress",
+    });
+    const plan = planPickups({
+      ...base,
+      claimed: [
+        { key: "#12", title: "issue 12", state: "In Progress" },
+        { key: "#13", title: "issue 13", state: "In Progress" },
+      ],
+      launches: [batch],
+      idleSince: new Map([
+        ["#12", NOW - 2 * HOUR],
+        ["#13", NOW - 2 * HOUR],
+      ]),
+    });
+    expect(
+      plan.actions.filter((action) => action.cause === "pickup-question"),
+    ).toEqual([]);
+  });
 });
 
 describe("the line", () => {

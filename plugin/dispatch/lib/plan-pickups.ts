@@ -793,7 +793,11 @@ function planIdleClaimed(
     if (
       pickup.kind === "ended" &&
       wholeBatchQuestion(pickup.record) &&
-      pickup.record.record.item === item.key
+      pickup.record.record.item === item.key &&
+      plan.quiet.some(
+        (quiet) =>
+          quiet.target === item.key && quiet.class === "claimed-carried",
+      )
     )
       waitForCarriedBatchAnchor(
         item,

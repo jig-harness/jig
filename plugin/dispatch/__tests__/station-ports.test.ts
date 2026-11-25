@@ -150,7 +150,7 @@ describe("the steps on a person's answer", () => {
     }
   });
 
-  it("settles a carried whole-batch question without releasing its anchor", async () => {
+  it("refuses a carried whole-batch question without a successor session", async () => {
     const root = mkdtempSync(join(tmpdir(), "jig-carried-batch-"));
     try {
       const record = {
@@ -197,13 +197,11 @@ describe("the steps on a person's answer", () => {
         },
       });
       const result = await stationPorts(i).releasePickup("#513", record.id);
-      expect(result.ok).toBe(true);
+      expect(result.ok).toBe(false);
+      expect(reasonOf(result)).toContain("cannot start a successor session");
       expect(i.moved).toEqual([]);
-      expect(readEnded(record.id, root)?.record.releasedItems).toEqual([
-        "#513",
-        "#514",
-      ]);
-      expect(readEnded(record.id, root)?.record.released).toBe(true);
+      expect(readEnded(record.id, root)?.record.releasedItems).toBeUndefined();
+      expect(readEnded(record.id, root)?.record.released).toBe(false);
     } finally {
       closeStateDb(root);
       rmSync(root, { recursive: true, force: true });
