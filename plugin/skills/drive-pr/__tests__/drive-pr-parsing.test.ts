@@ -2134,9 +2134,17 @@ describe("summary-findings parsing", () => {
     const path = "fresh.ts";
     const text = "This is a fresh finding.";
     const fingerprint = fingerprintOf(path, 3, text);
+    const sectionPath = "section.ts";
+    const sectionText = "This finding is held out of inline review.";
+    const sectionFingerprint = fingerprintOf(sectionPath, 4, sectionText);
     const entries = [
       { fingerprint: "entry-flag", blocking: false },
-      { fingerprint: "section-flag" },
+      {
+        fingerprint: sectionFingerprint,
+        path: sectionPath,
+        line: 4,
+        comment: sectionText,
+      },
       {
         fingerprint: "keep-blocking",
         blocking: true,
@@ -2154,6 +2162,7 @@ describe("summary-findings parsing", () => {
         "<details><summary>🗂️ <b>Beyond this PR</b> — 4 finding(s) for triage (not posted inline)</summary>",
         "",
         "Held out of the inline threads so this PR can converge — **not blocking**.",
+        `- \`${sectionPath}:4\` — ${sectionText}`,
         "</details>",
         `<!-- ai-review-backlog: ${blob} -->`,
       ].join("\n"),
@@ -2163,11 +2172,11 @@ describe("summary-findings parsing", () => {
     const r = classify(input);
     expect(r.ignoredBacklog.map((entry) => entry.fingerprint)).toEqual([
       "entry-flag",
-      "section-flag",
     ]);
     expect(
       r.unaddressed.map(({ fingerprint, source }) => [fingerprint, source]),
     ).toEqual([
+      [sectionFingerprint, "backlog"],
       ["keep-blocking", "backlog"],
       [fingerprint, "body"],
     ]);
@@ -2177,7 +2186,81 @@ describe("summary-findings parsing", () => {
     });
     expect(
       countMismatch.unaddressed.map((entry) => entry.fingerprint),
-    ).toContain("section-flag");
+    ).toContain(sectionFingerprint);
+  });
+
+  it("honors a Beyond this PR disposition when it renders every backlog entry", () => {
+    const entries = [
+      { path: "one.ts", line: 1, comment: "One held finding." },
+      { path: "two.ts", line: 2, comment: "Another held finding." },
+    ].map((entry) => ({
+      ...entry,
+      fingerprint: fingerprintOf(entry.path, entry.line, entry.comment),
+    }));
+    const blob = Buffer.from(JSON.stringify(entries)).toString("base64");
+    const r = classify({
+      pr: 1,
+      stickyCommentId: 9,
+      stickyBody: [
+        "<details><summary>🗂️ <b>Beyond this PR</b> — 2 finding(s) for triage (not posted inline)</summary>",
+        "",
+        "Held out of the inline threads so this PR can converge — **not blocking**.",
+        ...entries.map(
+          (entry) => `- \`${entry.path}:${entry.line}\` — ${entry.comment}`,
+        ),
+        "</details>",
+        `<!-- ai-review-backlog: ${blob} -->`,
+      ].join("\n"),
+      anchoredKeys: [],
+      addressedFingerprints: new Set(),
+    });
+    expect(r.ignoredBacklog.map((entry) => entry.fingerprint)).toEqual(
+      entries.map((entry) => entry.fingerprint),
+    );
+    expect(r.unaddressed).toEqual([]);
+  });
+
+  it("does not let a matching Beyond this PR count suppress a different backlog entry", () => {
+    const renderedPath = "rendered.ts";
+    const renderedText = "This entry is explicitly shown as non-blocking.";
+    const hiddenPath = "hidden.ts";
+    const hiddenText = "This blocking entry is not rendered in the section.";
+    const rendered = {
+      fingerprint: fingerprintOf(renderedPath, 1, renderedText),
+      path: renderedPath,
+      line: 1,
+      comment: renderedText,
+    };
+    const hidden = {
+      fingerprint: fingerprintOf(hiddenPath, 2, hiddenText),
+      path: hiddenPath,
+      line: 2,
+      comment: hiddenText,
+    };
+    const blob = Buffer.from(JSON.stringify([rendered, hidden])).toString(
+      "base64",
+    );
+    const r = classify({
+      pr: 1,
+      stickyCommentId: 9,
+      stickyBody: [
+        "<details><summary>unrelated details</summary>",
+        "</details>",
+        "<details><summary>🗂️ <b>Beyond this PR</b> — 2 finding(s) for triage (not posted inline)</summary>",
+        "",
+        "Held out of the inline threads so this PR can converge — **not blocking**.",
+        `- \`${renderedPath}:1\` — ${renderedText}`,
+        "</details>",
+        `<!-- ai-review-backlog: ${blob} -->`,
+      ].join("\n"),
+      anchoredKeys: [],
+      addressedFingerprints: new Set(),
+    });
+    expect(r.ignoredBacklog).toEqual([]);
+    expect(r.unaddressed.map((finding) => finding.fingerprint)).toEqual([
+      rendered.fingerprint,
+      hidden.fingerprint,
+    ]);
   });
 
   it("reports a shortfall when the declared count exceeds what was classified", () => {

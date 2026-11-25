@@ -659,12 +659,23 @@ function partitionBacklog(
   bullets: readonly BodyFinding[],
 ): { blockingBacklog: BacklogEntry[]; ignoredBacklog: BacklogEntry[] } {
   const backlog = decodeBacklog(stickyBody);
-  // The declared disposition applies to the cohort this section describes.
-  const details = stickyBody.slice(stickyBody.indexOf("<details"));
-  const section = details.match(
-    /^<details><summary>🗂️ <b>Beyond this PR<\/b> — (\d+) finding\(s\) for triage \(not posted inline\)<\/summary>\r?\n[ \t\r\n]*Held out of the inline threads so this PR can converge — \*\*not blocking\*\*\./,
+  // The declared disposition applies only to the entries rendered in this
+  // section. A count alone cannot establish that: a different blocking entry
+  // can leave the count unchanged. Match the rendered finding identities to
+  // the blob before treating its otherwise-unflagged entries as informational.
+  const section = stickyBody.match(
+    /<details><summary>🗂️ <b>Beyond this PR<\/b> — (\d+) finding\(s\) for triage \(not posted inline\)<\/summary>\r?\n[ \t\r\n]*Held out of the inline threads so this PR can converge — \*\*not blocking\*\*\.([\s\S]*?)<\/details>/,
   );
-  const sectionCoversBacklog = Number(section?.[1]) === backlog.length;
+  const rendered = section ? parseBodyFindings(section[2] ?? "") : [];
+  const renderedFingerprints = new Set(
+    rendered.map((finding) =>
+      fingerprintOf(finding.path, finding.line, finding.text),
+    ),
+  );
+  const sectionCoversBacklog =
+    Number(section?.[1]) === backlog.length &&
+    renderedFingerprints.size === backlog.length &&
+    backlog.every((entry) => renderedFingerprints.has(entry.fingerprint));
   const freshFingerprints = new Set(
     bullets.map((f) => fingerprintOf(f.path, f.line, f.text)),
   );
