@@ -381,8 +381,10 @@ describe("the reading skills", () => {
       "has,comma",
       "has;semicolon",
       "has=equals",
-      "has\u001bescape",
-      "has\u0085control",
+      ...[
+        ...Array.from({ length: 0x20 }, (_, i) => i),
+        ...Array.from({ length: 0x21 }, (_, i) => 0x7f + i),
+      ].map((code) => `has${String.fromCodePoint(code)}control`),
       "",
       ...[
         0x061c, 0x200e, 0x200f, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066,
