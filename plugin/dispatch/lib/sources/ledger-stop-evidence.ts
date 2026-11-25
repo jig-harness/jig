@@ -23,7 +23,7 @@ export function readsBaseHead(
   );
 }
 
-/** What a stop's evidence adds: the heads and the mergeability a ledger whose stop the forge's read places (`CONVERGED`, a conflict, a mechanical stop) was read beside. */
+/** What a stop's evidence adds: the heads and the mergeability a ledger whose stop the forge's read places (`CONVERGED`, a conflict, a mechanical stop) was read beside, and the head a `NOT_SETTLED` stop's repeated re-arms are counted on (`repeated-ends.ts`). */
 export function stopEvidence(
   ledger: Ledger,
   forge: PrFacts,
@@ -45,7 +45,11 @@ export function stopEvidence(
       ...baseRead,
       ...read,
     };
-  if (ledger.driver.exit === DRIVE_EXIT.WORKTREE_UNCLEAN) return read;
+  if (
+    ledger.driver.exit === DRIVE_EXIT.WORKTREE_UNCLEAN ||
+    ledger.driver.exit === DRIVE_EXIT.NOT_SETTLED
+  )
+    return read;
   return baseRead === undefined ? {} : { ...baseRead, ...read };
 }
 

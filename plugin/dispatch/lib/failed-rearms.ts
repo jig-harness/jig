@@ -57,6 +57,11 @@ function headsText(heads: RearmHeads): string {
   return `PR head ${heads.pr}, branch head ${heads.branch}`;
 }
 
+/** The pull request head a launch record's heads name; `null` for none. */
+export function prHeadOf(heads: string | null | undefined): string | null {
+  return /^PR head (\S+), branch head /.exec(heads ?? "")?.[1] ?? null;
+}
+
 /** Whether a re-arm of this drive records the heads it launched at: a `re-armable` ledger with a recorded exit. */
 function weighsHeads(pr: DrivenPr): boolean {
   return pr.class === "re-armable" && pr.evidence.noCause !== true;
