@@ -587,7 +587,16 @@ export function parseLedger(body: string): ParsedLedger | null {
     !/^[a-f0-9]{40}$/.test(ledger.reviewCarriedFrom)
   )
     delete ledger.reviewCarriedFrom;
-  for (const f of circuit.malformedLedgerCircuit(read.fields)) delete ledger[f];
+  for (const f of circuit.malformedLedgerCircuit(read.fields)) {
+    // The wall-clock cap is measured from this moment: dropping it would
+    // give a takeover a whole new window, so the ledger is not read.
+    if (f === "firstDrivenAt")
+      return {
+        kind: "malformed",
+        reason: "ill-formed field(s): firstDrivenAt is not a timestamp",
+      };
+    delete ledger[f];
+  }
   const { probe, ...driver } = ledger.driver;
   const clean = probeStopOf(probe);
   ledger.driver =

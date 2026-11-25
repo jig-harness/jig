@@ -13,4 +13,4 @@ release: minor
 
 ### Fixed
 
-- An answered non-blocking `winddown-deferred` summary finding stays answered: drive-pr no longer asks it again every few rounds. A reviewer that reports the same finding as blocking is still answered.
+- An answered non-blocking `winddown-deferred` summary finding stays answered: drive-pr no longer asks it again every few rounds. A reviewer that reports the same finding as blocking is still asked.

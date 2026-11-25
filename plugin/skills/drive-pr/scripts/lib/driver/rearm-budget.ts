@@ -21,6 +21,7 @@ import {
   drivenHours,
   personsCircuitStop,
   pastCeilingAnswered,
+  pastCeilingIdentity,
   readCircuitSettings,
   recordFirstDriven,
   stopAtCeiling,
@@ -257,7 +258,13 @@ export async function roundBudget(
         drivenHours(stoppedAt),
       ),
     );
-    if (!dryRun) await storeRaise(pr, circuit.raised, circuit.raisedHours);
+    if (!dryRun)
+      await storeRaise(
+        pr,
+        circuit.raised,
+        circuit.raisedHours,
+        launch.pastCeiling ? undefined : pastCeilingIdentity(),
+      );
     console.error(
       `re-arm: a person's override raised PR #${pr}'s round ceiling to ${circuit.ceiling} (${circuit.raised} added to ${settings.maxTotal.value})${settings.wallClock === null ? "" : ` and its wall-clock cap to ${Math.round((settings.wallClock.value + circuit.raisedHours) * 10) / 10}h`}${dryRun ? " [dry run: not recorded]" : ""}`,
     );

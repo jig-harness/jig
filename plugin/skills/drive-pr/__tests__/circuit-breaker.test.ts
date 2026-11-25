@@ -127,7 +127,10 @@ describe("the divergence stop", () => {
       newFindings: 2,
       fixedFindings: 1,
     });
-    expect(findingMovement(["a"], ["a"])).toBeNull();
+    expect(findingMovement(["a"], ["a"])).toEqual({
+      newFindings: 0,
+      fixedFindings: 0,
+    });
     expect(findingMovement(undefined, ["a"])).toBeNull();
   });
 
@@ -289,6 +292,23 @@ describe("the circuit fields in the state and the ledger", () => {
     };
     seedCircuit(state, { firstDrivenAt: "2026-01-01T00:00:00.000Z" });
     expect(state).toEqual({ firstDrivenAt: "2026-01-01T00:00:00.000Z" });
+  });
+
+  it("seeds a person's circuit stop and the consumed overrides, and flags a malformed first launch", () => {
+    const stop = {
+      key: "round-ceiling",
+      choice: "Finish by hand",
+      at: "2026-01-01T00:00:00.000Z",
+    };
+    const state: Record<string, unknown> = {};
+    seedCircuit(state, { circuitStop: stop, usedOverrides: ["k"] });
+    expect(state).toEqual({ circuitStop: stop, usedOverrides: ["k"] });
+    expect(malformedLedgerCircuit({ firstDrivenAt: "soon" })).toEqual([
+      "firstDrivenAt",
+    ]);
+    expect(malformedLedgerCircuit({ circuitStop: { key: 1 } })).toEqual([
+      "circuitStop",
+    ]);
   });
 });
 

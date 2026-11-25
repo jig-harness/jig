@@ -27,6 +27,7 @@ import {
   DIVERGENCE_ROUNDS,
   divergenceStops,
   findingMovement,
+  USED_OVERRIDES_KEPT,
   hoursDriven,
   openFindingKeys,
   wallClockSpent,
@@ -85,10 +86,25 @@ export function readCircuitSettings(): {
 }
 
 let overrideAnswered = false;
+let overrideIdentity: string | undefined;
 
-/** Whether this launch read a person's override answer to the `round-ceiling` park. */
+/** Whether this launch read a person's override answer to the `round-ceiling` park that no raise has consumed. */
 export function pastCeilingAnswered(): boolean {
   return overrideAnswered;
+}
+
+/** The identity of the override answer this launch read, for the raise it authorizes to record. */
+export function pastCeilingIdentity(): string | undefined {
+  return overrideIdentity;
+}
+
+/** A person's override answers, by where and when they were given. */
+function overrideAnswerIdentity(verdicts: readonly PendingVerdict[]): string {
+  return verdicts
+    .filter(answerRaisesCeiling)
+    .flatMap((v) => v.answers.map((a) => `${v.key}|${a.url}|${a.at}`))
+    .sort()
+    .join(",");
 }
 
 /**
@@ -108,10 +124,19 @@ export async function applyCircuitAnswers(
   dryRun: boolean,
 ): Promise<void> {
   if (verdicts.some(answerRaisesCeiling)) {
-    overrideAnswered = true;
-    console.error(
-      `re-arm: a person's answer to the ${ROUND_CEILING_PARK} park allows PR #${pr} one more round budget past its ceiling.`,
-    );
+    const identity = overrideAnswerIdentity(verdicts);
+    const used = (await openStore(pr)).read().state.usedOverrides ?? [];
+    if (used.includes(identity)) {
+      console.error(
+        `re-arm: a person's answer to the ${ROUND_CEILING_PARK} park of PR #${pr} already raised its ceiling once; it authorizes nothing more.`,
+      );
+    } else {
+      overrideAnswered = true;
+      overrideIdentity = identity;
+      console.error(
+        `re-arm: a person's answer to the ${ROUND_CEILING_PARK} park allows PR #${pr} one more round budget past its ceiling.`,
+      );
+    }
   }
   const resume = verdicts.some(answerContinuesDivergence);
   const stop = verdicts.find(answerKeepsStopped);
@@ -195,10 +220,19 @@ export async function storeRaise(
   pr: string,
   raised: number,
   raisedHours: number,
+  answerIdentity?: string,
 ): Promise<void> {
   const store = await openStore(pr);
   await store.update((s) => ({
     ...s,
+    ...(answerIdentity === undefined
+      ? {}
+      : {
+          usedOverrides: [
+            ...(s.usedOverrides ?? []).filter((k) => k !== answerIdentity),
+            answerIdentity,
+          ].slice(-USED_OVERRIDES_KEPT),
+        }),
     ceilingRaised: Math.max(s.ceilingRaised ?? 0, raised),
     wallClockRaisedHours: Math.max(s.wallClockRaisedHours ?? 0, raisedHours),
     parked: s.parked.filter((p) => p.key !== ROUND_CEILING_PARK),

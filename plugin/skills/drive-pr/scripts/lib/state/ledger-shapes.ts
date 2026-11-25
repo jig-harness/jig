@@ -223,10 +223,13 @@ export const LEDGER_PAYLOAD_FIELDS = {
   roundsGranted: s.optional(s.unknown()),
   // The circuit breaker's raises and first launch, unrestricted as the stable
   // ledger accepted them before they existed; the reader drops a malformed
-  // one (`circuit-breaker.ts`).
+  // one, except a first launch it cannot read, which refuses the ledger
+  // (`circuit-breaker.ts`).
   ceilingRaised: s.optional(s.unknown()),
   firstDrivenAt: s.optional(s.unknown()),
   wallClockRaisedHours: s.optional(s.unknown()),
+  circuitStop: s.optional(s.unknown()),
+  usedOverrides: s.optional(s.unknown()),
   phase: text,
   lastCountedHead: text,
   verifiedSha: text,

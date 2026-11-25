@@ -96,6 +96,8 @@
             "ceilingRaised": true,
             "firstDrivenAt": true,
             "wallClockRaisedHours": true,
+            "circuitStop": true,
+            "usedOverrides": true,
             "phase": {
               "type": "string"
             },
@@ -952,6 +954,8 @@
         "ceilingRaised": true,
         "firstDrivenAt": true,
         "wallClockRaisedHours": true,
+        "circuitStop": true,
+        "usedOverrides": true,
         "phase": {
           "type": "string"
         },

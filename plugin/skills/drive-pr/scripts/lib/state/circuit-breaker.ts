@@ -59,6 +59,8 @@ export interface CircuitBreakerState {
   roundFindings?: RoundFindings[];
   /** A person's answer to a circuit park that keeps the drive stopped, until their `--past-ceiling`. */
   circuitStop?: CircuitStop;
+  /** The override answers a raise already consumed, by identity, so a re-read answer authorizes nothing twice. */
+  usedOverrides?: string[];
 }
 
 /** A person's answer to a circuit park that keeps the drive stopped. */
@@ -76,7 +78,12 @@ export interface LedgerCircuit {
   ceilingRaised?: number;
   firstDrivenAt?: string;
   wallClockRaisedHours?: number;
+  circuitStop?: CircuitStop;
+  usedOverrides?: string[];
 }
+
+/** The override answers a state remembers as consumed. */
+export const USED_OVERRIDES_KEPT = 8;
 
 const isCount = (v: unknown): v is number =>
   typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
@@ -86,6 +93,15 @@ const isHours = (v: unknown): v is number =>
 
 const isMoment = (v: unknown): v is string =>
   typeof v === "string" && Number.isFinite(parseMs(v));
+
+const isCircuitStop = (v: unknown): v is CircuitStop =>
+  isRecord(v) &&
+  typeof v.key === "string" &&
+  typeof v.choice === "string" &&
+  isMoment(v.at);
+
+const isUsedOverrides = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.every((k) => typeof k === "string");
 
 function isRoundFindings(v: unknown): v is RoundFindings {
   return (
@@ -110,11 +126,8 @@ export function isOptionalCircuit(s: Record<string, unknown>): boolean {
     (s.roundFindings === undefined ||
       (Array.isArray(s.roundFindings) &&
         s.roundFindings.every(isRoundFindings))) &&
-    (s.circuitStop === undefined ||
-      (isRecord(s.circuitStop) &&
-        typeof s.circuitStop.key === "string" &&
-        typeof s.circuitStop.choice === "string" &&
-        isMoment(s.circuitStop.at)))
+    (s.circuitStop === undefined || isCircuitStop(s.circuitStop)) &&
+    (s.usedOverrides === undefined || isUsedOverrides(s.usedOverrides))
   );
 }
 
@@ -128,6 +141,8 @@ export function circuitLedgerFields(s: CircuitBreakerState): LedgerCircuit {
     ...(s.wallClockRaisedHours
       ? { wallClockRaisedHours: s.wallClockRaisedHours }
       : {}),
+    ...(s.circuitStop === undefined ? {} : { circuitStop: s.circuitStop }),
+    ...(s.usedOverrides?.length ? { usedOverrides: s.usedOverrides } : {}),
   };
 }
 
@@ -139,6 +154,8 @@ export function malformedLedgerCircuit(
     ceilingRaised: isCount,
     firstDrivenAt: isMoment,
     wallClockRaisedHours: isHours,
+    circuitStop: isCircuitStop,
+    usedOverrides: isUsedOverrides,
   } as const;
   return (Object.keys(checks) as (keyof LedgerCircuit)[]).filter(
     (name) => l[name] !== undefined && !checks[name](l[name]),
@@ -160,6 +177,10 @@ export function seedCircuit(
     .sort((a, b) => parseMs(a) - parseMs(b))[0];
   delete state.ceilingRaised;
   delete state.wallClockRaisedHours;
+  delete state.circuitStop;
+  delete state.usedOverrides;
+  if (l.circuitStop !== undefined) state.circuitStop = l.circuitStop;
+  if (l.usedOverrides !== undefined) state.usedOverrides = l.usedOverrides;
   if (l.ceilingRaised !== undefined) state.ceilingRaised = l.ceilingRaised;
   if (l.wallClockRaisedHours !== undefined)
     state.wallClockRaisedHours = l.wallClockRaisedHours;
@@ -187,8 +208,11 @@ export function atRoundCeiling(
 /**
  * The `ceilingRaised` an override leaves: once the ceiling is reached, the
  * ceiling becomes the heads counted before the resumed one plus `block`, so
- * the resumed head is the first of `block` more; below the ceiling it is
- * unchanged. Never lowered.
+ * the resumed head is the first of `block` more rounds; below the ceiling it
+ * is unchanged. The block is counted from the heads already spent, so a
+ * drive that was already past its ceiling (an upgraded one) still gets
+ * exactly one block, never a block that is spent before the next round.
+ * Never lowered.
  */
 export function raisedCeiling(
   spent: { rounds: number; headCounted: boolean },
@@ -245,7 +269,8 @@ export function openFindingKeys(
 
 /**
  * The movement between the previous gate's open findings and this one's;
- * `null` when there is no previous gate or nothing moved.
+ * `null` when there is no previous gate. A gate where nothing moved is a
+ * movement of none, which ends a streak of diverging rounds.
  */
 export function findingMovement(
   previous: readonly string[] | undefined,
@@ -256,7 +281,6 @@ export function findingMovement(
   const after = new Set(now);
   const newFindings = now.filter((k) => !before.has(k)).length;
   const fixedFindings = previous.filter((k) => !after.has(k)).length;
-  if (newFindings === 0 && fixedFindings === 0) return null;
   return { newFindings, fixedFindings };
 }
 
