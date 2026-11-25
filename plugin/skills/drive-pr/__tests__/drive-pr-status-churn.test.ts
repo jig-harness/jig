@@ -149,6 +149,20 @@ async function stored(
 }
 
 describe("drive-status.ts structural-churn brake", () => {
+  it("records churn evidence when GitHub reports an older base commit", async () => {
+    const { cwd, heads } = history(3);
+    const [base, head, policy] = heads as [string, string, string];
+    const fx = writeFixture({ head, base, threads: [finding("PRRT_lag")] });
+    const r = await probeIn(fx.dir, fx.stateDir, head, ["--bump-attempt"], {
+      env: { ...ENV, DRIVE_PR_TARGET: "999", DRIVE_PR_POLICY_BASE: policy },
+      cwd,
+    });
+    expectSpawnExit(exitOf(r), 0);
+    expect(r.state).toBe("ROUND_READY");
+    const state = await stored(fx.stateDir, cwd);
+    expect(state.roundPaths?.at(-1)?.blobs?.["a.ts"]).toBeDefined();
+  });
+
   it("parks the drive when the same file churns for four non-severe rounds", async () => {
     const { stateDir, results, repo } = await rounds([
       "medium",
