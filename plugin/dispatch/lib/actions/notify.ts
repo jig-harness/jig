@@ -120,7 +120,13 @@ import type {
   RepoTarget,
 } from "../types.ts";
 import { type ApplyState, timeLeftMs } from "./launch.ts";
-import { namedChannels, reportUnreachable } from "./notify-channel-faults.ts";
+import {
+  isLasting,
+  namedChannels,
+  readWholeRepo,
+  reportUnreachable,
+  tellChannelStart,
+} from "./notify-channel-faults.ts";
 
 /** A notification the plan names, with its cause and message; `repeat` once it is sent again after `renotify_after`. */
 export type Cause = NoticeCause;
@@ -675,14 +681,7 @@ function startFrom(
       causes++;
       counted.add(c.notice.key);
     }
-  // A target the tick could not observe may hold a standing cause it never saw, so the start waits for a tick that sees it.
-  let complete =
-    scope.report.records.every((r) => r.ok) &&
-    // Only a notification channel's own fault says nothing about this repository's causes; any other unplaced target may hold one.
-    scope.report.unplaced.every((u) => u.channelFault === true) &&
-    (scope.report.withheld ?? []).length === 0 &&
-    // A converged pull request whose place the board read could not tell may hold a cause not yet seen.
-    (scope.report.board?.pending ?? []).length === 0;
+  let complete = readWholeRepo(scope.report);
   for (const c of due) {
     // A repeat refers to a real delivery, possibly at another repository: it stays due, never rewritten as silent.
     // A repeat of a silent record from an earlier incomplete start was never delivered: it is recorded silent again, so an outage does not release the backlog.
@@ -721,15 +720,7 @@ function startFrom(
     );
     return [];
   }
-  // The receipt tells a start only once its marker is durable.
-  state.channelStarts ??= new Map();
-  let start = state.channelStarts.get(channel);
-  if (start === undefined) {
-    start = { channel, causes: 0 };
-    state.channelStarts.set(channel, start);
-    scope.report.channelStarts = [...(scope.report.channelStarts ?? []), start];
-  }
-  start.causes += causes;
+  tellChannelStart(state, scope.report, channel, causes);
   // A repeat that is sent keeps the failure ledger's wait, as it does on a channel that has started.
   return notBackingOff(channel, repeats, scope.settings.book, scope.report);
 }
@@ -787,13 +778,7 @@ function recordSent(
         key: c.notice.key,
         at,
         workspace: silent ? SILENT_START : place,
-        lasting:
-          c.cause === "drifting" ||
-          c.cause === "ready" ||
-          (c.cause === "stopped-unknown" && c.evidence.noCause === true) ||
-          typeof c.evidence.failedRearm === "string" ||
-          typeof c.evidence.reviewerFailureHead === "string" ||
-          typeof c.evidence.usageRefusal === "string",
+        lasting: isLasting(c),
       },
       // A cause about a stage this machine launched has its ended row instead.
       silent || c.launched === true
