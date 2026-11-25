@@ -958,14 +958,16 @@ model.
 
 - **Naming a model.** `routing.models.<runtime>.<tier>` and
   `routing.stages.<stage>.models.<runtime>.<tier>` take any model the selected
-  launch can pass to its runtime, one word with no control characters,
-  whitespace, comma, semicolon or equals sign and not beginning with a dash.
-  A `routing.family_tiers` key keeps the older grammar: it may begin with a
-  dash or hold NUL or a lone surrogate, but not whitespace, a comma, semicolon
-  or equals sign. A `routing.model_tiers` key may also begin with a dash, but
-  may not contain NUL or a lone surrogate. Selected values use the stricter
-  operand rule, so a dormant legacy key can stay while a selection of the
-  same string is refused. A
+  launch can pass to its runtime, one word with no control,
+  bidirectional-control or lone-surrogate characters, no whitespace, comma,
+  semicolon or equals sign, and not beginning with a dash. Every declaration
+  key must also be nonempty and hold no whitespace, comma, semicolon or equals
+  sign. Beyond that, a `routing.family_tiers` key keeps the older grammar: it
+  may begin with a dash or hold NUL or a lone surrogate. A
+  `routing.model_tiers` key may also begin with a dash, but may not contain
+  NUL or a lone surrogate. Selected values use the stricter operand rule, so a
+  dormant legacy key can stay while a selection of the same string is refused.
+  A
   declaration key, unlike a model value, may not be `__proto__`:
   the shared loader rejects that mapping key before routing
   reads it. For a runtime with a list (`claude-code`, `codex`) a name
@@ -1040,8 +1042,10 @@ model.
   that sets the steward's model in its user file has it in every repository
   unless a higher layer overrides that cell or resets a section that contains it.
 - **`routing.family_tiers`** is kept: its entries are read as
-  `routing.model_tiers` entries, and a configuration that sets only it routes
-  exactly as before. The two keys are one table; a model declared under both
+  `routing.model_tiers` entries, and a configuration that sets only it keeps its
+  tier classification and precedence; selecting a model follows the
+  selected-model rules above, which refuse some strings (one starting with a
+  dash, for example) that were accepted before. The two keys are one table; a model declared under both
   with different tiers is refused.
 - **Which stages read their row today.** The dispatcher's steward launch. The
   other stages (`pickup`, `rearm`, `followup`) are accepted and checked, and a
