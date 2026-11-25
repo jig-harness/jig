@@ -2220,7 +2220,7 @@ describe("summary-findings parsing", () => {
     expect(r.unaddressed).toEqual([]);
   });
 
-  it("keeps abbreviated Beyond this PR renderings blocking", () => {
+  it("honors unambiguous abbreviated Beyond this PR renderings", () => {
     const entries = [
       {
         path: "AGENTS.md",
@@ -2248,6 +2248,38 @@ describe("summary-findings parsing", () => {
         "Held out of the inline threads so this PR can converge — **not blocking**.",
         "- `AGENTS.md` — 🟡 **medium** (correctness · adjacent) — The full reviewer comment…",
         "- `docs/README.md:12` — 🟢 **low** (maintainability · adjacent) — The full reviewer comment…",
+        "</details>",
+        `<!-- ai-review-backlog: ${blob} -->`,
+      ].join("\n"),
+      anchoredKeys: [],
+      addressedFingerprints: new Set(),
+    });
+    expect(r.ignoredBacklog.map((entry) => entry.fingerprint)).toEqual(
+      entries.map((entry) => entry.fingerprint),
+    );
+    expect(r.unaddressed).toEqual([]);
+  });
+
+  it("keeps an ambiguous abbreviated Beyond this PR rendering blocking", () => {
+    const entries = [
+      "The shared prefix, first finding.",
+      "The shared prefix, second finding.",
+    ].map((comment) => ({
+      path: "same.ts",
+      line: 8,
+      comment,
+      fingerprint: fingerprintOf("same.ts", 8, comment),
+    }));
+    const blob = Buffer.from(JSON.stringify(entries)).toString("base64");
+    const r = classify({
+      pr: 1,
+      stickyCommentId: 9,
+      stickyBody: [
+        "<details><summary>🗂️ <b>Beyond this PR</b> — 2 finding(s) for triage (not posted inline)</summary>",
+        "",
+        "Held out of the inline threads so this PR can converge — **not blocking**.",
+        "- `same.ts:8` — 🟡 **medium** — The shared prefix…",
+        "- `same.ts:8` — 🟡 **medium** — The shared prefix…",
         "</details>",
         `<!-- ai-review-backlog: ${blob} -->`,
       ].join("\n"),
