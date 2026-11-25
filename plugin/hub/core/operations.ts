@@ -135,3 +135,34 @@ export const trimExpired = operation<
   { table: string; column: string; before: number; limit: number },
   { deleted: number }
 >("trimExpired", "change");
+
+/** A scheduled job's next run, as the scheduling adapter keeps it. */
+export interface JobSchedule {
+  readonly job: string;
+  /** When the job is next due, epoch milliseconds. */
+  readonly nextRunAt: number;
+  /** Its cadence when it repeats; `null` for a run at one moment. */
+  readonly everyMs: number | null;
+  readonly updatedAt: number;
+}
+
+/**
+ * Keeps `job`'s next run, replacing what it had: due at `nextRunAt`, and
+ * every `everyMs` after it when that is set.
+ */
+export const saveJobSchedule = operation<
+  { job: string; nextRunAt: number; everyMs: number | null; now: number },
+  { saved: true }
+>("saveJobSchedule", "change");
+
+/** Every job's next run in the partition, by name. */
+export const readJobSchedules = operation<Record<string, never>, JobSchedule[]>(
+  "readJobSchedules",
+  "read",
+);
+
+/** Forgets `job`'s next run; `removed` says whether it had one. */
+export const removeJobSchedule = operation<
+  { job: string },
+  { removed: boolean }
+>("removeJobSchedule", "change");
