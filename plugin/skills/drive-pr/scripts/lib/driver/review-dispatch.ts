@@ -274,6 +274,14 @@ export async function dispatchReviewPass(
       `cannot record this pass against PR #${context.pr}'s head; stopping rather than driving unbounded`,
     );
   }
+  // The attempt write above is the last await before the spawn; a cap that
+  // ran out during it stops the drive here instead of starting an agent with
+  // a one-second deadline. The write landed, so the local pass counter is
+  // given back to stay in step with what ran.
+  if (context.circuit !== undefined && wallClockReached(context.circuit)) {
+    context.passes -= 1;
+    return await stopAtCeiling(context.circuit, "wall-clock", round, false);
+  }
   context.passIdentity = resolveAccountIdentity(context.agent);
   const session = prepared?.correlation.sessionId ?? null;
   // Recalculated immediately before the spawn: the preparation, the mailbox
