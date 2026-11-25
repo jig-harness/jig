@@ -7,10 +7,17 @@
  * It runs as the hub's user and refuses, writing nothing, when that user
  * is root, is not the user the settings name (`jig-hub` by default), or is
  * the dispatcher's user: one whose Jig home holds the dispatcher's machine
- * file or whose scheduler holds the dispatcher's job. Where podman or
+ * file or whose scheduler holds the dispatcher's job, or whose scheduler
+ * cannot be read to tell. Where podman or
  * docker is installed it builds the hub's image from the installed plugin
  * copy, and the job runs `jig hub serve` in it; elsewhere the job runs
- * `jig hub serve` directly.
+ * `jig hub serve` directly. Before the job, it makes the database
+ * directory and the feed socket's directory (`host-paths.ts`).
+ *
+ * `jig uninstall hub --machine` removes the job, then stops the running hub
+ * (`instance.ts`) and any container of the hub's name, and fails when the
+ * hub is still running. Without `--machine`, or with no job and no install
+ * record here, it removes nothing.
  */
 import {
   existsSync,
@@ -42,8 +49,10 @@ import {
   buildCommand,
   type ContainerRuntime,
   containerRuntime,
-  stopCommand,
+  removeContainer,
 } from "./container.ts";
+import { prepareHostPaths } from "./host-paths.ts";
+import { stopRunningHub } from "./instance.ts";
 import {
   checkPrivate,
   defaultSettingsPath,
@@ -83,25 +92,42 @@ export function hubJobSpec(): JobSpec {
 /** Who runs the install, and the probes it asks; injected by tests. */
 export interface InstallProbes {
   identity(): { uid: number; gid: number; user: string };
-  /** Why this user is the dispatcher's, or null when it is not. */
-  dispatcherHere(): Promise<string | null>;
+  /** Why this user is the dispatcher's, or null when it is not; `unreadable` when it cannot be told. */
+  dispatcherHere(): Promise<Outcome<string | null, "unreadable">>;
   runtime(): ContainerRuntime | null;
   /** Why the job would not stay up after logout, or null. */
   availability(): Promise<string | null>;
   platform: string;
 }
 
-/** Why this user is the dispatcher's: its machine file, or its scheduler's dispatcher job. */
-export async function dispatcherReason(): Promise<string | null> {
+/**
+ * Why this user is the dispatcher's: its machine file, or its scheduler's
+ * dispatcher job; `unreadable` when its scheduler cannot be read, which is
+ * never taken to mean it is not.
+ */
+export async function dispatcherReason(): Promise<
+  Outcome<string | null, "unreadable">
+> {
   const machine = machineConfigPath();
   if (existsSync(machine))
-    return `this user holds the dispatcher's machine file ${machine}`;
+    return ok(`this user holds the dispatcher's machine file ${machine}`);
   const scheduler = detectScheduler();
-  if (!scheduler.ok) return null;
+  if (!scheduler.ok)
+    return failed(
+      "unreadable",
+      `cannot tell whether this user's scheduler holds the dispatcher's job: ${scheduler.failure.reason}`,
+    );
   const snapshot = await snapshotScheduler(scheduler.value, dispatchJobSpec(5));
-  return snapshot.ok && jobPresent(snapshot.value)
-    ? "this user's scheduler holds the dispatcher's job"
-    : null;
+  if (!snapshot.ok)
+    return failed(
+      "unreadable",
+      `cannot tell whether this user's scheduler holds the dispatcher's job: ${snapshot.failure.reason}`,
+    );
+  return ok(
+    jobPresent(snapshot.value)
+      ? "this user's scheduler holds the dispatcher's job"
+      : null,
+  );
 }
 
 /** A systemd user manager stops at logout unless lingering is on. */
@@ -138,6 +164,8 @@ const systemProbes: InstallProbes = {
 export interface HubInstallRequest {
   readonly confirm: boolean;
   readonly remove: boolean;
+  /** For a removal: `--machine`, without which the hub's job stays. */
+  readonly machine?: boolean;
   /** The running `jig.ts`. */
   readonly script: string;
   readonly settingsPath?: string;
@@ -170,9 +198,13 @@ export async function refusal(
       `jig install hub runs as the hub's user, ${settings.value.user}, not ${who.user}`,
     );
   const dispatcher = await probes.dispatcherHere();
-  if (dispatcher !== null)
+  if (!dispatcher.ok)
     return refuse(
-      `${dispatcher}: the hub runs under an OS user of its own, never the dispatcher's`,
+      `${dispatcher.failure.reason}; the hub runs under an OS user of its own, never the dispatcher's`,
+    );
+  if (dispatcher.value !== null)
+    return refuse(
+      `${dispatcher.value}: the hub runs under an OS user of its own, never the dispatcher's`,
     );
   const exposed = checkPrivate(
     {
@@ -285,8 +317,17 @@ export async function installHub(
     return 1;
   }
   const settings = readHubSettings(refused.value.settings);
-  if (!settings.ok) return 1;
-  mkdirSync(settings.value.database, { recursive: true, mode: 0o700 });
+  if (!settings.ok) {
+    console.error(`jig install hub: ${settings.failure.reason}`);
+    return 1;
+  }
+  const prepared = prepareHostPaths(settings.value);
+  if (!prepared.ok) {
+    console.error(`jig install hub: ${prepared.failure.reason}`);
+    return 1;
+  }
+  for (const warning of prepared.value)
+    console.error(`jig install hub: ${warning}`);
   if (runtime !== null) {
     const built = await buildImage(runtime, dirname(request.script));
     if (!built.ok) {
@@ -311,14 +352,54 @@ export async function installHub(
   });
 }
 
+/** Whether this user has a hub to remove: its job, or its install record. */
+async function hubHere(spec: JobSpec): Promise<Outcome<boolean, string>> {
+  if (existsSync(installRecordPath())) return ok(true);
+  const scheduler = detectScheduler();
+  if (!scheduler.ok) return scheduler;
+  const snapshot = await snapshotScheduler(scheduler.value, spec);
+  return snapshot.ok ? ok(jobPresent(snapshot.value)) : snapshot;
+}
+
+/** Stops the running hub and any container of its name; why it could not, or null. */
+async function stopHub(probes: InstallProbes): Promise<string | null> {
+  const stopped = await stopRunningHub();
+  if (!stopped.ok) return stopped.failure.reason;
+  if (stopped.value !== null) console.log(`Stopped the hub: ${stopped.value}.`);
+  // Only a hub this user installed has a container to remove.
+  const runtime = existsSync(installRecordPath()) ? probes.runtime() : null;
+  if (runtime === null) return null;
+  const removed = await removeContainer(runtime);
+  if (!removed.ok) return removed.failure.reason;
+  if (removed.value) console.log("Removed the hub's container.");
+  return null;
+}
+
 async function uninstallHub(
   request: HubInstallRequest,
   probes: InstallProbes,
   spec: JobSpec,
 ): Promise<number> {
+  if (!request.machine) {
+    console.log(
+      "The hub's job is the machine's, not a repository's, so it stays: remove it with jig uninstall hub --machine.",
+    );
+    return 0;
+  }
+  const here = await hubHere(spec);
+  if (!here.ok) {
+    console.error(`jig uninstall hub: ${here.failure.reason}`);
+    return 1;
+  }
+  if (!here.value) {
+    console.log("No hub job or install record here: nothing to remove.");
+    return 0;
+  }
   console.log(jobPreview(spec, true));
   if (!request.confirm) {
-    console.log("Preview only; add --yes to apply. The database stays.");
+    console.log(
+      "Preview only; add --yes to apply. The running hub stops; the database stays.",
+    );
     return 0;
   }
   return exclusiveInstallLock(async () => {
@@ -327,9 +408,13 @@ async function uninstallHub(
       console.error(written.failure.reason);
       return 1;
     }
-    // Only a hub this user installed has a container to stop.
-    const runtime = existsSync(installRecordPath()) ? probes.runtime() : null;
-    if (runtime !== null) await run(stopCommand(runtime), { timeoutSec: 30 });
+    const unstopped = await stopHub(probes);
+    if (unstopped !== null) {
+      console.error(
+        `jig uninstall hub: removed ${written.value}, but the hub did not stop: ${unstopped}`,
+      );
+      return 1;
+    }
     rmSync(installRecordPath(), { force: true });
     console.log(`Removed: ${written.value}. The database stays.`);
     return 0;

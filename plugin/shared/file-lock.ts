@@ -16,8 +16,9 @@
  * leaves no empty lock. A caller that cannot take the lock within its wait
  * gets `null`.
  *
- * The lock is local to the machine. The Orca card lock (`orca-card-lock.ts`)
- * and the scheduled upgrade's claim (`runtime/scheduled-upgrade.ts`) take it.
+ * The lock is local to the machine. The Orca card lock (`orca-card-lock.ts`),
+ * the scheduled upgrade's claim (`runtime/scheduled-upgrade.ts`) and the
+ * resident hub's single instance (`hub/process/instance.ts`) take it.
  */
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -224,6 +225,15 @@ function publish(file: string, content: string): boolean {
 
 function tryTake(lock: string, content: string): boolean {
   return publish(lock, content);
+}
+
+/** The owner the lock for `key` records; `null` when no lock stands or it names none. */
+export function fileLockOwner(
+  key: string,
+  options: Pick<FileLockOptions, "root" | "name">,
+): ProcessIdentity | null {
+  const content = readLock(fileLockPath(key, options.root, options.name));
+  return content === null ? null : ownerOf(content);
 }
 
 /** Takes the lock for `key`, runs `body` and releases it; `null` when the lock was not taken in time. */

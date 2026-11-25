@@ -15,11 +15,24 @@ import {
 } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
-import { buildCommand, runCommand } from "../container.ts";
+import { failed, ok } from "../../../shared/outcome.ts";
+import {
+  buildCommand,
+  type ContainerRunner,
+  removeContainer,
+  runCommand,
+  stopContainer,
+} from "../container.ts";
 import { hubDoctorChecks } from "../doctor.ts";
-import { hubJobSpec, type InstallProbes, refusal } from "../install.ts";
+import { feedPathBlocks, prepareHostPaths } from "../host-paths.ts";
+import {
+  hubJobSpec,
+  type InstallProbes,
+  installHub,
+  refusal,
+} from "../install.ts";
 import { parseHubSettings } from "../settings.ts";
-import { lstatSync } from "node:fs";
+import { lstatSync, statSync } from "node:fs";
 
 const scratch = mkdtempSync(join(tmpdir(), "hub-install-"));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -54,6 +67,7 @@ test("/v1/ and the webhook listener take loopback and private-network addresses 
   for (const address of [
     "0.0.0.0:7461",
     "[::]:7461",
+    "[fe80::1]:7461",
     "8.8.8.8:7461",
     "localhost:7461",
     "127.0.0.1",
@@ -83,7 +97,7 @@ test("the settings default to the hub's user and refuse an unknown setting or a 
 
 const probes = (over: Partial<InstallProbes> = {}): InstallProbes => ({
   identity: () => ({ uid: me.uid, gid: me.gid, user: me.username }),
-  dispatcherHere: async () => null,
+  dispatcherHere: async () => ok(null),
   runtime: () => null,
   availability: async () => null,
   platform: "linux",
@@ -107,9 +121,16 @@ test("jig install hub refuses root, another user and the dispatcher's user, and 
   expect(
     await refused({
       dispatcherHere: async () =>
-        "this user holds the dispatcher's machine file",
+        ok("this user holds the dispatcher's machine file"),
     }),
   ).toContain("never the dispatcher's");
+  // A scheduler that cannot be read refuses the install rather than pass it.
+  expect(
+    await refused({
+      dispatcherHere: async () =>
+        failed("unreadable", "cannot tell: crontab -l failed"),
+    }),
+  ).toContain("cannot tell: crontab -l failed");
   expect(await refused({})).toBeNull();
   const job = hubJobSpec();
   expect(job.args).toEqual(["hub", "serve", "--scheduled"]);
@@ -155,7 +176,15 @@ test("jig doctor hub fails a settings file or database directory another user ca
   chmodSync(database, 0o700);
   expect(
     statusOf(
-      await doctor(file, { dispatcherHere: async () => "dispatcher" }),
+      await doctor(file, { dispatcherHere: async () => ok("dispatcher") }),
+      "hub:user",
+    ),
+  ).toBe("fail");
+  expect(
+    statusOf(
+      await doctor(file, {
+        dispatcherHere: async () => failed("unreadable", "no scheduler"),
+      }),
       "hub:user",
     ),
   ).toBe("fail");
@@ -200,8 +229,134 @@ test("the image is built from the plugin copy and run with its settings mounted 
     "--settings",
     "/run/jig-hub/settings.yaml",
   ]);
+  expect(podman).not.toContain("--replace");
+  expect(podman).toContain("/run/jig-hub/feed:/run/jig-hub/feed:rw");
   const docker = runCommand("docker", parsed.value, "1.2.3", identity);
   expect(docker).not.toContain("--replace");
   expect(docker).not.toContain("--userns=keep-id");
   expect(docker).toContain("1001:1001");
+});
+
+test("the default feed socket sits outside the hub's own directory", () => {
+  const defaults = parseHubSettings("", "/hub/settings.yaml", {
+    JIG_HOME: "/home/jig-hub/.jig",
+  });
+  expect(defaults.ok && defaults.value.feed).toEqual({
+    socket: "/home/jig-hub/.jig/hub-feed/feed.sock",
+    group: null,
+  });
+});
+
+test("the host side makes the feed socket's directory the hub user's alone, or 0710 and the front's group", () => {
+  const root = join(scratch, "paths");
+  mkdirSync(root, { mode: 0o711 });
+  const database = join(root, "data");
+  const alone = prepareHostPaths({
+    database,
+    feed: { socket: join(root, "alone", "feed.sock"), group: null },
+  });
+  expect(alone).toEqual({ ok: true, value: [] });
+  expect(statSync(database).mode & 0o777).toBe(0o700);
+  expect(statSync(join(root, "alone")).mode & 0o777).toBe(0o700);
+  // The front's group is resolved on the host; here, this user's own primary group.
+  const shared = prepareHostPaths(
+    {
+      database,
+      feed: { socket: join(root, "front", "feed.sock"), group: "front" },
+    },
+    () => ok(me.gid),
+  );
+  expect(shared.ok).toBe(true);
+  const front = statSync(join(root, "front"));
+  expect(front.mode & 0o777).toBe(0o710);
+  expect(front.gid).toBe(me.gid);
+  const unknown = prepareHostPaths(
+    {
+      database,
+      feed: { socket: join(root, "x", "feed.sock"), group: "nobody-here" },
+    },
+    () => failed("unavailable", "no group named nobody-here in /etc/group"),
+  );
+  expect(unknown.ok ? null : unknown.failure.reason).toContain("nobody-here");
+});
+
+test("a directory above the socket's that the front's group cannot pass is named", () => {
+  const root = join(scratch, "closed");
+  mkdirSync(join(root, "feed"), { recursive: true, mode: 0o700 });
+  chmodSync(root, 0o700);
+  const socket = join(root, "feed", "feed.sock");
+  const blocks = feedPathBlocks(socket, me.gid + 100_000);
+  expect(blocks[0]).toBe(`${root} (mode 0700)`);
+  chmodSync(root, 0o711);
+  expect(feedPathBlocks(socket, me.gid + 100_000)).not.toContain(
+    `${root} (mode 0711)`,
+  );
+});
+
+test("a container stop or removal that fails says so; a missing container is no failure", async () => {
+  const answer =
+    (code: number, stderr = ""): ContainerRunner =>
+    async () => ({ code, stderr });
+  expect(await stopContainer("podman", answer(0))).toEqual(ok(true));
+  expect(
+    await stopContainer(
+      "podman",
+      answer(125, 'Error: no container with name or ID "jig-hub" found'),
+    ),
+  ).toEqual(ok(false));
+  const refused = await stopContainer(
+    "docker",
+    answer(1, "permission denied while trying to connect to the Docker daemon"),
+  );
+  expect(refused.ok ? null : refused.failure.reason).toContain(
+    "permission denied",
+  );
+  expect(
+    await removeContainer(
+      "docker",
+      answer(1, "Error: No such container: jig-hub"),
+    ),
+  ).toEqual(ok(false));
+  const calls: string[][] = [];
+  const removed = await removeContainer("podman", async (command) => {
+    calls.push(command);
+    return command[1] === "rm"
+      ? { code: 2, stderr: "cannot remove" }
+      : { code: 0, stderr: "" };
+  });
+  expect(calls.map((command) => command[1])).toEqual(["container", "rm"]);
+  expect(removed.ok ? null : removed.failure.reason).toContain("cannot remove");
+});
+
+test("jig uninstall hub without --machine leaves the hub's job, saying how to remove it", async () => {
+  const lines: string[] = [];
+  const log = console.log;
+  console.log = (line: string) => lines.push(line);
+  try {
+    const code = await installHub(
+      {
+        confirm: true,
+        remove: true,
+        machine: false,
+        script: "/nowhere/jig.ts",
+      },
+      probes(),
+    );
+    expect(code).toBe(0);
+  } finally {
+    console.log = log;
+  }
+  expect(lines.join("\n")).toContain("jig uninstall hub --machine");
+});
+
+test("jig doctor hub checks the feed socket's directory", async () => {
+  const { file } = settingsFile(
+    `feed:\n  socket: ${join(scratch, "doctor-feed", "feed.sock")}\n`,
+  );
+  expect(statusOf(await doctor(file), "hub:feed")).toBe("warn");
+  mkdirSync(join(scratch, "doctor-feed"), { mode: 0o700 });
+  chmodSync(join(scratch, "doctor-feed"), 0o700);
+  expect(statusOf(await doctor(file), "hub:feed")).toBe("pass");
+  chmodSync(join(scratch, "doctor-feed"), 0o755);
+  expect(statusOf(await doctor(file), "hub:feed")).toBe("fail");
 });

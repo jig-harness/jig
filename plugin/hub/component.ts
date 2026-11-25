@@ -6,7 +6,8 @@
  *
  * Its opt-in is the hub's settings file and an install run as the hub's
  * own OS user, so a bare `jig install` or `jig run` never includes it;
- * `jig install hub` names it. `jig hub` alone prints its help. The host
+ * `jig install hub` names it; its job is the machine's, so only
+ * `jig uninstall --machine` removes it. `jig hub` alone prints its help. The host
  * protocol's verbs join `hubCommand`'s `or(…)` as they are built.
  *
  * The command lives outside `core/`: it uses the command-line library,
@@ -93,6 +94,7 @@ export const hubComponent: Component<HubArguments> = {
     installHub({
       confirm: request.confirm,
       remove: true,
+      machine: request.machine,
       script: request.script,
     }),
   status: () => scheduledStatus("hub", hubJobSpec(), null),

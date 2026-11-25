@@ -4,10 +4,10 @@
  * them until the serving context's signal aborts. `/v1/` binds each of its
  * loopback and private-network addresses, never every interface; the
  * webhook listener binds its own address; the feed binds its Unix socket,
- * or loopback with the front's secret.
+ * in the directory the host side made for it (`host-paths.ts`), or loopback
+ * with the front's secret.
  */
-import { readFileSync } from "node:fs";
-import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { ok, type Outcome } from "../../shared/outcome.ts";
 import type { HubPorts } from "../core/ports.ts";
 import type { ServingPort } from "../core/serving.ts";
 import {
@@ -16,21 +16,6 @@ import {
   startListener,
 } from "./listeners.ts";
 import type { HubSettings } from "./settings.ts";
-
-/** The group id of `name`, from the group database. */
-function groupId(
-  name: string,
-  readGroups: () => string = () => readFileSync("/etc/group", "utf8"),
-): Outcome<number, "unavailable"> {
-  const text = attempt("unavailable", "cannot read /etc/group", readGroups);
-  if (!text.ok) return text;
-  for (const line of text.value.split("\n")) {
-    const [group, , id] = line.split(":");
-    if (group === name && id !== undefined && /^\d+$/.test(id))
-      return ok(Number(id));
-  }
-  return failed("unavailable", `no group named ${name} in /etc/group`);
-}
 
 /** The listeners the settings name, without their handlers yet. */
 function listenerBinds(
@@ -47,11 +32,12 @@ function listenerBinds(
     bind: { hostname: settings.webhooks.host, port: settings.webhooks.port },
   });
   const { feed } = settings;
-  if ("socket" in feed) {
-    const gid = feed.group === null ? ok(null) : groupId(feed.group);
-    if (!gid.ok) return gid;
-    specs.push({ name: "feed", bind: { unix: feed.socket, gid: gid.value } });
-  } else
+  if ("socket" in feed)
+    specs.push({
+      name: "feed",
+      bind: { unix: feed.socket, open: feed.group !== null },
+    });
+  else
     specs.push({
       name: "feed",
       bind: { hostname: feed.listen.host, port: feed.listen.port },

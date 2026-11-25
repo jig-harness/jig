@@ -5,9 +5,13 @@
  * settings, so a bare `jig doctor` passes where no hub is set up. Later
  * steps add their own checks beside these.
  */
-import { existsSync } from "node:fs";
+import { lstatSync } from "node:fs";
+import { dirname } from "node:path";
 import type { DoctorCheck } from "../../runtime/component.ts";
+import { errnoCode } from "../../shared/errors.ts";
+import { attempt, type Outcome } from "../../shared/outcome.ts";
 import { containerRuntime, type ContainerRuntime } from "./container.ts";
+import { feedDirectoryMode, feedPathBlocks, groupId } from "./host-paths.ts";
 import { readServeRecord } from "./serve.ts";
 import {
   defaultSettingsPath,
@@ -19,14 +23,13 @@ import {
   readHubSettings,
   type StatReader,
 } from "./settings.ts";
-import { lstatSync } from "node:fs";
 
 export interface DoctorProbes {
   readonly identity: Identity;
   readonly settingsPath: string;
   readonly stat: StatReader;
-  /** Why this user is the dispatcher's, or null. */
-  dispatcherHere(): Promise<string | null>;
+  /** Why this user is the dispatcher's, or null; `unreadable` when it cannot be told. */
+  dispatcherHere(): Promise<Outcome<string | null, "unreadable">>;
   runtime(): ContainerRuntime | null;
 }
 
@@ -45,9 +48,14 @@ function modeCheck(
   allowed: number,
   probes: DoctorProbes,
 ): DoctorCheck {
-  if (!existsSync(path)) return check(id, "skip", `no ${what} ${path} yet`);
-  const stats = probes.stat(path);
-  const exposed = exposure(stats, probes.identity, allowed);
+  const stats = attempt("unreadable", `cannot read ${what} ${path}`, () =>
+    probes.stat(path),
+  );
+  if (!stats.ok)
+    return errnoCode(stats.failure.cause) === "ENOENT"
+      ? check(id, "skip", `no ${what} ${path} yet`)
+      : check(id, "fail", stats.failure.reason);
+  const exposed = exposure(stats.value, probes.identity, allowed);
   return exposed === null
     ? check(id, "pass", `${what} ${path} is the hub user's alone`)
     : check(
@@ -90,11 +98,76 @@ function interfacesCheck(settings: HubSettings): DoctorCheck {
   );
 }
 
+/** The feed socket's directory: the hub user's, mode 0700, or 0710 and the front's group, which can reach it. */
+function feedCheck(settings: HubSettings, probes: DoctorProbes): DoctorCheck {
+  const id = "hub:feed";
+  const { feed } = settings;
+  if (!("socket" in feed))
+    return check(
+      id,
+      "pass",
+      `the feed listens on ${feed.listen.host}:${feed.listen.port} with the front's secret`,
+    );
+  const directory = dirname(feed.socket);
+  const reinstall = "run jig install hub --yes again, which makes it";
+  const stats = attempt("unreadable", `cannot read ${directory}`, () =>
+    probes.stat(directory),
+  );
+  if (!stats.ok)
+    return check(
+      id,
+      "warn",
+      errnoCode(stats.failure.cause) === "ENOENT"
+        ? `no feed socket directory ${directory} yet`
+        : stats.failure.reason,
+      reinstall,
+    );
+  const mode = stats.value.mode & 0o777;
+  const wanted = feedDirectoryMode(feed.group);
+  const gid = feed.group === null ? null : groupId(feed.group);
+  if (gid !== null && !gid.ok)
+    return check(
+      id,
+      "fail",
+      gid.failure.reason,
+      "create the front's group, or remove feed.group",
+    );
+  const wrong =
+    stats.value.uid !== probes.identity.uid ||
+    mode !== wanted ||
+    (gid?.ok === true && stats.value.gid !== gid.value);
+  if (wrong)
+    return check(
+      id,
+      "fail",
+      `the feed socket directory ${directory} is not the hub user's with mode ${wanted.toString(8).padStart(4, "0")}${feed.group === null ? "" : ` and the group ${feed.group}`}`,
+      reinstall,
+    );
+  const blocks = gid?.ok ? feedPathBlocks(feed.socket, gid.value) : [];
+  return blocks.length === 0
+    ? check(
+        id,
+        "pass",
+        feed.group === null
+          ? `the feed socket ${feed.socket} is the hub user's alone`
+          : `the front's group ${feed.group} reaches the feed socket ${feed.socket}`,
+      )
+    : check(
+        id,
+        "warn",
+        `the front's group ${feed.group} cannot pass ${blocks.join(", ")} on the way to the feed socket`,
+        "give each the others' search permission (chmod o+x), or set feed.socket under a directory it can pass",
+      );
+}
+
 /** Every check of `jig doctor hub`. */
 export async function hubDoctorChecks(
   probes: DoctorProbes,
 ): Promise<DoctorCheck[]> {
-  if (!existsSync(probes.settingsPath))
+  const present = attempt("unreadable", "", () =>
+    probes.stat(probes.settingsPath),
+  );
+  if (!present.ok && errnoCode(present.failure.cause) === "ENOENT")
     return [
       check(
         "hub:settings",
@@ -119,7 +192,9 @@ export async function hubDoctorChecks(
       ? "the hub runs as root"
       : probes.identity.user !== settings.user
         ? `this is ${probes.identity.user}, not the hub's user ${settings.user}`
-        : dispatcher;
+        : dispatcher.ok
+          ? dispatcher.value
+          : dispatcher.failure.reason;
   const runtime = probes.runtime();
   return [
     userProblem === null
@@ -145,6 +220,7 @@ export async function hubDoctorChecks(
       probes,
     ),
     interfacesCheck(settings),
+    feedCheck(settings, probes),
     runtime === null
       ? check(
           "hub:container",
@@ -159,7 +235,7 @@ export async function hubDoctorChecks(
 /** The probes on this machine. */
 export function systemDoctorProbes(
   identity: Identity,
-  dispatcherHere: () => Promise<string | null>,
+  dispatcherHere: DoctorProbes["dispatcherHere"],
 ): DoctorProbes {
   return {
     identity,

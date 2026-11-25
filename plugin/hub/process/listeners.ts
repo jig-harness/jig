@@ -8,14 +8,16 @@
  * unit, a job's run, goes to the worker thread (`scheduling.ts`), so a
  * webhook's acknowledgement never waits behind one. The webhook listener
  * refuses a body over 25 MiB, GitHub's own cap on a payload. A feed on a
- * Unix socket is created mode 0600 and opened to the front's group (0660)
- * when the settings name one; a feed on loopback answers 401 to a request
- * that does not carry the front's secret.
+ * Unix socket is created mode 0600, or 0666 when the settings name the
+ * front's group: then the socket's directory, which the host side gives
+ * that group and mode 0710 (`host-paths.ts`), decides who reaches it. A
+ * feed on loopback answers 401 to a request that does not carry the
+ * front's secret.
  */
 import { createHash, timingSafeEqual } from "node:crypto";
-import { chmodSync, chownSync, lstatSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
-import { attempt, ok, type Outcome } from "../../shared/outcome.ts";
+import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import type { HubPorts } from "../core/ports.ts";
 import { codedResponse, type ListenerName } from "../core/routes.ts";
 import type {
@@ -39,8 +41,8 @@ export type Bind =
   | { readonly hostname: string; readonly port: number }
   | {
       readonly unix: string;
-      /** The group the socket opens to (mode 0660); null keeps it 0600. */
-      readonly gid: number | null;
+      /** Whether its directory guards the socket (mode 0666); else the socket is 0600. */
+      readonly open: boolean;
     };
 
 export interface ListenerSpec {
@@ -149,28 +151,39 @@ function clearStaleSocket(path: string): void {
   if (found.ok && found.value.isSocket()) rmSync(path, { force: true });
 }
 
-/** Binds a Unix socket created 0600, then opened to the front's group. */
+/** Binds a Unix socket created 0600, or 0666 for its directory to guard; stops it again when its mode cannot be set. */
 function serveSocket(
   bind: Extract<Bind, { unix: string }>,
   fetch: (request: Request) => Promise<Response>,
-): ReturnType<typeof Bun.serve> {
-  mkdirSync(dirname(bind.unix), { recursive: true, mode: 0o750 });
+): Outcome<ReturnType<typeof Bun.serve>, "unavailable"> {
+  const where = `the feed socket ${bind.unix}`;
+  const made = attempt(
+    "unavailable",
+    `cannot make the directory of ${where}`,
+    () => mkdirSync(dirname(bind.unix), { recursive: true, mode: 0o700 }),
+  );
+  if (!made.ok) return made;
   clearStaleSocket(bind.unix);
   const before = process.umask(0o177);
-  try {
-    const server = Bun.serve({
+  const started = attempt("unavailable", `cannot bind ${where}`, () =>
+    Bun.serve({
       unix: bind.unix,
       fetch,
       maxRequestBodySize: REQUEST_BODY_LIMIT,
-    });
-    if (bind.gid !== null) {
-      chownSync(bind.unix, -1, bind.gid);
-      chmodSync(bind.unix, 0o660);
-    } else chmodSync(bind.unix, 0o600);
-    return server;
-  } finally {
-    process.umask(before);
-  }
+    }),
+  );
+  process.umask(before);
+  if (!started.ok) return started;
+  const mode = bind.open ? 0o666 : 0o600;
+  const moded = attempt(
+    "unavailable",
+    `cannot set ${where} to mode ${mode.toString(8).padStart(4, "0")}`,
+    () => chmodSync(bind.unix, mode),
+  );
+  if (moded.ok) return ok(started.value);
+  void started.value.stop(true);
+  rmSync(bind.unix, { force: true });
+  return failed(moded.failure.code, moded.failure.reason);
 }
 
 /** Starts one listener; `unavailable` when it cannot bind. */
@@ -182,21 +195,30 @@ export function startListener(
   const fetch = fetchHandler(ports, spec, stop);
   const { bind } = spec;
   const where = "unix" in bind ? bind.unix : `${bind.hostname}:${bind.port}`;
-  const started = attempt(
-    "unavailable",
-    `the ${spec.name} listener cannot bind ${where}`,
-    () =>
+  const started =
+    "unix" in bind
+      ? serveSocket(bind, fetch)
+      : attempt(
+          "unavailable",
+          `the ${spec.name} listener cannot bind ${where}`,
+          () =>
+            Bun.serve({
+              hostname: bind.hostname,
+              port: bind.port,
+              fetch,
+              maxRequestBodySize:
+                spec.name === "webhook"
+                  ? WEBHOOK_BODY_LIMIT
+                  : REQUEST_BODY_LIMIT,
+            }),
+        );
+  if (!started.ok)
+    return failed(
+      "unavailable",
       "unix" in bind
-        ? serveSocket(bind, fetch)
-        : Bun.serve({
-            hostname: bind.hostname,
-            port: bind.port,
-            fetch,
-            maxRequestBodySize:
-              spec.name === "webhook" ? WEBHOOK_BODY_LIMIT : REQUEST_BODY_LIMIT,
-          }),
-  );
-  if (!started.ok) return started;
+        ? `the ${spec.name} listener: ${started.failure.reason}`
+        : started.failure.reason,
+    );
   const server = started.value;
   const host = bind && "hostname" in bind ? bind.hostname : "";
   const address =

@@ -139,6 +139,16 @@ test("the listeners bind the settings' loopback addresses, recorded in serve.jso
   expect(answer.status).toBe(404);
 });
 
+test("a feed opened to the front's group leaves the socket to its directory to guard, and never looks the group up", async () => {
+  // No such group exists: the hub never resolves it; the host side does, for the directory.
+  const settings = settingsIn(`${SOCKET_FEED}\n  group: no-such-group-here`);
+  await start(settings);
+  const socket = join(settings.database, "..", "feed", "feed.sock");
+  expect(statSync(socket).mode & 0o777).toBe(0o666);
+  const answer = await fetch("http://hub/anything", { unix: socket });
+  expect(answer.status).toBe(404);
+});
+
 test("a feed on loopback answers 401 without the front's secret", async () => {
   const secret = "s".repeat(40);
   const hub = await start(

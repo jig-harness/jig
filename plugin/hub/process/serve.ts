@@ -179,9 +179,14 @@ export async function startHub(
     await shutdown();
     return failed("unavailable", started.failure.reason);
   }
+  // The listeners stop when the caller's signal aborts, or when the start fails after they are up.
+  const halt = new AbortController();
+  const forward = () => halt.abort(options.stop.reason);
+  if (options.stop.aborted) forward();
+  else options.stop.addEventListener("abort", forward, { once: true });
   const serving: UnitContext = {
     unit: "hub:serve",
-    signal: options.stop,
+    signal: halt.signal,
     deadlineAt: Number.MAX_SAFE_INTEGER,
   };
   const served = ports.serving.serve(
@@ -206,13 +211,22 @@ export async function startHub(
     startedAt: currentIso(),
     listeners: listeners.map(({ name, address }) => ({ name, address })),
   };
-  writeFileSync(
-    join(settings.database, SERVE_RECORD),
-    JSON.stringify(record, null, 2),
-    {
-      mode: 0o600,
-    },
+  const recordPath = join(settings.database, SERVE_RECORD);
+  const recorded = attempt(
+    "unavailable",
+    `cannot record what the hub bound in ${recordPath}`,
+    () =>
+      writeFileSync(recordPath, JSON.stringify(record, null, 2), {
+        mode: 0o600,
+      }),
   );
+  if (!recorded.ok) {
+    options.stop.removeEventListener("abort", forward);
+    halt.abort("the hub could not record what it bound");
+    await served;
+    await shutdown();
+    return recorded;
+  }
   return ok({
     listeners,
     scheduling,

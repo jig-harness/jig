@@ -17,15 +17,19 @@
  * webhooks:
  *   listen: 127.0.0.1:7462            # where the tunnel forwards /webhooks/
  * feed:
- *   socket: ~/.jig/hub/feed/feed.sock # or listen: 127.0.0.1:7463 with secret
+ *   socket: ~/.jig/hub-feed/feed.sock # or listen: 127.0.0.1:7463 with secret
  *   group: jig-front
  * ```
  *
  * `/v1/` and the webhook listener take loopback or private-network
  * addresses only (`127/8`, `10/8`, `172.16/12`, `192.168/16`, the shared
  * `100.64/10` a private overlay hands out, `::1`, `fc00::/7`), never every
- * interface (`0.0.0.0`, `::`) or a public address. A feed on a port takes
- * loopback only, with the secret the front adds to every request.
+ * interface (`0.0.0.0`, `::`), a link-local address (`fe80::/10`, which
+ * names no private network, only the link) or a public address. A feed on
+ * a port takes loopback only, with the secret the front adds to every
+ * request. The feed's default socket sits outside the hub's own directory,
+ * which stays the hub user's alone, so the front's group can be let
+ * through to it (`host-paths.ts`).
  */
 import { lstatSync, readFileSync, type Stats } from "node:fs";
 import { homedir } from "node:os";
@@ -74,6 +78,13 @@ const MIN_SECRET_LENGTH = 32;
 /** The hub's own directory under the Jig home: `~/.jig/hub`. */
 export function hubHome(env: Record<string, string | undefined> = process.env) {
   return join(jigHome(env), "hub");
+}
+
+/** The feed's socket when the settings name none: beside the hub's own directory, not in it. */
+export function defaultFeedSocket(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  return join(jigHome(env), "hub-feed", "feed.sock");
 }
 
 /** The settings file when `--settings` names none. */
@@ -127,9 +138,10 @@ export function parseAddress(
   return ok({ host, port });
 }
 
-/** Whether `/v1/` and the webhook listener may bind `address`: loopback or a private network, never every interface. */
+/** Whether `/v1/` and the webhook listener may bind `address`: loopback or a private network, never every interface or a link-local address. */
 export function privateAddress(address: ListenAddress): boolean {
-  return isPrivateAddress(address.host);
+  const linkLocal = isIP(address.host) === 6 && /^fe[89ab]/i.test(address.host);
+  return !linkLocal && isPrivateAddress(address.host);
 }
 
 /** An address a listener may bind, or why not. */
@@ -250,7 +262,7 @@ function socketFeed(
   if (group !== null && !isName(group))
     return invalid(file, "feed.group must be a group's name");
   const path = pathValue(
-    feed.socket ?? join(hubHome(env), "feed", "feed.sock"),
+    feed.socket ?? defaultFeedSocket(env),
     "feed.socket",
     file,
   );
@@ -338,7 +350,7 @@ export function exposure(
 /** Reads a file's mode and owner without following a link. */
 export type StatReader = (
   path: string,
-) => Pick<Stats, "mode" | "uid" | "isDirectory">;
+) => Pick<Stats, "mode" | "uid" | "gid" | "isDirectory">;
 
 const lstat: StatReader = (path) => lstatSync(path);
 
