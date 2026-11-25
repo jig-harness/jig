@@ -1048,8 +1048,8 @@ only way out on `runtime: process`, which has no notices workspace: a
 subscribes to, a Slack or Discord channel), whose address the file names
 by the environment variable that holds it, never by the address. A
 channel added to a host that already has standing needs starts from them: it
-records them as known without sending them, so a need that appears
-afterwards reaches it, as does one that still stands once
+records them as known without sending them, so a need that appears on a
+repository after that repository's start reaches it, as does one that still stands once
 `dispatch.renotify_after` has passed, except a lasting cause and with
 `renotify_after` at `0s` (see [`notify.channels[]`](CONFIGURATION.md#the-machines-dispatch-file)). A
 message that

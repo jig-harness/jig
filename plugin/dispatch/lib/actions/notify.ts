@@ -140,6 +140,9 @@ function hours(ms: number): string {
 /** The repository whose suppression record a repeat moves: a host failure's record stays where it was first told. */
 const repeatedAt = new WeakMap<Cause, string>();
 
+/** Repeats whose earlier record was a silent start, never a delivery. */
+const silentRepeats = new WeakSet<Cause>();
+
 /** A cause sent again: its message says it still waits, and since when. */
 function asRepeat(
   cause: Cause,
@@ -158,6 +161,7 @@ function asRepeat(
     notice: { ...cause.notice, text: [head, again, ...rest].join("\n") },
   };
   repeatedAt.set(repeated, record.repo);
+  if (record.workspace === SILENT_START) silentRepeats.add(repeated);
   return repeated;
 }
 
@@ -677,7 +681,8 @@ function startFrom(
     (scope.report.board?.pending ?? []).length === 0;
   for (const c of due) {
     // A repeat refers to a real delivery, possibly at another repository: it stays due, never rewritten as silent.
-    if (repeatedAt.has(c)) {
+    // A repeat of a silent record from an earlier incomplete start was never delivered: it is recorded silent again, so an outage does not release the backlog.
+    if (repeatedAt.has(c) && !silentRepeats.has(c)) {
       repeats.push(c);
       continue;
     }

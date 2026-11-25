@@ -55,6 +55,7 @@ export function namedChannels(
       report.unplaced.push({
         target: "a notification channel",
         record: "runtime",
+        channelFault: true,
         reason: `${fault}, so nothing was sent through it`,
       });
   }
