@@ -262,6 +262,9 @@ describe("resolving a credential reference", () => {
     expect(maskCredentials(`pre\n  ${trimmed}  \npost`, "[masked]")).toBe(
       "pre\n[masked]\npost",
     );
+    expect(maskCredentials(`diagnostic ${stderrOnly}`, "[masked]")).toBe(
+      "diagnostic [masked]",
+    );
 
     const collision = "marker-collision-secret-1234";
     const refused = await resolveCredential(

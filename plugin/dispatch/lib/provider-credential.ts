@@ -20,7 +20,8 @@
  *
  * The value stays in the resolving process's memory, remembered so every
  * mask there replaces it (`shared/credentials.ts`); no reason, wall or need
- * carries it, and the command's error output is never quoted in a reason.
+ * carries it, and the command's error output is remembered for masking but
+ * never quoted in a reason.
  */
 import { isMaskable, rememberSecret } from "../../shared/credentials.ts";
 import { swallow } from "../../shared/errors.ts";
@@ -67,6 +68,12 @@ function learnPrinted(stdout: string): void {
         rememberSecret(fragment);
     }
   }
+}
+
+/** Remember captured output without exposing it in a recorded failure reason. */
+function learnCommandOutput(stdout: string, stderrTail: string): void {
+  learnPrinted(stdout);
+  learnPrinted(stderrTail);
 }
 
 function escapeRegExp(value: string): string {
@@ -130,35 +137,38 @@ export async function resolveCredential(
   const done = await run([...command, reference], {
     timeoutSec,
     env,
-    // Error output is discarded and never counts toward the bound, so the bound is the longest value plus a line ending and one byte. A value over the longest is refused below by its own length.
-    stderr: "ignore",
-    maxBufferBytes: LONGEST_VALUE + 3,
+    // Keep only the bounded failure tail to teach the process what to mask;
+    // error output never appears in the outcome reason.
+    stderr: "pipe",
     reapGroup: true,
   });
   if (done.bufferExceeded) {
     // Only the bounded head is kept: the overflow chunk is never retained.
-    learnPrinted(done.stdout.slice(0, LONGEST_VALUE + 3));
+    learnCommandOutput(
+      done.stdout.slice(0, LONGEST_VALUE + 3),
+      done.stderrTail,
+    );
     return failed(
       "unauthorized",
       "the credential command printed a value over 4 KiB",
     );
   }
   if (done.timedOut) {
-    learnPrinted(done.stdout);
+    learnCommandOutput(done.stdout, done.stderrTail);
     return failed(
       "unreachable",
       `the credential command did not answer within ${timeoutSec}s; a later tick tries again`,
     );
   }
   if (done.code !== 0) {
-    learnPrinted(done.stdout);
+    learnCommandOutput(done.stdout, done.stderrTail);
     return failed(
       "unauthorized",
       `the credential command ${done.spawnFailed === true ? "could not start" : `exited ${done.code}`}; its error output is not recorded`,
     );
   }
   if (done.groupSurvived === true) {
-    learnPrinted(done.stdout);
+    learnCommandOutput(done.stdout, done.stderrTail);
     return failed(
       "unauthorized",
       "the credential command left a background process running; it was stopped, and its value is not used",
@@ -166,7 +176,7 @@ export async function resolveCredential(
   }
   // Learn captured output before refusing marker-shaped values too: a failed
   // value can contain a marker beside opaque material that must stay masked.
-  learnPrinted(done.stdout);
+  learnCommandOutput(done.stdout, done.stderrTail);
   const value = done.stdout.replace(/\r?\n$/, "");
   if (value === "")
     return failed("unauthorized", "the credential command printed no value");
