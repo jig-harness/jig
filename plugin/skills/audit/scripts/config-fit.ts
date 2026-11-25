@@ -2294,11 +2294,24 @@ const SECTIONS: [Finding["severity"], string][] = [
  */
 function factText(value: string): string {
   const shown = formatDisplayValue(value);
-  // A value with edge whitespace or a leading quote is quoted too, so it
+  if (shown !== value) return shown;
+  // A value with edge whitespace (a no-break or zero-width space included) or
+  // a leading quote is quoted, its edge whitespace escaped visibly, so it
   // cannot read like its trimmed or already-quoted twin.
-  return shown === value && /^\s|\s$|^"/.test(value)
-    ? JSON.stringify(value)
-    : shown;
+  const blank = /[\s\uFEFF]/;
+  let start = 0;
+  let end = value.length;
+  while (start < end && blank.test(value[start]!)) start++;
+  while (end > start && blank.test(value[end - 1]!)) end--;
+  if (start === 0 && end === value.length && !value.startsWith('"'))
+    return value;
+  const esc = (c: string) =>
+    `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`;
+  const edged =
+    [...value.slice(0, start)].map(esc).join("") +
+    value.slice(start, end) +
+    [...value.slice(end)].map(esc).join("");
+  return `"${edged.replaceAll('"', '\\"')}"`;
 }
 
 export function render(report: FitReport): string {
