@@ -25,6 +25,7 @@ import {
   recordFailure,
 } from "../lib/failures.ts";
 import {
+  markChannelStarted,
   ORCA_CARD,
   readSuppressions,
   recordKey,
@@ -153,6 +154,9 @@ async function tick(
 ): Promise<RepoReport> {
   const report = parkedReport(h.repo);
   report.actions.push(...extra);
+  // The channels have already begun sending on this repository; one that has not starts from what stands (notify-channel-start.test.ts).
+  for (const c of Array.isArray(channel) ? channel : [channel])
+    markChannelStarted(c.name, h.repo.slug, "2026-01-01T00:00:00.000Z", h.root);
   await applyNotices(
     h.state,
     h.repo,
@@ -180,7 +184,9 @@ async function tick(
 
 function rows(root: string) {
   return stateDb(root)
-    .query("SELECT channel, key, at FROM notices ORDER BY channel")
+    .query(
+      "SELECT channel, key, at FROM notices WHERE repo <> '' ORDER BY channel",
+    )
     .all() as Array<{ channel: string; key: string; at: string }>;
 }
 
@@ -290,9 +296,9 @@ describe("the `channel` column", () => {
     closeDatabase(path);
 
     const db = stateDb(root);
-    expect(db.query("SELECT channel, key FROM notices").all()).toEqual([
-      { channel: ORCA_CARD, key: KEY },
-    ]);
+    expect(
+      db.query("SELECT channel, key FROM notices WHERE repo <> ''").all(),
+    ).toEqual([{ channel: ORCA_CARD, key: KEY }]);
     expect(readSuppressions(ORCA_CARD, SLUG, root).get(KEY)).toMatchObject({
       key: KEY,
       workspace: "/ws",

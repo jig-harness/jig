@@ -1,6 +1,8 @@
+import type { lastStopEvent } from "../../../skills/drive-pr/scripts/lib/state/events.ts";
 import type { Ledger } from "../../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
-import type { Evidence } from "../types.ts";
+import type { Evidence, StaleCause } from "../types.ts";
+import { stoppedOnProbeRead } from "./ledger-probe.ts";
 import type { PrFacts } from "./ledgers.ts";
 
 /** Read the base head for conflict stops and other stops that owe conflict recovery. */
@@ -16,6 +18,7 @@ export function readsBaseHead(
     (exit === DRIVE_EXIT.HITL_PARKED && mergeable === "CONFLICTING") ||
     (exit === DRIVE_EXIT.INDETERMINATE &&
       ledger.driver.personStop === undefined &&
+      !stoppedOnProbeRead(ledger) &&
       mergeable === "CONFLICTING")
   );
 }
@@ -44,4 +47,20 @@ export function stopEvidence(
     };
   if (ledger.driver.exit === DRIVE_EXIT.WORKTREE_UNCLEAN) return read;
   return baseRead === undefined ? {} : { ...baseRead, ...read };
+}
+
+/**
+ * Whether a mechanical stop's re-drive must run in the tree it stopped in: a
+ * stall, listing or status probe read stop that left work there or never
+ * measured it, and a pass deadline whose stop measured work left.
+ */
+export function boundToTree(
+  kind: NonNullable<StaleCause["mechanicalStop"]>,
+  exit: number,
+  last: ReturnType<typeof lastStopEvent>,
+): boolean {
+  const own = last === undefined || last.cause === String(exit);
+  if (kind === "stall" || kind === "check-runs" || kind === "probe-read")
+    return own && last?.leftWork !== false;
+  return kind === "deadline" && own && last?.leftWork === true;
 }

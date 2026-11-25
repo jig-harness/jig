@@ -118,7 +118,7 @@
       "driveStatusExit": 1,
       "driveExit": 1,
       "endsDrive": true,
-      "meaning": "The state could not be read, or a step failed: `drive.ts` also ends with it when a pass fails. Never a settled state; read what the drive printed before re-arming.",
+      "meaning": "The state could not be read, or a step failed: `drive.ts` also ends with it when a pass fails. A probe stop marked as a read failure keeps the read diagnostic, and the dispatcher re-drives it once per pull-request head. A second such stop on the same head needs a person.",
       "stop": "stopped on a failure; the drive's log says what failed",
       "cause": "tool-failed",
       "nextOwner": "person",
@@ -196,6 +196,15 @@
       "driveExit": 4,
       "endsDrive": false,
       "meaning": "The forge has not yet worked out whether the pull request merges cleanly. Read again."
+    },
+    {
+      "name": "POLL_BUDGET_SPENT",
+      "kind": "state",
+      "exit": 4,
+      "driveStatusExit": 4,
+      "driveExit": 4,
+      "endsDrive": false,
+      "meaning": "The poll budget ended before the next iteration or before a pull-request read could start. The probe reports how long it waited. A request that was sent and failed retains its read failure."
     },
     {
       "name": "NOT_SETTLED",

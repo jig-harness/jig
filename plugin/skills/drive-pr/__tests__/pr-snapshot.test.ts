@@ -288,7 +288,7 @@ describe("readPrSnapshot", () => {
       get,
       () => 0,
     );
-    expect(r.ok).toBe(false);
+    expect(r).toMatchObject({ ok: false, budgetSpent: true });
     expect(wire.sent).toEqual([]);
   });
 
@@ -302,7 +302,11 @@ describe("readPrSnapshot", () => {
       get,
       () => (wire.sent.length === 0 ? 5 : 0),
     );
-    expect(r.ok).toBe(false);
+    expect(r).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("HTTP 502"),
+    });
+    expect(r).not.toHaveProperty("budgetSpent");
     expect(wire.sent.length).toBe(1);
   });
 });

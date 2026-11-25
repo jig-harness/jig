@@ -1,4 +1,8 @@
 #!/usr/bin/env bun
+import { MARKER_SAFE_FINGERPRINT } from "./lib/summary-answer.ts";
+export { MARKER_SAFE_FINGERPRINT } from "./lib/summary-answer.ts";
+import { withoutFencedExamples } from "./lib/markdown-examples.ts";
+import { summaryAnswerBlocks } from "../../../shared/summary-answer-blocks.ts";
 import { definedFields } from "../../../shared/defined-fields.ts";
 import { swallow } from "../../../shared/errors.ts";
 import { TRUSTED_ASSOCIATIONS } from "../../../shared/trusted-authors.ts";
@@ -20,7 +24,8 @@ import { TRUSTED_ASSOCIATIONS } from "../../../shared/trusted-authors.ts";
  *   backlog     the `ai-review-backlog` base64 blob — findings deliberately
  *               held out of the inline threads ("Beyond this PR", wind-down
  *               deferrals). Authoritative: it carries the reviewer's OWN
- *               stable fingerprints.
+ *               stable fingerprints. Explicitly non-blocking entries are
+ *               reported separately and require no answer.
  *   body        a finding bullet in the summary whose path never received an
  *               inline review comment from the reviewer. Fingerprinted from
  *               its content so the key is stable while the finding is.
@@ -40,9 +45,8 @@ import { TRUSTED_ASSOCIATIONS } from "../../../shared/trusted-authors.ts";
  * answer carries `<fingerprint>@<sha>#<round>` instead, and is scoped to where
  * the reviewer's own review sits relative to that head: honoured while the
  * review is BEHIND it, for one further head where the review sits exactly AT it
- * and the fingerprint is in the reviewer's backlog blob, and — for the
- * `winddown-deferred` subset of that blob — `WINDDOWN_EXEMPTION_ROUNDS` rounds
- * past the one it names. See `collectAddressed`.
+ * and the fingerprint is carried only in the reviewer's backlog blob. See
+ * `collectAddressed` for the marker rules.
  *
  * Usage:
  *   bun summary-findings.ts [PR] [--json] [--configured-reviewer-only]
@@ -103,6 +107,7 @@ export interface BacklogEntry {
   comment: string;
   firstRound?: number;
   reason?: string;
+  blocking?: boolean;
 }
 
 export interface SummaryFinding {
@@ -124,6 +129,7 @@ export interface SummaryReport {
   total: number;
   findings: SummaryFinding[];
   unaddressed: SummaryFinding[];
+  ignoredBacklog: BacklogEntry[];
 }
 
 /**
@@ -165,7 +171,8 @@ export function reviewedShaFrom(body: string): string | undefined {
  * the bare fingerprint. See `collectAddressed` for why the two are not
  * interchangeable, and for what the round bounds.
  */
-export const ADDRESSED_MARKER = "drive-pr-addressed";
+import { ADDRESSED_MARKER } from "../../../shared/summary-answer-blocks.ts";
+export { ADDRESSED_MARKER };
 
 /**
  * How many further reviewer rounds a `winddown-deferred` marker keeps
@@ -289,7 +296,6 @@ export function parseMarkerPayload(raw: string): MarkerPayload {
  * emits, so anything outside it means the identifier we key everything on
  * moved under us.
  */
-export const MARKER_SAFE_FINGERPRINT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 /**
  * A PRESENT marker must decode to a well-formed array of well-formed entries or
@@ -358,19 +364,15 @@ export function decodeBacklog(body: string): BacklogEntry[] {
       // above: a malformed `category` costs the one field, never the blob.
       category: typeof entry.category === "string" ? entry.category : "unknown",
       comment: entry.comment as string,
-      // The reviewer's own provenance for the entry: which round first raised
-      // it, and why it is being held out of inline review. `firstRound` is
-      // provenance only, nothing branches on it. `reason` IS load-bearing:
-      // `reason === 'winddown-deferred'` still selects the round-bounded
-      // exemption, alongside the position rule keyed on backlog
-      // MEMBERSHIP — both in `collectAddressed`. A wrong-typed
-      // value on either degrades to absent rather than failing the blob, which
-      // for `reason` means losing an exemption (the fail-closed direction,
-      // costing a re-answer) rather than blocking the whole report.
+      // Keep the reviewer's provenance and disposition. The reason and
+      // blocking flag count only when their types match the reviewer format.
       ...(typeof entry.firstRound === "number"
         ? { firstRound: entry.firstRound }
         : {}),
       ...(typeof entry.reason === "string" ? { reason: entry.reason } : {}),
+      ...(typeof entry.blocking === "boolean"
+        ? { blocking: entry.blocking }
+        : {}),
     };
   });
 }
@@ -440,15 +442,15 @@ export function winddownFingerprintsOf(stickyBody: string): Set<string> {
   const body = bodyFingerprintsOf(stickyBody);
   return new Set(
     decodeBacklog(stickyBody)
-      .filter((e) => e.reason === "winddown-deferred")
+      .filter((e) => e.reason === "winddown-deferred" && e.blocking !== true)
       .map((e) => e.fingerprint)
       .filter((fp) => !body.has(fp)),
   );
 }
 
 export function parseDeclaredUnanchored(body: string): number {
-  const m = body.match(
-    /(\d+)\s+finding\(s\)\s+without\s+a\s+diff-anchorable\s+line/i,
+  const m = withoutFencedExamples(body).match(
+    /^[ \t]*>\s*(\d+)\s+finding\(s\)\s+without\s+a\s+diff-anchorable\s+line\b/im,
   );
   return m ? Number.parseInt(m[1] ?? "", 10) : 0;
 }
@@ -465,7 +467,16 @@ export interface BodyFinding {
  * would otherwise be counted twice.
  */
 export function parseBodyFindings(body: string): BodyFinding[] {
-  const head = body.split("<details")[0] ?? "";
+  // A reviewer can use other collapsed sections before or after its backlog.
+  // Exclude only the named backlog itself; summary bullets elsewhere still
+  // describe fresh work.
+  const head = withoutFencedExamples(body)
+    // Examples in a diagnostic or another collapsed section are prose, not
+    // findings.  Only actual Markdown bullets participate in the summary.
+    .replace(
+      /<details><summary>🗂️ <b>Beyond this PR<\/b>[\s\S]*?<\/details>/g,
+      "",
+    );
   const out: BodyFinding[] = [];
   for (const line of head.split("\n")) {
     const m = line.match(/^[-*]\s+`([^`]+)`\s+[—–-]\s+(.*)$/);
@@ -654,6 +665,66 @@ export function anchorKey(path: string, line: number | null): string {
   return line == null ? path : `${path}:${line}`;
 }
 
+function partitionBacklog(
+  stickyBody: string,
+  bullets: readonly BodyFinding[],
+): {
+  blockingBacklog: BacklogEntry[];
+  ignoredBacklog: BacklogEntry[];
+} {
+  const backlog = decodeBacklog(stickyBody);
+  // The declared disposition applies only to the entries rendered in this
+  // section. A count alone cannot establish that: a different blocking entry
+  // can leave the count unchanged. Match the rendered finding identities to
+  // the blob before treating its otherwise-unflagged entries as informational.
+  const section = withoutFencedExamples(stickyBody).match(
+    /<details><summary>🗂️ <b>Beyond this PR<\/b> — (\d+) finding\(s\) for triage \(not posted inline\)<\/summary>\r?\n[ \t\r\n]*Held out of the inline threads so this PR can converge — \*\*not blocking\*\*\.([\s\S]*?)<\/details>/,
+  );
+  const rendered = section ? parseBodyFindings(section[2] ?? "") : [];
+  // A fingerprint is authoritative whenever the renderer preserves the full
+  // text. An abbreviated renderer cannot establish the identity of a backlog
+  // entry, even when its location and prefix match exactly one current entry:
+  // another entry can later share those rendered fields. It therefore remains
+  // blocking until the renderer supplies the complete fingerprint.
+  const renderedFingerprints = new Map<string, number>();
+  for (const finding of rendered) {
+    const fingerprint = fingerprintOf(finding.path, finding.line, finding.text);
+    renderedFingerprints.set(
+      fingerprint,
+      (renderedFingerprints.get(fingerprint) ?? 0) + 1,
+    );
+  }
+  const backlogFingerprints = new Map<string, number>();
+  for (const entry of backlog) {
+    backlogFingerprints.set(
+      entry.fingerprint,
+      (backlogFingerprints.get(entry.fingerprint) ?? 0) + 1,
+    );
+  }
+  const freshFingerprints = new Set(
+    bullets.map((f) => fingerprintOf(f.path, f.line, f.text)),
+  );
+  const blockingBacklog: BacklogEntry[] = [];
+  const ignoredBacklog: BacklogEntry[] = [];
+  for (const entry of backlog) {
+    const informational =
+      entry.blocking !== true &&
+      (entry.blocking === false ||
+        entry.reason === "winddown-deferred" ||
+        (section !== null &&
+          renderedFingerprints.get(entry.fingerprint) === 1 &&
+          backlogFingerprints.get(entry.fingerprint) === 1));
+    if (!informational) blockingBacklog.push(entry);
+    // A fresh body bullet takes precedence over a carry-forward disposition.
+    else if (!freshFingerprints.has(entry.fingerprint))
+      ignoredBacklog.push(entry);
+  }
+  return {
+    blockingBacklog,
+    ignoredBacklog,
+  };
+}
+
 export function classify(input: ClassifyInput): SummaryReport {
   const { stickyBody, anchoredKeys, addressedFingerprints } = input;
   const findings: SummaryFinding[] = [];
@@ -668,7 +739,12 @@ export function classify(input: ClassifyInput): SummaryReport {
     });
   };
 
-  for (const e of decodeBacklog(stickyBody)) {
+  const bullets = parseBodyFindings(stickyBody);
+  const { blockingBacklog, ignoredBacklog } = partitionBacklog(
+    stickyBody,
+    bullets,
+  );
+  for (const e of blockingBacklog) {
     push({
       fingerprint: e.fingerprint,
       source: "backlog",
@@ -705,7 +781,6 @@ export function classify(input: ClassifyInput): SummaryReport {
   // direction costs a live finding, silently.
   const slots = new Map<string, number>();
   for (const k of anchoredKeys) slots.set(k, (slots.get(k) ?? 0) + 1);
-  const bullets = parseBodyFindings(stickyBody);
   const byExactKey = new Map<string, BodyFinding[]>();
   for (const f of bullets) {
     const key = anchorKey(f.path, f.line);
@@ -789,16 +864,14 @@ export function classify(input: ClassifyInput): SummaryReport {
   }
 
   const declared = parseDeclaredUnanchored(stickyBody);
-  // Measured against EVERY unanchored finding already classified — backlog
-  // entries included — not just the body bullets. Backlog entries are
-  // unanchored by construction, so if the reviewer's declared count covers them
-  // too, subtracting only the bullets manufactures a synthetic slot for a
-  // finding that was already enumerated. That phantom cannot be cleared by
-  // answering real findings, and it reappears on every new head — turning
-  // "fail closed" into "never converges", which is a liveness bug rather than
-  // the safety property it looks like.
-  // `findings` already holds the deduplicated backlog + body set at this point.
-  const classified = findings.length;
+  // The declaration describes findings in the summary above the backlog.
+  // Blocking backlog entries can account for slots as well. Informational
+  // carry-forwards belong to a separate cohort and cannot explain a shortfall.
+  // The declaration is about unanchored summary bullets, not separately
+  // carried backlog entries. A backlog finding must not consume its slot.
+  const classified = new Set(
+    bodyOnly.map((f) => fingerprintOf(f.path, f.line, f.text)),
+  ).size;
   const shortfall = Math.max(0, declared - classified);
   // Scoped to the reviewed HEAD, not to the sticky comment id. The sticky is
   // upserted, so its id is stable across every round — keying a slot on it means
@@ -835,6 +908,7 @@ export function classify(input: ClassifyInput): SummaryReport {
     total: findings.length,
     findings,
     unaddressed: findings.filter((f) => !f.addressed),
+    ignoredBacklog,
   };
 }
 
@@ -1127,11 +1201,10 @@ export function collectAddressed(
     positionCache.set(sha, computed);
     return computed;
   };
-  for (const s of sources) {
-    if (!TRUSTED_ASSOCIATIONS.has(s.authorAssociation)) continue;
-    const outcome = outcomeOf(s.body);
+  for (const body of trustedAnswerBlocks(sources)) {
+    const outcome = outcomeOf(body);
     if (outcome === null) continue;
-    for (const m of s.body.matchAll(re)) {
+    for (const m of body.matchAll(re)) {
       const { fingerprint, sha, round } = parseMarkerPayload(m[1] ?? "");
       if (!sha) {
         if (FIX_DEPENDENT_OUTCOMES.has(outcome)) continue;
@@ -1174,6 +1247,16 @@ export function collectAddressed(
     }
   }
   return out;
+}
+
+function trustedAnswerBlocks(sources: AddressedSource[]): string[] {
+  return sources
+    .filter(
+      (source) =>
+        TRUSTED_ASSOCIATIONS.has(source.authorAssociation) &&
+        outcomeOf(source.body) !== null,
+    )
+    .flatMap((source) => summaryAnswerBlocks(source.body));
 }
 
 /**
@@ -1237,10 +1320,9 @@ export function findExactMarkers(
     `<!--\\s*${ADDRESSED_MARKER}:\\s*([^\\s>]+)\\s*-->`,
     "g",
   );
-  for (const s of sources) {
-    if (!TRUSTED_ASSOCIATIONS.has(s.authorAssociation)) continue;
-    if (outcomeOf(s.body) === null) continue;
-    for (const m of s.body.matchAll(re)) {
+  for (const body of trustedAnswerBlocks(sources)) {
+    if (outcomeOf(body) === null) continue;
+    for (const m of body.matchAll(re)) {
       const { fingerprint, sha, round } = parseMarkerPayload(m[1] ?? "");
       if (!fingerprints.has(fingerprint)) continue;
       if (markerSha ? sha === markerSha : sha === "") {
@@ -1373,6 +1455,7 @@ function emptyReport(pr: number): SummaryReport {
     total: 0,
     findings: [],
     unaddressed: [],
+    ignoredBacklog: [],
   };
 }
 
@@ -1442,9 +1525,6 @@ export async function summaryReport(
       comments ?? (await issueCommentsFor(repo, prNumber, undefined));
     const sticky = reviewerSticky(issueComments, configuredReviewerOnly);
     const stickyRound = sticky ? parseReviewRound(sticky.body) : null;
-    const winddownDeferred = sticky
-      ? winddownFingerprintsOf(sticky.body)
-      : new Set<string>();
     const bodyFormat = reviewBodyFormat();
     if (bodyFormat !== undefined)
       return reviewBodyReportFor(prNumber, repo, issueComments, bodyFormat);
@@ -1467,8 +1547,6 @@ export async function summaryReport(
     const addressed = collectAddressed(markerSourcesOf(issueComments), {
       reviewerPosition: (sha) => reviewerPosition(sha, reviewedSha),
       backlogFingerprints: backlogFingerprintsOf(sticky.body),
-      winddownDeferred,
-      currentRound: stickyRound,
     });
     return classify({
       pr: prNumber,
@@ -1485,6 +1563,67 @@ export async function summaryReport(
     swallow(error, "summary finding evidence is indeterminate");
     return null;
   }
+}
+
+function separateProbeArgs(rawArgv: string[]) {
+  // Strip flag values before scanning for the PR number: a numeric
+  // fingerprint or SHA prefix is also a valid value for those flags.
+  const stripIdx = new Set<number>();
+  const flagValue = (flag: string): string | undefined => {
+    const index = rawArgv.indexOf(flag);
+    if (index === -1) return undefined;
+    stripIdx.add(index);
+    stripIdx.add(index + 1);
+    return rawArgv[index + 1];
+  };
+  const checkFingerprintsArg = flagValue("--check-addressed");
+  const durableFingerprintsArg = flagValue("--check-durable-addressed");
+  const markerShaArg = flagValue("--marker-sha");
+  const argv = rawArgv.filter((_, i) => !stripIdx.has(i));
+
+  return { argv, checkFingerprintsArg, durableFingerprintsArg, markerShaArg };
+}
+
+function printAddressProbe(
+  pr: number,
+  issueComments: IssueComment[],
+  primaryArg: string,
+  durableArg: string | undefined,
+  markerSha: string | undefined,
+  sticky: IssueComment | undefined,
+): number {
+  const round = sticky ? parseReviewRound(sticky.body) : null;
+  const winddownDeferred = sticky
+    ? winddownFingerprintsOf(sticky.body)
+    : new Set<string>();
+  const primary = primaryArg.split(",").filter(Boolean);
+  const durable = durableArg?.split(",").filter(Boolean) ?? [];
+  const requested = [...primary, ...durable];
+  for (const fp of requested) {
+    if (!MARKER_SAFE_FINGERPRINT.test(fp)) {
+      console.error(
+        `summary-findings: --check-addressed fingerprint '${fp}' is not MARKER_SAFE_FINGERPRINT-shaped`,
+      );
+      return 1;
+    }
+  }
+  const sources = markerSourcesOf(issueComments);
+  const found = findExactMarkers(sources, new Set(primary), markerSha, {
+    winddownDeferred,
+    currentRound: round,
+  });
+  if (durable.length > 0) {
+    for (const fp of findExactMarkers(sources, new Set(durable), undefined))
+      found.add(fp);
+  }
+  console.log(
+    JSON.stringify({
+      pr,
+      unaddressed: requested.filter((fp) => !found.has(fp)),
+      round,
+    }),
+  );
+  return 0;
 }
 
 async function main(): Promise<number> {
@@ -1518,24 +1657,17 @@ async function main(): Promise<number> {
   // `reviewerPosition` answer whether a finding remains suppressed and
   // therefore cannot serve this duplicate check.
   //
-  // Strip flag values before scanning for the PR number: a numeric
-  // fingerprint or SHA prefix is also a valid value for those flags.
-  const checkIdx = rawArgv.indexOf("--check-addressed");
-  const checkFingerprintsArg =
-    checkIdx === -1 ? undefined : rawArgv[checkIdx + 1];
-  const markerShaIdx = rawArgv.indexOf("--marker-sha");
-  const markerShaArg =
-    markerShaIdx === -1 ? undefined : rawArgv[markerShaIdx + 1];
-  const stripIdx = new Set(
-    [
-      checkIdx,
-      checkIdx === -1 ? -1 : checkIdx + 1,
-      markerShaIdx,
-      markerShaIdx === -1 ? -1 : markerShaIdx + 1,
-    ].filter((i) => i !== -1),
-  );
-  const argv = rawArgv.filter((_, i) => !stripIdx.has(i));
-
+  const { argv, checkFingerprintsArg, durableFingerprintsArg, markerShaArg } =
+    separateProbeArgs(rawArgv);
+  if (
+    durableFingerprintsArg !== undefined &&
+    (!checkFingerprintsArg || !markerShaArg)
+  ) {
+    console.error(
+      "summary-findings: --check-durable-addressed needs --check-addressed and --marker-sha",
+    );
+    return 1;
+  }
   const prNumber = await resolvePrNumber(argv);
   if (prNumber === undefined) {
     console.error("summary-findings: could not resolve a PR number");
@@ -1575,55 +1707,16 @@ async function main(): Promise<number> {
     checkFingerprintsArg,
   );
 
-  const sticky = reviewerSticky(issueComments, configuredReviewerOnly);
-  // The round the sticky describes. Read here — above the `--check-addressed`
-  // branch — so the PRODUCER of a marker's `#<round>` suffix and the CONSUMER
-  // that measures the winddown exemption against it read the same field off the
-  // same comment. A second source for "which round is this" is a second thing
-  // to drift, and a marker stamped with a round the consumer never compares
-  // against is a suppression nobody can bound.
-  const stickyRound = sticky ? parseReviewRound(sticky.body) : null;
-  // Read here — above the `--check-addressed` branch — so that mode's
-  // stale-vs-duplicate distinction (`findExactMarkers`) and the main report's
-  // exemption (`collectAddressed`, below) key off the exact same backlog
-  // snapshot. `decodeBacklog` throws on a malformed blob, which now surfaces
-  // as an INDETERMINATE exit for `--check-addressed` too — the same
-  // fail-closed direction the main report already took this from.
-  const winddownDeferred = sticky
-    ? winddownFingerprintsOf(sticky.body)
-    : new Set<string>();
-
+  // Preserve the legacy round-qualified marker behavior for manual retries.
   if (checkFingerprintsArg !== undefined) {
-    const requested = checkFingerprintsArg.split(",").filter(Boolean);
-    for (const fp of requested) {
-      if (!MARKER_SAFE_FINGERPRINT.test(fp)) {
-        console.error(
-          `summary-findings: --check-addressed fingerprint '${fp}' is not MARKER_SAFE_FINGERPRINT-shaped`,
-        );
-        return 1;
-      }
-    }
-    const markerSources = markerSourcesOf(issueComments);
-    const found = findExactMarkers(
-      markerSources,
-      new Set(requested),
+    return printAddressProbe(
+      prNumber,
+      issueComments,
+      checkFingerprintsArg,
+      durableFingerprintsArg,
       markerShaArg,
-      { winddownDeferred, currentRound: stickyRound },
+      reviewerSticky(issueComments, configuredReviewerOnly),
     );
-    console.log(
-      JSON.stringify({
-        pr: prNumber,
-        unaddressed: requested.filter((fp) => !found.has(fp)),
-        // `answer-summary-finding.ts` stamps this into the fix-dependent
-        // markers it is about to post. Null when the sticky stamps no round (or
-        // there is no sticky at all): the marker then carries none, and
-        // `collectAddressed` withholds the winddown exemption from it — the
-        // fail-closed direction, costing a re-answer rather than an unbounded
-        // suppression.
-        round: stickyRound,
-      }),
-    );
-    return 0;
   }
 
   const report = await summaryReport(

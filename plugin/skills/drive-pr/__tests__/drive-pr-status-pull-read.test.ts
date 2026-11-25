@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -33,6 +33,61 @@ function cacheEnv(dir: string): Record<string, string> {
 }
 
 describe("drive-status.ts reads the pull request conditionally", () => {
+  it("ends a poll whose next snapshot has no budget with exit 4", async () => {
+    const { dir, stateDir } = writeFixture({
+      threads: [],
+      checkRuns: [DORMANT_ARM],
+      pullEtag: '"pull-1"',
+    });
+    const preload = join(dir, "expire-poll.ts");
+    const snapshotModule = new URL(
+      "../scripts/lib/status/pr-snapshot.ts",
+      import.meta.url,
+    ).pathname;
+    writeFileSync(
+      preload,
+      `
+      import { mock } from "bun:test";
+      import { readPrSnapshot } from ${JSON.stringify(snapshotModule)};
+      const read = readPrSnapshot;
+      mock.module(${JSON.stringify(snapshotModule)}, () => ({
+        readPrSnapshot(owner, repo, pr, caller, get, budgetSec) {
+          // The first evaluation has an exemption. Expire the poll at the
+          // read's admission check during the next evaluation.
+          const left = budgetSec?.();
+          return read(owner, repo, pr, caller, get, () =>
+            left === undefined ? undefined : 0);
+        },
+      }));
+    `,
+    );
+    const r = await probeIn(
+      dir,
+      stateDir,
+      HEAD,
+      ["--timeout", "10", "--interval", "1"],
+      {
+        once: false,
+        reconcile: false,
+        preload,
+        env: { ...cacheEnv(dir), DRIVE_PR_STATUS_MIN_INTERVAL: "1" },
+      },
+    );
+    expectSpawnExit({ ...r, stdout: JSON.stringify(r.json) }, 4);
+    expect(r.json.reason).toContain("gave up after 10s");
+    expect(r.json.failure).toBeUndefined();
+    expect(lines(dir, "pull-reads")).toEqual(["200 snapshot"]);
+  });
+
+  it("preserves a sent snapshot failure's class and HTTP status", async () => {
+    const { dir, stateDir } = writeFixture({ snapshotUnreadable: true });
+    const r = await probeIn(dir, stateDir, HEAD, [], { reconcile: false });
+    expectSpawnExit({ ...r, stdout: JSON.stringify(r.json) }, 1);
+    expect(r.json.failure).toBe("read");
+    expect(r.json.reason).toContain("server-fault");
+    expect(r.json.reason).toContain("HTTP 502");
+  });
+
   it("two evaluations of an unchanged pull request read it once in full, then once answered 304", async () => {
     const { dir, stateDir } = writeFixture({
       threads: [],

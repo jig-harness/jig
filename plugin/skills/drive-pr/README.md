@@ -178,11 +178,23 @@ with `review.skip_notice_marker` that names the skipped commit. Without one,
 a head it skipped reads as a head it has not reviewed yet, and the drive
 waits for it (`STALE_REVIEW`) until `--timeout`.
 
+When the poll budget expires before the next iteration or pull-request read,
+the probe returns exit `4` and reports how long it waited. When a sent request
+fails and the probe stops on that read, the reason keeps the failure detail.
+The dispatcher retries a probe read stop once per pull-request head. A
+second read stop on that head goes to a person.
+
+
 Jig ships no reviewer that implements this protocol. The defaults in the
 table above are configuration: a repository changes them to match its own
 reviewer's check run, comment marker and commit stamp
 ([fields](../../CONFIGURATION.md#review),
 [AI reviewers](../../EXTENDING.md#ai-reviewers)).
+
+The drive reports explicitly non-blocking wind-down backlog entries in its
+status JSON. Those entries need no reply and do not block convergence.
+When a round answers several summary findings, it posts their outcomes and
+reasons in one PR comment, with a marker for each finding.
 
 A reviewer that submits the forge's own pull-request reviews instead
 (`review.reviewer_evidence: review_object`) is read from two other
