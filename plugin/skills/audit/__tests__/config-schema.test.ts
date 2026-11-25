@@ -407,6 +407,10 @@ describe("the reading skills", () => {
         ]);
       }
     }
+    // A non-ASCII letter is an ordinary model character: both validators accept it.
+    expect(schemaPassModel.test("模型")).toBe(true);
+    expect(PASS_MODEL_PATTERN.test("模型")).toBe(true);
+    expect(checkConfig({ drive: { pass_model: "模型" } }, schema)).toEqual([]);
     expect(field("ci.repair_skill")?.pattern).toBe(SKILL_NAME_PATTERN.source);
     expect(field("drive.pass_args")?.items).toEqual({
       type: "string",
