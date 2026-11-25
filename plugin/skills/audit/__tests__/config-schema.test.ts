@@ -382,6 +382,10 @@ describe("the reading skills", () => {
       "has;semicolon",
       "has=equals",
       ...[
+        0x00a0, 0x1680, 0x2000, 0x2007, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000,
+        0xfeff,
+      ].map((code) => `has${String.fromCodePoint(code)}space`),
+      ...[
         ...Array.from({ length: 0x20 }, (_, i) => i),
         ...Array.from({ length: 0x21 }, (_, i) => 0x7f + i),
       ].map((code) => `has${String.fromCodePoint(code)}control`),
@@ -392,9 +396,16 @@ describe("the reading skills", () => {
       ].map((code) => `has${String.fromCodePoint(code)}control`),
     ]) {
       expect(schemaPassModel.test(value)).toBe(PASS_MODEL_PATTERN.test(value));
-      expect(
-        checkConfig({ drive: { pass_model: value } }, schema).length === 0,
-      ).toBe(PASS_MODEL_PATTERN.test(value));
+      const findings = checkConfig({ drive: { pass_model: value } }, schema);
+      if (PASS_MODEL_PATTERN.test(value)) {
+        expect(findings).toEqual([]);
+      } else {
+        expect(
+          findings.some(
+            (f) => f.id === "type:drive.pass_model" && f.severity === "error",
+          ),
+        ).toBe(true);
+      }
     }
     expect(field("ci.repair_skill")?.pattern).toBe(SKILL_NAME_PATTERN.source);
     expect(field("drive.pass_args")?.items).toEqual({
