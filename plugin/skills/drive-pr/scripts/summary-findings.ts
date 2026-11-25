@@ -468,10 +468,12 @@ export interface BodyFinding {
 function withoutFencedExamples(body: string): string {
   let fence: { char: string; length: number } | null = null;
   return body
-    .split("\n")
+    .split(/\r?\n/)
     .map((line) => {
-      const trimmed = line.trimStart();
-      const match = trimmed.match(/^(`{3,}|~{3,})(.*)$/);
+      // CommonMark permits at most three spaces before a fenced-code
+      // delimiter. Four spaces start an indented code block instead, which
+      // must not hide the live summary lines that follow it.
+      const match = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
       if (fence !== null) {
         const closes =
           match !== null &&

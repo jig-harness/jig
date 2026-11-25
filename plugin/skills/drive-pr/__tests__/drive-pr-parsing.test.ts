@@ -301,6 +301,19 @@ describe("summary-findings parsing", () => {
     expect(parseDeclaredUnanchored(body)).toBe(9);
   });
 
+  it("does not treat an indented code example as a fenced summary example", () => {
+    const body = [
+      "    ```markdown",
+      "    - `example.ts:1` — an indented code example",
+      "- `live.ts:3` — a live finding",
+      "> 1 finding(s) without a diff-anchorable line",
+    ].join("\r\n");
+    expect(parseBodyFindings(body)).toEqual([
+      { path: "live.ts", line: 3, text: "a live finding" },
+    ]);
+    expect(parseDeclaredUnanchored(body)).toBe(1);
+  });
+
   it("extracts severity from the bullet", () => {
     expect(jigSeverity("🟡 **medium** (high confidence)")).toBe("medium");
     expect(jigSeverity("no severity here")).toBe("unknown");
