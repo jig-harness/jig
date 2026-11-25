@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { reviewerStickyBody } from "../scripts/lib/status/reviewer-sticky.ts";
-import { stickyMarker } from "../scripts/lib/overlay.ts";
+import { reviewerApp, stickyMarker } from "../scripts/lib/overlay.ts";
 import {
   parseDeclaredUnanchored,
   selectReviewerSticky,
@@ -9,7 +9,7 @@ import {
 const MARKER = "<!-- sticky -->";
 const comment = (body: string) => ({
   body,
-  user: { login: "docomply-review[bot]" },
+  user: { login: `${reviewerApp()}[bot]` },
 });
 
 describe("sticky structure", () => {

@@ -252,6 +252,23 @@ type Fence = {
   indent: number;
 } | null;
 
+/** The text a fence delimiter is read from, and its offset from the fence's item content column. */
+function fenceFrame(line: string, fence: Fence, columns: number) {
+  if (fence !== null)
+    return {
+      text: line,
+      indent: fence.indent,
+      relative: columns - fence.indent,
+    };
+  const item = /^( {0,3})([-+*]|\d{1,9}[.)])([ \t]+)(?=\S)/.exec(line);
+  if (item === null) return { text: line, indent: 0, relative: columns };
+  return {
+    text: line.slice(item[0].length),
+    indent: item[0].length,
+    relative: 0,
+  };
+}
+
 /**
  * One line's effect on a Markdown code fence. Fences are structural only at
  * Markdown's permitted indentation, and their delimiter length is remembered:
@@ -265,17 +282,7 @@ function fenceStep(
   fence: Fence,
 ): { fence: Fence; delimiter: boolean; columns: number } {
   const { columns } = markdownIndentation(line);
-  let text = line;
-  let indent = fence?.indent ?? 0;
-  let relative = columns - indent;
-  if (fence === null) {
-    const item = /^( {0,3})([-+*]|\d{1,9}[.)])([ \t]+)(?=\S)/.exec(line);
-    if (item !== null) {
-      indent = item[0].length;
-      text = line.slice(indent);
-      relative = 0;
-    }
-  }
+  const { text, indent, relative } = fenceFrame(line, fence, columns);
   const token =
     relative >= 0 && relative <= 3
       ? (/^\s*(`{3,}|~{3,})/.exec(text)?.[1] ?? "")
