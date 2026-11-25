@@ -494,10 +494,11 @@ effective tree before the drive installs.
 
 Restart a stopped drive by the procedure for its stop (answer every parked
 decision; for a usage-limit stop, follow "Picking up a stopped drive" in the drive-pr skill: a pass that
-bills a known, different account may pick the drive up now, while the same
-account or an unresolvable one is admitted once the recorded reset has passed,
-or earlier when a person who knows the window reopened passes
-`--window-reopened`; grant a spent
+bills a known account different from the account recorded on the stop may pick
+the drive up now, while the same account, or one that either side cannot
+identify, is admitted once the recorded reset has passed. When no reset was
+recorded, or earlier than the reset, a person who knows the window reopened
+passes `--window-reopened`; grant a spent
 round budget). What needs a restart depends on how the drive ended:
 
 - A drive a person stopped stays stopped.
@@ -513,9 +514,14 @@ round budget). What needs a restart depends on how the drive ended:
   busy, in a repository listed on the owning host with the `rearm` stage
   enabled, from an apply tick of that host's dispatcher that reads the forge
   successfully; it skips disputed and out-of-scope pull requests. Check that
-  scope before waiting for a refresh. When the pull request is held or busy,
-  release the hold or wait for the busy drive; when it is not mergeable, a new
-  conflict is a new stop and follows the restart rules below instead of waiting.
+  scope before waiting for a refresh. The refresh also needs the stopped
+  ledger's generation to be above any claim on the pull request, and the
+  merge-ready announcement to succeed, so a pull request with another Ready
+  blocker (one outside the merge-now and approve-first lanes) falls back. When
+  the pull request is held or busy, release the hold or wait for the busy
+  drive; when mergeability reads `UNKNOWN` or cannot be read, recheck it, and
+  follow the restart rules below only on a confirmed `CONFLICTING` result,
+  which is a new stop and not a wait.
   Until the refresh records the convergence the head is stale, and
   dispatch can withhold a re-drive while verification of the new head is
   pending. A refresh that is still unresolved (verification pending, a held
