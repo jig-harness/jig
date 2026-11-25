@@ -973,7 +973,7 @@ async function evaluateFresh(
   report.summaryTotal = summary.total;
   report.summaryIgnoredBacklogKeys = summary.ignoredBacklog
     .map((entry) => entry.fingerprint)
-    .sort();
+    .sort((a, b) => a.localeCompare(b));
   report.summaryUnaddressed = summary.unaddressed.length;
   report.summaryUnaddressedKeys = summary.unaddressed
     .map((f) => String(f.fingerprint))

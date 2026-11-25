@@ -2220,7 +2220,7 @@ describe("summary-findings parsing", () => {
     expect(r.unaddressed).toEqual([]);
   });
 
-  it("matches the rendered Beyond this PR anchors when its comments are abbreviated", () => {
+  it("keeps abbreviated Beyond this PR renderings blocking", () => {
     const entries = [
       {
         path: "AGENTS.md",
@@ -2254,10 +2254,41 @@ describe("summary-findings parsing", () => {
       anchoredKeys: [],
       addressedFingerprints: new Set(),
     });
-    expect(r.ignoredBacklog.map((entry) => entry.fingerprint)).toEqual(
+    expect(r.ignoredBacklog).toEqual([]);
+    expect(r.unaddressed.map((entry) => entry.fingerprint)).toEqual(
       entries.map((entry) => entry.fingerprint),
     );
-    expect(r.unaddressed).toEqual([]);
+  });
+
+  it("does not treat distinct same-anchor backlog findings as rendered", () => {
+    const entries = ["The rendered finding.", "The hidden finding."].map(
+      (comment) => ({
+        path: "same.ts",
+        line: 8,
+        comment,
+        fingerprint: fingerprintOf("same.ts", 8, comment),
+      }),
+    );
+    const blob = Buffer.from(JSON.stringify(entries)).toString("base64");
+    const r = classify({
+      pr: 1,
+      stickyCommentId: 9,
+      stickyBody: [
+        "<details><summary>🗂️ <b>Beyond this PR</b> — 2 finding(s) for triage (not posted inline)</summary>",
+        "",
+        "Held out of the inline threads so this PR can converge — **not blocking**.",
+        "- `same.ts:8` — The rendered finding.",
+        "- `same.ts:8` — A different rendering.",
+        "</details>",
+        `<!-- ai-review-backlog: ${blob} -->`,
+      ].join("\n"),
+      anchoredKeys: [],
+      addressedFingerprints: new Set(),
+    });
+    expect(r.ignoredBacklog).toEqual([]);
+    expect(r.unaddressed.map((entry) => entry.fingerprint)).toEqual(
+      entries.map((entry) => entry.fingerprint),
+    );
   });
 
   it("does not let a matching Beyond this PR count suppress a different backlog entry", () => {
