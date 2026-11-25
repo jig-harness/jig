@@ -465,7 +465,12 @@ export interface BodyFinding {
  * nested fence, or an unclosed fence change the surrounding summary. Keep
  * line breaks so the line-oriented finding parser cannot join two live bullets.
  */
-type MarkdownFence = { char: string; length: number; containerIndent: number };
+type MarkdownFence = {
+  char: string;
+  length: number;
+  containerIndent: number;
+  quoted: boolean;
+};
 
 function fenceOf(
   match: RegExpMatchArray,
@@ -478,6 +483,7 @@ function fenceOf(
     // marker and following whitespace are: its content column scopes this
     // fence, and an outer sibling ends an unclosed one.
     containerIndent,
+    quoted: false,
   };
 }
 
@@ -495,10 +501,18 @@ function closesFence(
   );
 }
 
-function opensFence(match: RegExpMatchArray | null): match is RegExpMatchArray {
+function opensFence(
+  match: RegExpMatchArray | null,
+  containerIndent: number,
+): match is RegExpMatchArray {
   return (
     match !== null &&
-    columnsOf(match[2] ?? match[1] ?? "") <= 3 &&
+    // A fence in a list is indented from that list's content column; a list
+    // marker nested four columns into ordinary prose is indented code, not a
+    // new container.  Test the marker (when present) from the container and
+    // a bare delimiter from the same column.
+    columnsOf(match[1] ?? "") - containerIndent <= 3 &&
+    columnsOf(match[2] ?? "") <= 3 &&
     !(match[3]?.[0] === "`" && (match[4] ?? "").includes("`"))
   );
 }
@@ -515,20 +529,61 @@ function withoutFencedExamples(body: string): string {
   let indentedCode = false;
   let previousBlank = true;
   let listContainerIndent: number | null = null;
+  let inHtmlComment = false;
   return body
     .split(/\r?\n/)
     .map((line) => {
+      // Reviewer summaries occasionally quote an entire example in an HTML
+      // comment. It is not rendered summary evidence, so it must not supply
+      // a declaration, a body finding, or a backlog section.
+      const startsComment = line.indexOf("<!--");
+      const endsComment = line.indexOf("-->");
+      if (inHtmlComment || startsComment !== -1) {
+        if (
+          endsComment !== -1 &&
+          (inHtmlComment || endsComment > startsComment)
+        )
+          inHtmlComment = false;
+        else if (startsComment !== -1) inHtmlComment = true;
+        return "";
+      }
+      // A quoted fence is distinct from the block quote used for the reviewer's
+      // unanchored-count declaration. Track only quoted fence delimiters so a
+      // live `> N finding(s)` line remains visible to the declaration parser.
+      const quotedFence = line.match(/^[ \t]*>\s*(`{3,}|~{3,})(.*)$/);
+      if (fence?.quoted) {
+        if (
+          quotedFence !== null &&
+          quotedFence[1]?.[0] === fence.char &&
+          (quotedFence[1]?.length ?? 0) >= fence.length &&
+          /^[ \t]*$/.test(quotedFence[2] ?? "")
+        )
+          fence = null;
+        return "";
+      }
+      if (quotedFence !== null) {
+        fence = {
+          char: quotedFence[1]?.[0] ?? "`",
+          length: quotedFence[1]?.length ?? 0,
+          containerIndent: 0,
+          quoted: true,
+        };
+        return "";
+      }
+      const content = line;
       // The second capture is a list marker's content prefix. Delimiters are
       // measured from that container, not from the document's left edge.
-      const match = line.match(
-        /^(\s*)(?:(?:[-+*]|\d+[.)])([ \t]+))?(`{3,}|~{3,})(.*)$/,
+      const match = content.match(
+        /^([ \t]*)(?:(?:[-+*]|\d+[.)])([ \t]+))?(`{3,}|~{3,})([^\r\n]*)$/,
       );
-      const lineIndent = columnsOf(line.match(/^[ \t]*/)?.[0] ?? "");
-      const listPrefix = line.match(/^[ \t]*(?:[-+*]|\d+[.)])[ \t]+/)?.[0];
-      if (listPrefix !== undefined) listContainerIndent = columnsOf(listPrefix);
+      const lineIndent = columnsOf(content.match(/^[ \t]*/)?.[0] ?? "");
+      const listPrefix = content.match(/^[ \t]*(?:[-+*]|\d+[.)])[ \t]+/)?.[0];
+      const currentContainer = listContainerIndent ?? 0;
+      if (listPrefix !== undefined && lineIndent - currentContainer <= 3)
+        listContainerIndent = columnsOf(listPrefix);
       else if (
         listContainerIndent !== null &&
-        line.trim() !== "" &&
+        content.trim() !== "" &&
         lineIndent < listContainerIndent
       )
         listContainerIndent = null;
@@ -536,16 +591,17 @@ function withoutFencedExamples(body: string): string {
         // A list-contained fence cannot consume the next outer block merely
         // because its closer was omitted. Process that boundary afresh.
         const indent = columnsOf(
-          match?.[1] ?? line.match(/^[ \t]*/)?.[0] ?? "",
+          match?.[1] ?? content.match(/^[ \t]*/)?.[0] ?? "",
         );
-        if (line.trim() !== "" && indent < fence.containerIndent) fence = null;
+        if (content.trim() !== "" && indent < fence.containerIndent)
+          fence = null;
         else {
           if (closesFence(match, fence)) fence = null;
           previousBlank = false;
           return "";
         }
       }
-      const indent = columnsOf(line.match(/^[ \t]*/)?.[0] ?? "");
+      const indent = columnsOf(content.match(/^[ \t]*/)?.[0] ?? "");
       // Indented code starts only where Markdown can start a new block; a
       // four-column paragraph continuation remains live prose.
       if (indent >= 4 && (previousBlank || indentedCode)) {
@@ -553,13 +609,12 @@ function withoutFencedExamples(body: string): string {
         previousBlank = false;
         return "";
       }
-      if (opensFence(match)) {
-        fence = fenceOf(
-          match,
-          listContainerIndent !== null && lineIndent >= listContainerIndent
-            ? listContainerIndent
-            : 0,
-        );
+      const containerIndent =
+        listContainerIndent !== null && lineIndent >= listContainerIndent
+          ? listContainerIndent
+          : 0;
+      if (opensFence(match, containerIndent)) {
+        fence = fenceOf(match, containerIndent);
         previousBlank = false;
         return "";
       }

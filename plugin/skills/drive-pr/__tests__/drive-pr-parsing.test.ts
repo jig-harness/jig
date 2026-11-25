@@ -401,6 +401,40 @@ describe("summary-findings parsing", () => {
     expect(parseDeclaredUnanchored(body)).toBe(1);
   });
 
+  it("scans fences relative to ordered lists and ignores quoted examples", () => {
+    const body = [
+      "10. explanation:",
+      "    ```markdown",
+      "    > 0 finding(s) without a diff-anchorable line",
+      "    ```",
+      "> ```markdown",
+      "> - `quoted.ts:1` — a fenced decoy",
+      "> > 0 finding(s) without a diff-anchorable line",
+      "> ```",
+      "- `live.ts:3` — a live finding",
+      "> 1 finding(s) without a diff-anchorable line",
+    ].join("\n");
+    expect(parseBodyFindings(body)).toEqual([
+      { path: "live.ts", line: 3, text: "a live finding" },
+    ]);
+    expect(parseDeclaredUnanchored(body)).toBe(1);
+  });
+
+  it("does not read summary evidence quoted in HTML comments", () => {
+    const body = [
+      "<!--",
+      "- `quoted.ts:1` — a hidden finding",
+      "> 0 finding(s) without a diff-anchorable line",
+      "-->",
+      "- `live.ts:3` — a live finding",
+      "> 1 finding(s) without a diff-anchorable line",
+    ].join("\n");
+    expect(parseBodyFindings(body)).toEqual([
+      { path: "live.ts", line: 3, text: "a live finding" },
+    ]);
+    expect(parseDeclaredUnanchored(body)).toBe(1);
+  });
+
   it("extracts severity from the bullet", () => {
     expect(jigSeverity("🟡 **medium** (high confidence)")).toBe("medium");
     expect(jigSeverity("no severity here")).toBe("unknown");
