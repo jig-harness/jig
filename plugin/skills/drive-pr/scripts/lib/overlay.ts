@@ -1,5 +1,6 @@
 import { shellQuote } from "../../../../shared/cli.ts";
 import { definedFields } from "../../../../shared/defined-fields.ts";
+import { MODEL_TOKEN_PATTERN } from "../../../do-item/scripts/lib/routing-fields.ts";
 /**
  * The consumer repository's drive-loop values, read from its Jig
  * configuration (every layer, `.config/jig.yaml` among them) through the
@@ -427,11 +428,8 @@ export function ciRepairRoundsSetting(): number | undefined {
 /** The model each pass runs on when neither `--pass-model` nor `drive.pass_model` names one: Claude Code's alias for the latest Sonnet. */
 export const DEFAULT_PASS_MODEL = "sonnet";
 
-/**
- * A model as a pass command takes it: one word that does not start with a
- * dash (a model id, a Claude Code alias such as `sonnet`, or a routing tier).
- */
-export const PASS_MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/@[\]-]*$/;
+/** A model as a pass command takes it: one word without a leading dash (id, alias or routing tier), the routing model-token grammar. */
+export const PASS_MODEL_PATTERN = MODEL_TOKEN_PATTERN;
 
 /** `drive.pass_model`: the model, alias or routing tier each pass runs on; `undefined` when not configured. */
 export function passModelSetting(): string | undefined {

@@ -72,7 +72,7 @@ they have today ([Left out](#left-out)).
 | Part | Values | Who takes it |
 |---|---|---|
 | `agent` | the repository's agent names, as `determine_agent.ts` prints them today | `do-item`'s delegation, as the subagent type |
-| `tier` | `simple`, `standard` or `complex`, the [complexity tier](../GLOSSARY.md) | translated to the runtime's [family alias](../GLOSSARY.md) through `routing.models.<runtime>.<tier>` before the runtime sees it |
+| `tier` | `simple`, `standard` or `complex`, the [complexity tier](../GLOSSARY.md) | translated to the configured model selection through `routing.models.<runtime>.<tier>` before the runtime sees it |
 | `effort` | `low`, `medium`, `high`, `max` | translated through `routing.efforts` where a runtime spells a level differently |
 
 A complexity tier says how hard the item is, not which model runs it. By
@@ -85,8 +85,13 @@ sub-steps to a Scout model, as a skill chooses its own scouts. No tier's
 default is a Judgment family (`fable`, `astra`); the loader accepts one
 where a repository configures it for a tier, and the audit reports each
 such mapping
-([ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md)). The tier is never a model id: the translation table is the
-only place a model name appears, and it is configuration a check reads.
+([ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md)). The
+tier is never a model id. Model identifiers used by the complexity-tier
+translation appear in routing configuration and its classification keys, both
+of which the loader checks. A direct model name in a one-run operator choice
+does not use that routing loader. A tier-valued one-run choice is available
+only to a drive pass, whose settings resolve it through that loader;
+implementer routing derives its tier from item facts instead.
 
 ### Complexity tiers
 
@@ -213,8 +218,8 @@ implementer ran ([the record](#where-it-is-read)):
    line), the rules forward no model and no effort, and the reasons say
    `tier: pin unknown`: a missed pin overwritten by a rule is the failure
    this step exists to prevent.
-6. **The translation**: the tier to the runtime's family alias through
-   `routing.models.<runtime>`, the effort through
+6. **The translation**: the tier to the runtime's configured model selection
+   through `routing.models.<runtime>`, the effort through
    `routing.efforts.<runtime>`. The runtime is derived from the environment
    the way [`reflect`](../plugin/skills/reflect/README.md) derives the
    harness (that reader moves to `plugin/shared/`, since two skills use it).
@@ -397,26 +402,19 @@ is policy, not an override, and the reasons name the rule that fired.
   report across pull requests of one type and area, are how that
   comparison is run, and a person moves the row with the report beside the
   change.
-- **M0's declaration points** gain a row: the routing table in the
-  repository's configuration (`routing.models`), beside agent and skill
-  metadata. The policy's invariant, its table and the audit's
-  `model-pins-are-family-aliases` criterion say so, and the configuration
-  loader is the check. One list of known families per runtime in
+- **Shared routing** is a separate runtime-selection contract, not an M0
+  metadata declaration point. Its configuration (`routing.models`) chooses a
+  model for a runtime, while each Judgment decision layer keeps its own
+  admission and baseline at its metadata or configuration declaration point.
+  The routing loader checks the selection. One list of known families per runtime in
   `plugin/shared/` (`model-families.ts`), which M0's mappings link,
   records the tier M0's mappings give each family (for Claude Code:
   `haiku` scout, `sonnet` execution, `opus` strategic, `fable` judgment; for
   Codex: `luna` scout, `terra` execution, `sol` strategic, `astra`
-  judgment, rows M0's mappings gain at step 4). The loader
-  refuses an alias outside the list, and a `routing.models` row in which a
-  stricter complexity tier maps to a family of a lower M0 tier than a
-  lighter one: `complex: sonnet` with `standard: opus` would make the
-  strictest tier the cheaper family, the declared tier contradicting the
-  model's that M0's policy rejects. A repository whose mapping
-  legitimately differs (a provider whose alias resolves to another family)
-  declares the family's tier in `routing.family_tiers.<runtime>.<family>`
-  with a `reason`, which the loader reads in place of the list's tier for
-  that family and refuses without the reason; the audit reports each one.
-  A runtime with no list takes any name.
+  judgment, rows M0's mappings gain at step 4). The current configuration
+  reference's [open model vocabulary](../plugin/CONFIGURATION.md#the-open-model-vocabulary)
+  defines how a repository declares an unlisted model and how stage rows
+  select and validate their effective models.
   Independently of ordering, the loader refuses any tier mapped to a
   Scout family, and a `family_tiers` override cannot move a Scout family
   out of that refusal. A tier mapped to a Judgment family is accepted when
@@ -433,10 +431,11 @@ the routing policy page names the tiers and says routes are derived. The
 that routes (`do-item` with this design built). There is no `mechanical`
 observation yet: a required check that the pull request's `## Route`
 section parses and agrees with the base branch's rules is future, and until
-it exists the criterion scores `advisory` at most. Beside the score, as
-evidence, the audit reads the `## Route` section of the pull requests the
-repository's recent history shows and reports the share routed by the
-rules, the share a person chose and the share recorded and not applied.
+it exists the criterion scores `advisory` at most. The audit currently reads
+the repository routing configuration and reports informational diagnostics
+from it; it does not yet score or validate route records. Collecting recent pull requests'
+`## Route` records and reporting the shares routed by rules, chosen by a
+person, or recorded but not applied is planned work.
 
 ## Configuration
 
@@ -449,9 +448,10 @@ rules, the share a person chose and the share recorded and not applied.
 | `routing.raise.flags` | list of labels, or `catalog` | `catalog`: every flag the catalog's areas declare | `determine_route.ts` |
 | `routing.raise.sizes` | list of labels | the known sizes (`work_batch.sizes`, else the batchable sizes, always with `review.taxonomy.sizes`) outside `batch_sizes`; `[large]` where that leaves none | `determine_route.ts` |
 | `routing.raise.reviews` | `true`, `false` | `true` | `determine_route.ts` |
-| `routing.models.<runtime>.<tier>` | the runtime's family alias, per complexity tier | `claude-code: {simple: sonnet, standard: sonnet, complex: opus}`, `codex: {simple: terra, standard: terra, complex: sol}` | `determine_route.ts`, the configuration loader, `drive-pr`, the dispatcher |
+| `routing.models.<runtime>.<tier>` | a runtime family alias or classified model identifier; an undeclared identifier is also valid where the runtime has no family catalog | `claude-code: {simple: sonnet, standard: sonnet, complex: opus}`, `codex: {simple: terra, standard: terra, complex: sol}` | `determine_route.ts`, the configuration loader, `drive-pr`, the dispatcher; a launch boundary rejects a model its target tool cannot accept |
+| `routing.stages.<stage>.models.<runtime>.<tier>` | a stage-specific family alias or classified model identifier; an undeclared identifier is also valid where the runtime has no family catalog | absent: the all-stages `routing.models` cell | the steward dispatcher today; other declared stages are validated but not yet read |
 | `routing.efforts.<runtime>.<effort>` | the runtime's own level name | unchanged | `determine_route.ts` |
-| `routing.family_tiers.<runtime>.<family>` | `{tier, reason}` | none: the tier the known-families list gives | the configuration loader, the audit |
+| `routing.model_tiers.<runtime>.<model>` (or the older `routing.family_tiers.<runtime>.<model>`) | `{tier, reason}` | none: the tier the known-families list gives | the configuration loader, the audit |
 
 **Existing type overrides keep their precedence.** An explicit
 `routing.types.<type>.tier` replaces the type/size table's initial tier,
@@ -476,11 +476,12 @@ a type outside the effective type set, or a type in the set with no
 complete row where the repository renamed it (the
 [work-types rule](work-types.md#configuration)); a tier or effort outside
 the closed lists (`execution` and `strategic` read as `standard` and
-`complex`); an alias outside the known families for a runtime that
-has them; a `routing.models` row in which a stricter complexity tier maps
-to a family of a lower M0 tier (from the list, or from
-`routing.family_tiers`) than a lighter one; a
-`family_tiers` entry with no reason; and, where the repository has a label taxonomy
+`complex`); a model outside a runtime's known families whose M0 tier neither
+`routing.model_tiers` nor `routing.family_tiers` declares; a `routing.models` or effective stage row in which a stricter complexity tier maps
+to a family of a lower M0 tier (from the list, `routing.model_tiers`, or
+`routing.family_tiers`) than a lighter one, whenever both model tiers can be
+resolved; a `model_tiers` or `family_tiers`
+entry with no reason; and, where the repository has a label taxonomy
 (`issue_tracker.taxonomy`), a raise list the repository declares naming a
 label the taxonomy does not declare. A default list is never refused: a
 default label the taxonomy does not declare raises nothing, since no item
@@ -578,7 +579,10 @@ refused `do_item` section does today; it is never read as absent.
   would run those judgment layers on a cheaper model, which is the depth
   inside the drive [work types left out](work-types.md#left-out) for the
   same reason. The session's model is the person's or the launcher's
-  choice; a pass keeps the model the drive was armed with.
+  choice. A pass is not changed by an item-derived implementer route, but an
+  explicitly requested complexity tier resolves through `routing.models`, and
+  its ordinary Codex fallback reads the all-stages `codex.standard` cell.
+  Changing either shared cell can therefore change a pass.
 - **Routing the scouts and the review tiers.** Each skill chooses them in
   its own text (the scouts and the pattern review on a fast model, the
   semantic review on the strongest available), the place M0 puts a skill's

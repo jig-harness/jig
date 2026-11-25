@@ -6,6 +6,7 @@ import {
   clonePath,
   environmentLayer,
   fieldInMessage,
+  formatDisplayValue,
   formatField,
   layerOf,
   loadLayeredConfig,
@@ -520,6 +521,20 @@ test("field paths round-trip keys that hold dots", () => {
   expect(formatField(path)).toBe('do_item.agents.title_keywords."node.js"');
   expect(parseField(formatField(path))).toEqual(path);
   expect(parseField("a.b")).toEqual(["a", "b"]);
+});
+
+test("field paths escape control and bidirectional characters", () => {
+  const path = ["routing", "model_tiers", "model\u0080\u202Ename"];
+  expect(formatField(path)).toBe(
+    'routing.model_tiers."model\\u0080\\u202ename"',
+  );
+  expect(parseField(formatField(path))).toEqual(path);
+});
+
+test("display values escape Unicode line separators", () => {
+  expect(formatDisplayValue("model\u2028name\u2029next")).toBe(
+    '"model\\u2028name\\u2029next"',
+  );
 });
 
 test("jig-config reports a key that holds a dot as one field", () => {

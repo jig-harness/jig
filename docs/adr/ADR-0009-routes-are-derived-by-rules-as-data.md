@@ -109,17 +109,24 @@ Every route can be explained from the configuration and the issue, and
 checked against the outcome. Moving a rule is one field in `routing`, with
 a report beside it. A repository that wants a model to route must first
 show, from the reports, the class of item the rules get wrong, and admit
-the pass for that class alone. The routing table becomes one of the
-policy's declaration points, beside agent and skill metadata, which the
-policy and the audit's criterion say. The session, the scouts, the review
-tiers and the drive's passes keep the model they have, so the judgment
-layers a pickup runs are never routed down with its implementer.
+the pass for that class alone. The routing table selects models for runtime
+stages; it is not a policy declaration point for a Judgment decision layer.
+That layer records its own admission and baseline beside its metadata or
+configuration declaration, as the policy and audit criterion require. The
+session, the scouts and the review tiers keep the model they have, so the
+judgment layers a pickup runs are never routed down with its implementer. A
+drive pass is likewise unaffected by an item-derived implementer route, but it
+can use an explicit complexity tier through `routing.models` or the all-stages
+`codex.standard` cell; changing either of those shared cells can therefore
+change a drive pass.
 
 ## Extraction (decisions-become-checks)
 
 The configuration loader refuses a `routing` value outside the closed
-lists, an alias outside the known families for a runtime that has them,
-and a row in which a stricter complexity tier maps to a cheaper family
-than a lighter one, from one families list in `plugin/shared/` that the
-policy's mappings link. The audit's M0 criterion reads the `## Route` section of
-recent pull requests as evidence beside the score.
+lists, a model outside a runtime's known families whose tier neither
+`routing.model_tiers` nor `routing.family_tiers` declares, and a row in
+which a stricter complexity tier maps to a cheaper family
+than a lighter one when it can resolve both model tiers, from one families list in `plugin/shared/` that the
+policy's mappings link. The audit's M0 criterion currently evaluates
+layer-specific admission and baseline evidence at each declaration; collecting
+recent pull requests' `## Route` sections as routing evidence is planned.
