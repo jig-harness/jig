@@ -788,6 +788,7 @@ function planIdleClaimed(
 ): void {
   const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
   const latest = latestPickupFor(item.key, input.launches);
+  if (hostFaultStop(item, input, plan, latest, pr)) return;
   if (quietByPr(item, input, pr, plan, asksPerson(latest))) {
     if (
       pickup.kind === "ended" &&
@@ -805,7 +806,6 @@ function planIdleClaimed(
       );
     return;
   }
-  if (hostFaultStop(item, input, plan, latest, pr)) return;
   if (lockWaitStop(item, input, plan, latest, pr)) return;
   const asked =
     pickup.kind === "ended" ? questionAsked(input, item, pickup.record) : null;

@@ -6,7 +6,9 @@
  */
 import { claimedLaunchRoot } from "./plan-input-fixtures.ts";
 import { afterEach, describe, expect, it } from "bun:test";
-import { rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { captureIdentity } from "../../shared/liveness.ts";
 import type {
   CommentFact,
@@ -15,6 +17,7 @@ import type {
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { DEFAULT_LABELS } from "../lib/labels.ts";
 import { type LaunchClaim, readLaunches } from "../lib/launches.ts";
+import { readEnded, recordExit, writeRecord } from "../lib/launches.ts";
 import type { SessionsReport, Workspace } from "../lib/runtime/port.ts";
 import type { SharedContext } from "../lib/shared-launches.ts";
 import { type StationInputs, stationPorts } from "../lib/station-ports.ts";
@@ -144,6 +147,64 @@ describe("the steps on a person's answer", () => {
       const refused = await stationPorts(i).releasePickup("#513");
       expect(reasonOf(refused)).toContain(says);
       expect(i.moved).toEqual([]);
+    }
+  });
+
+  it("settles a carried whole-batch question without releasing its anchor", async () => {
+    const root = mkdtempSync(join(tmpdir(), "jig-carried-batch-"));
+    try {
+      const record = {
+        version: 1,
+        id: "20261112T164041Z-carried",
+        token: "t",
+        account: "a",
+        action: "pickup",
+        repo: "example-org/web",
+        repoPath: "/srv/work/web",
+        configDir: "/tmp",
+        facts: "f",
+        vendor: "claude",
+        item: "#513",
+        pr: null,
+        workspace: null,
+        createdAt: "2026-11-12T16:40:41.000Z",
+        wallBackoffMs: 0,
+        replaces: null,
+        attempts: [],
+        released: false,
+        claimedItems: ["#513"],
+        batchItems: [
+          { key: "#513", person: "writer" },
+          { key: "#514", person: "writer" },
+        ],
+      };
+      writeRecord(record as never, root);
+      recordExit(
+        record.id,
+        {
+          at: "2026-11-12T17:00:00Z",
+          code: 0,
+          signal: null,
+          said: "Question: Should the batch follow the shared approach?\n",
+        },
+        root,
+      );
+      const i = inputs({
+        root,
+        links: {
+          itemsOf: () => null,
+          prsOf: () => [{ number: 793, url: "u" }],
+        },
+      });
+      const result = await stationPorts(i).releasePickup("#513", record.id);
+      expect(result.ok).toBe(true);
+      expect(i.moved).toEqual([]);
+      expect(readEnded(record.id, root)?.record.releasedItems).toEqual([
+        "#514",
+      ]);
+    } finally {
+      closeStateDb(root);
+      rmSync(root, { recursive: true, force: true });
     }
   });
 

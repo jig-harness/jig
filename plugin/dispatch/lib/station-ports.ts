@@ -263,6 +263,31 @@ export function releaseRecord(
   return null;
 }
 
+/**
+ * Settle the unclaimed members of a whole-batch question whose anchor remains
+ * carried by an open pull request. The carrying claim is deliberately kept.
+ */
+function settleCarriedBatchRecord(
+  inputs: StationInputs,
+  item: string,
+  id: string,
+): string | null | undefined {
+  const root = inputs.root ?? stateRoot();
+  const ended = readEnded(id, root);
+  if (ended === null) return `launch record ${id} is not an ended record`;
+  const { record } = ended;
+  if (record.action !== "pickup" || record.repo !== inputs.repo.slug)
+    return `launch record ${id} is not a pickup of ${inputs.repo.slug}`;
+  if (!wholeBatchQuestion(ended) || record.item !== item) return undefined;
+  const members = record.batchItems?.map((member) => member.key) ?? [];
+  const settled = members.filter((member) => !pickupClaimed(record, member));
+  record.releasedItems = [
+    ...new Set([...(record.releasedItems ?? []), ...settled]),
+  ];
+  writeRecord(record, root);
+  return null;
+}
+
 /** Why an open pull request stops a release of `item`, or that none can be told; `null` when none carries it. */
 function carryFault(inputs: StationInputs, item: string): string | null {
   const carried = inputs.links?.prsOf(item) ?? null;
@@ -315,7 +340,18 @@ async function releasePickup(
       `${item} is now ${current.state.name}, not a claim to release`,
     );
   const carriedBy = carryFault(inputs, item);
-  if (carriedBy !== null) return refused(carriedBy);
+  if (carriedBy !== null) {
+    const settled =
+      recordId === null
+        ? undefined
+        : settleCarriedBatchRecord(inputs, item, recordId);
+    if (settled === null)
+      return ok(
+        `${carriedBy}; kept its carried claim and released the whole-batch question's unclaimed members`,
+      );
+    if (settled !== undefined) return refused(settled);
+    return refused(carriedBy);
+  }
   const held = await sessionHolds(inputs, (w) => w.items.includes(item), item);
   if (held !== null) return refused(held);
   const unclaimed = ["backlog", "unstarted", "triage"].includes(
