@@ -314,9 +314,9 @@ export function repositoryConfigPath(
 }
 
 const INVISIBLE_DISPLAY =
-  /[\p{Cc}\p{Cf}\p{Bidi_Control}\p{Default_Ignorable_Code_Point}\u2028\u2029]/u;
+  /[\p{Cc}\p{Cf}\p{Cs}\p{Bidi_Control}\p{Default_Ignorable_Code_Point}\u2028\u2029\u2800]/u;
 
-/** Whether one character is invisible: a control, format, separator or default-ignorable character. */
+/** Whether one character is invisible: a control, format, unpaired surrogate, separator, braille blank or default-ignorable character. */
 export function isInvisibleDisplayChar(character: string): boolean {
   return INVISIBLE_DISPLAY.test(character);
 }

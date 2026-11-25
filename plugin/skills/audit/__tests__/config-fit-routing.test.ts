@@ -244,6 +244,9 @@ test("the Markdown rendering keeps a fact on one line and escapes controls", () 
   expect(fact("\uFEFFmain")).not.toBe(fact("main\uFEFF"));
   expect(fact("main\uFEFF")).toBe('- integration_branch: "main\\\\ufeff"');
   expect(fact("\uFEFFmain")).toBe('- integration_branch: "\\\\ufeffmain"');
+  expect(fact("main\u2800")).toBe('- integration_branch: "main\\\\u2800"');
+  expect(fact("main\uD800")).toBe('- integration_branch: "main\\\\ud800"');
+  expect(fact("main\uD800")).not.toBe(fact("main\uD801"));
   expect(fact("main\u200B")).toBe('- integration_branch: "main\\\\u200b"');
   expect(fact("\u200Bmain")).toBe('- integration_branch: "\\\\u200bmain"');
   expect(fact("  main")).not.toBe(fact(" \\u0020main"));
