@@ -178,6 +178,7 @@ export function reviewerStickyBody(
   // are not reviewer evidence. Requiring byte zero rejected valid configured
   // summaries; accepting every trimmed line lets an example replace one.
   let fence: { character: "`" | "~"; length: number } | null = null;
+  let quotedFence: { character: "`" | "~"; length: number } | null = null;
   const structural: string[] = [];
   for (const line of body.split(/\r?\n/)) {
     // Fenced blocks are structural only at Markdown's permitted indentation.
@@ -208,21 +209,48 @@ export function reviewerStickyBody(
     }
     if (fence !== null || indentation.columns >= 4) continue;
     // Finding-count declarations are intentionally rendered as blockquotes by
-    // the reviewer. Keep their prose, but still discard quoted protocol
-    // markers so examples cannot become evidence.
+    // the reviewer. Only the declaration itself survives, and only as a
+    // whole quoted prose line outside quoted code: the rest of a quoted line,
+    // quoted fences and quoted protocol markers are untrusted example text.
     if (/^ {0,3}>/.test(line)) {
-      if (
-        !/findings?(?:\(s\))?\s+without\s+a\s+diff-anchorable\s+line/i.test(
-          line,
-        )
-      )
+      const content = line.replace(/^ {0,3}>[ \t]?/, "");
+      const quotedIndent = markdownIndentation(content);
+      const quotedToken =
+        quotedIndent.columns <= 3
+          ? (/^\s*(`{3,}|~{3,})/.exec(content)?.[1] ?? "")
+          : "";
+      if (quotedFence === null && quotedToken !== "") {
+        const rest = content.slice(
+          content.indexOf(quotedToken) + quotedToken.length,
+        );
+        if (quotedToken[0] === "~" || !rest.includes("`"))
+          quotedFence = {
+            character: quotedToken[0] as "`" | "~",
+            length: quotedToken.length,
+          };
         continue;
-      // The declared count is data, but the rest of the quoted line is still
-      // untrusted example text. Do not let a marker beside that declaration
-      // become review evidence.
-      structural.push(line.replaceAll("<!--", "< !--"));
+      }
+      if (quotedFence !== null) {
+        if (
+          quotedToken !== "" &&
+          quotedToken[0] === quotedFence.character &&
+          quotedToken.length >= quotedFence.length &&
+          /^[ \t]*$/.test(
+            content.slice(content.indexOf(quotedToken) + quotedToken.length),
+          )
+        )
+          quotedFence = null;
+        continue;
+      }
+      if (quotedIndent.columns >= 4) continue;
+      const declaration =
+        /^\s*(\S+\s+findings?(?:\(s\))?\s+without\s+a\s+diff-anchorable\s+line)\s*[.!]?\s*$/i.exec(
+          content,
+        );
+      if (declaration !== null) structural.push(declaration[1] as string);
       continue;
     }
+    quotedFence = null;
     structural.push(line);
   }
   // Every evidence parser consumes this structural view. Returning the raw

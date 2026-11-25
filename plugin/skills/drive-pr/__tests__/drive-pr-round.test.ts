@@ -1707,19 +1707,25 @@ describe("summary-findings marker overrides", () => {
            quotedDeclaration: m.reviewerSticky([
              { id: 25, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n> 2 findings without a diff-anchorable line <!-- custom+sha: def5678 -->' },
            ], false)?.id,
+           quotedDeclarationBody: (() => { const b = s.reviewerStickyBody({ user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n> 2 findings without a diff-anchorable line\\n> <!-- custom+sha: def5678 -->' }, (login) => login === 'reviewer[bot]', '<!-- other-review -->'); return { sha: m.reviewedShaFrom(b ?? ''), declared: m.parseDeclaredUnanchored(b ?? '') }; })(),
+           quotedFencedDeclaration: (() => { const b = s.reviewerStickyBody({ user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n> \`\`\`\\n> 2 findings without a diff-anchorable line\\n> \`\`\`' }, (login) => login === 'reviewer[bot]', '<!-- other-review -->'); return m.parseDeclaredUnanchored(b ?? ''); })(),
+           validSupersedesMalformed: m.reviewerSticky([
+             { id: 31, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: malformed -->\\n<!-- ai-review-round: 2 -->\\n- \`a.ts\` — finding' },
+             { id: 32, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: def5678 -->\\n<!-- ai-review-round: 3 -->\\nall clear' },
+           ], false)?.id,
            malformedSummarySurvivesSkip: (() => { try {
              m.reviewerSticky([
                { id: 26, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: malformed -->\\n<!-- ai-review-round: 5 -->\\n- \`a.ts\` — finding' },
                { id: 27, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: def5678 -->\\n<!-- ai-review-round: 6 -->\\n<!-- ai-review-skip-notice -->\\n\`def5678\` skipped\\n<!-- /ai-review-skip-notice -->' },
-             ], false); return false;
-           } catch { return true; } })(),
+             ], false); return null;
+           } catch (e) { return String(e instanceof Error ? e.message : e); } })(),
            multipleMalformedSummariesSurvivePartialRecovery: (() => { try {
              m.reviewerSticky([
                { id: 28, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: malformed -->\\n<!-- ai-review-round: 5 -->\\n- \`a.ts\` — finding' },
                { id: 29, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: malformed -->\\n<!-- ai-review-round: 2 -->\\n- \`b.ts\` — finding' },
                { id: 30, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: def5678 -->\\n<!-- ai-review-round: 3 -->\\nall clear' },
-             ], false); return false;
-           } catch { return true; } })(),
+             ], false); return null;
+           } catch (e) { return String(e instanceof Error ? e.message : e); } })(),
            foreignSkipDoesNotSetWatermark: s.reviewerStickyIn([
              { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 1 -->', updated_at: '2026-11-24T10:00:00Z' },
              { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- ai-review-round: 3 -->\\n<!-- ai-review-skip-notice -->\\n\`def5678\` skipped\\n<!-- /ai-review-skip-notice -->', updated_at: '2026-11-24T11:00:00Z' },
@@ -1827,8 +1833,14 @@ describe("summary-findings marker overrides", () => {
     expect(got.spacedSha).toBe(true);
     expect(got.caseVariantSha).toBe(true);
     expect(got.quotedDeclaration).toBe(25);
-    expect(got.malformedSummarySurvivesSkip).toBe(true);
-    expect(got.multipleMalformedSummariesSurvivePartialRecovery).toBe(true);
+    const unreadable = "reviewer summary protocol evidence is unreadable";
+    expect(got.malformedSummarySurvivesSkip).toBe(unreadable);
+    expect(got.multipleMalformedSummariesSurvivePartialRecovery).toBe(
+      unreadable,
+    );
+    expect(got.validSupersedesMalformed).toBe(32);
+    expect(got.quotedDeclarationBody).toEqual({ sha: undefined, declared: 2 });
+    expect(got.quotedFencedDeclaration).toBe(0);
     expect(got.foreignSkipDoesNotSetWatermark).toMatchObject({
       sha: "abc1234",
       round: 2,
