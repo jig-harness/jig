@@ -227,6 +227,25 @@ async function readEvidence(
   return ok({ ...(value as ChurnEvidence), rounds: value.rounds });
 }
 
+/** Replace this round's entry with its paths alone: no severity, no blobs. */
+async function withdrawEvidence(
+  ctx: BrakeContext,
+  report: BrakeReport,
+): Promise<number | null> {
+  const withdrawn = await run(
+    tsArgv(ctx.driveStateScript, ["record-paths", ctx.pr, "--stdin-json"]),
+    {
+      stdin: JSON.stringify({ paths: report.openThreadPaths ?? [] }),
+      stdout: "ignore",
+      stderr: "pipe",
+      timeoutSec: ctx.helperTimeoutSec,
+    },
+  );
+  if (withdrawn.code === 0) return null;
+  if (withdrawn.stderr) process.stderr.write(withdrawn.stderr);
+  return withdrawn.code;
+}
+
 /**
  * Judge the round just recorded and park the drive when it churns. Returns
  * the exit the gate ends with (`8` parked, `9` parked on a pull request that
@@ -251,14 +270,14 @@ export async function runChurnBrake(
     );
   const n = setting.value;
   if (n === 0) return null;
-  // A head the reviewer has not reviewed carries findings from an earlier
-  // head: the round recorded no facts and is no round of review churn to judge.
-  if (report.reviewedSha !== report.apiHead) return null;
   if (!recorded)
     return indeterminate(
       report,
       `this round's structural-churn evidence could not be recorded for #${ctx.pr} (the record-paths write or the file-content read failed; the stderr line above names which), so the brake cannot judge the round; re-arm the drive`,
     );
+  // A head the reviewer has not reviewed carries findings from an earlier
+  // head: the round recorded no facts and is no round of review churn to judge.
+  if (report.reviewedSha !== report.apiHead) return null;
   const state = await readEvidence(ctx);
   if (!state.ok)
     return indeterminate(
@@ -296,11 +315,15 @@ export async function runChurnBrake(
       undefined,
       ctx.budgetLeftSec,
     );
-    if (!now.ok)
+    if (!now.ok) {
+      // The PR may have moved: the evidence the verdict rested on is
+      // uncertified, so it is withdrawn as for a confirmed change.
+      const failedCode = await withdrawEvidence(ctx, report);
       return indeterminate(
         report,
-        `${describeTrip(trip)}, but #${ctx.pr}'s head and base could not be re-read before the park (${now.reason}); re-arm the drive`,
+        `${describeTrip(trip)}, but #${ctx.pr}'s head and base could not be re-read before the park (${now.reason}); ${failedCode === null ? "round " + round + "'s evidence was withdrawn" : "round " + round + "'s evidence could not be withdrawn (record-paths exited " + failedCode + ")"}; re-arm the drive`,
       );
+    }
     if (
       now.snapshot.state !== "OPEN" ||
       now.snapshot.headRefOid !== report.apiHead ||
@@ -311,22 +334,12 @@ export async function runChurnBrake(
     ) {
       // The verdict is withheld, so the facts it rested on must not stay
       // durable: a later gate would judge an entry nothing certified.
-      const withdrawn = await run(
-        tsArgv(ctx.driveStateScript, ["record-paths", ctx.pr, "--stdin-json"]),
-        {
-          stdin: JSON.stringify({ paths: report.openThreadPaths ?? [] }),
-          stdout: "ignore",
-          stderr: "pipe",
-          timeoutSec: ctx.helperTimeoutSec,
-        },
-      );
-      if (withdrawn.code !== 0) {
-        if (withdrawn.stderr) process.stderr.write(withdrawn.stderr);
+      const failedCode = await withdrawEvidence(ctx, report);
+      if (failedCode !== null)
         return indeterminate(
           report,
-          `#${ctx.pr} changed while the ${CHURN_CLASS} verdict was reached, and round ${round}'s evidence could not be withdrawn (record-paths exited ${withdrawn.code}); re-arm the drive once it is addressed`,
+          `#${ctx.pr} changed while the ${CHURN_CLASS} verdict was reached, and round ${round}'s evidence could not be withdrawn (record-paths exited ${failedCode}); re-arm the drive once it is addressed`,
         );
-      }
       return terminal(
         report,
         "HEAD_MOVED",

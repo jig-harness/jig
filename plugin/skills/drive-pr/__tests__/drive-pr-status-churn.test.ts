@@ -37,7 +37,10 @@ afterAll(() => rmSync(scratch, { recursive: true, force: true }));
  * A repository with one commit per round, each rewriting a.ts, whose ids are
  * the heads: a round is a distinct push, and its file contents are read.
  */
-function history(rounds: number): { cwd: string; heads: string[] } {
+function history(
+  rounds: number,
+  contents?: readonly number[],
+): { cwd: string; heads: string[] } {
   const cwd = mkdtempSync(join(scratch, "repo-"));
   const env = Object.fromEntries(
     Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")),
@@ -64,7 +67,10 @@ function history(rounds: number): { cwd: string; heads: string[] } {
   git("init", "-q");
   const heads: string[] = [];
   for (let i = 1; i <= rounds; i++) {
-    writeFileSync(join(cwd, "a.ts"), `export const round = ${i};\n`);
+    writeFileSync(
+      join(cwd, "a.ts"),
+      `export const round = ${contents?.[i - 1] ?? i};\n`,
+    );
     git("add", ".");
     git("commit", "-q", "-m", `round ${i}`);
     heads.push(git("rev-parse", "HEAD"));
@@ -267,19 +273,25 @@ describe("drive-status.ts structural-churn brake", () => {
 
   it("parks on a file whose content returned to an earlier one (A, B, A)", async () => {
     // A real repository: the gate reads file contents at the head it judges.
-    const repo = history(4);
+    // The final reviewed commit restores round 1's content, so only the gate's
+    // own measurement of round 4 completes the return.
+    const repo = history(4, [1, 2, 3, 1]);
     const head = repo.heads[3] as string;
+    const first = spawnSync("git", ["rev-parse", `${repo.heads[0]}:a.ts`], {
+      cwd: repo.cwd,
+      encoding: "utf8",
+    }).stdout.trim();
     const fx = writeFixture({ head, threads: [finding("PRRT_live", "high")] });
     seedRounds(fx.stateDir, 3, "c4a".padEnd(40, "3"));
-    const blob = (c: string) => c.repeat(40);
     const seeded = readState(fx.stateDir, "999") as Record<string, unknown>;
+    const blobs = [first, "b".repeat(40), "c".repeat(40)];
     writeState(fx.stateDir, "999", {
       ...seeded,
-      roundPaths: ["a", "b", "a"].map((c, i) => ({
+      roundPaths: blobs.map((blob, i) => ({
         round: i + 1,
         paths: ["a.ts"],
         severe: true,
-        blobs: { "a.ts": blob(c) },
+        blobs: { "a.ts": blob },
       })),
     });
     const r = await probeIn(fx.dir, fx.stateDir, head, ["--bump-attempt"], {
