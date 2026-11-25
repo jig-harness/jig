@@ -404,6 +404,15 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.308.2] - 2026-11-25
+
+### Fixed
+
+- End an expired pull-request poll with exit `4` even when the deadline
+  prevents the next read. Preserve diagnostics from failed reads and retry a
+  drive that stopped on a probe read failure once per pull-request head.
+- Use clickable cross-repository issue and PR links in `/jig:orchestrate` reports and notebooks.
+
 ## [0.308.1] - 2026-11-25
 
 ### Fixed
@@ -11031,7 +11040,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.308.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.308.2...HEAD
+[0.308.2]: https://github.com/jig-harness/jig/compare/v0.308.1...v0.308.2
 [0.308.1]: https://github.com/jig-harness/jig/compare/v0.308.0...v0.308.1
 [0.308.0]: https://github.com/jig-harness/jig/compare/v0.307.0...v0.308.0
 [0.307.0]: https://github.com/jig-harness/jig/compare/v0.306.4...v0.307.0
