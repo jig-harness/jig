@@ -372,7 +372,6 @@ async function installVerb(
   const { components, script } = context;
   const free = checkCommandPath();
   if (!free.ok) return failureExit(free.failure);
-  if (args.noUpgrade) await optOut(args.confirm);
   const jobless = withoutJobs(args, context);
   if (jobless) {
     console.log(
@@ -397,6 +396,9 @@ async function installVerb(
         console.log,
       );
   if (code !== 0) return code;
+  // Do not persist the opt-out until the selected install preflights and jobs
+  // have succeeded: a refused component install must leave user settings alone.
+  if (args.noUpgrade) await optOut(args.confirm);
   console.log("== the jig command ==");
   const deadlineSec = commandDeadlineSec(components);
   return installCommand({

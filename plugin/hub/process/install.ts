@@ -85,7 +85,6 @@ export function hubJobSpec(): JobSpec {
     stateRoot: join(hubHome(), "job"),
     args: ["hub", "serve", "--scheduled"],
     schedule: { everyMinutes: 1, afterExit: true },
-    deadlineSec: 86_400,
   };
 }
 

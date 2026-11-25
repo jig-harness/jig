@@ -193,13 +193,24 @@ export async function startHub(
     serving,
     listenerHandlers(options.routes ?? emptyRoutes()),
   );
+  const stopped = served.then(
+    async () => {
+      options.stop.removeEventListener("abort", forward);
+      await shutdown();
+    },
+    async () => {
+      options.stop.removeEventListener("abort", forward);
+      await shutdown();
+    },
+  );
   // `serve` settles before every listener is up only when one could not bind.
   const up = await Promise.race([
     served.then((outcome) => outcome),
     bound.then((listeners) => ok(listeners)),
   ]);
   if (!up.ok || up.value === undefined) {
-    await shutdown();
+    halt.abort("the hub could not start listening");
+    await stopped.catch(() => undefined);
     return failed(
       "unavailable",
       up.ok ? "the hub stopped before it listened" : up.failure.reason,
@@ -223,13 +234,12 @@ export async function startHub(
   if (!recorded.ok) {
     options.stop.removeEventListener("abort", forward);
     halt.abort("the hub could not record what it bound");
-    await served;
-    await shutdown();
+    await stopped.catch(() => undefined);
     return recorded;
   }
   return ok({
     listeners,
     scheduling,
-    stopped: served.then(shutdown),
+    stopped,
   });
 }

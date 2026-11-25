@@ -424,7 +424,7 @@ hub keeps none of these.
 | --- | --- | --- | --- | --- |
 | `hub-in-flight-read` | table `in_flight_reads`, one row per partition and target | the unit reading the target through, when it took the read and its deadline, 30 seconds later | `hub/storage/operations.ts`, for the core's `takeInFlightRead` and `releaseInFlightRead` | taken by one insert that replaces the row only once its deadline has passed; released only by its holder; the trimming job deletes a row a day after its deadline |
 | `hub-job-lease` | table `job_leases`, one row per partition and job | the run holding the job and until when, its progress as JSON, and when a run last started and finished | `hub/storage/operations.ts`, for the core's job helper (`hub/core/jobs.ts`) | taken by one insert that takes the row only when it is free or lapsed; progress saved and the lease renewed only while the holder's lease holds; finished only by its holder |
-| `hub-job-schedule` | table `job_schedules`, one row per partition and job | when the job is next due and, for a job that repeats, its cadence in milliseconds | `hub/storage/operations.ts`, for the process adapter's scheduling (`hub/process/scheduling.ts`) | replaced whole by one upsert on its key; the run at one moment removes its row once it has run |
+| `hub-job-schedule` | table `job_schedules`, one row per partition and job | when the job is next due and, for a job that repeats, its cadence in milliseconds | `hub/storage/operations.ts`, for the process adapter's scheduling (`hub/process/scheduling.ts`) | replaced whole by one upsert on its key; a one-shot is deleted before its run begins, so a restart does not launch it twice |
 
 ## Markers that are not records
 

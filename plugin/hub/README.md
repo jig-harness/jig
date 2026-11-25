@@ -91,6 +91,9 @@ so it must never reach the hub's settings or its database.
      `~/.jig/hub`, stays the hub user's alone, which is why the socket's
      default sits beside it.
 
+     Create the shared group first, and add both the hub and front users to
+     it, before naming it in `feed.group`.
+
    ```sh
    chmod 600 ~/.jig/hub/settings.yaml
    ```
@@ -115,11 +118,14 @@ so it must never reach the hub's settings or its database.
    - the settings file mounted read-only at `/run/jig-hub/settings.yaml`;
    - the database directory and the feed socket's directory mounted
      read-write at their own paths;
-   - the host's network (`--network=host`), so the listeners bind exactly
+   - on Linux, the host's network (`--network=host`), so the listeners bind exactly
      the host addresses the settings name and no port is published beyond
      them; it also lets the hub reach the services the host listens for on
      loopback;
    - the hub user's uid and gid, and a read-only root filesystem.
+
+   Container mode currently requires Linux host networking. On macOS and
+   other platforms the job runs `jig hub serve` directly.
 
    Prefer podman, rootless: to run containers with docker, the hub's user
    joins the `docker` group, and that group can do anything as root on the
@@ -171,19 +177,11 @@ neither rotation drops a delivery. The commands come with webhook intake.
 
 ## Recovering from a compromise
 
-In this order:
-
-1. Stop the hub: `jig uninstall hub --machine --yes` removes its job and
-   stops the running hub, and fails when the hub has not stopped (the
-   database stays). Without `--machine` the hub's job stays.
-2. Revoke the App's private key on GitHub and make a new one.
-3. Rotate every webhook secret.
-4. Revoke the tracker application's tokens and rotate its secret.
-5. Make a new identity key, which voids every host's pin, credential and
-   watch credential, so each host enrolls again.
-6. Delete the database's copies of host records and the world view, which
-   come back on their own.
-7. Start the hub (`jig install hub --yes`) and approve the hosts again,
-   checking each request's details.
-
-The audit trail says who held what before.
+The shipped hub has no enrollment, webhook, forge, tracker, identity-key or
+host-approval commands yet. Stop a suspected hub with
+`jig uninstall hub --machine --yes`; it removes the job and stops the running
+process while keeping the database for investigation. Rotate credentials in
+the services that issued them, preserve the database and settings file as
+evidence, then reinstall the hub after the affected settings have been
+replaced. Host enrollment and recovery audit records arrive with those
+features.
