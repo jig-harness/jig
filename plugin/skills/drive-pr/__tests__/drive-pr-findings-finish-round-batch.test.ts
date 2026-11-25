@@ -29,6 +29,54 @@ describe("finish-round.ts", () => {
   const findingsFinishRoundFixtures = createFindingsFinishRoundFixtures();
   const { seed, finishRound } = findingsFinishRoundFixtures;
 
+  const acceptedThread = (id: string) => ({
+    id,
+    bot: true,
+    comments: [
+      { authorAssociation: "NONE", body: "a finding" },
+      {
+        author: "example-user-2",
+        authorAssociation: "OWNER",
+        body: "**accepted** — fixed.",
+      },
+    ],
+  });
+
+  async function bumpRound(
+    stateDir: string,
+    fixtureDir: string,
+    cwd: string,
+    head: string,
+  ) {
+    await seed(stateDir, fixtureDir, cwd, [
+      "bump-round",
+      "999",
+      "--head",
+      head,
+    ]);
+  }
+
+  async function holdAcceptedThread(
+    stateDir: string,
+    fixtureDir: string,
+    cwd: string,
+    key: string,
+    commentUrl: string,
+  ) {
+    await seed(stateDir, fixtureDir, cwd, [
+      "hold",
+      "999",
+      "--key",
+      key,
+      "--kind",
+      "thread",
+      "--outcome",
+      "accepted",
+      "--comment-url",
+      commentUrl,
+    ]);
+  }
+
   it("reports a held code-scanning moot over an unsettled alert as left open, not resolved", async () => {
     const r = await finishRound({
       fixture: {
@@ -90,18 +138,7 @@ describe("finish-round.ts", () => {
       fixture: {
         threads: [
           { id: "PRRT_live", path: "a.ts", bot: true },
-          {
-            id: "PRRT_current",
-            bot: true,
-            comments: [
-              { authorAssociation: "NONE", body: "a finding" },
-              {
-                author: "example-user-2",
-                authorAssociation: "OWNER",
-                body: "**accepted** — fixed.",
-              },
-            ],
-          },
+          acceptedThread("PRRT_current"),
         ],
       },
       seedState: async ({ stateDir, fixtureDir, cwd }) => {
@@ -109,42 +146,22 @@ describe("finish-round.ts", () => {
         // reply and the resolve leaves behind. `claim-held` refuses it on the
         // round check, and that refusal must not take the current round's own
         // held thread down with it.
-        await seed(stateDir, fixtureDir, cwd, [
-          "bump-round",
-          "999",
-          "--head",
-          PREV,
-        ]);
-        await seed(stateDir, fixtureDir, cwd, [
-          "hold",
-          "999",
-          "--key",
+        await bumpRound(stateDir, fixtureDir, cwd, PREV);
+        await holdAcceptedThread(
+          stateDir,
+          fixtureDir,
+          cwd,
           "PRRT_stale",
-          "--kind",
-          "thread",
-          "--outcome",
-          "accepted",
-          "--comment-url",
           "https://example.invalid/held-comment-stale",
-        ]);
-        await seed(stateDir, fixtureDir, cwd, [
-          "bump-round",
-          "999",
-          "--head",
-          HEAD,
-        ]);
-        await seed(stateDir, fixtureDir, cwd, [
-          "hold",
-          "999",
-          "--key",
+        );
+        await bumpRound(stateDir, fixtureDir, cwd, HEAD);
+        await holdAcceptedThread(
+          stateDir,
+          fixtureDir,
+          cwd,
           "PRRT_current",
-          "--kind",
-          "thread",
-          "--outcome",
-          "accepted",
-          "--comment-url",
           "https://example.invalid/PRRT_current/comment-1",
-        ]);
+        );
       },
     });
     expect(r.exitCode).toBe(6);
@@ -175,48 +192,27 @@ describe("finish-round.ts", () => {
       fixture: {
         threads: [
           { id: "PRRT_live", path: "a.ts", bot: true },
-          {
-            id: "PRRT_vanisher",
-            bot: true,
-            comments: [
-              { authorAssociation: "NONE", body: "a finding" },
-              {
-                author: "example-user-2",
-                authorAssociation: "OWNER",
-                body: "**accepted** — fixed.",
-              },
-            ],
-          },
+          acceptedThread("PRRT_vanisher"),
         ],
       },
       seedState: async ({ stateDir, fixtureDir, cwd }) => {
         // Held in this order — `held`'s array preserves hold order, and the
         // drain processes `pending` in that same order, so PRRT_vanisher is
         // dispatched first.
-        await seed(stateDir, fixtureDir, cwd, [
-          "hold",
-          "999",
-          "--key",
+        await holdAcceptedThread(
+          stateDir,
+          fixtureDir,
+          cwd,
           "PRRT_vanisher",
-          "--kind",
-          "thread",
-          "--outcome",
-          "accepted",
-          "--comment-url",
           "https://example.invalid/PRRT_vanisher/comment-1",
-        ]);
-        await seed(stateDir, fixtureDir, cwd, [
-          "hold",
-          "999",
-          "--key",
+        );
+        await holdAcceptedThread(
+          stateDir,
+          fixtureDir,
+          cwd,
           "PRRT_victim",
-          "--kind",
-          "thread",
-          "--outcome",
-          "accepted",
-          "--comment-url",
           "https://example.invalid/held-comment-victim",
-        ]);
+        );
         // Resolving PRRT_vanisher has a side effect, via the shared gh stub's
         // resolveReviewThread branch, of releasing PRRT_victim — simulating a
         // CONCURRENT driver resolving it between this drain's own batch
