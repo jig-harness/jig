@@ -1084,7 +1084,7 @@ function integrationBranch(
         {
           id: "unchecked:repository.base_branch",
           severity: "info",
-          message: `the clone has no origin remote, so whether ${declared} exists there is unchecked`,
+          message: `the clone has no origin remote, so whether ${formatDisplayValue(declared)} exists there is unchecked`,
         },
       ];
     const found = run(
@@ -1098,7 +1098,7 @@ function integrationBranch(
           {
             id: "derivation:repository.base_branch",
             severity: "error",
-            message: `repository.base_branch is ${declared}, but origin has no such branch (fetch, or correct the name)`,
+            message: `repository.base_branch is ${formatDisplayValue(declared)}, but origin has no such branch (fetch, or correct the name)`,
           },
         ];
   }
@@ -2293,7 +2293,12 @@ const SECTIONS: [Finding["severity"], string][] = [
  * so a value that differs only by such a character still reads differently.
  */
 function factText(value: string): string {
-  return formatDisplayValue(value);
+  const shown = formatDisplayValue(value);
+  // A value with edge whitespace or a leading quote is quoted too, so it
+  // cannot read like its trimmed or already-quoted twin.
+  return shown === value && /^\s|\s$|^"/.test(value)
+    ? JSON.stringify(value)
+    : shown;
 }
 
 export function render(report: FitReport): string {

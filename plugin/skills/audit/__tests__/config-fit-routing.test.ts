@@ -231,7 +231,9 @@ test("the Markdown rendering keeps a fact on one line and escapes controls", () 
   expect(fact("a\rb\u202Ec")).toBe('- integration_branch: "a\\\\rb\\\\u202ec"');
   expect(fact("main\r")).toBe('- integration_branch: "main\\\\r"');
   expect(fact("main\t")).toBe('- integration_branch: "main\\\\t"');
-  expect(fact("main\u2028x")).not.toContain("\u2028");
+  expect(fact("main\u2028x")).toBe('- integration_branch: "main\\\\u2028x"');
+  expect(fact("  main")).toBe('- integration_branch: "  main"');
+  expect(fact("main")).not.toBe(fact('"main"'));
   const marker = `z${" ".repeat(200000)}z`;
   expect(fact(marker)).toBe(`- integration_branch: z${" ".repeat(200000)}z`);
 });
