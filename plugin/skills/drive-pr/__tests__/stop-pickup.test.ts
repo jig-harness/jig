@@ -94,6 +94,13 @@ describe("stopPickup", () => {
     ).toBe("");
   });
 
+  it("hands on the work a wall-clock kill left through a person's stop answer", async () => {
+    const r = await pickupAfter([stop("8", true), stop("1", true)]);
+    expect(r.notice).toStartWith("RE-ARMED AFTER A PERSON'S STOP");
+    expect(r.inheritsEdits).toBe(true);
+    expect((await pickupAfter([stop("1")])).notice).toBe("");
+  });
+
   it("hands on the work of a ceiling stop whose park could not be recorded", async () => {
     const r = await pickupAfter([stop("6", true)]);
     expect(r.inheritsEdits).toBe(true);

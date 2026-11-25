@@ -69,6 +69,10 @@ const OWN_STOPS: ReadonlySet<number> = new Set([
 
 /** The notice of a pass deadline or an unreadable listing, ahead of `leftWork`'s lines. */
 function stopHeadline(code: number, round: string | number): string[] {
+  if (code === DRIVE_EXIT.INDETERMINATE)
+    return [
+      `RE-ARMED AFTER A PERSON'S STOP AT THE CEILING: the drive before this one stayed stopped at round ${round} on a person's answer to its ceiling park, after the wall-clock cap killed its pass.`,
+    ];
   if (code === DRIVE_EXIT.HITL_PARKED || code === MAX_ROUNDS_EXIT)
     return [
       `RE-ARMED AFTER A WALL-CLOCK PARK: the drive before this one parked at round ${round} when the wall-clock cap killed its pass.`,
@@ -110,10 +114,18 @@ async function stallHeadline(
   ];
 }
 
-/** The ceiling stops: a park, or the exit used when the park could not be recorded. */
+/**
+ * The ceiling stops: a park, the exit used when the park could not be
+ * recorded, or the no-pass stop a person's answer to the park keeps the
+ * drive at (`INDETERMINATE`, which carries the earlier stop's measurement).
+ */
 function isCeilingStop(stop: DriveEvent): boolean {
   const code = Number(stop.cause);
-  return code === DRIVE_EXIT.HITL_PARKED || code === MAX_ROUNDS_EXIT;
+  return (
+    code === DRIVE_EXIT.HITL_PARKED ||
+    code === MAX_ROUNDS_EXIT ||
+    code === DRIVE_EXIT.INDETERMINATE
+  );
 }
 
 /** What a drive armed after `state`'s last stop hands its first pass. */
