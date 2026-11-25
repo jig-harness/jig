@@ -8,7 +8,8 @@
  * chapter's title, status line and generated sections in place between their
  * markers, leaving the prose alone; the index page's list of chapters; and
  * each chapter's data file under `plugin/protocol/data/`. `--stage` also
- * stages each file it changed, for the pre-commit hook.
+ * stages every planned generated output, so an index-stale output is refreshed
+ * for the pre-commit hook even when the working tree already has its bytes.
  *
  * `--check` writes nothing. It fails, naming each file and section that
  * differs and the command that fixes it (data files are compared as parsed
@@ -58,6 +59,8 @@ export interface GenerateResult {
   unreadable: string | null;
   /** The files a write changed, relative to the root. */
   written: string[];
+  /** Every generated output, relative to the root. */
+  outputs: string[];
   /** The merge base a check compared with. */
   comparedWith: string | null;
 }
@@ -86,11 +89,12 @@ export function generate(options: GenerateOptions): GenerateResult {
   const chapters = options.chapters ?? CHAPTERS;
   const { root } = options;
   const plan = planOutputs(root, chapters);
+  const outputs = plan.outputs.map((output) => output.path);
   const findings = [...plan.findings];
   const written: string[] = [];
   if (!options.check) {
     written.push(...writeOutputs(root, plan.outputs));
-    return { findings, unreadable: null, written, comparedWith: null };
+    return { findings, unreadable: null, written, outputs, comparedWith: null };
   }
   for (const output of plan.outputs)
     for (const part of staleness(root, output))
@@ -103,10 +107,22 @@ export function generate(options: GenerateOptions): GenerateResult {
   findings.push(...heldFindings(root, chapters));
   const base = mergeBase(root, options.base ?? null, options.env);
   if (!base.ok)
-    return { findings, unreadable: base.reason, written, comparedWith: null };
+    return {
+      findings,
+      unreadable: base.reason,
+      written,
+      outputs,
+      comparedWith: null,
+    };
   const atBase = baseData(root, base.commit);
   if (!atBase.ok)
-    return { findings, unreadable: atBase.reason, written, comparedWith: null };
+    return {
+      findings,
+      unreadable: atBase.reason,
+      written,
+      outputs,
+      comparedWith: null,
+    };
   findings.push(
     ...atBase.findings,
     ...compareWithBase({
@@ -121,12 +137,13 @@ export function generate(options: GenerateOptions): GenerateResult {
     findings,
     unreadable: null,
     written,
+    outputs,
     comparedWith: `${base.commit.slice(0, 12)} (the merge base with ${base.ref})`,
   };
 }
 
 /**
- * Stage the files a write changed, in the index the running commit uses: the
+ * Stage every planned output in the index the running commit uses: the
  * environment is passed on whole, since a pre-commit hook's git names that
  * index in it.
  */
@@ -180,8 +197,23 @@ function reportWrite(
   staging: boolean,
 ): number {
   for (const file of result.written) console.log(`protocol: wrote ${file}`);
-  if (staging && stage(root, result.written) !== 0) return 2;
+  // The index can hold an older generated output even where the working tree
+  // already matches the rendered value. Stage the complete output set so a
+  // source-only commit cannot leave that stale index entry behind.
+  if (staging && stage(root, result.outputs) !== 0) return 2;
   return result.findings.length ? 1 : 0;
+}
+
+/** Refuse to stage a generated file that also carries an unstaged hand edit. */
+export function hasUnstagedOutput(
+  root: string,
+  files: readonly string[],
+): boolean {
+  if (!files.length) return false;
+  return (
+    Bun.spawnSync(["git", "-C", root, "diff", "--quiet", "--", ...files])
+      .exitCode !== 0
+  );
 }
 
 /** A check's verdict: a finding fails it, an unread merge base could not check. */
@@ -204,6 +236,20 @@ function main(args: string[]): number {
     return 2;
   }
   const root = join(import.meta.dir, "..", "..");
+  // `git add` stages a whole file. Refusing before rendering is the only safe
+  // answer when a mixed generated/prose chapter has unstaged prose.
+  if (
+    command.stage &&
+    hasUnstagedOutput(
+      root,
+      planOutputs(root, CHAPTERS).outputs.map((o) => o.path),
+    )
+  ) {
+    console.error(
+      "protocol: refusing --stage because a generated output has unstaged edits",
+    );
+    return 2;
+  }
   const result = generate({
     root,
     check: command.check,

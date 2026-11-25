@@ -21,7 +21,8 @@ pre-commit:
     # The generated-file inventory's commit-time twin for the Jig Protocol
     # (M2): when a staged file is among the chapters' sources (the protocol
     # entry of .config/change-areas.yaml), regenerate the chapters and stage
-    # each one the generator changed, so the commit carries them.
+    # every planned generated output, so the commit carries them even when an
+    # older index entry is the only stale copy.
     protocol:
       glob:
         - "tools/protocol/**"
@@ -37,6 +38,7 @@ pre-commit:
         - "plugin/skills/steward/SKILL.md"
         - "plugin/skills/drive-pr/SKILL.md"
         - "plugin/skills/drive-pr/scripts/drive-status.ts"
+        - "plugin/skills/drive-pr/scripts/lib/outcome.ts"
         - "plugin/skills/drive-pr/scripts/drive.ts"
         - "plugin/skills/drive-pr/scripts/lib/driver/**"
         - "plugin/skills/drive-pr/scripts/lib/state/lease.ts"
@@ -67,6 +69,8 @@ pre-commit:
         - "plugin/shared/records/registry-machine-rows.json"
         - "plugin/shared/records/not-records.ts"
         - "plugin/shared/records/envelope.ts"
+        - "plugin/shared/reply-markers.ts"
+        - "plugin/shared/summary-answer-blocks.ts"
         - "plugin/shared/records/followup-values.ts"
         - "plugin/shared/records/writer.ts"
         - "plugin/shared/errors.ts"

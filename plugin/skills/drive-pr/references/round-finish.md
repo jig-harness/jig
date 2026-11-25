@@ -679,6 +679,16 @@ do not invoke it; it is wired in already. The following points apply:
 
 ## Draining a `kind: finding`
 
+`finish-round.ts` claims each held summary finding and submits the round's
+answers as one comment. Each answer carries its own outcome, reason and
+fingerprint marker. Before posting, the batch reconciles trusted markers
+and skips answers already delivered. A batch above the forge comment limit
+returns its claims with a diagnostic so the held reasons can be shortened.
+It releases completed claims
+individually and returns claims after failed dispatches. The procedure below
+covers manual recovery of a single hold.
+
+
 **`kind: finding`** — because concurrent drivers in sibling worktrees can be reading
 this same `held` snapshot right now, **claim a key before dispatching its
 external mutation**. The claim carries `--pushed-sha` and makes the *same*
@@ -730,12 +740,8 @@ retries (and back off between them) rather than relying on the outer pass
 counter to catch an inner loop it cannot see.
 
 This is the actual double-dispatch guard: `answer-summary-finding.ts` posts a
-new top-level comment on the none-answered path — the branch that dispatches
-when no live marker exists yet for the fingerprint, as opposed to refusing a
-*mixed* batch where some fingerprints already carry one — and that path is
-**not** idempotent — so two drivers both reading the same held
-snapshot and both dispatching for the same key is what corrupts the PR with a
-duplicate comment. The claim closes that
+new top-level comment on the posting path. Two drivers can read the same pre-post snapshot, so the
+claim prevents both from dispatching the same held key. The claim closes that
 for the ordinary case — only the one that wins `claim-held` may call
 `answer-summary-finding.ts` for that key this round — but it is a lease with
 a finite window, not a guarantee against every interleaving: a dispatch that
@@ -764,14 +770,13 @@ bun "<skill-dir>/scripts/drive-state.ts" release-held [PR] --key K --token <prin
 
 A `finding` is answered with `bun "<skill-dir>/../../shared/command.ts" --stdin-file .context/scratch/held-reason.md -- bun "<skill-dir>/scripts/portable.ts" answer-summary-finding [PR] --outcome <outcome> --fingerprint <key>`, after writing the item's own `.reason` field **verbatim** to `.context/scratch/held-reason.md` with the file editor —
 never re-composed or re-derived from memory, which is exactly the recollection
-this batch exists not to depend on. `--pushed-sha` must be the PR's live head
-and this worktree's clean HEAD, so the marker cannot precede the push; it does
+this batch exists not to depend on. For `accepted` and `moot`, `--pushed-sha`
+must be the PR's live head and this worktree's clean HEAD, so the marker
+cannot precede the push; it does
 not attempt to prove a commit landed for this particular finding, and § 3's
 "one limit to plan around" says why nothing here can.
 
-That call reconciles the exact fingerprint/SHA markers already on the PR first,
-and then follows the paths below — read them separately, because only the
-posting path mutates the PR:
+The manual CLI reconciles exact fingerprint/SHA markers before it posts:
 
 - **Every fingerprint already answered** → idempotent no-op, exit 0. Nothing is
   posted, so a crash-recovery retry of a batch that already dispatched is safe.

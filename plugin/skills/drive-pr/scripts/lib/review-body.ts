@@ -515,5 +515,6 @@ export function reviewBodyReport(input: ReviewBodyInput): SummaryReport {
     total: findings.length,
     findings,
     unaddressed: findings.filter((f) => !f.addressed),
+    ignoredBacklog: [],
   };
 }

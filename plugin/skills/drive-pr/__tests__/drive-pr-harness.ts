@@ -65,7 +65,11 @@ export const WORKTREE_LOCK = await worktreeLockName();
  * that genuinely needs git to answer uses instead, and
  * `the head tokens are not objects in this repository` pins the property.
  */
-import { HEAD, stickyBody } from "./drive-pr-sticky-fixture.ts";
+import {
+  HEAD,
+  type StickyBacklog,
+  stickyBody,
+} from "./drive-pr-sticky-fixture.ts";
 export { HEAD, stickyBody } from "./drive-pr-sticky-fixture.ts";
 export const PREV = "7bd2ca906c111111111111111111111111111111";
 // Keep the fake git push contract independent of guarded-push.ts's own
@@ -338,7 +342,8 @@ export interface Fixture {
   stateChangesAfter?: number;
   /** Extra reviewer comments that are NOT the sticky (no ai-code-review marker). */
   decoyReviewerComments?: string[];
-  backlog?: boolean;
+  backlog?: StickyBacklog;
+  unanchoredSummary?: number;
   /**
    * GitHub's mergeability verdict: `MERGEABLE`, `CONFLICTING`, or `UNKNOWN`
    * while it recomputes. Defaults to `MERGEABLE`.
@@ -2579,6 +2584,9 @@ export function writeFixture(
       body: stickyBody({
         sha: f.reviewedSha ?? head,
         backlog: f.backlog ?? false,
+        ...(f.unanchoredSummary === undefined
+          ? {}
+          : { unanchored: f.unanchoredSummary }),
         ...(f.stickyRound === null ? { round: null } : {}),
       }),
       user: { login: "example-review[bot]" },

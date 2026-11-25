@@ -24,8 +24,8 @@ import { retryAttempts } from "../../../shared/retry.ts";
  *   drive-status.ts --json --no-count   head-sync wait; the flag is what keeps
  *                                       the round counter still
  *   drive-state.ts held                 a FRESH read, never memory
- *   per item, one at a time             thread → resolve-held-thread.ts
- *                                       finding → claim → answer → release
+ *   per held thread                    resolve-held-thread.ts
+ *   held findings                      claim each → post one reply → release each
  *
  * An agent following that ordering by hand can get it wrong, and prose cannot
  * be the mechanism for an ordering whose failures are silent — so this script
@@ -170,10 +170,7 @@ import { isTransparentFollowUp } from "./lib/bot-confirmation.ts";
 import { applyCommitPrefix } from "./lib/commit-prefix-step.ts";
 import { fail, isDigits, isGitSha, runMain, short } from "./lib/cli.ts";
 import { hasLeaveOpenMarker, qualifyingOutcome } from "./lib/outcome.ts";
-import {
-  drainedThreadResult,
-  threadAwaitsAlert,
-} from "./lib/scanner-sweep-guard.ts";
+import { threadAwaitsAlert } from "./lib/scanner-sweep-guard.ts";
 import {
   ciHoldTimeoutSeconds,
   ghCall,
@@ -205,6 +202,12 @@ import { writePassFinish } from "./lib/state/pass-finish.ts";
 import { resolveStateDir } from "./lib/state/store.ts";
 import { holdParkReason, isUnheldOutcome } from "./lib/missing-required-run.ts";
 import { observedPush } from "./lib/push-failure.ts";
+import {
+  answerFindingBatch,
+  type HeldRecord,
+  type ItemOutcome,
+  resolveThreadItem,
+} from "./lib/finish-round-drain.ts";
 import { roundFinishRecorder } from "./lib/state/round-finish.ts";
 import { TRUSTED_ASSOCIATIONS } from "./summary-findings.ts";
 
@@ -213,8 +216,6 @@ const driveState = join(here, "drive-state.ts");
 const driveStatus = join(here, "drive-status.ts");
 const ciHold = join(here, "ci-hold.ts");
 const guardedPush = join(here, "guarded-push.ts");
-const resolveHeldThread = join(here, "resolve-held-thread.ts");
-const answerSummaryFinding = join(here, "answer-summary-finding.ts");
 // Same script, same resolution `drive-status.ts` uses for its own thread
 // enumeration (`ctx.listThreadsScript`): the ONE canonical implementation
 // lives in /resolve-review-comments, not a copy under this skill.
@@ -239,17 +240,6 @@ const MAX_BATCH_READS = 5;
 
 /** How many times ONE key may be attempted across those re-reads. */
 const MAX_ATTEMPTS_PER_KEY = 2;
-
-interface HeldRecord {
-  key: string;
-  kind: "thread" | "finding";
-  outcome: string;
-  round: number;
-  reason?: string;
-  actor: string;
-  verifiedSha?: string;
-  commentUrl?: string;
-}
 
 /**
  * Parse a `drive-state.ts held` payload, element-checked rather than merely
@@ -1566,45 +1556,42 @@ async function main(): Promise<number> {
     );
     if (pending.length === 0) break;
 
-    // `stale` is set by a `claim-held` exit 4 — the snapshot being iterated is
-    // no longer current, so SKILL.md § 6 says re-read before trusting anything
-    // else in it. Breaking out here rather than continuing the inner loop is
-    // that instruction, mechanised.
     let stale = false;
-    for (const item of pending) {
-      attempts.set(item.key, (attempts.get(item.key) ?? 0) + 1);
-      const outcome =
-        item.kind === "thread"
-          ? await resolveThreadItem(pr, item, report.head)
-          : await answerFindingItem(pr, item, report.head);
-      if (outcome.abort !== undefined) {
-        resultsByKey.set(item.key, outcome.result);
-        report.items = Array.from(resultsByKey.values());
-        return done(outcome.abort.code, outcome.abort.state, outcome.abort.why);
-      }
-      // A stale outcome (claim-held exit 4: "not in the held batch") is not
-      // recorded at all — it means a fresh `held` read is needed, and the key
-      // is either already handled elsewhere (gone from the next read, nothing
-      // left to reconcile) or still there (re-attempted, and THAT attempt's own
-      // outcome — success or a genuine refusal — is what overwrites this key's
-      // entry). Recording it unconditionally made one logical key appear TWICE
-      // in a FINISHED report whenever a transient stale retry was followed by a
-      // real success, and the SAME map is what fixes the sibling bug: a key's
-      // non-stale REFUSAL that later succeeds (a DIFFERENT key going stale
-      // forces a fresh read that retries this one too) now overwrites its own
-      // earlier refused entry, instead of a separate counter remembering a
-      // refusal that no longer exists. `echoDiagnostic` already surfaced the
-      // stale event live at the call site above, so nothing here is silently
-      // lost — only the misleading permanent record is.
-      if (!outcome.stale) {
-        resultsByKey.set(item.key, outcome.result);
-        report.items = Array.from(resultsByKey.values());
-      }
+    const record = (key: string, outcome: ItemOutcome): void => {
       if (outcome.stale) {
         stale = true;
-        break;
+      } else {
+        resultsByKey.set(key, outcome.result);
+        report.items = Array.from(resultsByKey.values());
       }
+    };
+    const countAttempt = (item: HeldRecord): void => {
+      attempts.set(item.key, (attempts.get(item.key) ?? 0) + 1);
+    };
+    for (const item of pending.filter((held) => held.kind === "thread")) {
+      countAttempt(item);
+      const outcome = await resolveThreadItem(pr, item, report.head);
+      record(item.key, outcome);
+      if (outcome.abort !== undefined) {
+        return done(outcome.abort.code, outcome.abort.state, outcome.abort.why);
+      }
+      if (stale) break;
     }
+    if (stale) continue;
+
+    // A stale finding claim restarts the read before any comment is sent.
+    // Once a comment is delivered, settlement can refuse but cannot go stale.
+    const findings = await answerFindingBatch(
+      pr,
+      pending.filter((held) => held.kind === "finding"),
+      report.head,
+      countAttempt,
+    );
+    for (const outcome of findings) record(outcome.result.key, outcome);
+    const abort = findings.find(
+      (outcome) => outcome.abort !== undefined,
+    )?.abort;
+    if (abort !== undefined) return done(abort.code, abort.state, abort.why);
     if (!stale) break;
   }
 
@@ -1664,8 +1651,7 @@ async function main(): Promise<number> {
       // reach here having gone stale on every attempt it DID get (some
       // non-zero count under MAX_ATTEMPTS_PER_KEY), or having never been
       // reached at all — the inner loop breaks the INSTANT any item in
-      // `pending` goes stale (this file's own "Breaking out here" comment
-      // above), so a batch whose earlier keys keep going stale can exhaust
+      // `pending` goes stale, so a batch whose earlier keys keep going stale can exhaust
       // MAX_BATCH_READS before a later sibling is ever attempted once. A
       // thread is the concrete case: its claim path could not return exit 4
       // at all before this same fix, so a remaining thread on an unpatched
@@ -1692,8 +1678,7 @@ async function main(): Promise<number> {
     }
     report.items = Array.from(resultsByKey.values());
     // Mirrors the per-item split just above, at the summary level: the loop
-    // stops at the FIRST stale item on each read (this file's own "Breaking
-    // out here" comment), so a batch whose earlier keys keep going stale can
+    // stops at the first stale item on each read, so a batch whose earlier keys keep going stale can
     // exhaust the bounds with later siblings never attempted even once. A
     // summary that unconditionally says "each stayed stale on every attempt"
     // contradicts those siblings' own honest per-item diagnostics and can
@@ -1723,331 +1708,6 @@ async function main(): Promise<number> {
     "FINISHED",
     `round finished on ${report.head}: pushed, stamped, head-synced, ${report.items.length} held item(s) drained`,
   );
-}
-
-interface ItemOutcome {
-  result: ItemResult;
-  /** A `claim-held` exit 4 — re-read the batch before continuing. */
-  stale?: boolean;
-  /** Set when the whole drain must stop, not just this key. */
-  abort?: { code: number; state: Report["state"]; why: string };
-}
-
-/**
- * A held THREAD, resolved only through the wrapper — never `resolve-thread.ts`
- * directly, whose mutation is unconditional and has no notion of which push
- * justifies it. The wrapper's `claim-held --kind thread` is both
- * the provenance check and the thread's OWN claim, in one lock hold, so there
- * is no separate claim/release pair on this path.
- */
-async function resolveThreadItem(
-  pr: string,
-  item: HeldRecord,
-  head: string,
-): Promise<ItemOutcome> {
-  const res = await run(
-    tsArgv(resolveHeldThread, ["--key", item.key, "--pushed-sha", head, pr]),
-    { stderr: "pipe" },
-  );
-  if (isLeaseExit(res.code)) {
-    echoDiagnostic("resolve-held-thread.ts", res.stderr);
-    return {
-      result: {
-        key: item.key,
-        kind: item.kind,
-        action: "refused",
-        code: res.code,
-        diagnostic: res.stderr,
-      },
-      abort: {
-        code: res.code,
-        state: "LEASE_HELD",
-        why: `resolve-held-thread.ts refused with exit ${res.code}`,
-      },
-    };
-  }
-  if (res.code === 3) {
-    // The stored state itself is unreadable — `resolve-held-thread.ts`
-    // reaches this both through its own precheck `drive-state.ts held` call
-    // and through `claim-held`, either of which propagates `store.ts`'s
-    // `ExitError(3)` verbatim on a malformed stored state. Not a per-key
-    // problem — `answerFindingItem` already treats the identical exit from
-    // the finding path as a batch-level abort; this mirrors it, rather than
-    // iterating the rest of an untrustworthy snapshot one silently-refused
-    // thread at a time.
-    echoDiagnostic("resolve-held-thread.ts", res.stderr);
-    return {
-      result: {
-        key: item.key,
-        kind: item.kind,
-        action: "refused",
-        code: 3,
-        diagnostic: res.stderr,
-      },
-      abort: {
-        code: 1,
-        state: "BATCH_UNREADABLE",
-        why: "drive-state.ts could not read this PR's state — stopping the drain rather than operating on unreadable state",
-      },
-    };
-  }
-  if (res.code !== 0) {
-    echoDiagnostic("resolve-held-thread.ts", res.stderr);
-    return {
-      result: {
-        key: item.key,
-        kind: item.kind,
-        action: "refused",
-        code: res.code,
-        diagnostic: res.stderr,
-      },
-      // Mirrors the finding path's `claimRes.code === 4` handling above.
-      // `resolve-held-thread.ts` returns exit 4 — from either its own `held`
-      // precheck or the `claim-held --kind thread` call it wraps — when the
-      // key is no longer in the held batch at all, which is the snapshot
-      // going stale (a concurrent operation, most often this very thread's
-      // own resolve, already removed it since this drain's last read), not a
-      // property of this item. Recording it as a permanent refusal made the
-      // drain return PARTIAL/6 over work that had already finished.
-      stale: res.code === 4,
-    };
-  }
-  return { result: drainedThreadResult(item.key, item.kind, res) };
-}
-
-/**
- * A held FINDING: claim, dispatch, release — in that order, with the release
- * fired the instant the external operation succeeds rather than accumulated
- * into an end-of-batch `--all`. A pass killed after answering three of five
- * and before a single release would re-answer all five next round, and
- * `answer-summary-finding.ts`'s none-answered path posts a NEW top-level
- * comment every call.
- *
- * The item's own `.reason` goes to the dispatch verbatim on stdin — never
- * re-composed, which is exactly the recollection the durable batch exists not
- * to depend on.
- */
-async function answerFindingItem(
-  pr: string,
-  item: HeldRecord,
-  head: string,
-): Promise<ItemOutcome> {
-  const refusal = (code: number, diagnostic: string): ItemOutcome => ({
-    result: {
-      key: item.key,
-      kind: item.kind,
-      action: "refused",
-      code,
-      diagnostic,
-    },
-  });
-
-  // Checked BEFORE the claim, not after: `answer-summary-finding.ts` refuses a
-  // blank reason anyway, but reaching that refusal costs a claim this script
-  // would then have to give back, and a claim/unclaim pair over a record that
-  // was never dispatchable is noise in the one log a successor reads. `hold
-  // --kind finding` requires the body on stdin, so an entry without one did
-  // not come from that path.
-  if ((item.reason ?? "").trim() === "") {
-    const diagnostic = `finish-round.ts: held finding '${item.key}' carries no reason body — 'drive-state.ts hold --kind finding' requires one, so this entry did not come from that path. Re-hold it via SKILL.md § 3 with the reason on stdin.\n`;
-    // Locally generated, not a helper's stderr — but `emit()`'s prose mode
-    // only prints action/code/key per item, never the diagnostic text, so
-    // without this an operator watching an unattended (non-`--json`) run
-    // sees a bare PARTIAL and has to go dig for what actually corrupted the
-    // held entry.
-    echoDiagnostic("finish-round.ts", diagnostic);
-    return refusal(2, diagnostic);
-  }
-
-  const claimRes = await run(
-    tsArgv(driveState, [
-      "claim-held",
-      pr,
-      "--key",
-      item.key,
-      "--kind",
-      "finding",
-      "--pushed-sha",
-      head,
-    ]),
-    { stderr: "pipe" },
-  );
-  if (claimRes.code !== 0) {
-    echoDiagnostic("claim-held", claimRes.stderr);
-    if (isLeaseExit(claimRes.code)) {
-      return {
-        ...refusal(claimRes.code, claimRes.stderr),
-        abort: {
-          code: claimRes.code,
-          state: "LEASE_HELD",
-          why: `drive-state.ts claim-held refused with exit ${claimRes.code}`,
-        },
-      };
-    }
-    // Exit 3 is the stored state itself being unreadable — not a per-key
-    // problem, so the round stops rather than iterating an entire batch one
-    // silently-failing key at a time. Exit 4 is a stale snapshot: re-read.
-    // Everything else (1, and the usage codes) is per-key — skip it, keep
-    // going, and let the report carry the refusal.
-    if (claimRes.code === 3) {
-      return {
-        ...refusal(3, claimRes.stderr),
-        abort: {
-          code: 1,
-          state: "BATCH_UNREADABLE",
-          why: "drive-state.ts could not read this PR's state — stopping the drain rather than operating on unreadable state",
-        },
-      };
-    }
-    return {
-      ...refusal(claimRes.code, claimRes.stderr),
-      stale: claimRes.code === 4,
-    };
-  }
-  const token = claimRes.stdout.trim();
-  if (token === "") {
-    // A claim that printed no token cannot be released or unclaimed, so it
-    // must not be dispatched against either: the key would be wedged behind a
-    // claim nothing can give back. Reported, not worked around.
-    const diagnostic =
-      "claim-held printed no token — refusing to dispatch a claim this script could not release. Inspect 'drive-state.ts get'.\n";
-    echoDiagnostic("finish-round.ts", diagnostic);
-    return refusal(1, diagnostic);
-  }
-
-  const answerRes = await run(
-    tsArgv(answerSummaryFinding, [
-      "--outcome",
-      item.outcome,
-      "--fingerprint",
-      item.key,
-      "--pushed-sha",
-      head,
-      pr,
-    ]),
-    { stderr: "pipe", stdin: item.reason ?? "" },
-  );
-  if (answerRes.code !== 0) {
-    echoDiagnostic("answer-summary-finding.ts", answerRes.stderr);
-    // Give the claim back immediately rather than leaving it to expire, so a
-    // retry — this round or the next — is not blocked behind the staleness
-    // window. The retry must still start with a fresh `claim-held`: this
-    // token is dead the moment `unclaim-held` accepts it.
-    const unclaimRes = await run(
-      tsArgv(driveState, [
-        "unclaim-held",
-        pr,
-        "--key",
-        item.key,
-        "--token",
-        token,
-      ]),
-      { stderr: "pipe" },
-    );
-    if (unclaimRes.code !== 0) {
-      echoDiagnostic("unclaim-held", unclaimRes.stderr);
-    }
-    if (isLeaseExit(answerRes.code)) {
-      return {
-        ...refusal(answerRes.code, answerRes.stderr),
-        abort: {
-          code: answerRes.code,
-          state: "LEASE_HELD",
-          why: `answer-summary-finding.ts refused with exit ${answerRes.code}`,
-        },
-      };
-    }
-    // A lease refusal from the cleanup itself is still a lease refusal from
-    // "any step" (see isLeaseExit's contract) even though the answer dispatch
-    // that provoked it failed for an ordinary reason — flattening it into an
-    // per-key refused/6 would leave the claim live and block recovery until
-    // the staleness window expires instead of ending the run now.
-    if (isLeaseExit(unclaimRes.code)) {
-      return {
-        ...refusal(answerRes.code, answerRes.stderr),
-        abort: {
-          code: unclaimRes.code,
-          state: "LEASE_HELD",
-          why: `unclaim-held refused with exit ${unclaimRes.code}`,
-        },
-      };
-    }
-    // A non-lease unclaim failure leaves the claim live rather than reverting
-    // it to reclaimable — a fact the report must carry alongside the answer's
-    // own refusal, not just echo to a scrollback an unattended pass never
-    // reads.
-    return refusal(
-      answerRes.code,
-      unclaimRes.code === 0
-        ? answerRes.stderr
-        : `${answerRes.stderr}\nunclaim-held also failed (exit ${unclaimRes.code}) — the claim on '${item.key}' remains live rather than reclaimable:\n${unclaimRes.stderr}`,
-    );
-  }
-
-  const releaseRes = await run(
-    tsArgv(driveState, [
-      "release-held",
-      pr,
-      "--key",
-      item.key,
-      "--token",
-      token,
-    ]),
-    { stderr: "pipe" },
-  );
-  if (releaseRes.code !== 0) {
-    echoDiagnostic("release-held", releaseRes.stderr);
-    const out = refusal(
-      releaseRes.code,
-      `finish-round.ts: the ANSWER for '${item.key}' was posted successfully; only the release failed, so the entry is still held at ${head}.\n${releaseRes.stderr}`,
-    );
-    // A lease refusal here means another driver has taken over since the
-    // answer posted — the same "any step" contract as every other lease
-    // check, and the reason this one must abort rather than fall through to
-    // the ordinary reconcile-and-rerun path below: continuing would dispatch
-    // the REST of this batch against a lease that is no longer this
-    // process's to hold.
-    if (isLeaseExit(releaseRes.code)) {
-      return {
-        ...out,
-        abort: {
-          code: releaseRes.code,
-          state: "LEASE_HELD",
-          why: `release-held refused with exit ${releaseRes.code}`,
-        },
-      };
-    }
-    // Exit 3 is the stored state itself being unreadable — not a per-key problem,
-    // the same "malformed, refuse" condition the claim step already aborts the
-    // whole drain over (`claimRes.code === 3` above) and `resolveThreadItem`
-    // mirrors for the thread path. Falling through to an ordinary per-item
-    // refusal here left a batch-level failure looking like one bad key: if this
-    // was the last item, the drain returns PARTIAL/6 naming ONE finding to
-    // reconcile, when the real problem is that nothing in `held` can be trusted
-    // right now.
-    if (releaseRes.code === 3) {
-      return {
-        ...out,
-        abort: {
-          code: 1,
-          state: "BATCH_UNREADABLE",
-          why: `release-held could not read this PR's state after posting the answer for '${item.key}' — the answer stands, but stopping the drain rather than operating on unreadable state`,
-        },
-      };
-    }
-    // The ANSWER is already on the PR — that is the irreversible half, and it
-    // succeeded. A failed, non-lease, non-3 release leaves the entry held at
-    // the SHA it was answered under, which the next `claim-held` refuses
-    // (correctly: it is what stops a duplicate comment) and whose recovery
-    // that refusal itself prints. Reported as a refusal so the round does not
-    // read as clean, and NOT retried here: the token is still valid, so a
-    // human or a re-run can release it, and a retry loop over a stored state
-    // that just refused a write is not a recovery.
-    return out;
-  }
-  return {
-    result: { key: item.key, kind: item.kind, action: "answered", code: 0 },
-  };
 }
 
 runMain("finish-round.ts", main);

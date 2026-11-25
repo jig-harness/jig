@@ -1009,6 +1009,7 @@ async function main(): Promise<number> {
             unresolvedThreadKeys: report.openThreadKeys,
             unresolvedThreadVersions: report.openThreadVersions,
             summaryUnaddressedKeys: report.summaryUnaddressedKeys,
+            summaryIgnoredBacklogKeys: report.summaryIgnoredBacklogKeys,
             summaryHeldUndispatchedKeys: report.summaryHeldUndispatchedKeys,
             parkedKeys: report.parkedItemKeys,
             actionableParkKeys: report.actionableParkKeys,
