@@ -404,6 +404,15 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.308.3] - 2026-11-25
+
+### Fixed
+
+- Drive-pr reports explicitly non-blocking wind-down backlog without
+  requiring answers before convergence. Each round groups its blocking
+  summary-finding answers into one pull request comment and keeps a
+  fingerprint marker per finding so retries can skip delivered answers.
+
 ## [0.308.2] - 2026-11-25
 
 ### Fixed
@@ -11040,7 +11049,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.308.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.308.3...HEAD
+[0.308.3]: https://github.com/jig-harness/jig/compare/v0.308.2...v0.308.3
 [0.308.2]: https://github.com/jig-harness/jig/compare/v0.308.1...v0.308.2
 [0.308.1]: https://github.com/jig-harness/jig/compare/v0.308.0...v0.308.1
 [0.308.0]: https://github.com/jig-harness/jig/compare/v0.307.0...v0.308.0
