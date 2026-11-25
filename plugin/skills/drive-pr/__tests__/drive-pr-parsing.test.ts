@@ -284,6 +284,23 @@ describe("summary-findings parsing", () => {
     expect(parseDeclaredUnanchored(stickyBody({ unanchored: 2 }))).toBe(2);
   });
 
+  it("ignores fenced examples without changing live summary bullets", () => {
+    const body = [
+      "`not a fence ``` and still prose`",
+      "```markdown",
+      "- `example.ts:1` — a fenced decoy",
+      "~~~",
+      "- `still-example.ts:2` — a nested shorter fence",
+      "```",
+      "- `live.ts:3` — a live finding",
+      "> 9 finding(s) without a diff-anchorable line",
+    ].join("\n");
+    expect(parseBodyFindings(body)).toEqual([
+      { path: "live.ts", line: 3, text: "a live finding" },
+    ]);
+    expect(parseDeclaredUnanchored(body)).toBe(9);
+  });
+
   it("extracts severity from the bullet", () => {
     expect(jigSeverity("🟡 **medium** (high confidence)")).toBe("medium");
     expect(jigSeverity("no severity here")).toBe("unknown");

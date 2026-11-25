@@ -448,7 +448,7 @@ export function winddownFingerprintsOf(stickyBody: string): Set<string> {
 }
 
 export function parseDeclaredUnanchored(body: string): number {
-  const m = body.match(
+  const m = withoutFencedExamples(body).match(
     /(\d+)\s+finding\(s\)\s+without\s+a\s+diff-anchorable\s+line/i,
   );
   return m ? Number.parseInt(m[1] ?? "", 10) : 0;
@@ -461,6 +461,41 @@ export interface BodyFinding {
 }
 
 /**
+ * Remove fenced examples without letting inline backticks, a shorter nested
+ * fence, or an unclosed fence change the surrounding summary. Keep line
+ * breaks so the line-oriented finding parser cannot join two live bullets.
+ */
+function withoutFencedExamples(body: string): string {
+  let fence: { char: string; length: number } | null = null;
+  return body
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trimStart();
+      const match = trimmed.match(/^(`{3,}|~{3,})(.*)$/);
+      if (fence !== null) {
+        const closes =
+          match !== null &&
+          match[1]?.[0] === fence.char &&
+          (match[1]?.length ?? 0) >= fence.length &&
+          !(match[2] ?? "").trim();
+        if (closes) fence = null;
+        return "";
+      }
+      // A backtick run with a backtick in its info string is an inline span,
+      // not a CommonMark fence opener.
+      if (
+        match !== null &&
+        !(match[1]?.[0] === "`" && (match[2] ?? "").includes("`"))
+      ) {
+        fence = { char: match[1]?.[0] ?? "`", length: match[1]?.length ?? 0 };
+        return "";
+      }
+      return line;
+    })
+    .join("\n");
+}
+
+/**
  * Finding bullets from the summary body, EXCLUDING the `<details>` block — that
  * block renders the backlog, which is already parsed from its own blob and
  * would otherwise be counted twice.
@@ -469,10 +504,9 @@ export function parseBodyFindings(body: string): BodyFinding[] {
   // A reviewer can use other collapsed sections before or after its backlog.
   // Exclude only the named backlog itself; summary bullets elsewhere still
   // describe fresh work.
-  const head = body
+  const head = withoutFencedExamples(body)
     // Examples in a diagnostic or another collapsed section are prose, not
     // findings.  Only actual Markdown bullets participate in the summary.
-    .replace(/```[\s\S]*?```/g, "")
     .replace(
       /<details><summary>🗂️ <b>Beyond this PR<\/b>[\s\S]*?<\/details>/g,
       "",
