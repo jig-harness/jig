@@ -80,6 +80,21 @@ describe("stopPickup", () => {
     expect((await pickupAfter([stop("8", false)])).notice).toBe("");
   });
 
+  it("keeps the work a park left across a refused re-arm's unmeasured park", async () => {
+    const r = await pickupAfter([stop("8", true), stop("8")]);
+    expect(r.notice).toStartWith("RE-ARMED AFTER A WALL-CLOCK PARK");
+    expect(r.inheritsEdits).toBe(true);
+    // A later stop that measured the tree speaks for it.
+    expect(
+      (await pickupAfter([stop("8", true), stop("8", false)])).notice,
+    ).toBe("");
+  });
+
+  it("hands on the work of a ceiling stop whose park could not be recorded", async () => {
+    const r = await pickupAfter([stop("6", true)]);
+    expect(r.inheritsEdits).toBe(true);
+  });
+
   it("hands a stall's recorded decisions to the next drive, and the work it left", async () => {
     const r = await pickupAfter(
       [stop("14", true)],

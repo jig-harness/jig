@@ -19,7 +19,7 @@
  * the edits here are not its.
  */
 import { resolveActor } from "./../state/actor.ts";
-import { lastStopEvent } from "./../state/events.ts";
+import type { DriveEvent } from "./../state/events.ts";
 import { hostLabel } from "./../state/ledger-mirror.ts";
 import { DRIVE_EXIT } from "./../status/terminal-states.ts";
 import type { DriveState } from "./../state/schema.ts";
@@ -28,6 +28,7 @@ import {
   CI_INFRA_PERSISTED_EXIT,
   CI_REPAIR_SPENT_EXIT,
   CHECK_RUNS_UNREADABLE_EXIT,
+  MAX_ROUNDS_EXIT,
   PASS_DEADLINE_EXIT,
   STALLED_EXIT,
 } from "./settings.ts";
@@ -68,7 +69,7 @@ const OWN_STOPS: ReadonlySet<number> = new Set([
 
 /** The notice of a pass deadline or an unreadable listing, ahead of `leftWork`'s lines. */
 function stopHeadline(code: number, round: string | number): string[] {
-  if (code === DRIVE_EXIT.HITL_PARKED)
+  if (code === DRIVE_EXIT.HITL_PARKED || code === MAX_ROUNDS_EXIT)
     return [
       `RE-ARMED AFTER A WALL-CLOCK PARK: the drive before this one parked at round ${round} when the wall-clock cap killed its pass.`,
     ];
@@ -109,12 +110,34 @@ async function stallHeadline(
   ];
 }
 
+/** The ceiling stops: a park, or the exit used when the park could not be recorded. */
+function isCeilingStop(stop: DriveEvent): boolean {
+  const code = Number(stop.cause);
+  return code === DRIVE_EXIT.HITL_PARKED || code === MAX_ROUNDS_EXIT;
+}
+
+/**
+ * The stop that speaks for the tree: the last one, unless it is a ceiling
+ * stop that never measured the tree (a re-arm refused at the ceiling parks
+ * again before any pass runs). Such a stop carries no word about the work an
+ * earlier stop left, so the search goes back past it to the stop that did.
+ */
+function stopOfTree(events: readonly DriveEvent[]): DriveEvent | undefined {
+  const stops = events.filter((e) => e.kind === "stop");
+  for (let i = stops.length - 1; i >= 0; i--) {
+    const stop = stops[i];
+    if (stop === undefined) break;
+    if (stop.leftWork !== undefined || !isCeilingStop(stop)) return stop;
+  }
+  return stops.at(-1);
+}
+
 /** What a drive armed after `state`'s last stop hands its first pass. */
 export async function stopPickup(
   pr: string,
   state: DriveState,
 ): Promise<StopPickup> {
-  const stop = lastStopEvent(state.events ?? []);
+  const stop = stopOfTree(state.events ?? []);
   const code = stop === undefined ? null : Number(stop.cause);
   const ciStop = code === null ? undefined : CI_STOPS.get(code);
   if (ciStop !== undefined)
@@ -124,7 +147,7 @@ export async function stopPickup(
     };
   const leftWork = stop?.leftWork === true;
   // A park the wall-clock cap forced on a killed pass records what it left.
-  const parkedWithWork = code === DRIVE_EXIT.HITL_PARKED && leftWork;
+  const parkedWithWork = stop !== undefined && isCeilingStop(stop) && leftWork;
   if (code === null || (!OWN_STOPS.has(code) && !parkedWithWork))
     return HANDS_ON_NOTHING;
   const here = stop?.tree === `${await resolveActor()}@${hostLabel()}`;
