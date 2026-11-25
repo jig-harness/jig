@@ -49,7 +49,7 @@ import { planDrift } from "./expectations.ts";
 import { isDrive, type ReadRecord } from "./launches.ts";
 import { parkNotice, stopNotice, unreportedNotice } from "./notices.ts";
 import { goneUnlaunched } from "./recovery-facts.ts";
-import { idleBlocksStart } from "./automation.ts";
+import { automationStartBlock } from "./automation.ts";
 import { backingOff } from "./infra-backoff.ts";
 import { retryWaiting } from "./repeated-ends.ts";
 import { conflictNote } from "./sources/ledger-probe.ts";
@@ -660,12 +660,6 @@ function treeBound(pr: DrivenPr, sessions: SessionsReport): DrivenPr | null {
   };
 }
 
-/** Why an automation pull request's drive is not started again of itself: it needs no work. `null` for any other drive, and for a person's rearm request. */
-function idleWhy(pr: DrivenPr): string | null {
-  if (!idleBlocksStart(pr)) return null;
-  return `${pr.why}; but it is an automation pull request that needs no work (no failing check, no conflict, no unresolved thread), so nothing is started of itself: a person merges it, or labels it rearm`;
-}
-
 /** A drive left unplaced; a ledger or comments that did not read are said to be a failed read. */
 function unplacedDrive(target: string, pr: DrivenPr): Unplaced {
   return {
@@ -702,8 +696,16 @@ function plannable(
     raiseStrandedDrive(input, read, want);
     return null;
   }
+  const startsBlocked = automationStartBlock(pr);
+  // A silent drive the opt-out blocks is not quiet: its person is still told
+  // (planDrive), only the takeover is withheld.
   const waiting =
-    backingOff(pr, input.nowMs) ?? retryWaiting(pr, input.nowMs) ?? idleWhy(pr);
+    backingOff(pr, input.nowMs) ??
+    retryWaiting(pr, input.nowMs) ??
+    (startsBlocked === null ||
+    (pr.class === "silent" && pr.evidence.trustedDriveManual === true)
+      ? null
+      : `${pr.why}; ${startsBlocked}`);
   if (waiting === null) return pr;
   plan.quiet.push({ target, class: pr.class, why: waiting });
   // Nothing is launched for the drive, but a launch of unknown process still
@@ -723,6 +725,24 @@ function raiseStrandedDrive(input: PlanInput, pr: DrivenPr, want: Want): void {
     strandedByRecord(input.slug, pr, input.launches, input.nowMs),
     want,
   );
+}
+
+/** Who takes a drive over, and what could not be read, where the opt-out (`blocked`) does not withhold the takeover. */
+function takeoverReading(
+  input: PlanInput,
+  pr: DrivenPr,
+  hold: DriveHold,
+  blocked: string | null,
+  claimed: TakeoverClaim | null,
+) {
+  const takeover =
+    blocked === null && hold.kind === "takeover" ? hold.record.record.id : null;
+  const foreign = takeover === null && blocked === null ? claimed : null;
+  const read =
+    blocked === null
+      ? orphanReading(pr, input, takeover, foreign)
+      : { holder: null, gone: null, unread: `${pr.why}; ${blocked}` };
+  return { takeover, foreign, ...read };
 }
 
 /** One driven pull request: quiet, unplaced, held by a launch record or another host's claim, or wanted. */
@@ -746,13 +766,20 @@ function planDrive(
     raiseStrandedDrive(input, pr, want);
     return;
   }
-  const takeover = hold.kind === "takeover" ? hold.record.record.id : null;
+  const blocked = pr.class === "silent" ? automationStartBlock(pr) : null;
   // Another host's open takeover on these ledger facts holds the drive even
   // where this host's own record would take it over.
-  const placed = planForeign(input, pr, plan, want);
-  if (placed === true) return;
-  const foreign = takeover === null ? placed : null;
-  const { holder, gone, unread } = orphanReading(pr, input, takeover, foreign);
+  // The opt-out withholds only the takeover: the other host's claim is still
+  // placed, and its diagnostics raised.
+  const claimed = planForeign(input, pr, plan, want);
+  if (claimed === true) return;
+  const { takeover, foreign, holder, gone, unread } = takeoverReading(
+    input,
+    pr,
+    hold,
+    blocked,
+    claimed,
+  );
   const taken =
     takeover !== null || foreign !== null || holder !== null || gone !== null;
   if (QUIET.has(pr.class) && !taken) {
