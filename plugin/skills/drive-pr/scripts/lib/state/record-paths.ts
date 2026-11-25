@@ -25,7 +25,7 @@ interface RecordPathsArgs {
 
 async function readInput(
   a: RecordPathsArgs,
-): Promise<{ paths: string[]; facts: RoundFacts }> {
+): Promise<{ paths: string[]; facts: RoundFacts; round?: number }> {
   if (!a.stdinJson)
     return {
       paths: a.stdin ? (await readStdinAll()).split("\n") : a.paths,
@@ -78,7 +78,7 @@ export async function recordPathsCommand(
       `record-paths: #${pr} has not counted a round yet (rounds=0) — run drive-status.ts (which bumps first) or drive-state.ts bump-round/bump-attempt before recording anchors`,
     );
   }
-  const { paths: raw, facts } = await readInput(a);
+  const { paths: raw, facts, round: expectedRound } = await readInput(a);
   // The cap `foldRoundPaths` applies is silent by construction — sort,
   // then slice — so a round with genuinely more distinct anchor paths
   // than the cap loses the overflow with nothing in the stored state
@@ -92,16 +92,31 @@ export async function recordPathsCommand(
       `record-paths: #${pr} round ${store.read().state.rounds} has ${distinct.length} distinct anchor path(s), exceeding the ${ROUND_PATHS_MAX_PER_ROUND}-path cap — ${distinct.length - ROUND_PATHS_MAX_PER_ROUND} dropped and will not feed structuralEscalationDue`,
     );
   }
-  await store.update((s) => ({
-    ...s,
-    roundPaths: foldRoundPaths(
-      s.roundPaths,
-      s.rounds,
-      raw,
-      s.lastEscalatedRound,
-      facts,
-    ),
-  }));
+  // A write bound to a judged round (`"round"` in the JSON form) is checked
+  // under the same lock that writes it: when the drive has counted a later
+  // round, the entry it meant to replace is already gone, and writing now
+  // would overwrite the newer observation with the older one.
+  let stale = false;
+  await store.update((s) => {
+    stale = expectedRound !== undefined && s.rounds !== expectedRound;
+    if (stale) return s;
+    return {
+      ...s,
+      roundPaths: foldRoundPaths(
+        s.roundPaths,
+        s.rounds,
+        raw,
+        s.lastEscalatedRound,
+        facts,
+      ),
+    };
+  });
+  if (stale) {
+    console.error(
+      `record-paths: #${pr} is at round ${store.read().state.rounds}, not the round ${expectedRound} this write was bound to — nothing was written`,
+    );
+    return 3;
+  }
   process.stdout.write(`${JSON.stringify(store.read().state.roundPaths)}\n`);
   return 0;
 }

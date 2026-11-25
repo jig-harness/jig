@@ -12,9 +12,9 @@ release: minor
   changing between each pair of consecutive reviewed heads. It also parks when
   a file returned to an earlier content after a different one. That check
   reads only the latest 12 recorded rounds, and a file's content is recorded
-  only for the rounds where it drew a finding, so a file with no finding on
-  the intermediate head escapes it; a round whose contents could not be read
-  is no evidence either way. A head
+  only for the rounds where it drew a finding. A return is judged across the
+  sampled rounds, so a change that no sampled round gives evidence of escapes
+  it; a round whose contents could not be read is no evidence either way. A head
   the reviewer has not reviewed is never judged. A round with a `high` or `blocker` finding never counts
   toward the same-file streak. The park's framed decision names the files and
   the rounds and offers **Ship as is and defer the rest**, **Constrain the

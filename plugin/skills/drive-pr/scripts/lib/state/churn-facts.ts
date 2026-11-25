@@ -69,7 +69,12 @@ export function roundFactsFor(
  * not mean, and storing the rest would hide that.
  */
 function inputProblem(value: Record<string, unknown>): string | null {
-  const { paths, severe, blobs } = value;
+  const { paths, severe, blobs, round } = value;
+  if (
+    round !== undefined &&
+    !(typeof round === "number" && Number.isInteger(round) && round >= 1)
+  )
+    return "round must be a positive integer";
   if (!Array.isArray(paths) || paths.some((p) => typeof p !== "string"))
     return "paths must be a list of strings";
   if (severe !== undefined && typeof severe !== "boolean")
@@ -92,12 +97,14 @@ function blobsProblem(blobs: unknown, paths: readonly string[]): string | null {
 
 /**
  * Read the JSON form of `record-paths --stdin-json`: `{"paths": [...],
- * "severe"?: bool, "blobs"?: {path: id}}`, or the problem that makes the
+ * "severe"?: bool, "blobs"?: {path: id}, "round"?: n}`, or the problem that makes the
  * text not one, so the command refuses it rather than storing a guess.
  */
 export function parseRoundInput(
   text: string,
-): { paths: string[]; facts: RoundFacts } | { problem: string } {
+):
+  | { paths: string[]; facts: RoundFacts; round?: number }
+  | { problem: string } {
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -112,6 +119,7 @@ export function parseRoundInput(
   const { severe, blobs } = value as RoundFacts;
   return {
     paths: value.paths as string[],
+    ...(value.round === undefined ? {} : { round: value.round as number }),
     facts: {
       ...(severe === undefined ? {} : { severe }),
       ...(blobs === undefined ? {} : { blobs }),

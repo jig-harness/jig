@@ -24,7 +24,6 @@ import {
 } from "./drive-pr-harness.ts";
 import { createStatusEscalationFixtures } from "./drive-pr-status-escalation-fixtures.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
-import { readState, seedRounds, writeState } from "./state-rows.ts";
 
 useDrivePrSuite();
 
@@ -271,37 +270,52 @@ describe("drive-status.ts structural-churn brake", () => {
     expect(state.parked.map((p) => p.key)).toEqual(["structural-churn-r4"]);
   });
 
-  it("parks on a file whose content returned to an earlier one (A, B, A)", async () => {
-    // A real repository: the gate reads file contents at the head it judges.
-    // The final reviewed commit restores round 1's content, so only the gate's
-    // own measurement of round 4 completes the return.
-    const repo = history(4, [1, 2, 3, 1]);
+  it("neither records facts nor parks a head the reviewer has not reviewed", async () => {
+    const { stateDir, repo } = await rounds(
+      ["medium", "low", "medium"],
+      history(4),
+    );
     const head = repo.heads[3] as string;
-    const first = spawnSync("git", ["rev-parse", `${repo.heads[0]}:a.ts`], {
-      cwd: repo.cwd,
-      encoding: "utf8",
-    }).stdout.trim();
-    const fx = writeFixture({ head, threads: [finding("PRRT_live", "high")] });
-    seedRounds(fx.stateDir, 3, "c4a".padEnd(40, "3"));
-    const seeded = readState(fx.stateDir, "999") as Record<string, unknown>;
-    const blobs = [first, "b".repeat(40), "c".repeat(40)];
-    writeState(fx.stateDir, "999", {
-      ...seeded,
-      roundPaths: blobs.map((blob, i) => ({
-        round: i + 1,
-        paths: ["a.ts"],
-        severe: true,
-        blobs: { "a.ts": blob },
-      })),
+    const fx = writeFixture({
+      head,
+      reviewedSha: "1".repeat(40),
+      threads: [finding("PRRT_3", "low")],
     });
-    const r = await probeIn(fx.dir, fx.stateDir, head, ["--bump-attempt"], {
+    const r = await probeIn(fx.dir, stateDir, head, ["--bump-attempt"], {
+      env: ENV,
+      cwd: repo.cwd,
+    });
+    expectSpawnExit(exitOf(r), 0);
+    expect(r.json.reason).not.toContain("structural churn");
+    const state = await stored(stateDir, repo.cwd);
+    expect(state.parked).toEqual([]);
+    const last = state.roundPaths?.at(-1);
+    expect(last?.severe).toBeUndefined();
+    expect(last?.blobs).toBeUndefined();
+  });
+
+  it("parks on a file whose content returned to an earlier one (A, B, A)", async () => {
+    // A real repository and real counting gates: three severe rounds on A, B,
+    // C record their own blobs, and the final reviewed commit restores round
+    // 1's content, so only the gate's own measurement of round 4 completes
+    // the return.
+    const repo = history(4, [1, 2, 3, 1]);
+    const early = await rounds(["high", "high", "high"], repo);
+    for (const r of early.results) expectSpawnExit(exitOf(r), 0);
+    const recorded = (await stored(early.stateDir, repo.cwd)).roundPaths ?? [];
+    expect(recorded.map((e) => Object.values(e.blobs ?? {}).length)).toEqual([
+      1, 1, 1,
+    ]);
+    const head = repo.heads[3] as string;
+    const fx = writeFixture({ head, threads: [finding("PRRT_live", "high")] });
+    const r = await probeIn(fx.dir, early.stateDir, head, ["--bump-attempt"], {
       env: ENV,
       cwd: repo.cwd,
     });
     expectSpawnExit(exitOf(r), 8);
     expect(r.state).toBe("HITL_PARKED");
     expect(r.json.reason).toContain("structural churn (oscillation)");
-    const park = (await stored(fx.stateDir)).parked.find(
+    const park = (await stored(early.stateDir, repo.cwd)).parked.find(
       (p) => p.key === "structural-churn-r4",
     );
     expect(park?.class).toBe("structural-churn");

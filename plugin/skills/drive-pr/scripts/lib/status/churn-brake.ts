@@ -227,21 +227,28 @@ async function readEvidence(
   return ok({ ...(value as ChurnEvidence), rounds: value.rounds });
 }
 
-/** Replace this round's entry with its paths alone: no severity, no blobs. */
+/**
+ * Replace the judged round's entry with its paths alone: no severity, no
+ * blobs. The write is bound to `round`, so a drive that has counted a later
+ * round since the judgment keeps its newer entry: `record-paths` exits `3`
+ * then and writes nothing, which leaves no evidence of the judged round to
+ * withdraw.
+ */
 async function withdrawEvidence(
   ctx: BrakeContext,
   report: BrakeReport,
+  round: number,
 ): Promise<number | null> {
   const withdrawn = await run(
     tsArgv(ctx.driveStateScript, ["record-paths", ctx.pr, "--stdin-json"]),
     {
-      stdin: JSON.stringify({ paths: report.openThreadPaths ?? [] }),
+      stdin: JSON.stringify({ paths: report.openThreadPaths ?? [], round }),
       stdout: "ignore",
       stderr: "pipe",
       timeoutSec: ctx.helperTimeoutSec,
     },
   );
-  if (withdrawn.code === 0) return null;
+  if (withdrawn.code === 0 || withdrawn.code === 3) return null;
   if (withdrawn.stderr) process.stderr.write(withdrawn.stderr);
   return withdrawn.code;
 }
@@ -318,7 +325,7 @@ export async function runChurnBrake(
     if (!now.ok) {
       // The PR may have moved: the evidence the verdict rested on is
       // uncertified, so it is withdrawn as for a confirmed change.
-      const failedCode = await withdrawEvidence(ctx, report);
+      const failedCode = await withdrawEvidence(ctx, report, round);
       return indeterminate(
         report,
         `${describeTrip(trip)}, but #${ctx.pr}'s head and base could not be re-read before the park (${now.reason}); ${failedCode === null ? "round " + round + "'s evidence was withdrawn" : "round " + round + "'s evidence could not be withdrawn (record-paths exited " + failedCode + ")"}; re-arm the drive`,
@@ -334,7 +341,7 @@ export async function runChurnBrake(
     ) {
       // The verdict is withheld, so the facts it rested on must not stay
       // durable: a later gate would judge an entry nothing certified.
-      const failedCode = await withdrawEvidence(ctx, report);
+      const failedCode = await withdrawEvidence(ctx, report, round);
       if (failedCode !== null)
         return indeterminate(
           report,
