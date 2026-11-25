@@ -86,7 +86,9 @@ import {
   hostFault,
   latestPickupFor,
 } from "./pickup-host-fault.ts";
+import { hostFaultNeed, restartedNote } from "./host-fault-need.ts";
 import { namedMembers, wholeBatchQuestion } from "./batch-question.ts";
+import { settleBatchSiblings, waitForBatchAnchor } from "./batch-siblings.ts";
 import { relaunched, relaunchStep } from "./pickup-relaunch.ts";
 import { lockWaitStop } from "./pickup-lock-wait.ts";
 import type { TreeReader } from "./pickup-tree.ts";
@@ -203,99 +205,6 @@ function doubleClaim(
   };
 }
 
-interface WaitingSibling {
-  item: ClaimedItem;
-  input: PickupInput;
-  held: ReturnType<typeof holding>;
-  pr: LaunchPrReading;
-  latest: ReturnType<typeof latestPickupFor>;
-  record: ReadRecord;
-  anchor: string;
-}
-
-/** Claimed siblings of a whole-batch question, decided once every item is planned. */
-const waitingSiblings = new WeakMap<PickupPlan, WaitingSibling[]>();
-
-/**
- * A claimed sibling of a whole-batch question waits quietly only while the
- * anchor's own plan raised that question; the answer is the anchor's to
- * settle. When the anchor is carried by an open pull request and so cannot
- * show it, the anchor still owns the surfaced need: answering it settles
- * the entire batch without releasing the carried claim. Otherwise (the anchor was released) the sibling is
- * planned as any claimed item.
- */
-function settleBatchSiblings(plan: PickupPlan): void {
-  for (const w of waitingSiblings.get(plan) ?? []) {
-    const shows = plan.actions.some(
-      (a) =>
-        a.target === w.anchor &&
-        a.cause === "pickup-question" &&
-        a.evidence.record === w.record.record.id,
-    );
-    const carried = plan.quiet.some(
-      (q) => q.target === w.anchor && q.class === "claimed-carried",
-    );
-    if (!shows && carried) {
-      // The anchor's pull request carries it, so a sibling must surface the
-      // decision. Keep the anchor as its target so its answer settles the
-      // whole batch without releasing the carried claim.
-      const anchor =
-        w.input.claimed?.find((item) => item.key === w.anchor) ?? w.item;
-      const asked = questionAsked(
-        w.input,
-        { ...anchor, key: w.anchor },
-        w.record,
-        true,
-      );
-      if (asked !== null) {
-        plan.actions.push(asked);
-        plan.quiet.push({
-          target: w.item.key,
-          class: "pickup-ended",
-          why: `waits on the question its batch's pass asked on ${w.anchor}, which names no member; the answer settles the batch while its carried anchor keeps its claim (launch record ${w.record.record.id})`,
-        });
-        continue;
-      }
-    }
-    if (!shows) {
-      planIdle(w.item, w.input, plan, {
-        held: w.held,
-        pr: w.pr,
-        latest: w.latest,
-      });
-      continue;
-    }
-    plan.quiet.push({
-      target: w.item.key,
-      class: "pickup-ended",
-      why: `waits on the question its batch's pass asked on ${w.anchor}, which names no member; the answer settles the batch while its carried anchor keeps its claim (launch record ${w.record.record.id})`,
-    });
-  }
-}
-
-/** Keep the whole-batch question visible when its carried anchor is the only claimed member. */
-function waitForCarriedBatchAnchor(
-  item: ClaimedItem,
-  input: PickupInput,
-  plan: PickupPlan,
-  held: ReturnType<typeof holding>,
-  pr: LaunchPrReading,
-  latest: ReturnType<typeof latestPickupFor>,
-  record: ReadRecord,
-): void {
-  const waiting = waitingSiblings.get(plan) ?? [];
-  waiting.push({
-    item,
-    input,
-    held,
-    pr,
-    latest,
-    record,
-    anchor: item.key,
-  });
-  waitingSiblings.set(plan, waiting);
-}
-
 export function planPickups(input: PickupInput): PickupPlan {
   const plan: PickupPlan = {
     actions: [],
@@ -320,7 +229,16 @@ export function planPickups(input: PickupInput): PickupPlan {
   for (const item of input.claimed ?? [])
     planClaimed(item, input, plan, joined(item.key));
   planWaiting(input, plan);
-  settleBatchSiblings(plan);
+  settleBatchSiblings(plan, {
+    asked: (w, anchor) =>
+      questionAsked(w.input, { ...anchor, key: w.anchor }, w.record, true),
+    idle: (w) =>
+      planIdle(w.item, w.input, plan, {
+        held: w.held,
+        pr: w.pr,
+        latest: w.latest,
+      }),
+  });
   if (input.values !== undefined && input.root !== undefined)
     plan.actions = batchPickups(
       plan.actions,
@@ -520,52 +438,6 @@ function heldAfterHostFault(
   if (held === null) return false;
   plan.quiet.push({ target: key, class: "pickup-ended", why: held });
   return true;
-}
-
-function restartedNote(source: ReadRecord): string {
-  return `it was restarted once after its pickup stopped on a host fault (launch record ${source.record.id}) and stopped on one again, so it is not restarted a second time`;
-}
-
-/**
- * The need an item raises when its pickup stopped on a fault of its host
- * and no restart is left to it: notified once per launch record, for a
- * diagnosing session (the steward) or a person to find the fault's cause.
- */
-function hostFaultNeed(
-  slug: string,
-  item: Pick<WantedItem, "key" | "title" | "state">,
-  latest: ReadRecord,
-  fault: HostFault,
-  note: string,
-): Action {
-  const { record } = latest;
-  const asked = endedQuestion(latest);
-  const reason = `the pickup stopped on a fault of this host (${fault.why}), and it is not restarted: ${note}`;
-  return {
-    stage: "notify",
-    target: item.key,
-    record: "runtime",
-    reason,
-    evidence: {
-      record: record.id,
-      stage: "pickup",
-      title: item.title,
-      state: item.state,
-      account: record.account,
-      hostFault: fault.kind,
-      ended: endedHow(latest),
-      ...(asked === null ? {} : { question: asked }),
-    },
-    cause: "pickup-ended",
-    notice: pickupNotice(
-      slug,
-      `${item.key} host fault, record ${record.id}`,
-      `${item.key} (${item.title}): ${reason}; the host's fault is diagnosed and repaired, then the item is picked up again or left`,
-    ),
-    ...(record.workspace === null ? {} : { workspace: record.workspace.path }),
-    // The pass's ended row in the outcome log already holds how it ended.
-    launched: true,
-  };
 }
 
 /**
@@ -799,15 +671,15 @@ function planIdleClaimed(
           quiet.target === item.key && quiet.class === "claimed-carried",
       )
     )
-      waitForCarriedBatchAnchor(
+      waitForBatchAnchor(plan, {
         item,
         input,
-        plan,
         held,
         pr,
         latest,
-        pickup.record,
-      );
+        record: pickup.record,
+        anchor: item.key,
+      });
     return;
   }
   if (lockWaitStop(item, input, plan, latest, pr)) return;
@@ -827,8 +699,7 @@ function planIdleClaimed(
     // sibling is settled once every item is (`settleBatchSiblings`).
     const anchor = pickup.record.record.item;
     if (wholeBatchQuestion(pickup.record) && anchor !== null) {
-      const waiting = waitingSiblings.get(plan) ?? [];
-      waiting.push({
+      waitForBatchAnchor(plan, {
         item,
         input,
         held,
@@ -837,7 +708,6 @@ function planIdleClaimed(
         record: pickup.record,
         anchor,
       });
-      waitingSiblings.set(plan, waiting);
       return;
     }
     plan.actions.push(endedNeed(input.slug, item, pickup.record, pickup.why));
