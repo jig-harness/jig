@@ -1702,6 +1702,22 @@ describe("summary-findings marker overrides", () => {
            ], false)?.id,
            malformedRound: s.hasInvalidReviewRound('<!-- ai-review-round: 2 -->\\n<!-- ai-review-round:'),
            malformedSha: s.hasInvalidReviewedSha('<!-- custom+sha: abc1234 -->\\n<!-- custom+sha: malformed -->', 'custom+sha'),
+           spacedSha: s.hasInvalidReviewedSha('<!-- custom+sha : unavailable -->', 'custom+sha'),
+           caseVariantSha: s.hasInvalidReviewedSha('<!-- CUSTOM+SHA: abc1234 -->', 'custom+sha'),
+           quotedDeclaration: m.reviewerSticky([
+             { id: 25, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n> 2 findings without a diff-anchorable line' },
+           ], false)?.id,
+           malformedSummarySurvivesSkip: (() => { try {
+             m.reviewerSticky([
+               { id: 26, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: malformed -->\\n<!-- ai-review-round: 5 -->\\n- \`a.ts\` — finding' },
+               { id: 27, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: def5678 -->\\n<!-- ai-review-round: 6 -->\\n<!-- ai-review-skip-notice -->\\n\`def5678\` skipped\\n<!-- /ai-review-skip-notice -->' },
+             ], false); return false;
+           } catch { return true; } })(),
+           foreignSkipDoesNotSetWatermark: s.reviewerStickyIn([
+             { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 1 -->', updated_at: '2026-11-24T10:00:00Z' },
+             { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- ai-review-round: 3 -->\\n<!-- ai-review-skip-notice -->\\n\`def5678\` skipped\\n<!-- /ai-review-skip-notice -->', updated_at: '2026-11-24T11:00:00Z' },
+             { user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 2 -->', updated_at: '2026-11-24T12:00:00Z' },
+           ], (login) => login === 'reviewer[bot]', '<!-- other-review -->', 'custom+sha'),
            declaredNegative: (() => { try { m.parseDeclaredUnanchored('-1.0 findings without a diff-anchorable line'); return false; } catch { return true; } })(),
            declaredConflict: (() => { try { m.parseDeclaredUnanchored('0 findings without a diff-anchorable line\\n4 findings without a diff-anchorable line'); return false; } catch { return true; } })(),
          }));`,
@@ -1801,6 +1817,15 @@ describe("summary-findings marker overrides", () => {
     expect(got.malformedRoundKeepsSummary).toBe(23);
     expect(got.malformedRound).toBe(true);
     expect(got.malformedSha).toBe(true);
+    expect(got.spacedSha).toBe(true);
+    expect(got.caseVariantSha).toBe(true);
+    expect(got.quotedDeclaration).toBe(25);
+    expect(got.malformedSummarySurvivesSkip).toBe(true);
+    expect(got.foreignSkipDoesNotSetWatermark).toMatchObject({
+      sha: "abc1234",
+      round: 2,
+      updatedAt: "2026-11-24T12:00:00Z",
+    });
     expect(got.declaredNegative).toBe(true);
     expect(got.declaredConflict).toBe(true);
   });

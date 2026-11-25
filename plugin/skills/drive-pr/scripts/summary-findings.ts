@@ -88,7 +88,6 @@ import {
   reviewedShaIn,
   structuralSkipNotices,
   differentReviewedHead,
-  sameReviewedHead,
 } from "./lib/status/reviewer-sticky.ts";
 import { skipNoticeIn } from "./lib/status/skip-notice.ts";
 import {
@@ -1433,16 +1432,6 @@ export function reviewerSticky(
       selectedReviewedSha,
     );
     const replacesSelection = carriesFindingEvidence || cleanReplacement;
-    if (
-      malformedFindingEvidence !== null &&
-      replacesSelection &&
-      ((round !== null &&
-        (malformedFindingEvidence.round === null ||
-          round > malformedFindingEvidence.round)) ||
-        (reviewedSha !== "" &&
-          !sameReviewedHead(reviewedSha, malformedFindingEvidence.sha)))
-    )
-      malformedFindingEvidence = null;
     const skipOnly =
       !carriesFindingEvidence &&
       skipNoticeIn(
@@ -1453,6 +1442,18 @@ export function reviewerSticky(
     // not establish the initial selection or an ordering watermark that hides
     // a later affirmative review with findings.
     if (skipOnly) continue;
+    // A malformed finding-bearing summary remains unreadable until a later
+    // clean summary proves it supersedes that summary by its explicit round.
+    // A different SHA alone cannot establish ordering, and a skip-only
+    // acknowledgement is not a replacement summary at all.
+    if (
+      malformedFindingEvidence !== null &&
+      replacesSelection &&
+      round !== null &&
+      malformedFindingEvidence.round !== null &&
+      round > malformedFindingEvidence.round
+    )
+      malformedFindingEvidence = null;
     // An auxiliary response never supersedes a finding-bearing summary just
     // because it happens to mention a protocol marker. A newer declared round
     // is also evidence: it is the reviewer's explicit replacement boundary.

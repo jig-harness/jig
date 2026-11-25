@@ -32,7 +32,12 @@ export function hasInvalidReviewRound(body: string): boolean {
 /** A SHA marker was present but did not satisfy the marker grammar. */
 export function hasInvalidReviewedSha(body: string, marker: string): boolean {
   const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const openers = [...body.matchAll(new RegExp(`<!--\\s*${escaped}:`, "g"))];
+  // Recognise an attempted marker broadly, then require the exact marker
+  // grammar below. Otherwise a spaced or case-variant attempt can fall
+  // through as if no stamp had been written at all.
+  const openers = [
+    ...body.matchAll(new RegExp(`<!--\\s*${escaped}\\s*:`, "gi")),
+  ];
   if (openers.length === 0) return false;
   const markers = [
     ...body.matchAll(
@@ -202,7 +207,14 @@ export function reviewerStickyBody(
       continue;
     }
     if (fence !== null || indentation.columns >= 4) continue;
-    if (/^ {0,3}>/.test(line)) continue;
+    // Finding-count declarations are intentionally rendered as blockquotes by
+    // the reviewer. Keep their prose, but still discard quoted protocol
+    // markers so examples cannot become evidence.
+    if (
+      /^ {0,3}>/.test(line) &&
+      !/findings?(?:\(s\))?\s+without\s+a\s+diff-anchorable\s+line/i.test(line)
+    )
+      continue;
     structural.push(line);
   }
   // Every evidence parser consumes this structural view. Returning the raw
@@ -337,9 +349,10 @@ export function reviewerStickyIn(
         !lowerRound
       )
         sticky = { ...sticky, skip };
-      // A skip does not replace review evidence, but its explicit ordering
-      // boundary prevents an older stamp becoming the witness later.
-      if (skip !== null && round !== null)
+      // Before any affirmative review witness exists, skip notices order only
+      // one another. Once a reviewed head is selected, a skip for another
+      // head must not block a later acknowledgement of that selected head.
+      if (skip !== null && round !== null && sticky.sha === "")
         highestExplicitRound = Math.max(highestExplicitRound ?? round, round);
       continue;
     }
