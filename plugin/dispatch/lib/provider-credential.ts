@@ -52,11 +52,7 @@ const LONGEST_VALUE = 4096;
  */
 function learnPrinted(stdout: string): void {
   const lines = stdout.split(/\r?\n/);
-  for (const part of [
-    stdout.trim(),
-    ...lines,
-    ...lines.map((line) => line.trim()),
-  ]) {
+  for (const part of [...lines, ...lines.map((line) => line.trim())]) {
     // Keep the full failed line as an exact mask too. Splitting alone loses a
     // credential whose pieces either side of a replacement marker are too
     // short to be maskable on their own.

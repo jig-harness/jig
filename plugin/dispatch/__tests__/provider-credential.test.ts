@@ -246,7 +246,7 @@ describe("resolving a credential reference", () => {
     const stderrOnly = "opaque-stderr-diagnostic-1234";
     const failed = await resolveCredential(
       command(
-        `process.stdout.write('unrelated before\\n  ${trimmed}  \\nunrelated after'); process.stderr.write(${JSON.stringify(stderrOnly)}); process.exit(1)`,
+        `process.stdout.write('pre\\n  ${trimmed}  \\npost'); process.stderr.write(${JSON.stringify(stderrOnly)}); process.exit(1)`,
       ),
       "ref",
       process.env,
@@ -259,8 +259,8 @@ describe("resolving a credential reference", () => {
         "the credential command exited 1; its error output is not recorded",
     });
     expect(failed.failure.reason).not.toContain(stderrOnly);
-    expect(maskCredentials(`value ${trimmed}`, "[masked]")).toBe(
-      "value [masked]",
+    expect(maskCredentials(`pre\n  ${trimmed}  \npost`, "[masked]")).toBe(
+      "pre\n[masked]\npost",
     );
 
     const collision = "marker-collision-secret-1234";
