@@ -21,6 +21,7 @@
 import { resolveActor } from "./../state/actor.ts";
 import { lastStopEvent } from "./../state/events.ts";
 import { hostLabel } from "./../state/ledger-mirror.ts";
+import { DRIVE_EXIT } from "./../status/terminal-states.ts";
 import type { DriveState } from "./../state/schema.ts";
 import { recordedDecisions } from "./restart.ts";
 import {
@@ -67,6 +68,10 @@ const OWN_STOPS: ReadonlySet<number> = new Set([
 
 /** The notice of a pass deadline or an unreadable listing, ahead of `leftWork`'s lines. */
 function stopHeadline(code: number, round: string | number): string[] {
+  if (code === DRIVE_EXIT.HITL_PARKED)
+    return [
+      `RE-ARMED AFTER A WALL-CLOCK PARK: the drive before this one parked at round ${round} when the wall-clock cap killed its pass.`,
+    ];
   if (code === PASS_DEADLINE_EXIT)
     return [
       `RE-ARMED AFTER A PASS DEADLINE: the drive before this one stopped with exit ${PASS_DEADLINE_EXIT} (PASS_DEADLINE) at round ${round}: its passes reached their deadline and the driver did not restart them again (drive.pass_deadline_retries).`,
@@ -117,8 +122,11 @@ export async function stopPickup(
       notice: ciStop(String(stop?.round ?? "?")).join("\n"),
       inheritsEdits: false,
     };
-  if (code === null || !OWN_STOPS.has(code)) return HANDS_ON_NOTHING;
   const leftWork = stop?.leftWork === true;
+  // A park the wall-clock cap forced on a killed pass records what it left.
+  const parkedWithWork = code === DRIVE_EXIT.HITL_PARKED && leftWork;
+  if (code === null || (!OWN_STOPS.has(code) && !parkedWithWork))
+    return HANDS_ON_NOTHING;
   const here = stop?.tree === `${await resolveActor()}@${hostLabel()}`;
   const inherits = leftWork && here;
   const round = stop?.round ?? "?";

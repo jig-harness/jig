@@ -72,6 +72,14 @@ const stop = (
 });
 
 describe("stopPickup", () => {
+  it("hands on the work a wall-clock park left, and nothing for an ordinary park", async () => {
+    const left = await pickupAfter([stop("8", true)]);
+    expect(left.notice).toStartWith("RE-ARMED AFTER A WALL-CLOCK PARK");
+    expect(left.inheritsEdits).toBe(true);
+    expect((await pickupAfter([stop("8")])).notice).toBe("");
+    expect((await pickupAfter([stop("8", false)])).notice).toBe("");
+  });
+
   it("hands a stall's recorded decisions to the next drive, and the work it left", async () => {
     const r = await pickupAfter(
       [stop("14", true)],

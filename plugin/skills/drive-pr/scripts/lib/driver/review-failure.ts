@@ -82,6 +82,11 @@ async function handlePassDeadline(
     console.error(
       `  The wall-clock cap is spent: the pass's ${passDeadlineSec}s deadline was cut to it.`,
     );
+    // The killed pass's leftovers stay in this tree: say so and record them on
+    // the stop, as the deadline stop does, so a re-arm here inherits them.
+    for (const line of describeLeftovers(await passLeftovers()))
+      console.error(`  ${line}`);
+    driverRuntime.stopLeftWork = await measureStop();
     return await stopAtCeiling(context.circuit, "wall-clock", round, false);
   }
   return await restartAfterDeadline(passDeadlineSec, round, context);
