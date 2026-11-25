@@ -69,12 +69,28 @@ export async function resolveMarkerSha(
 ): Promise<string> {
   if (marker === "") return "";
   if (marker.length === 40) return marker;
-  const rp = await localGit(
-    ["rev-parse", "--verify", "--quiet", `${marker}^{commit}`],
+  // Only an object-id abbreviation resolves here: `rev-parse <name>` would
+  // prefer a ref of that name (a branch or tag spelled like the hex) over the
+  // object, so the prefix is listed as object ids instead.
+  if (!/^[0-9a-f]{4,39}$/i.test(marker)) return "";
+  const listed = await localGit(
+    ["rev-parse", `--disambiguate=${marker.toLowerCase()}`],
     gitCallTimeoutSeconds(),
     cwd,
   );
-  return rp.code === 0 ? rp.stdout.trim() : "";
+  if (listed.code !== 0) return "";
+  const ids = listed.stdout
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const id = ids[0];
+  if (ids.length !== 1 || id === undefined) return "";
+  const kind = await localGit(
+    ["cat-file", "-t", id],
+    gitCallTimeoutSeconds(),
+    cwd,
+  );
+  return kind.code === 0 && kind.stdout.trim() === "commit" ? id : "";
 }
 
 /**
