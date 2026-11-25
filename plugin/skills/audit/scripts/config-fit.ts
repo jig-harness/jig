@@ -2288,16 +2288,12 @@ const SECTIONS: [Finding["severity"], string][] = [
 ];
 
 /**
- * A fact on one line: line breaks of any kind collapse to a space in a single
- * linear pass, and any other control or bidirectional character is escaped.
+ * A fact on one line: the declared value is shown as written, and any control,
+ * line-break or bidirectional character is escaped visibly (one linear pass),
+ * so a value that differs only by such a character still reads differently.
  */
 function factText(value: string): string {
-  const oneLine = value
-    .split(/[\r\n\u2028\u2029]+/)
-    .map((part) => part.trim())
-    .filter((part) => part !== "")
-    .join(" ");
-  return formatDisplayValue(oneLine);
+  return formatDisplayValue(value);
 }
 
 export function render(report: FitReport): string {
