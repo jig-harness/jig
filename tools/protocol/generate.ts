@@ -212,7 +212,7 @@ export function hasUnstagedOutput(
   if (!files.length) return false;
   return (
     Bun.spawnSync(["git", "-C", root, "diff", "--quiet", "--", ...files])
-      .exitCode === 1
+      .exitCode !== 0
   );
 }
 

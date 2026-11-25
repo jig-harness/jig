@@ -449,7 +449,7 @@ export function winddownFingerprintsOf(stickyBody: string): Set<string> {
 
 export function parseDeclaredUnanchored(body: string): number {
   const m = withoutFencedExamples(body).match(
-    /(\d+)\s+finding\(s\)\s+without\s+a\s+diff-anchorable\s+line/i,
+    /^[ \t]*>\s*(\d+)\s+finding\(s\)\s+without\s+a\s+diff-anchorable\s+line\b/im,
   );
   return m ? Number.parseInt(m[1] ?? "", 10) : 0;
 }
@@ -487,6 +487,7 @@ function closesFence(
 ): boolean {
   return (
     match !== null &&
+    match[2] === undefined &&
     columnsOf(match[1] ?? "") - fence.containerIndent <= 3 &&
     match[3]?.[0] === fence.char &&
     (match[3]?.length ?? 0) >= fence.length &&
@@ -497,7 +498,7 @@ function closesFence(
 function opensFence(match: RegExpMatchArray | null): match is RegExpMatchArray {
   return (
     match !== null &&
-    columnsOf(match[2] ?? "") <= 3 &&
+    columnsOf(match[2] ?? match[1] ?? "") <= 3 &&
     !(match[3]?.[0] === "`" && (match[4] ?? "").includes("`"))
   );
 }
@@ -537,7 +538,7 @@ function withoutFencedExamples(body: string): string {
         const indent = columnsOf(
           match?.[1] ?? line.match(/^[ \t]*/)?.[0] ?? "",
         );
-        if (indent < fence.containerIndent) fence = null;
+        if (line.trim() !== "" && indent < fence.containerIndent) fence = null;
         else {
           if (closesFence(match, fence)) fence = null;
           previousBlank = false;
@@ -785,7 +786,7 @@ function partitionBacklog(
   // section. A count alone cannot establish that: a different blocking entry
   // can leave the count unchanged. Match the rendered finding identities to
   // the blob before treating its otherwise-unflagged entries as informational.
-  const section = stickyBody.match(
+  const section = withoutFencedExamples(stickyBody).match(
     /<details><summary>🗂️ <b>Beyond this PR<\/b> — (\d+) finding\(s\) for triage \(not posted inline\)<\/summary>\r?\n[ \t\r\n]*Held out of the inline threads so this PR can converge — \*\*not blocking\*\*\.([\s\S]*?)<\/details>/,
   );
   const rendered = section ? parseBodyFindings(section[2] ?? "") : [];

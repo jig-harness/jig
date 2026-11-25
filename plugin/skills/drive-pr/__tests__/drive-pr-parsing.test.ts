@@ -369,6 +369,38 @@ describe("summary-findings parsing", () => {
     expect(parseDeclaredUnanchored(body)).toBe(1);
   });
 
+  it("does not close a fence on a list marker or a blank container boundary", () => {
+    const body = [
+      "- explanation:",
+      "  ```markdown",
+      "",
+      "  - ```",
+      "  > 0 finding(s) without a diff-anchorable line",
+      "  ```",
+      "- `live.ts:3` — a live finding",
+      "> 1 finding(s) without a diff-anchorable line",
+    ].join("\n");
+    expect(parseBodyFindings(body)).toEqual([
+      { path: "live.ts", line: 3, text: "a live finding" },
+    ]);
+    expect(parseDeclaredUnanchored(body)).toBe(1);
+  });
+
+  it("does not treat prose or indented delimiters as declarations or fences", () => {
+    const body = [
+      "The example says 0 finding(s) without a diff-anchorable line.",
+      "",
+      "    ```",
+      "    > 0 finding(s) without a diff-anchorable line",
+      "- `live.ts:3` — a live finding",
+      "> 1 finding(s) without a diff-anchorable line",
+    ].join("\n");
+    expect(parseBodyFindings(body)).toEqual([
+      { path: "live.ts", line: 3, text: "a live finding" },
+    ]);
+    expect(parseDeclaredUnanchored(body)).toBe(1);
+  });
+
   it("extracts severity from the bullet", () => {
     expect(jigSeverity("🟡 **medium** (high confidence)")).toBe("medium");
     expect(jigSeverity("no severity here")).toBe("unknown");
