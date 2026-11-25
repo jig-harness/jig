@@ -30,9 +30,12 @@ describe("a unit's context", () => {
       async (context) => {
         given = context;
         await ports.storage.run(context, "repo:o/r", counter, { count: 1 });
-        await ports.serving.serve(context, async () =>
-          ok({ status: 204, headers: {}, body: "" }),
-        );
+        const answer = async () => ok({ status: 204, headers: {}, body: "" });
+        await ports.serving.serve(context, {
+          host: answer,
+          webhook: answer,
+          feed: answer,
+        });
         await ports.scheduling.schedule(context, "sweep", { everyMs: 60_000 });
         await ports.scheduling.runSoon(context, "sweep");
         await ports.scheduling.cancel(context, "sweep");
