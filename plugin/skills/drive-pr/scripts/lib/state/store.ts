@@ -331,7 +331,7 @@ function refuseUnusable(
       "Every PARKED entry must carry a non-empty newline-free key, a kind of",
       "thread|finding, a NON-EMPTY reason, and a non-negative integer round.",
       "Every HELD entry must carry a non-empty newline-free key, a kind of",
-      "thread|finding, an outcome of accepted|moot, an integer round no",
+      "thread|finding, a valid outcome (accepted or moot for threads), an integer round no",
       "lower than -1 (-1 is the sentinel hold --unconfirmed writes), and an",
       "'actor' matching the exact grammar resolveActor() emits: 'wt-' plus",
       "16 lowercase hex digits (the tree that made its promise).",

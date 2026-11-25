@@ -180,7 +180,13 @@
                     "type": "string"
                   },
                   "outcome": {
-                    "enum": ["accepted", "moot"]
+                    "enum": [
+                      "accepted",
+                      "rejected",
+                      "wont-fix",
+                      "deferred",
+                      "moot"
+                    ]
                   },
                   "commentUrl": {
                     "type": "string"
@@ -818,6 +824,8 @@
                 "additionalProperties": true
               }
             },
+            "roundPaths": true,
+            "churnAckRound": true,
             "driver": {
               "type": "object",
               "properties": {
@@ -1027,7 +1035,7 @@
                 "type": "string"
               },
               "outcome": {
-                "enum": ["accepted", "moot"]
+                "enum": ["accepted", "rejected", "wont-fix", "deferred", "moot"]
               },
               "commentUrl": {
                 "type": "string"
@@ -1659,6 +1667,8 @@
             "additionalProperties": true
           }
         },
+        "roundPaths": true,
+        "churnAckRound": true,
         "driver": {
           "type": "object",
           "properties": {

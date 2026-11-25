@@ -24,6 +24,7 @@ import {
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
 
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 
 import { writeState } from "./state-rows.ts";
@@ -378,41 +379,52 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
     expect(r.state).toBe("CONVERGED");
   });
 
+  it("converges with only non-blocking wind-down backlog and reports what it skipped", async () => {
+    const r = await probe({
+      threads: [],
+      backlog: "winddown-only",
+      anchored: [".claude/agents/review-arbiter.md:31"],
+    });
+    expect(r.state).toBe("CONVERGED");
+    expectSpawnExit({ ...r, stdout: JSON.stringify(r.json) }, 3);
+    expect(r.json.work).toMatchObject({
+      summaryUnaddressed: 0,
+      summaryIgnoredBacklogKeys: ["b9a7a18089043564"],
+    });
+  });
+
+  it("counts a declared shortfall even when wind-down backlog explains no blocking findings", async () => {
+    const r = await probe({
+      threads: [],
+      backlog: "winddown-only",
+      unanchoredSummary: 1,
+      anchored: [".claude/agents/review-arbiter.md:31"],
+    });
+    expect(r.state).toBe("ROUND_READY");
+    expect(r.json.work).toMatchObject({
+      summaryUnaddressed: 1,
+      summaryUnaddressedKeys: [expect.stringMatching(/^unaccounted-/)],
+      summaryIgnoredBacklogKeys: ["b9a7a18089043564"],
+    });
+  });
+
   it("an addressed marker from an untrusted commenter does not permit convergence", async () => {
     const r = await probe({
       threads: [],
       backlog: true,
       anchored: [".claude/agents/review-arbiter.md"],
-      addressed: ["b9a7a18089043564", "c773d9fdb7974e6d"],
+      addressed: ["c773d9fdb7974e6d"],
       addressedBy: "NONE",
     });
     expect(r.state).toBe("ROUND_READY");
-    expect((r.json.work as Record<string, unknown>).summaryUnaddressed).toBe(2);
+    expect(r.json.work).toMatchObject({
+      summaryUnaddressed: 1,
+      summaryUnaddressedKeys: ["c773d9fdb7974e6d"],
+      summaryIgnoredBacklogKeys: ["b9a7a18089043564"],
+    });
   });
 
-  it("CLI wiring: a backlog fix marker at the reviewed head registers end to end", async () => {
-    // Unlike the `collectAddressed` unit probes in `summary-findings parsing`
-    // above, this drives the REAL chain: `drive-status.ts` spawns
-    // `summary-findings.ts` as a subprocess, which reads the sticky's own
-    // backlog blob via `backlogFingerprintsOf` and wires it into
-    // `collectAddressed` itself — nothing here calls either function
-    // directly. A one-line regression to that wiring (`backlogFingerprints:
-    // new Set()`, or restoring the retired `reason === 'winddown-deferred'`
-    // filter) would leave `c773d9fdb7974e6d` unaddressed here even though
-    // every direct-call probe above still passes.
-    //
-    // Only ONE of the sticky's two backlog entries gets a marker, so the
-    // count below is unambiguous evidence THIS fingerprint registered — a
-    // wiring bug that drops backlog membership entirely would leave both
-    // unaddressed and this would read 2, not 1.
-    //
-    // The head here must be one `reviewerPosition` can RESOLVE: it decides
-    // `at` vs `past` through `git rev-parse`, and an unresolvable revision
-    // fails closed to `past`, which drops the marker and makes this read 2 for
-    // a reason that has nothing to do with the wiring under test. Hence
-    // `realHead()` rather than the opaque `HEAD` token (see its own comment —
-    // a literal that resolved only in checkouts carrying one idle branch is
-    // what this probe originally had).
+  it("a blocking backlog fix marker at the reviewed head permits convergence", async () => {
     const head = await realHead();
     const r = await probe({
       threads: [],
@@ -422,7 +434,8 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
       reviewedSha: head,
       fixDependentAddressed: [{ fingerprint: "c773d9fdb7974e6d", sha: head }],
     });
-    expect((r.json.work as Record<string, unknown>).summaryUnaddressed).toBe(1);
+    expect(r.state).toBe("CONVERGED");
+    expect(r.json.work).toMatchObject({ summaryUnaddressed: 0 });
   });
 
   it("no marker at all falls back to the check-run, and SAYS the witness is weaker", async () => {

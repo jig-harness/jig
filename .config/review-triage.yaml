@@ -1,0 +1,106 @@
+# Jig's own decline ladder (plugin/CONFIGURATION.md § The review-triage
+# file; docs/adr/ADR-0025-deferred-findings-stay-outside-epic-scope.md).
+# From round 4 a finding the triage rubric would accept must clear its
+# band's bar before it earns another fix; a declined finding gets a
+# `wont-fix` or `deferred` reply, and a deferred one is filed through the
+# deferral protocol like any other.
+version: 1
+severity_order:
+  - low
+  - medium
+  - high
+  - blocker
+severity_mapping:
+  low:
+    priority: 4
+    acceptance: Minor
+  medium:
+    priority: 3
+    acceptance: Minor
+  high:
+    priority: 2
+    acceptance: Major
+  blocker:
+    priority: 1
+    acceptance: Blocker
+  unknown:
+    priority: 3
+# The categories Jig's reviewer emits; the same list as review.taxonomy.categories
+# in .config/jig.yaml.
+categories:
+  - correctness
+  - data-integrity
+  - security
+  - compliance
+  - ux
+  - performance
+  - tests
+  - docs
+  - drift
+  - style
+# A finding whose severity, or whose self-inflicted measurement, is unknown
+# is not judged by the ladder: the rubric's own answer stands.
+fail_open:
+  inert_when_unknown:
+    - severity
+    - self_inflicted
+bands:
+  # Rounds 1 to 3: every finding the rubric accepts is fixed.
+  - id: boy-scout
+    from_round: 1
+    through_round: 3
+    minimal_diff: false
+    accept_if:
+      unconditional: true
+  # Rounds 4 to 6: keep high and blocker findings, anything a fix of this
+  # pull request caused, and the categories that guard behaviour; decline
+  # medium and low docs, style, drift, tests, ux and performance findings.
+  - id: escalated
+    from_round: 4
+    through_round: 6
+    minimal_diff: true
+    accept_if:
+      min_severity: high
+      categories:
+        - correctness
+        - data-integrity
+        - security
+        - compliance
+      self_inflicted: true
+  # Round 7 on: keep high and blocker findings, regressions this pull request
+  # caused, and data-integrity and security findings; decline the rest.
+  - id: late
+    from_round: 7
+    through_round: null
+    minimal_diff: true
+    accept_if:
+      min_severity: high
+      categories:
+        - data-integrity
+        - security
+      self_inflicted: true
+reply:
+  marker: review-triage ladder
+  wont_fix: >-
+    **wont-fix** — valid, declined by the {marker} ({config}, band `{band}`,
+    round {round}): a {severity}/{category} finding at tier {tier} clears none
+    of this band's accept clauses ({clauses}). Not obligatory, so no follow-up
+    is filed.
+
+    <!-- {marker} -->
+  deferred: >-
+    **deferred** — valid and obligatory, but declined for THIS PR by the
+    {marker} ({config}, band `{band}`, round {round}): a {severity}/{category}
+    finding at tier {tier} clears none of this band's accept clauses
+    ({clauses}).
+
+    <!-- {marker} -->
+calibration:
+  note: >-
+    Tuned so late rounds stop spending review, CI and agent time on wording
+    and prose while blocker and high findings and regressions are still
+    fixed. Read the declines the loop-cost and defect-escape reports list
+    (drive-pr's defect-escape.ts): a declined finding that later shipped as
+    a defect means a band declines too much; rounds still spent on wording
+    mean it declines too little. Retune the bands here, never per pull
+    request.

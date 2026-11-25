@@ -29,6 +29,19 @@
  *   log (`log.ts`) in the same transaction as the first suppression record
  *   written for it, timed at that record and keyed by the same facts; a
  *   cause about a stage this machine launched has its ended row instead.
+ * - **A channel new to a repository starts from what stands.** The first
+ *   tick that can send through a channel with no record at a repository does
+ *   not send the causes that already stand there, one message each: it
+ *   records them as known (`startFrom`), without sending. The start is the
+ *   repository's own row, written once its records are in, so a repository
+ *   reached on a later tick starts silently too; the receipt says once how
+ *   many causes the tick started from (`channelStarts`). Only a
+ *   cause that appears or changes afterwards is sent, and the causes
+ *   recorded this way follow the usual rules: repeated on
+ *   `dispatch.renotify_after` while they stand, dropped when they leave. A
+ *   renamed channel is a new one, and so is one whose records were dropped.
+ *   `orca-card` is never started this way. A channel that is not reachable
+ *   has not started: it starts on the first tick it can send.
  * - **Backed off while it keeps failing.** A cause whose delivery was lost
  *   is counted in the failure ledger (`failures.ts`) under its channel's key
  *   (`notice <key>` on `orca-card`, `notice <channel> <key>` on another):
@@ -50,11 +63,7 @@
  * through the notification.
  */
 import { probeStopOf } from "../../../skills/drive-pr/scripts/lib/status/probe-stop.ts";
-import {
-  channelNameFault,
-  type Delivery,
-  type NotificationChannel,
-} from "../../../chat/channel.ts";
+import type { Delivery, NotificationChannel } from "../../../chat/channel.ts";
 import { stateRoot } from "../../receipts.ts";
 import {
   driveClass,
@@ -71,8 +80,11 @@ import {
 } from "../failure-notices.ts";
 import { holderRecordStands } from "../holder-notices.ts";
 import {
+  channelStarted,
   dropSuppressions,
   ledgerKey,
+  markChannelStarted,
+  SILENT_START,
   ORCA_CARD,
   readHostSuppressions,
   readSuppressions,
@@ -108,6 +120,13 @@ import type {
   RepoTarget,
 } from "../types.ts";
 import { type ApplyState, timeLeftMs } from "./launch.ts";
+import {
+  isLasting,
+  namedChannels,
+  readWholeRepo,
+  reportUnreachable,
+  tellChannelStart,
+} from "./notify-channel-faults.ts";
 
 /** A notification the plan names, with its cause and message; `repeat` once it is sent again after `renotify_after`. */
 export type Cause = NoticeCause;
@@ -127,6 +146,9 @@ function hours(ms: number): string {
 /** The repository whose suppression record a repeat moves: a host failure's record stays where it was first told. */
 const repeatedAt = new WeakMap<Cause, string>();
 
+/** Repeats whose earlier record was a silent start, never a delivery. */
+const silentRepeats = new WeakSet<Cause>();
+
 /** A cause sent again: its message says it still waits, and since when. */
 function asRepeat(
   cause: Cause,
@@ -135,13 +157,17 @@ function asRepeat(
   nowMs: number,
 ): Cause {
   const [head = "", ...rest] = cause.notice.text.split("\n");
-  const again = `Sent again: this still waits on a person as of ${isoFromMs(nowMs)}, first sent ${record.at} (dispatch.renotify_after ${hours(everyMs)}).`;
+  const again =
+    record.workspace === SILENT_START
+      ? `Sent now: this has waited on a person since ${record.at}, when it was recorded as known without a send (dispatch.renotify_after ${hours(everyMs)}).`
+      : `Sent again: this still waits on a person as of ${isoFromMs(nowMs)}, first sent ${record.at} (dispatch.renotify_after ${hours(everyMs)}).`;
   const repeated = {
     ...cause,
     repeat: true as const,
     notice: { ...cause.notice, text: [head, again, ...rest].join("\n") },
   };
   repeatedAt.set(repeated, record.repo);
+  if (record.workspace === SILENT_START) silentRepeats.add(repeated);
   return repeated;
 }
 
@@ -508,7 +534,7 @@ export async function applyNotices(
   };
   const due = channels.map((channel) => ({
     channel,
-    due: dueOn(channel, scope),
+    due: dueOn(channel, scope, state, channel === card),
   }));
   // The notices go first on every channel: a delivery that recovers on any of them clears its row before a failure notice about it is decided.
   for (const { channel, due: causes } of due)
@@ -579,64 +605,19 @@ interface SendScope {
   deliveryTimeoutMs: number;
 }
 
-/**
- * Report each named channel that cannot be reached (its address unset or
- * refused) as the host's fault, once a tick, whether or not anything is due
- * on it: otherwise a channel that is never configured would wait silently.
- * A reachability check that throws is reported where the causes are decided.
- */
-function reportUnreachable(
-  state: ApplyState,
-  channels: ReadonlyArray<NotificationChannel<Cause>>,
-  report: RepoReport,
-): void {
-  state.channelFaults ??= new Set();
-  const reported = state.channelFaults;
-  for (const channel of channels) {
-    if (reported.has(channel.name)) continue;
-    let why: string | null;
-    try {
-      why = channel.unreachable();
-    } catch {
-      continue;
-    }
-    if (why === null) continue;
-    reported.add(channel.name);
-    report.unplaced.push({
-      target: `the ${channel.name} notification channel`,
-      record: "runtime",
-      reason: `${why}, so every notification on it waits; this host's machine file or the tick's environment must be corrected`,
-    });
-  }
-}
-
-/** The channels whose names hold to the port's rule (`channelNameFault`); another is reported, and nothing goes through it. */
-function namedChannels(
-  channels: ReadonlyArray<NotificationChannel<Cause>>,
-  report: RepoReport,
-): Array<NotificationChannel<Cause>> {
-  const kept: Array<NotificationChannel<Cause>> = [];
-  for (const channel of channels) {
-    const fault = channelNameFault(
-      channel.name,
-      kept.map((c) => c.name),
-    );
-    if (fault === null) kept.push(channel);
-    else
-      report.unplaced.push({
-        target: "a notification channel",
-        record: "runtime",
-        reason: `${fault}, so nothing was sent through it`,
-      });
-  }
-  return kept;
-}
-
 /** The causes due on `channel` and tried this tick; the rest reported suppressed, backing off, or waiting on a channel that cannot be reached. */
-function dueOn(channel: NotificationChannel<Cause>, scope: SendScope): Cause[] {
+function dueOn(
+  channel: NotificationChannel<Cause>,
+  scope: SendScope,
+  state: ApplyState,
+  isCard: boolean,
+): Cause[] {
   const name = channel.name;
-  const due = dueThere(name, scope);
-  if (due.length === 0) return due;
+  const starting = !isCard && startingChannel(name, scope);
+  // A start state that could not be read is no start and no proof of one: send nothing until a tick reads it.
+  if (starting === undefined) return [];
+  const due = dueThere(name, scope, starting);
+  if (due.length === 0 && !starting) return due;
   let why: string | null;
   try {
     why = channel.unreachable();
@@ -645,19 +626,110 @@ function dueOn(channel: NotificationChannel<Cause>, scope: SendScope): Cause[] {
     scope.report.unplaced.push({
       target: `the ${name} notification channel`,
       record: "runtime",
+      channelFault: true,
       reason: why,
     });
   }
-  if (why === null) return due;
+  if (why === null) return starting ? startFrom(name, scope, state, due) : due;
   for (const c of due)
     scope.report.notifications.push(outcomeFor(name, c, "waits", null, why));
   return [];
+}
+
+/** Whether `channel` has yet to begin on this repository; `undefined` when the start state cannot be read, reported on the receipt. A repository the channel already holds send records for gets its start row now. */
+function startingChannel(
+  channel: string,
+  { repo, root, report }: SendScope,
+): boolean | undefined {
+  try {
+    if (!channelStarted(channel, repo.slug, root)) return true;
+    markChannelStarted(channel, repo.slug, currentIso(), root);
+    return false;
+  } catch (error) {
+    report.unplaced.push({
+      target: `the ${channel} notification channel`,
+      record: "runtime",
+      channelFault: true,
+      reason: `its start state could not be read or written, so nothing is sent on it until a later tick reads it: ${failureText(error)}`,
+    });
+  }
+  return undefined;
+}
+
+/**
+ * Start `channel` on this repository from the causes that already stand:
+ * record each as known without sending it, so only a cause that appears or
+ * changes afterwards is sent, and tell the receipt once how many. The
+ * repository's start row goes in after its records, and only while every
+ * record is in and the tick read this repository's records whole, so a tick
+ * that fails part way starts it again. The records are silent: they are no
+ * send's history.
+ */
+function startFrom(
+  channel: string,
+  scope: SendScope,
+  state: ApplyState,
+  due: readonly Cause[],
+): Cause[] {
+  let causes = 0;
+  const repeats: Cause[] = [];
+  // Causes an earlier, incomplete start already recorded silently belong to this start's total.
+  const earlierSilent = readSuppressions(channel, scope.repo.slug, scope.root);
+  const counted = new Set<string>();
+  for (const c of scope.causes)
+    if (earlierSilent.get(c.notice.key)?.workspace === SILENT_START) {
+      causes++;
+      counted.add(c.notice.key);
+    }
+  let complete = readWholeRepo(scope.report);
+  for (const c of due) {
+    // A repeat refers to a real delivery, possibly at another repository: it stays due, never rewritten as silent.
+    // A repeat of a silent record from an earlier incomplete start was never delivered: it is recorded silent again, so an outage does not release the backlog.
+    if (repeatedAt.has(c) && !silentRepeats.has(c)) {
+      repeats.push(c);
+      continue;
+    }
+    if (!recordSent(channel, c, "", scope, true)) {
+      complete = false;
+      continue;
+    }
+    // A silent repeat of a record already counted above is one cause, counted once.
+    if (!counted.has(c.notice.key)) {
+      counted.add(c.notice.key);
+      causes++;
+    }
+    scope.report.notifications.push(
+      outcomeFor(
+        channel,
+        c,
+        "suppressed",
+        null,
+        `recorded as known without sending: the ${channel} channel started on this repository this tick from the causes that already stood`,
+      ),
+    );
+  }
+  // A repeat is delivered only once the start is complete: an incomplete start keeps it due for the tick that finishes it.
+  if (!complete) return [];
+  try {
+    markChannelStarted(channel, scope.repo.slug, currentIso(), scope.root);
+  } catch (error) {
+    outcomeLogFailed(
+      scope.report,
+      `the start of the ${channel} channel`,
+      error,
+    );
+    return [];
+  }
+  tellChannelStart(state, scope.report, channel, causes);
+  // A repeat that is sent keeps the failure ledger's wait, as it does on a channel that has started.
+  return notBackingOff(channel, repeats, scope.settings.book, scope.report);
 }
 
 /** The causes due on `channel`: new there, or due again; the rest reported suppressed. */
 function dueThere(
   channel: string,
   { repo, report, root, settings, causes, standing }: SendScope,
+  starting = false,
 ): Cause[] {
   const sent = readSuppressions(channel, repo.slug, root);
   const hostSent = readHostSuppressions(channel, HOST_NOTICE, root);
@@ -676,13 +748,16 @@ function dueThere(
           c,
           "suppressed",
           earlier.workspace,
-          earlier.sentAt === earlier.at
-            ? `sent ${earlier.at}`
-            : `sent ${earlier.at}, again ${earlier.sentAt}`,
+          earlier.workspace === SILENT_START
+            ? `known since ${earlier.at}, recorded without sending`
+            : earlier.sentAt === earlier.at
+              ? `sent ${earlier.at}`
+              : `sent ${earlier.at}, again ${earlier.sentAt}`,
         ),
       );
   }
-  return notBackingOff(channel, all, settings.book, report);
+  // A channel that is starting records the causes that stand, so none is held back for its failures: it has none.
+  return starting ? all : notBackingOff(channel, all, settings.book, report);
 }
 
 /** Record a cause `channel` delivered, with its event row when it is the cause's first record. */
@@ -691,7 +766,8 @@ function recordSent(
   c: Cause,
   place: string,
   { repo, report, root, settings }: SendScope,
-): void {
+  silent = false,
+): boolean {
   const at = currentIso();
   try {
     suppress(
@@ -701,26 +777,24 @@ function recordSent(
         target: c.target,
         key: c.notice.key,
         at,
-        workspace: place,
-        lasting:
-          c.cause === "drifting" ||
-          c.cause === "ready" ||
-          (c.cause === "stopped-unknown" && c.evidence.noCause === true) ||
-          typeof c.evidence.failedRearm === "string" ||
-          typeof c.evidence.reviewerFailureHead === "string" ||
-          typeof c.evidence.usageRefusal === "string",
+        workspace: silent ? SILENT_START : place,
+        lasting: isLasting(c),
       },
       // A cause about a stage this machine launched has its ended row instead.
-      c.launched === true ? null : eventRow(repo.slug, c, at, settings.about),
+      silent || c.launched === true
+        ? null
+        : eventRow(repo.slug, c, at, settings.about),
       root,
       c.repeat === true,
     );
+    return true;
   } catch (error) {
     outcomeLogFailed(
       report,
       `the suppression record of ${c.notice.key}`,
       error,
     );
+    return false;
   }
 }
 
@@ -744,6 +818,7 @@ function answered(
       report.unplaced.push({
         target: `the ${name} notification channel`,
         record: "runtime",
+        channelFault: true,
         reason: `it answered for ${answer.key}, which was not due on it or was answered already`,
       });
       continue;
@@ -839,6 +914,7 @@ async function answersOf(
         report.unplaced.push({
           target: `the ${channel.name} notification channel`,
           record: "runtime",
+          channelFault: true,
           reason:
             "it returned malformed delivery answers; valid answers were retained and missing causes count as lost",
         });
@@ -846,6 +922,7 @@ async function answersOf(
         report.unplaced.push({
           target: `the ${channel.name} notification channel`,
           record: "runtime",
+          channelFault: true,
           reason: `${expiredNote}; the answers it settled with during cancellation were retained`,
         });
       return valid;
@@ -866,6 +943,7 @@ function lostAnswers(
   report.unplaced.push({
     target: `the ${channel.name} notification channel`,
     record: "runtime",
+    channelFault: true,
     reason: `its delivery failed, and its batch counts as lost: ${why}`,
   });
   return batch.map((c) => ({

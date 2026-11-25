@@ -746,4 +746,21 @@ describe("--check and --stage", () => {
       "README.md",
     );
   });
+
+  test("--stage refreshes an output stale only in the index", () => {
+    const root = scratchRepo(null, [fixtureChapter()]);
+    const outputs = [
+      "plugin/protocol/data/fixture.json",
+      "plugin/protocol/fixture.md",
+    ];
+    expect(git(root, "add", "--", ...outputs).status).toBe(0);
+    put(root, "plugin/protocol/fixture.md", "stale staged copy\n");
+    expect(git(root, "add", "plugin/protocol/fixture.md").status).toBe(0);
+    generate({ root, chapters: [fixtureChapter()], check: false });
+    expect(stage(root, outputs)).toBe(0);
+    expect(
+      git(root, "diff", "--cached", "--name-only").stdout.toString(),
+    ).toContain("plugin/protocol/fixture.md");
+    expect(git(root, "diff", "--name-only").stdout.toString().trim()).toBe("");
+  });
 });

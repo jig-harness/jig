@@ -105,6 +105,13 @@ export const CLASS_ACTS = {
     meaning:
       "A person's review thread an agent may not overrule on its own, or a person's reversal of a provisional decision.",
   },
+  // The drive's own park: its structural-churn brake (drive-pr's
+  // `lib/state/churn.ts`) frames the decision when it stops itself.
+  "structural-churn": {
+    act: "Decide",
+    meaning:
+      "The drive's own park: the same files keep drawing non-blocking findings round after round, or a file returned to an earlier content; choose how the pull request goes on.",
+  },
   // The dispatcher's own framings of a need (`decisions/station.ts`): each
   // option is a step the tick carries out once a person chooses it.
   "followup-recovery": {

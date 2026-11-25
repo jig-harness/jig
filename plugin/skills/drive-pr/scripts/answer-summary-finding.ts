@@ -22,7 +22,8 @@
  *   the concrete reason, verbatim — no shell expansion
  *   EOF
  *
- *   --outcome      REQUIRED. accepted | rejected | wont-fix | deferred | moot
+ *   --batch        Read [{fingerprint,outcome,reason}] on stdin for a held round.
+ *   --outcome      REQUIRED for a manual reply. accepted | rejected | wont-fix | deferred | moot
  *   --fingerprint  REQUIRED, repeatable. From `summary-findings.ts`. Several
  *                  findings sharing one decision answer in a single comment
  *                  rather than one comment each.
@@ -114,65 +115,105 @@
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
 import { fail, isDigits, readStdinAll, runMain } from "./lib/cli.ts";
-import { ghCall, git, resolvePr, run, tsArgv } from "./lib/proc.ts";
+import {
+  ghCall,
+  git,
+  gitCallTimeoutSeconds,
+  resolvePr,
+  run,
+  summaryAnswerReconcileTimeoutSeconds,
+  tsArgv,
+} from "./lib/proc.ts";
 import {
   assertRemoteMutationAllowed,
   assertTreeMutationAllowed,
   resolveFenceContext,
 } from "./lib/state/lease.ts";
 import { lockHeartbeatMs } from "./lib/state/lock.ts";
-import { MARKER_SAFE_FINGERPRINT } from "./summary-findings.ts";
+import { summaryAnswerProblem } from "./lib/summary-answer.ts";
+import { FORGE_BODY_LIMIT } from "../../../shared/records/comment-limit.ts";
+
+import {
+  isOutcome,
+  isFixDependentOutcome,
+  type Outcome,
+} from "./lib/outcome.ts";
+import { SUMMARY_ANSWER_SEPARATOR } from "../../../shared/summary-answer-blocks.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-// `as const`, so `Outcome` is the closed vocabulary rather than `string`. As a
-// plain `string[]` the comparisons further down (`outcome === 'accepted'`) were
-// unchecked string literals, and a typo in one would have compiled.
-const OUTCOMES = [
-  "accepted",
-  "rejected",
-  "wont-fix",
-  "deferred",
-  "moot",
-] as const;
-type Outcome = (typeof OUTCOMES)[number];
-const isOutcome = (v: string): v is Outcome =>
-  (OUTCOMES as readonly string[]).includes(v);
-const TOKENS = OUTCOMES.map((o) => `**${o}**`);
+interface Answer {
+  fingerprint: string;
+  outcome: Outcome;
+  reason: string;
+}
+
+function isAnswer(answer: unknown): answer is Answer {
+  return (
+    typeof answer === "object" &&
+    answer !== null &&
+    "fingerprint" in answer &&
+    typeof answer.fingerprint === "string" &&
+    "outcome" in answer &&
+    isOutcome(answer.outcome) &&
+    "reason" in answer &&
+    typeof answer.reason === "string"
+  );
+}
+
+function parseBatch(raw: string): Answer[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    return fail(2, `answer-summary-finding.ts: invalid batch JSON: ${error}`);
+  }
+  if (
+    !Array.isArray(parsed) ||
+    parsed.length === 0 ||
+    !parsed.every(isAnswer)
+  ) {
+    fail(
+      2,
+      "answer-summary-finding.ts: --batch expects a non-empty array of { fingerprint, outcome, reason }",
+    );
+  }
+  if (new Set(parsed.map((item) => item.fingerprint)).size !== parsed.length) {
+    fail(2, "answer-summary-finding.ts: --batch expects distinct fingerprints");
+  }
+  return parsed;
+}
+
+function options() {
+  try {
+    const { values, positionals } = parseArgs({
+      args: process.argv.slice(2),
+      allowPositionals: true,
+      options: {
+        batch: { type: "boolean", default: false },
+        fingerprint: { type: "string", multiple: true, default: [] },
+        outcome: { type: "string", default: "" },
+        "pushed-sha": { type: "string", default: "" },
+      },
+    });
+    return {
+      batch: values.batch,
+      fingerprints: values.fingerprint,
+      outcome: values.outcome,
+      pushedSha: values["pushed-sha"],
+      requestedPr: positionals.at(-1) ?? "",
+    };
+  } catch (error) {
+    return fail(2, `answer-summary-finding.ts: ${error}`);
+  }
+}
 
 async function main(): Promise<number> {
-  let outcome = "";
-  let pr = "";
-  let pushedSha = "";
-  const fingerprints: string[] = [];
+  const { batch, fingerprints, outcome, pushedSha, requestedPr } = options();
 
-  const argv = process.argv.slice(2);
-  const take = (flag: string, i: number): string => {
-    const value = argv[i + 1];
-    if (value === undefined) fail(2, `${flag} requires a value`);
-    return value;
-  };
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === undefined) continue;
-    switch (a) {
-      case "--outcome":
-        outcome = take(a, i++);
-        break;
-      case "--fingerprint":
-        fingerprints.push(take(a, i++));
-        break;
-      case "--pushed-sha":
-        pushedSha = take(a, i++);
-        break;
-      default:
-        if (a.startsWith("--")) fail(2, `unknown flag: ${a}`);
-        pr = a;
-    }
-  }
-
-  if (!isOutcome(outcome)) {
+  if (!batch && !isOutcome(outcome)) {
     fail(
       2,
       "answer-summary-finding.ts: --outcome must be one of the closed-vocabulary values.",
@@ -203,103 +244,34 @@ async function main(): Promise<number> {
     );
   }
 
-  if (fingerprints.length === 0) {
+  if (!batch && fingerprints.length === 0) {
     fail(
       2,
       "answer-summary-finding.ts: at least one --fingerprint is required (from summary-findings.ts)",
     );
   }
 
-  // The fingerprint travels to summary-findings.ts through the marker and
-  // nowhere else, and the marker is lossy: its regex captures `[^\s>]+`, so
-  // whitespace truncates the value and `>` ends the comment early, while a `@`
-  // is read back as a fix-dependent SHA suffix. Any of those keys an answer to
-  // a fingerprint that is not the finding's, so the finding stays unaddressed
-  // on every later head and the drive can NEVER converge. Reject at the
-  // boundary rather than posting an answer that cannot be read — the grammar
-  // is MARKER_SAFE_FINGERPRINT in summary-findings.ts; keep the two identical.
-  // The grammar is imported, not restated: `summary-findings.ts` owns
-  // MARKER_SAFE_FINGERPRINT and reads the marker back with it, so a second copy
-  // here drifting by one character produces markers that never round-trip and a
-  // drive that never converges. The two
-  // messages stay separate because they diagnose different halves of it.
-  for (const fp of fingerprints) {
-    if (!/^[A-Za-z0-9]/.test(fp)) {
-      fail(
-        2,
-        `answer-summary-finding.ts: fingerprint '${fp}' must start with a letter or digit`,
-      );
-    }
-    if (!MARKER_SAFE_FINGERPRINT.test(fp)) {
-      fail(
-        2,
-        `answer-summary-finding.ts: fingerprint '${fp}' contains a character the`,
-        "drive-pr-addressed marker cannot carry (allowed: letters, digits, . _ -).",
-        "An answer under a mangled key never marks the finding addressed, so the",
-        "drive would never converge. Copy the fingerprint from summary-findings.ts.",
-      );
-    }
-  }
-
-  // Read verbatim, trailing newlines preserved — the bash original went out of
-  // its way (a sentinel byte) to keep a reason ending in a blank line intact
-  // after a closed code fence.
-  const reason = await readStdinAll();
-
-  // `=== ''` rejected only a zero-byte stdin, so a lone newline or a run of
-  // spaces posted `**accepted** — ` with nothing after it, and the marker went
-  // up regardless: the finding then reads as answered by a reply that explains
-  // nothing, which is the exact case this guard exists to refuse. Trim to
-  // decide, but keep `reason` itself verbatim — the trailing newlines are
-  // deliberately preserved for fenced reasons below.
-  if (reason.trim() === "") {
+  const raw = await readStdinAll();
+  if (batch && (outcome !== "" || fingerprints.length > 0)) {
     fail(
       2,
-      "answer-summary-finding.ts: the reason (stdin) was empty — a bare outcome classifies the finding while explaining nothing",
+      "answer-summary-finding.ts: --batch cannot be combined with --outcome or --fingerprint",
     );
   }
+  const answers = batch
+    ? parseBatch(raw)
+    : fingerprints.map((fingerprint) => ({
+        fingerprint,
+        outcome: outcome as Outcome,
+        reason: raw,
+      }));
 
-  // The outcome arrives as a FLAG and the token is composed below, so a
-  // reason that ALREADY opens with one produces `**accepted** — **accepted**
-  // — …`. The harvester keys on the leading token, so a doubled one is a
-  // malformed sample of exactly the kind this vocabulary exists to keep clean
-  // — and the marker posts anyway, so the finding reads as answered and no
-  // later pass revisits it.
-  //
-  // Measured, not hypothesised: it happened on this skill's own PR.
-  // `drive-state.ts hold --kind finding` takes the reason on stdin, held
-  // between the fix and the push; writing that held reason the way a THREAD
-  // reply is written — token first, since that is what reply-to-thread.ts
-  // demands — is the natural mistake, and nothing caught it until four comments
-  // were already posted and had to be PATCHed. Refuse instead, naming the fix.
-  //
-  // Checked after stripping LEADING whitespace, not on the reason verbatim: a
-  // reason can naturally start with indentation or a blank line (pasted from
-  // an indented code block, say), and a byte-zero-only check reads
-  // "  **rejected** — …" as not carrying a token at all, posting the doubled
-  // token this guard exists to refuse.
-  const reasonCheck = reason.replace(/^\s+/, "");
-  if (TOKENS.some((t) => reasonCheck.startsWith(t))) {
-    const leading = reasonCheck.split(/\s/, 1)[0];
-    fail(
-      2,
-      `answer-summary-finding.ts: the reason already opens with an outcome token (${leading}).`,
-      "",
-      "The token is composed from --outcome here; passing it on stdin too posts",
-      `"**${outcome}** — ${leading} — …", which the reviewer-scoring harvester reads as a`,
-      "malformed sample. Unlike reply-to-thread.ts, whose callers write the WHOLE",
-      "reply and so must supply the token, this script wants the reason alone:",
-      "",
-      `  answer-summary-finding.ts --outcome ${outcome} --fingerprint FP PR <<'EOF'`,
-      "  the concrete reason, with no leading token",
-      "  EOF",
-      "",
-      "If this reason came from 'drive-state.ts held', fix it at the 'hold' call —",
-      "that stdin is the same reason text, and it must not carry a token either.",
-    );
+  for (const { fingerprint, reason } of answers) {
+    const problem = summaryAnswerProblem(fingerprint, reason);
+    if (problem !== undefined) fail(2, `answer-summary-finding.ts: ${problem}`);
   }
 
-  pr = await resolvePr(pr);
+  const pr = await resolvePr(requestedPr);
   if (!isDigits(pr)) {
     fail(2, "answer-summary-finding.ts: could not resolve a PR number");
   }
@@ -308,8 +280,11 @@ async function main(): Promise<number> {
   // durable ones assert something about the finding's merit that no commit
   // changes, so nothing downstream can invalidate them and they may post
   // immediately.
-  const fixDependent = outcome === "accepted" || outcome === "moot";
-  if (fixDependent) {
+  const fixDependentAnswer = answers.find((answer) =>
+    isFixDependentOutcome(answer.outcome),
+  );
+  if (fixDependentAnswer !== undefined) {
+    const { outcome } = fixDependentAnswer;
     if (pushedSha === "") {
       fail(
         2,
@@ -370,11 +345,14 @@ async function main(): Promise<number> {
     // committed, and that commit IS the PR's head. Which is what "the fix
     // landed" means. A read that fails answers "cannot confirm", never
     // "fine".
-    const localRes = await git(["rev-parse", "HEAD"], { stderr: "ignore" });
+    const localRes = await git(["rev-parse", "HEAD"], {
+      stderr: "pipe",
+      timeoutSec: gitCallTimeoutSeconds(),
+    });
     if (localRes.code !== 0) {
       fail(
         1,
-        `answer-summary-finding.ts: cannot read local HEAD — refusing to post a '${outcome}' marker`,
+        `answer-summary-finding.ts: cannot read local HEAD (${localRes.timedOut ? "deadline exceeded" : localRes.stderr.trim() || `exit ${localRes.code}`}) — refusing to post a '${outcome}' marker`,
         "without confirming the change is committed here.",
       );
     }
@@ -386,11 +364,14 @@ async function main(): Promise<number> {
         "Answer for the commit you actually made, not a SHA read off the PR.",
       );
     }
-    const dirtyRes = await git(["status", "--porcelain"], { stderr: "ignore" });
+    const dirtyRes = await git(["status", "--porcelain"], {
+      stderr: "pipe",
+      timeoutSec: gitCallTimeoutSeconds(),
+    });
     if (dirtyRes.code !== 0) {
       fail(
         1,
-        `answer-summary-finding.ts: cannot read the working tree — refusing to post a '${outcome}' marker`,
+        `answer-summary-finding.ts: cannot read the working tree (${dirtyRes.timedOut ? "deadline exceeded" : dirtyRes.stderr.trim() || `exit ${dirtyRes.code}`}) — refusing to post a '${outcome}' marker`,
         "without confirming the change is committed.",
       );
     }
@@ -412,152 +393,102 @@ async function main(): Promise<number> {
     // bounds a false answer.
   }
 
-  // Reconcile against the PR's ACTUAL comments before posting anything.
-  //
-  // This script is not idempotent — every call posts a NEW top-level comment —
-  // and the held-batch's per-item claim only guards the CONCURRENT
-  // double-dispatch case. It says nothing about the sequential one: a driver
-  // calls this script, the POST to GitHub succeeds, and the process is killed
-  // before the caller's `release-held` runs. The claim file is now an orphan;
-  // once it crosses the staleness window a later round reclaims the same held
-  // key and, believing nothing has happened yet, calls this script again for
-  // the identical fingerprint — producing a second, duplicate comment with no
-  // error anywhere.
-  //
-  // `summary-findings.ts --check-addressed` looks for a marker with this EXACT
-  // fingerprint and this EXACT `@sha` suffix (`--marker-sha`, the SHA this call
-  // is itself about to stamp) already sitting on the PR — deliberately NOT the
-  // main report's `collectAddressed`/`reviewerPosition` pairing, even though
-  // that looks like the obvious thing to reuse. That pairing expires a
-  // fix-dependent marker once the reviewer has read its SHA (reaching it, for a
-  // finding outside the reviewer's backlog blob; moving past it for any
-  // finding), which answers "is this finding still open" — the wrong question
-  // here, and routing this reconciliation through it reintroduced the exact
-  // duplicate-post bug this block exists to close: a driver reconciling moments
-  // after its OWN successful post, once the reviewer had simply caught up to
-  // that SHA, saw its own marker as expired and posted a second one. An exact
-  // fingerprint+sha match has no such expiry — whether the reviewer has read a
-  // marker is irrelevant to whether posting it again would duplicate it. It
-  // goes through the CLI rather than importing `findExactMarkers` and
-  // re-fetching the comments here, so there stays one fetch-and-trust-filter
-  // path over that world-writable stream rather than a second one to drift from
-  // it.
-  //
-  // This is a plain read-then-write, not an atomic check-and-post: it narrows
-  // the window rather than eliminating it.
-  //
-  // In-flight overlap: two claimants can each pass this check before either's
-  // POST below is visible to the other — reachable if a genuinely slow (not
-  // crashed) dispatch outlives the claim's staleness window and a second driver
-  // reclaims and redispatches while the first POST is still in flight. See
-  // DRIVE_PR_CLAIM_STALE_MIN's own comment in lib/state/claims.ts for why
-  // closing that residual with a heartbeat/lease-renewal isn't worth it here.
-  //
-  // Head-moved reclaim: a driver can die AFTER its POST succeeds but BEFORE
-  // `release-held`. If the PR head moves on before that stale claim is
-  // reclaimed, a later reclaimer's `--marker-sha` is the NEW head, the check
-  // looks for a marker there, and misses the one sitting at the OLD head.
-  //
-  // That reclaimer never gets as far as posting a second, duplicate answer:
-  // `claim-held --kind finding --pushed-sha` refuses, because the held
-  // record's `verifiedSha` is still the OLD head. So instead of a duplicate
-  // comment the cost is a STUCK held entry: no
-  // `--pushed-sha` will ever match it again, and nothing re-enumerates it
-  // either, since `summary-findings.ts`'s `unaddressed` list already excludes
-  // an answered finding. That refusal names both recoveries (release the stale
-  // entry if the answer is genuinely already posted; re-hold it if not) —
-  // deliberately, since a mechanical one does not exist: recovery cannot tell
-  // "already posted" from "about to post" without reading the PR.
-  //
-  // The residual is not closed by a cheaper local fix. Matching ANY SHA here
-  // directly regresses the exact-match rule above (a later, legitimate
-  // re-answer of the same fingerprint under a new SHA would read as
-  // already-answered and be silently skipped, which is a live finding lost, not
-  // a re-asked one). Persisting the dispatched SHA before the POST only
-  // relocates the crash window one step earlier, since no ordering of a local
-  // state write and a remote POST is atomic. Same accepted-residual class as
-  // the in-flight-overlap route above, reached a third way — traded from a
-  // permanent wrong comment on the PR to a stale local entry with a documented
-  // one-command cleanup.
-  const checkArgs = [pr, "--check-addressed", fingerprints.join(",")];
-  if (fixDependent) checkArgs.push("--marker-sha", pushedSha);
+  // Exact marker lookup makes the POST recoverable if the process stops
+  // after delivery and before releasing its held claims. Match fix-dependent
+  // markers only on this head, so a later fix can answer the same fingerprint.
+  const fixKeys = answers
+    .filter((answer) => isFixDependentOutcome(answer.outcome))
+    .map((answer) => answer.fingerprint);
+  const durableKeys = answers
+    .filter((answer) => !isFixDependentOutcome(answer.outcome))
+    .map((answer) => answer.fingerprint);
+  const checkArgs = [
+    pr,
+    "--check-addressed",
+    (fixKeys.length ? fixKeys : durableKeys).join(","),
+  ];
+  if (fixKeys.length > 0) {
+    checkArgs.push("--marker-sha", pushedSha);
+    if (durableKeys.length > 0)
+      checkArgs.push("--check-durable-addressed", durableKeys.join(","));
+  }
   const check = await run(
     tsArgv(join(here, "summary-findings.ts"), checkArgs),
-    {
-      stderr: "ignore",
-    },
+    { stderr: "pipe", timeoutSec: summaryAnswerReconcileTimeoutSeconds() },
   );
   if (check.code !== 0) {
     fail(
       1,
       `answer-summary-finding.ts: could not reconcile PR #${pr}'s existing comments before posting — refusing to dispatch without knowing whether this outcome was already answered by an earlier, interrupted pass. Retry once the PR's comments are readable.`,
+      check.stderr.trim(),
     );
   }
-  let stillUnanswered: string[];
-  // The reviewer round the sticky under evaluation describes, read back from
-  // the same reconciliation call rather than fetched separately or passed in by
-  // the caller: `collectAddressed` measures the winddown exemption's bound
-  // against that exact field of that exact comment, so producing it from any
-  // other source is a second thing to drift — and a marker stamped with a round
-  // the consumer does not compare against is a suppression nobody can bound.
-  let stickyRound: number | null = null;
+  let report: unknown;
   try {
-    const parsed = JSON.parse(check.stdout);
-    stillUnanswered = parsed.unaddressed as string[];
-    stickyRound = typeof parsed.round === "number" ? parsed.round : null;
-  } catch {
+    report = JSON.parse(check.stdout);
+  } catch (error) {
     return fail(
       1,
-      `answer-summary-finding.ts: could not parse the reconciliation report for PR #${pr} — refusing to dispatch without knowing whether this outcome was already answered.`,
+      `answer-summary-finding.ts: could not parse the reconciliation report for PR #${pr}: ${error}`,
     );
   }
-  const toPost = fingerprints.filter((fp) => stillUnanswered.includes(fp));
-  const alreadyAnswered = fingerprints.filter(
-    (fp) => !stillUnanswered.includes(fp),
-  );
+  const requested = new Set([...fixKeys, ...durableKeys]);
+  if (
+    typeof report !== "object" ||
+    report === null ||
+    !("unaddressed" in report) ||
+    !Array.isArray(report.unaddressed) ||
+    !report.unaddressed.every(
+      (key: unknown) => typeof key === "string" && requested.has(key),
+    )
+  ) {
+    fail(
+      1,
+      `answer-summary-finding.ts: malformed reconciliation report for PR #${pr}`,
+    );
+  }
+  const unanswered = new Set(report.unaddressed);
+  const stickyRound =
+    "round" in report && typeof report.round === "number" ? report.round : null;
+  const toPost = answers.filter((answer) => unanswered.has(answer.fingerprint));
   if (toPost.length === 0) {
     console.error(
       `answer-summary-finding.ts: every fingerprint in this call already carries a live 'drive-pr-addressed' marker on PR #${pr} — treating as already dispatched by an earlier pass and skipping the duplicate post (idempotent no-op).`,
     );
     return 0;
   }
-  if (alreadyAnswered.length > 0) {
+  const alreadyAnswered = answers.filter(
+    (answer) => !unanswered.has(answer.fingerprint),
+  );
+  if (!batch && alreadyAnswered.length > 0) {
     fail(
       2,
-      `answer-summary-finding.ts: refusing a MIXED batch — ${alreadyAnswered.join(" ")} already carry a live marker, but ${toPost.join(" ")} do not. Posting now would either re-answer the already-marked ones or leave their reasoning inconsistent with a partial comment. Retry with only the still-unanswered fingerprint(s): ${toPost.join(" ")}`,
+      `answer-summary-finding.ts: refusing a MIXED batch — ${alreadyAnswered.map((item) => item.fingerprint).join(" ")} already carry a live marker, but ${toPost.map((item) => item.fingerprint).join(" ")} do not. Posting now would either re-answer the already-marked ones or leave their reasoning inconsistent with a partial comment. Retry with only the still-unanswered fingerprint(s): ${toPost.map((item) => item.fingerprint).join(" ")}`,
     );
   }
 
-  // A fix-dependent marker carries the SHA the change landed on; a durable
-  // one carries the bare fingerprint. The difference is not cosmetic:
-  // `rejected`, `wont-fix` and `deferred` are claims about the finding's
-  // MERIT, which no later commit changes, while `accepted` and `moot` claim
-  // only "answered as of THIS head". summary-findings.ts stops honouring a
-  // SHA-stamped marker once the reviewer's own review has caught up to that
-  // head (`collectAddressed` says exactly where the line falls) — so an
-  // incomplete fix, a revert, or a later round reintroducing the
-  // code a `moot` said was gone re-surfaces the finding instead of being
-  // suppressed by a stale answer whose fingerprint never changed.
-  //
-  // The round rides along on the fix-dependent form because one class of
-  // finding is EXEMPT from that expiry — the reviewer's `winddown-deferred`
-  // backlog entries, which it forwards without re-verifying, so their
-  // re-emission falsifies nothing. Unbounded, that exemption suppressed a
-  // reverted fix forever; bounded by elapsed rounds, it expires on
-  // its own and the finding is re-asked once. Stamped on EVERY fix-dependent
-  // marker, not just the winddown ones: which set a fingerprint belongs to is
-  // the reviewer's to say and it can change between rounds, so deciding it here
-  // would be a second, staler copy of that judgement. `collectAddressed` reads
-  // the round only inside the exemption, where it means something.
-  //
-  // A null round — no sticky, or a sticky stamping none — omits the suffix,
-  // which withholds the exemption from this marker. That is the pre-exemption
-  // behaviour: it costs one re-answer, and the re-answer stamps a round.
   const roundSuffix = stickyRound === null ? "" : `#${stickyRound}`;
-  const suffix = fixDependent ? `@${pushedSha}${roundSuffix}` : "";
-  let body = `**${outcome}** — ${reason}`;
-  for (const fp of fingerprints) {
-    body += `\n<!-- drive-pr-addressed: ${fp}${suffix} -->`;
+  const marker = ({ fingerprint, outcome }: Answer) => {
+    const suffix = isFixDependentOutcome(outcome)
+      ? `@${pushedSha}${roundSuffix}`
+      : "";
+    return `<!-- drive-pr-addressed: ${fingerprint}${suffix} -->`;
+  };
+  const body = batch
+    ? toPost
+        .map(
+          (answer) =>
+            `**${answer.outcome}** — ${answer.reason}\n${marker(answer)}`,
+        )
+        .join(SUMMARY_ANSWER_SEPARATOR)
+    : `**${outcome}** — ${raw}\n${toPost.map(marker).join("\n")}`;
+
+  const bodyBytes = Buffer.byteLength(body);
+  if (batch && bodyBytes > FORGE_BODY_LIMIT) {
+    fail(
+      2,
+      `answer-summary-finding.ts: the held answers need ${bodyBytes} UTF-8 bytes, beyond GitHub's ${FORGE_BODY_LIMIT}-byte comment limit. Shorten their reasons and re-hold the findings before retrying.`,
+    );
   }
 
   // LAST act before the POST: is this session still the one driving PR #pr

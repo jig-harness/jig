@@ -498,8 +498,10 @@ describe("drive-status.ts reports counts it never measured as null", () => {
       unresolvedThreadVersions: null,
       summaryUnaddressedKeys: null,
       summaryHeldUndispatchedKeys: null,
+      summaryIgnoredBacklogKeys: null,
       parkedKeys: null,
       actionableParkKeys: null,
+      churnParkKeys: null,
       // The anchor PATHS the same way — `[]` here would be the
       // positive claim "no file drew a finding this round", which is exactly
       // what a same-file recurrence check must never be told on a gate that

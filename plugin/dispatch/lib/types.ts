@@ -94,6 +94,8 @@ export interface AdoptRule {
   withinMs: number;
   /** The bots `pull_requests.trusted_automation` names, case folded: adopted, and driven while healthy too; absent for none. */
   trusted?: string[];
+  /** Listed bots need a manual drive or rearm, even when named in `authors`. */
+  excludeTrusted?: true;
 }
 
 /** One repository as the tick dispatches for it. */
@@ -234,7 +236,8 @@ export interface StaleCause {
    * a spent CI-repair budget (`21`), a pass deadline with its restarts
    * spent (`15`), checks still failing on the infrastructure through their
    * re-runs (`23`, `ci-infra`), or a check-runs listing cut short (`25`,
-   * `check-runs`). Re-driven once per head commit, a `ci-infra` stop once per
+   * `check-runs`) or a status probe read failure (`1`, `probe-read`). Re-driven
+   * once per head commit, a `ci-infra` stop once per
    * stop after its backoff; a re-drive that leaves the same stop standing is
    * a person's. The forge's rate limit for the drive's credential spent past
    * what it waits (`24`, `forge-limit`) is re-driven from that reset.
@@ -246,6 +249,7 @@ export interface StaleCause {
     | "deadline"
     | "ci-infra"
     | "check-runs"
+    | "probe-read"
     | "forge-limit";
   /** When the re-drive may start: a `ci-infra` stop's backoff end (`infra-backoff.ts`), a `forge-limit` stop's reset (`forge-limit-redrive.ts`). */
   notBefore?: string;
@@ -303,6 +307,8 @@ export interface DrivenPr {
   failure?: ReadFailure;
   /** The pull request's head commit and its branch's head on the forge, read only where a failed re-arm is weighed (`failed-rearms.ts`). */
   heads?: RearmHeads;
+  /** When the next launch of a drive whose launches keep ending the same way may start, an instant (`repeated-ends.ts`). */
+  retryAfter?: string;
 }
 
 /** A pull request's head commit, as the forge reports it with the pull request, and its branch's head on the forge. */
@@ -369,6 +375,8 @@ export interface Unplaced {
   target: string;
   record: RecordName;
   reason: string;
+  /** Set only for a notification channel's own fault, which says nothing about whether this repository's causes were observed. */
+  channelFault?: true;
   /** For an item the tracker listing returned: its title and link, which the line and the outcome log show beside its key. */
   title?: string;
   url?: string | null;
@@ -607,6 +615,13 @@ export interface NotifyOutcome {
   channel?: string;
 }
 
+/** A notification channel that began sending on this host this tick, and how many standing causes it was recorded as knowing without sending them. */
+export interface ChannelStart {
+  channel: string;
+  /** The causes that already stood across every repository of the tick; the first repository's report holds the entry, and later ones add to it. */
+  causes: number;
+}
+
 /** What `--apply` did with the repository's notices workspace once its notifications were sent. */
 export interface RetireOutcome {
   workspace: string;
@@ -817,6 +832,8 @@ export interface RepoReport {
   preflight?: PreflightHold[];
   /** What `--apply` notified, where the machine file enables `notify`; empty otherwise. */
   notifications: NotifyOutcome[];
+  /** The notification channels that began sending on this host this tick, told once: on the first repository the channel was started at. Absent when none began. */
+  channelStarts?: ChannelStart[];
   /** What `--apply` did with the repository's notices workspace, where the machine file enables `notify` and one is open. */
   noticesWorkspace?: RetireOutcome;
   /** What `--apply` had the session runtime end of what ended runs left; absent when none left anything. */

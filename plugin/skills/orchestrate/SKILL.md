@@ -55,6 +55,10 @@ profile or memory facility. It holds:
 The notebook replaces no repository record: decision records, the plan and
 the tracker stay where they are, and `state.md` links to them.
 
+Use full Markdown URL links for issues and pull requests outside the current
+repository throughout `state.md`, including `## Focus` and `## Links`, and in
+every `journal/YYYY-MM-DD.md` entry. Follow the examples in [Reporting](#reporting).
+
 Reach it through its script only, from the repository root, with the topic
 as the person gave it; the script names the folder, so "Release cadence" and
 `release-cadence` are one topic. `state` and `journal` read the text from
@@ -296,3 +300,8 @@ Once the person agrees:
 
 Keep reports short and lead with what changed. Use one decision per numbered
 line, without file dumps, so the person can see what needs their answer.
+
+In reports to the person, use full Markdown URL links for issues and pull
+requests outside the current repository, such as [example-org/example-repo#123](https://github.com/example-org/example-repo/pull/123)
+or [example-org/example-repo#456](https://github.com/example-org/example-repo/issues/456).
+Concise references are fine within the current repository when unambiguous.

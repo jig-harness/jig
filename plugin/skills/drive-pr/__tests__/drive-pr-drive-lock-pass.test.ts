@@ -1154,6 +1154,7 @@ describe("drive.ts loop control", () => {
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
+            DRIVE_PR_CHURN_ROUNDS: "0",
           },
           // Not piped: the pass ignores SIGTERM and inherits the driver's
           // output, so a pipe stays open until the pass's own loop ends —

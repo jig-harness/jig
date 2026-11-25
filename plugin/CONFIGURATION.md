@@ -424,15 +424,130 @@ protection) still decide its lane:
      apply to a behind branch or another blocker, and to forge facts that
      are incomplete or a mergeability not yet known.
 
-**Warning: the drive host installs what the pull request selects.** The
-classifier reads the textual patch, not its effect on the install: which
-lockfile is consumed, which installer runs, and which command applies. Jig
-picks the command from the lockfile it detects; for `yarn.lock`, an existing
-`.yarnrc.yml` alone selects `--immutable` over `--frozen-lockfile`. The drive
-host runs that install during a base merge or a conflict resolution, before
-the Ready decision, so a review at merge time comes too late. With
-`dispatch.adopt` on, a listed bot's pull request can be adopted and installed
-before anyone has looked at it.
+**The drive can install dependencies before the Ready decision.** To review
+install inputs before a listed bot's drive starts, set
+`dispatch.adopt.trusted_automation: false` and start each drive after review.
+Pause dispatch on every host that dispatches this repository, including
+ticks the change probe starts, and let each host's active ticks finish first
+(a tick that already passed its fresh read can still launch a first drive
+under a label removed afterwards, and a tick on a host left running keeps its
+old policy), then stop any running drives, retire every outstanding `drive`
+and `rearm` request (remove the labels) and resume dispatch once the policy is
+in effect: a request made before the switch can still start a drive without a
+new review. Start from a trusted baseline: the base branch's installer configuration,
+manifests and lockfiles, not the bot's branch. Compare every effective install
+input of the merged tree (or resolved index) against that baseline, since an
+edit already on the bot's branch is identical in the merge and its first
+parent. Then, for a clean base merge, compare the merged tree with its first
+parent (the pre-merge branch), or for a conflict resolution the resolved index
+with that branch, to isolate what the merge or resolution adds. Before preparing
+any checkout or merge, review the Git hooks they run, the merge drivers and
+the checkout and clean filters (smudge, process and clean) the host configures and the
+branch's path attributes can select; or use an isolated checkout that carries
+no unreviewed executable Git configuration. Then prepare and review the actual
+merge before the drive starts, in the drive's own worktree: the drive merges
+there and installs right after, so a filter that depends on local state can
+produce different bytes under identical commits and configuration. Use a
+scratch checkout instead only when you can establish that it resolves the same
+effective merge drivers, filters and hooks as the drive's worktree and
+produces the same effective install inputs; otherwise prepare the worktree
+first and start the drive in it. The drive installs right after its own clean
+merge and cannot wait for a recheck, so keep the base branch from moving
+between that review and the install, and when the head or base has moved since
+the review, repeat it before starting the drive. Keep the pull request's head
+fixed from the review through the drive's attachment and installation: the
+attach advances a checkout to a newer head of the same branch, so start the
+drive in the reviewed worktree with the head you reviewed, and review again if
+the head differs when the drive attaches. Recheck when the head, base or resolution changes the
+inputs. Review the
+contents of any newly selected lockfile, including an unchanged lockfile
+selected after a manifest edit or after a lockfile is added, removed, moved
+or copied. Verify the executable, version and source the host resolves for
+the install command, including any shim or override. For the built-in Yarn
+command, the presence of `.yarnrc.yml` selects `--immutable`, with
+`--frozen-lockfile` used otherwise. Verify that the resolved Yarn supports
+the selected flag.
+
+**Review the commands, not only the inputs.** The opt-out controls automatic
+starts only. A drive the operator starts resolves its policy from its bound or
+base configuration when present, otherwise from layered configuration in the
+checkout and environment it runs in, so verify the actual checkout,
+environment and effective policy the drive will use, and repeat the review if
+they differ from the ones reviewed. The environment, an overlay and catalogs
+read from disk can select a command neither repository snapshot holds. Before
+any drive that can install, review each selected install job's full command,
+working directory, executable and effective environment, whether it comes from
+a `drive.dependency_install` override or from the built-in command for the
+lockfile's own directory. Before any start or restart that can enter conflict
+repair (a first drive included, whatever a restarted drive stopped on, a
+parked drive whose pull request conflicts included), review the effective
+inputs of every command the resolution would run, before that command runs
+(a regeneration can run before its result is staged, and a conflicted
+lockfile is an input): a migration sequence's command, a
+`resolve_conflicts.generated` entry, the change-area catalog's generator, the
+built-in lockfile table, or a generator the operator finds and records for a
+derived path, with its working directory, against the base's configuration and
+the staged configuration both. Also review the Git hooks a merge or commit
+runs, and the obligation commands and the validation plan or gate that
+validation runs. A drive does not pause between a regeneration and the install that follows
+it during validation. To review a regenerated lockfile and the effective tree
+before anything installs, resolve the conflict and regenerate yourself, push,
+and only then start the drive.
+
+Restart a stopped drive by the procedure for its stop (answer every parked
+decision; for a usage-limit stop, follow "Picking up a stopped drive" in the drive-pr skill: a pass that
+bills a known account different from the account recorded on the stop may pick
+the drive up now, while the same account, or one that either side cannot
+identify, is admitted once the recorded reset has passed. When no reset was
+recorded, or earlier than the reset, a person who knows the window reopened
+passes `--window-reopened`; grant a spent
+round budget). What needs a restart depends on how the drive ended:
+
+- A drive a person stopped stays stopped.
+- A drive that stopped `TAKEN_OVER` stays stopped: its successor's ledger says
+  whether it can restart.
+- A drive converged on a head that is still its verified head and mergeable
+  needs no restart. A base that merely advanced does not stale it.
+- A head the dispatcher proves moved only by a clean base merge is refreshed,
+  not restarted, once the refresh records the convergence: it needs the merge
+  proof, an applicable review witness, passing checks on the new head and a
+  standing announcement on the previously verified head. The refresh runs only
+  while the pull request is open, not a draft, mergeable, and neither held nor
+  busy, in a repository listed on the owning host with the `rearm` stage
+  enabled, from an apply tick of that host's dispatcher that reads the forge
+  successfully; it skips disputed and out-of-scope pull requests. Check that
+  scope before waiting for a refresh. The refresh also needs the stopped
+  ledger's generation to be above every takeover claim in the ledger snapshot
+  (launch records and merge-ready announcements are not generation blockers), and the
+  merge-ready announcement to succeed, so a pull request with another Ready
+  blocker (one outside the merge-now and approve-first lanes) falls back. When
+  the pull request is held or busy, release the hold or wait for the busy
+  drive; when mergeability reads `UNKNOWN` or cannot be read, recheck it. A
+  `CONFLICTING` result is not a wait, and not a new stop either: once the
+  ledger reading identifies the head and base, a previously converged drive
+  reads `stale` while its ledger still records `CONVERGED`. Review the
+  effective conflict-resolution inputs, then re-drive that stale convergence by
+  hand. A drive whose head or base cannot be identified stays `unplaced`
+  (recheck it). A
+  `MERGEABLE` head that differs from the verified head reads `stale`: when the
+  refresh has fallen back, restart it by hand as the next bullet says.
+  Until the refresh records the convergence the head is stale, and
+  dispatch can withhold a re-drive while verification of the new head is
+  pending. A refresh that is still unresolved (verification pending, a held
+  drive slot, an unconfirmed ledger write) can show as `unplaced`, but so can a
+  fallback that leaves the drive `stale`: read the row's reason and check the
+  canonical ledger before choosing between waiting and a manual restart.
+- When a refresh falls back, check the canonical ledger before restarting: a
+  fallback can follow a ledger that already carries the new verified head, in
+  which case the convergence holds. When the ledger still shows the old head,
+  the pull request stays `stale`, which under the opt-out waits for a manual
+  restart.
+- Any other moved head is a new stop to restart, or a ledger recovery when
+  the ledger reading shows the prior convergence no longer settles the pull
+  request. A new conflict on a converged drive is not a stop the ledger
+  records: the ledger still says `CONVERGED` and the drive reads `stale`, so
+  re-drive it by hand as above; only a drive that actually stopped with
+  `PR_CONFLICTING` is a stop to restart.
 
 An entry
 without `update_types` skips manifest classification, so such an edit can
@@ -463,9 +578,10 @@ a full page of either does not read whole.
 The dispatcher keeps the read between ticks, keyed by the head and the base
 commit, and the drive's announcement keeps it for the run.
 
-With `dispatch.adopt` on, a listed bot's pull request is adopted whether or
-not `adopt.authors` names the bot, and it is driven to convergence while
-healthy, and again when its head moves, so the board can place it. Adoption
+With `dispatch.adopt` on and its trusted automation option enabled, a listed
+bot's pull request is adopted even if `adopt.authors` omits the bot. It is
+driven to convergence while healthy and again when its head moves, so the
+board can place it. Adoption
 needs a head known to be in the repository, a recent update and no hold; the
 commit, path and update-type rules apply only afterwards, when the board
 places it, so a listed pull request can be driven and still not reach merge
@@ -545,6 +661,7 @@ not resolve it either.
 | `drive.status_poll.max_interval_seconds` | whole number of seconds from 5 to 3600 | `300` | drive-pr | Maximum interval for an unchanged pull request or a low balance, subject to the base interval set by `--interval`. A change in the observed head, checks, review or threads restores the base cadence, subject to the budget. A pause for a nearly exhausted budget may last longer, within the probe's wall-clock timeout. |
 | `drive.reviews_drafts` | `true`, `false` | Unknown | drive-pr, do-item | Whether the AI reviewer reviews draft pull requests. The drive uses it to explain a draft waiting for a review; `false` also makes new pull requests open Ready unless `pull_requests.open_as` says otherwise |
 | `drive.max_rounds` | whole number ≥ 1 | `10` | drive-pr | The default round budget of a drive: how many review rounds it runs before it stops with [`MAX_ROUNDS`](protocol/drive-exits.md). The `--max-rounds` flag overrides it for one run. A re-arm a person asks for after a `MAX_ROUNDS` stop (`jig send … rearm`, or `--rearm-budget`) grants one more budget of this size; the steward's and the tick's re-drives never do. A value that is not a whole number of at least 1 stops the drive, unless the flag names the budget |
+| `drive.churn_rounds` | `0`, or a whole number from 2 to 12 | `4` | drive-pr | The structural-churn brake: how many consecutive rounds one file may draw findings, none of them `high` or `blocker`, and change between each pair of consecutive reviewed heads, before the drive parks itself under the `structural-churn` class with [`HITL_PARKED`](protocol/drive-exits.md#when-the-drive-parks-itself-on-structural-churn). The same brake parks a file that returns to an earlier content. `0` turns the brake off, both kinds. At most 12, the longest streak the drive's state can hold. `DRIVE_PR_CHURN_ROUNDS` sets it for one run and wins over the file. Any other value stops the round as `INDETERMINATE` ([the structural-churn park](skills/drive-pr/README.md#the-structural-churn-park)) |
 | `drive.pass_deadline_retries` | whole number ≥ 0 | `2` | drive-pr | How many passes killed at their deadline one drive restarts from, counted in the drive state across re-arms and takeovers until the drive converges or the pull request closes: the driver reports what the killed pass left in the tree, leaves it there and starts the next round. Past this many it stops with [`PASS_DEADLINE`](protocol/drive-exits.md) and says the budget is spent; `0` stops at the first. A value that is not a whole number of at least 0 stops the drive |
 | `drive.ci_repair_rounds` | whole number ≥ 0 | `2` | drive-pr | How many CI-repair passes a drive spends per head and failing check once the final CI on the converged head comes back red; `0` disables repair and diagnosis. Spending a positive budget starts one diagnosing session on the head. The repository's CI cost and flake posture, so every host that drives it spends the same. `DRIVE_PR_CI_REPAIR_ROUNDS` sets it for one run and wins over the file. A failed-job retry (`ci.rerun_failed_once`) and an infrastructure re-run spend none of it |
 | `drive.pass_model` | one word: a model id, a Claude Code alias, or a complexity tier (`simple`, `standard`, `complex`; `execution` and `strategic` read as `standard` and `complex`) | `sonnet`, Claude Code's alias for the latest Sonnet | drive-pr, do-item | The model each pass of a drive runs on: the arm command both skills build carries it as `claude --model <model> -p …`, and `drive.ts` adds it after `claude` to a pass command that names no model of its own. A tier resolves through the same tier-to-model table as the implementer's route (`routing.models`, row `claude-code`). The `--pass-model` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive. The driver log and the `drives.ts` listing name the model. The setting is Claude Code's; `--pass-model` also overrides a Codex pass and resolves tiers through `routing.models.codex`. Without that flag, a Codex pass runs on its own `-m`, else the standard tier of `routing.models.codex` (by default `terra`, given as `gpt-5.6-terra`), and any other pass command chooses its own model. A value that is not one word stops the drive |
@@ -708,7 +825,7 @@ it. Until then, opt in only to take part in that measurement.
 | `autonomy.max_level` | `attended`, `unattended` or `wide` | The repository's own `level`, else `attended` | drive-pr, resolve-review-comments, file-issue, decide | The highest level any layer may choose. Only the repository's file sets it: the user file refuses it, and an environment variable for it is an error. A drive reads it, and the `level` it falls back on, from the pull request's base branch (above) |
 | `autonomy.off_hours.level` | `attended`, `unattended` or `wide` | Off-hours is off | drive-pr, resolve-review-comments, file-issue, decide | The level a drive's pass decides at inside a window of `off_hours.schedule`, capped by `max_level`. Any layer may set it; the repository's ceiling still bounds it. Not yet validated (above) |
 | `autonomy.off_hours.schedule` | nonempty list of windows | `Mon-Fri 20:00-07:00`, `Sat-Sun` and `Mon 00:00-07:00`, once `off_hours.level` is set | drive-pr, resolve-review-comments, file-issue, decide | When off-hours applies, in the machine's local time zone. A window is `<days> [HH:MM-HH:MM]`: a day (`Mon`), a range (`Mon-Fri`; `Fri-Mon` wraps across the end of the week) or a comma list of those, then optionally times; without times it is those days whole; times alone (`22:00-06:00`) mean every day. An end at or before the start closes the next day, so a window crosses midnight; the days name the day it opens, which is why the default names Sunday night's end, `Mon 00:00-07:00`, on its own. A schedule without a level is an error |
-| `autonomy.park_classes` | list of distinct class names (lower-case words joined by hyphens) | `ready`, `merge`, `release`, `scope`, `human-thread`, `reviewer-posture`, `next-item`, `reopen-or-waive`, `dark-dial`, `rules`, `destructive`, `legal`, `copy`, `escalated`, `human-decision` | drive-pr | The decision classes a drive may park on: the rows of the repository's [human-in-the-loop registry](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md), by default the template's. Set, it replaces the default list; `escalated` and `human-decision`, which the review arbiter emits, and `human-thread`, which a reversed provisional decision is parked under, are kept whatever it lists. Only the repository's file sets it: the user file refuses it, and an environment variable for it is an error. A drive reads it from the pull request's base branch (above) |
+| `autonomy.park_classes` | list of distinct class names (lower-case words joined by hyphens) | `ready`, `merge`, `release`, `scope`, `human-thread`, `reviewer-posture`, `next-item`, `reopen-or-waive`, `dark-dial`, `rules`, `destructive`, `legal`, `copy`, `escalated`, `human-decision`, `structural-churn` | drive-pr | The decision classes a drive may park on: the rows of the repository's [human-in-the-loop registry](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md), by default the template's. Set, it replaces the default list; `escalated` and `human-decision`, which the review arbiter emits, `human-thread`, which a reversed provisional decision is parked under, and `structural-churn`, the drive's own brake (`drive.churn_rounds`), are kept whatever it lists. Only the repository's file sets it: the user file refuses it, and an environment variable for it is an error. A drive reads it from the pull request's base branch (above) |
 
 ## `ci`
 
@@ -1399,6 +1516,7 @@ These are set per machine or per run, not committed:
 | `JIRA_BEARER_TOKEN` | A token for the Jira adapter, sent as `Authorization: Bearer`: an OAuth 2.0 access token, or an API token with scopes, which Atlassian's API gateway accepts this way as well as in the `JIRA_EMAIL` pair. Set `issue_tracker.jira.api_base` with it, since Atlassian accepts both only through its API gateway; on an Atlassian Cloud site without it the adapter refuses the token before any request. The adapter verifies the authenticated account through Jira's `myself` endpoint before reading issues or searches, so the token needs the classic `read:jira-user` scope, or all of the granular `read:application-role:jira`, `read:group:jira`, `read:user:jira` and `read:avatar:jira` scopes, as well as the scopes its issue operations need. Add the applicable set before upgrading a token that previously only read issues. Wins over `JIRA_TOKEN_COMMAND` and the `JIRA_EMAIL` pair |
 | `JIRA_TOKEN_COMMAND` | A command that prints such a token, and nothing else, on its standard output, as `gh auth token` does, so a company's credential broker or vault holds the token and the environment holds only the command. It is split into words at spaces, with quotes keeping a word whole, and run without a shell (name one, `sh -c "..."`, if it needs one), from the home directory rather than the repository, so a program found by name is never the repository's. The adapter verifies the authenticated account through Jira's `myself` endpoint before reading issues or searches, so the token needs the classic `read:jira-user` scope, or all of the granular `read:application-role:jira`, `read:group:jira`, `read:user:jira` and `read:avatar:jira` scopes, as well as the scopes its issue operations need. The adapter runs it once per process, within 30 seconds, and keeps the token in memory; when Jira answers 401 it runs it once more and sends the request again once with the new token. If Jira refuses that replacement too, the process stops renewing the command and subsequent requests fail with credential guidance; restart the process after fixing the credential. A command that overruns either its own deadline or the request deadline is reported as unavailable and names `JIRA_TOKEN_COMMAND`; a caller cancellation remains a cancellation. A run that fails, prints nothing or more than a token, or overruns fails the request with an error naming the variable; the error shows the last line of the command's error output, never what it printed on standard output, so keep a broker's secrets off its error output. Wins over the `JIRA_EMAIL` pair |
 | `DRIVE_PR_BASE_BRANCH`, `DRIVE_PR_REVIEWER_APP`, `DRIVE_PR_REVIEWER_CHECK`, `DRIVE_PR_REVIEWER_EVIDENCE`, `DRIVE_PR_STICKY_MARKER`, `DRIVE_PR_SHA_MARKER` | Override the matching field for one run |
+| `DRIVE_PR_CHURN_ROUNDS` | Overrides `drive.churn_rounds` for one run: `0`, or a whole number from 2 to 12; any other value stops the round as `INDETERMINATE` |
 | `DRIVE_PR_ATTACH` | `off` makes `drive.ts` drive the working tree as it stands, without attaching the pull request to it first (for a harness that prepares its own trees), and `attach-pr.ts --place` choose the tree without attaching; `on` or unset attaches ([which tree drives a PR](skills/drive-pr/README.md#which-working-tree-drives-it)) |
 | `DRIVE_PR_HANDOFF_TELLS_REFUSED` | Set by the driver, never by a person: `1` makes `drive-state.ts handoff` exit `76` (`LEDGER_REFUSED_EXIT`) when its guards refused the ledger write (a lost acquisition, a newer takeover claim, a ledger that is not the stopped driver's) instead of `0`, so the drive labels its pull request's state only after a ledger write of its own; unset, a refused write exits `0` as a landed one does. A write that was attempted and did not land exits `75` (`LEDGER_NOT_WRITTEN_EXIT`) either way |
 | `DRIVE_PR_LEDGER` | `off` makes `drive.ts` drive without the drive ledger on the pull request: no seeding from it, no check for another clone's driver, no writes; `on` or unset uses it ([where its state lives](skills/drive-pr/README.md#where-its-state-lives)) |
@@ -1634,9 +1752,10 @@ repository. What a run may start is the machine's to say, in
 | `dispatch.labels.enabled` | `true` or `false` | `false`: no label is read or written. `true` turns the [pull request state labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on (below), for every writer (the drive, the follow-up through `jig dispatch marker` and the dispatcher's wrapper, and the dispatcher's tick): a repository with no dispatcher turns them on here too | dispatch, drive-pr |
 | `dispatch.labels.prefix` | string of at most 35 characters, with no comma and no space at either end | `jig:`: put before every label name (`jig:driving`, `jig:hold`). A repository whose label taxonomy has a convention of its own picks one that fits it | dispatch, drive-pr |
 | `dispatch.labels.only_labeled` | `true` or `false` | `false`: every open pull request is read for a drive ledger. `true` limits the dispatcher to the pull requests that carry a label of the set: one that carries none is never read, re-armed or followed up. A drive labels its own pull request (`driving` once it arms), so a drive a person arms by hand comes into the dispatcher's scope with its first label, and the dispatcher re-arms, re-drives and follows it up from then on; a person keeps one out with `hold`. Refused unless `enabled` is `true` | dispatch |
-| `dispatch.adopt.enabled` | `true` or `false` | `false`: a pull request with no drive ledger is driven only when a person labels it `drive`. `true` turns the adoption rule on (below). Refused beside `labels.only_labeled: true` | dispatch |
+| `dispatch.adopt.enabled` | `true` or `false` | `false`: a pull request with no drive ledger is not adopted by its author; its first drive starts when a person labels it `drive`, arms it by hand, or when a completed process pickup arms its own same-repository pull request (the pickup handoff is closed to a listed bot's pull request by `adopt.trusted_automation: false`). `true` turns the adoption rule on (below). Refused beside `labels.only_labeled: true` | dispatch |
 | `dispatch.adopt.authors` | nonempty list of forge logins (a GitHub App's as `<name>[bot]`) | The login the dispatcher reads the forge as, the one the host's sessions open pull requests under: the authors whose pull requests the rule adopts | dispatch |
 | `dispatch.adopt.within` | duration | `168h` (a week): how recently a pull request must have been updated for the rule to adopt it | dispatch |
+| `dispatch.adopt.trusted_automation` | `true` or `false` | `true`: the rule can adopt same-repository pull requests from bots listed in `pull_requests.trusted_automation`. Set `false` to require a manual drive or rearm for those bots, including bots also named in `adopt.authors` | dispatch |
 | `dispatch.pool.states` | nonempty list of [canonical states](#issue_tracker), under the same restrictions as `dispatch.states` | None: no ready pool. Set, the unassigned open items in these states (inside `issue_tracker.jira.pool_issue_types` on Jira) are pickups too, when a person who can write to the repository made each ready (below). Refused without `dispatch.identity` and without `do_item.claim_marker: true` | dispatch |
 
 A repository whose lane is a ready pool (validated items left unassigned
@@ -1856,7 +1975,10 @@ draft is adopted like any other, since a drive marks its pull request
 ready. A bot's pull request (a dependency update, say) is adopted only
 when `authors` names the bot or
 [`pull_requests.trusted_automation`](#trusted-automation) lists it, and one
-carrying `jig:hold` never is. An automation pull request (above) is adopted
+carrying `jig:hold` never is. Set `adopt.trusted_automation: false` to leave
+starts and restarts for the listed bots to a person, including those also
+named in `adopt.authors`. This restart rule applies even with adoption off.
+An automation pull request (above) is adopted
 only while it needs work, except a listed bot's, which is driven while
 healthy too; a healthy one is otherwise left for a person to merge, and
 `jig:drive` still drives
@@ -2023,8 +2145,8 @@ rejects any other form.
 | `change_probe` | `true`; whether the change probe runs: every minute, `jig dispatch probe --apply` (its own timer, which `jig install dispatch` writes beside the tick's) reads the forge once for the pull requests of every repository listed here with a stage, and wakes the tick of each repository where one was updated or its checks changed since the last probe. `false` makes a probe read and wake nothing, and the next `jig install dispatch --yes` removes its timer. Read by `jig dispatch probe` and the dispatcher's install |
 | `outbound_share` | `0.5`; the share of each rate-limit window, a tracker credential's or the forge's, the tick's own calls may use, a number above 0 and at most 1. `tracker_share`, its older name, still reads; a file that names both is refused. Every process on the host shares one record of each quota owner's budget (`~/.local/state/jig/tracker/budget.sqlite`, keyed by the system and a hash of the quota owner: a tracker's credential itself, or for the forge the owner its credential belongs to, below): each answer updates it, and while the system refuses the credential (Linear's `RATELIMITED`, an HTTP 429, GitHub's primary or secondary limit) no request leaves the host before the reset the answer named. The tick's calls stop, with the same wait, once a window has no more than `1 - outbound_share` of its limit left, which keeps the rest for the passes it starts and for people; Linear's windows refill continuously, so the reads resume once the refill brings the window back above that floor (seconds when it is only a little below, minutes when a pass has left a larger deficit), where a window that resets whole (GitHub's) waits for its reset. A tick that meets the limit reports the tracker once as rate limited until the reset, keeps showing the served queue it last read, and its pickups wait; a pickup pass the limit stops before it has claimed the item records `waits` and starts again after the reset; one that meets it after the claim waits within its deadline or records `failed`. Linear's request and complexity windows and Jira's `Retry-After` are read. GitHub's core, GraphQL and search limits are each a window of the record of the forge credential's quota owner, since GitHub counts them per user across all of a user's personal tokens and per installation across all of its tokens: the `gh` client's token or its stored login is asked once who it is (`gh api user`, kept for a week for a token and a day for a stored login, tried again after 15 minutes when it fails), an installation token's owner is the installation `JIG_GITHUB_INSTALLATION_ID` declares, and a credential whose owner cannot be established shares one record per host with every other such credential, so they can only spend less together, and a hold on one holds them all. A record an earlier release kept under the credential's own key seeds the owner's, its hold kept. Each run is recorded there: a `gh api` call reads the rate-limit headers of its answer, a GraphQL answer that selects `rateLimit` its GraphQL balance, and the other subcommands, which show no headers, each reserve a point of the GraphQL balance, the least a query costs, and are accounted from the `rate_limit` endpoint, which the tick reads at most once and only when no answer reported the core window in the last minute, and from their refusals. A GitHub primary limit whose headers name a limit the record keeps a window for and say it is spent holds that limit until its reset; a secondary limit, or a refusal that shows no headers, holds the credential until its `retry-after`, else for a minute, doubled for each refusal in a row up to fifteen, the refusals of one burst counting once. The `rate_limit` endpoint's answer replaces the balances the record holds, and a conditional request (`If-None-Match`, which GitHub does not charge when nothing changed) whose answer's headers are read reserves nothing, while one run with `--silent`, or whose output is not captured, reserves a request, since its headers cannot say whether GitHub charged it. A REST call is admitted against the window it spends, a GraphQL call against the GraphQL window, and another subcommand against both; a read of `rate_limit` costs nothing and is refused only while the credential is held. The tick's forge budget, its optional reads and `load.forge_floor` read the same record, and the tick report's `outbound github` line shows its core and GraphQL balances |
 | `preflight` | `[tracker]`; the checks the tick runs on each account before it launches a stage that touches the tracker (a follow-up, a pickup, or the steward's resume of one), a list of distinct names; `[]` runs none. `tracker` reads the repository's tracker headless through the tracker port (`Tracker.reach`, which reads no issue), in the repository's checkout and the environment a pass billed to the account runs in, so it reads the credential such a pass would; each account is asked at most once per tick for each tracker, within `runtime_timeout`. An account the tracker refuses, or whose read gives no answer by that deadline (a credential waiting on an approval), takes none of the repository's tracker stages that tick: each launch tries another account, or waits naming the answers, and the dashboard shows one need per account for the whole host, `tracker-unreachable`, act Authorize, its repository `host`, naming every repository it holds and the answer. A rate limit, a server error or the network holds nothing and leaves the stage to its own handling of them (`outbound_share`); neither does a configuration that opens no tracker, which the stage's own failure reports. A later tick whose answer passes clears the need; the probe runs only in a tick that has a tracker launch to start. A drive's re-arm or takeover and the steward's own pass are not checked. A value other than a list of known checks is refused. Read by the dispatcher's tick |
-| `notify.channels[]` | Empty; the [notification channels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) the tick sends each notification through, beside the Orca card it writes on `runtime: orca`. Each keeps its own records: a notification is sent once on each channel, again after `dispatch.renotify_after` while its cause stands, and a delivery that keeps failing backs off in the failure ledger under `notice <name> <key>` and, past `failures.notify_after`, is notified as failing through a channel that still delivers. On `runtime: process`, which writes no card, a repository's `notify` stage needs at least one. Read by the dispatcher's tick |
-| `notify.channels[].name` | Required; the channel's name, lowercase letters, digits and hyphens starting with a letter, and not another channel's. `orca-card`, the Orca card's name, is refused. Its records and failure-ledger rows are kept under it, so renaming a channel sends its standing notifications again |
+| `notify.channels[]` | Empty; the [notification channels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) the tick sends each notification through, beside the Orca card it writes on `runtime: orca`. Each keeps its own records: a notification is sent once on each channel, again after `dispatch.renotify_after` while its cause stands, and a delivery that keeps failing backs off in the failure ledger under `notice <name> <key>` and, past `failures.notify_after`, is notified as failing through a channel that still delivers. A channel starts from what stands on each repository separately: on the first tick it can send there, that repository's standing causes are recorded as known without sending (the tick's receipt says once how many), so only a cause that appears or changes afterwards is sent. A repository first reached on a later tick starts the same way, silently. A repository's start is written only once its causes are recorded and its records were read whole, so a tick that fails part way starts it again. After the start the usual rules apply: a cause is repeated on `dispatch.renotify_after` while it stands and dropped when it leaves. A lasting cause (drifting, ready, a stopped drive with no cause read, a failed re-arm, a reviewer failure, a usage refusal) is never repeated, and one recorded as known without sending stays suppressed on that channel, even if it leaves and returns under the same key; only a new key sends it. With `dispatch.renotify_after` at `0s` no cause is repeated. A renamed channel is a new one, as is one whose records were dropped or that has none (a channel upgraded from a release that kept none starts silently too, whatever its earlier delivery failures); `orca-card` is never started this way. On `runtime: process`, which writes no card, a repository's `notify` stage needs at least one. Read by the dispatcher's tick |
+| `notify.channels[].name` | Required; the channel's name, lowercase letters, digits and hyphens starting with a letter, and not another channel's. `orca-card`, the Orca card's name, is refused. Its records and failure-ledger rows are kept under it, so renaming a channel starts it anew on every repository: it starts as any new channel does (see `notify.channels[]`) |
 | `notify.channels[].kind` | Required; `webhook`, the one kind: an incoming webhook that takes one HTTP `POST` per notification (ntfy, a Slack incoming webhook, a Discord webhook). A 2xx answer counts as delivered. A webhook cannot be read back, so a notification whose answer was lost after it was sent may arrive twice once its back-off allows the next try, and it cannot tell whether a notification was read: the `notices_read` observation is the Orca card's alone |
 | `notify.channels[].url_env` | Required; the name of the environment variable, in the tick's environment, that holds the webhook's address. The address is a credential: the file names the variable, never the address, and a value that is not a variable's name is refused without being shown. The address must be `https:`, or `http:` on the loopback host for a relay on the same machine. The scheduled tick does not read a shell profile, so the variable reaches it through the job's own environment: on Linux a systemd drop-in for the dispatch service (`Environment=` or, better for a secret, `EnvironmentFile=` naming a file only the host's user can read), on macOS the launch agent's `EnvironmentVariables`, or a wrapper that exports it and then runs the launcher. An ntfy topic's name is its only secret on a public server: make it long and random (32 or more random characters), as for any password. Unset, empty or refused, the channel is unreachable: every notification on it waits, counting no failure, and the tick reports the channel once each tick in its receipt as the host's fault, naming the variable and never its value. The address never appears in a notification, the receipt, the outcome log or the outbound cost ledger, which keys the channel's requests by a hash of it |
 | `notify.channels[].format` | `text`; how a notification is posted. `text` posts plain text with `Title` and, for a pull request, `Click` headers, which ntfy shows as a phone push (any endpoint that takes plain text reads the body). `slack` posts a Slack incoming webhook's `{"text": …}`, links not unfurled. `discord` posts a Discord webhook's `{"content": …}` with every mention off. Each notification opens with its key line, then the framed decisions, the acts that settle it, its address and its pull request's link, cut to what the destination takes (4,000 bytes for `text`, 3,900 characters for `slack`, 2,000 for `discord`). Each post has a 10-second deadline within the tick's remaining time. A 2xx answer is delivered. A 429 is not a failure: the notification waits, and the address is held in the host's budget record (`~/.local/state/jig/tracker/budget.sqlite`) until the answer's `Retry-After`, or, naming none, for a minute doubled with each 429 in a row up to fifteen; until then no repository's tick on this host posts to it, and its notifications wait. Any other refusal (4xx, 5xx, a redirect, which is never followed) or no answer within the deadline is a failed delivery, counted in the failure ledger. After a 5xx, a 429 or no answer, the tick's remaining notifications on that channel wait for the next tick, and a destination that did not answer is asked once before the rest the next tick |
@@ -2400,6 +2522,7 @@ dispatch:
     enabled: true
     authors: [example-factory]
     within: 168h
+    trusted_automation: false            # request each listed bot's drive or rearm by hand
   pool:
     states: [todo]                       # needs do_item.claim_marker: true
 gates:
@@ -2480,6 +2603,7 @@ drive:
     waiting_share: 0.25                  # waiting probes slow below this fraction of the GraphQL limit
     max_interval_seconds: 300
   max_rounds: 10                         # default round budget of a drive; --max-rounds overrides
+  churn_rounds: 4                        # rounds of non-blocking findings on one file before the drive parks; 0 off
   pass_deadline_retries: 2               # passes killed at their deadline a drive restarts from
   ci_repair_rounds: 2                    # CI-repair passes per head and failing check; 0 stops on red
   pass_model: sonnet                     # a model id, an alias or a routing tier; --pass-model overrides

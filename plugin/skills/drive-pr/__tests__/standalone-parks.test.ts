@@ -21,6 +21,7 @@ const rep = (
 const sets = (keys: string[], reversals: string[] = []) => ({
   keys: new Set(keys),
   reversals: new Set(reversals),
+  selfParked: new Set<string>(),
 });
 
 describe("unlistedParkDetails", () => {

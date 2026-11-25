@@ -90,6 +90,10 @@ export const DRIVE_PACING_ENV: Record<string, string> = {
   // its ledger would add a post per round to what these suites count; the
   // ledger's own suite turns it on.
   DRIVE_PR_LEDGER: "off",
+  // Fixture drives run in a scratch repo with no origin fetch URL and synthetic
+  // HEAD tokens that are not git objects, so disable the structural-churn brake
+  // unless a test explicitly enables it.
+  DRIVE_PR_CHURN_ROUNDS: "0",
 };
 
 /** Spawn a fixture driver and leave its lifetime under the test’s control. */
@@ -118,6 +122,7 @@ export function spawnDriveIn(
       DRIVE_PR_FIXTURES: dir,
       DRIVE_PR_STATE_DIR: stateDir,
       DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
+      DRIVE_PR_CHURN_ROUNDS: "0",
       ...(opts.pacing === false ? {} : DRIVE_PACING_ENV),
       ...(opts.env ?? {}),
     },

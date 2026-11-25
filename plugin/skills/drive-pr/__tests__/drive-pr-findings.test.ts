@@ -28,6 +28,8 @@ import {
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
 
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { SUMMARY_ANSWER_SEPARATOR } from "../../../shared/summary-answer-blocks.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 
 useDrivePrSuite();
@@ -115,6 +117,31 @@ describe("answer-summary-finding.ts", () => {
     expect(body.startsWith("**wont-fix** — valid, but docs polish")).toBe(true);
     expect(body).toContain("<!-- drive-pr-addressed: abc123 -->");
     expect(body).toContain("<!-- drive-pr-addressed: def456 -->");
+  });
+
+  it("refuses an oversized round comment without writing any answer", async () => {
+    const reason = "é".repeat(17_000);
+    const r = await answer(
+      ["--batch"],
+      JSON.stringify([
+        { fingerprint: "oversized-1", outcome: "rejected", reason },
+        { fingerprint: "oversized-2", outcome: "wont-fix", reason },
+      ]),
+    );
+    expectSpawnExit({ ...r, stdout: null }, 2);
+    expect(r.stderr).toContain("65536-byte comment limit");
+    expect(r.stderr).toContain("comment limit");
+    expect(r.posted).toBe("");
+  });
+
+  it("rejects a separator embedded in a manual reason", async () => {
+    const r = await answer(
+      ["--outcome", "rejected", "--fingerprint", "fp-first"],
+      `The caller handles this.${SUMMARY_ANSWER_SEPARATOR}**wont-fix** — stray second block.`,
+    );
+    expectSpawnExit({ ...r, stdout: null }, 2);
+    expect(r.stderr).toContain("reason cannot contain an answer marker");
+    expect(r.posted).toBe("");
   });
 
   it("rejects an outcome outside the closed vocabulary", async () => {

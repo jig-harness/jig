@@ -51,6 +51,8 @@
  *   drive-state.ts reflected    [PR]                 # round a /reflect was last recorded at
  *   drive-state.ts set-reflected [PR]                # record a completed /reflect at the current round
  *   drive-state.ts park         [PR] --key K --kind thread|finding --class C  < record.md
+ *   drive-state.ts park-churn   [PR] --round R  < decision.json  # the structural-churn brake's park
+ *   drive-state.ts class-parked-keys [PR] --class C  # keys of the parks under one class
  *   drive-state.ts record-decision [PR]  < {"class","what","reverse","record"?,"key"?,"outcome"?}
  *   drive-state.ts reverse-decision [PR] < {"key","by","url","at"}
  *   drive-state.ts record-event [PR]     < {"kind","cause"}
@@ -58,7 +60,7 @@
  *                                     # the review arbiter's ruling on a thread
  *   drive-state.ts unpark       [PR] --key K [--key K …] [--stdin]  # all, or none; --stdin: receipts
  *   drive-state.ts parked-keys  [PR]  # newline-delimited keys (reversal-parked-keys: reversed provisional decisions'')
- *   drive-state.ts hold         [PR] --key K --kind thread|finding --outcome accepted|moot
+ *   drive-state.ts hold         [PR] --key K --kind thread|finding --outcome OUTCOME
  *                                     [--comment-url URL] [--unconfirmed]
  *                                     (--kind finding also requires the reason body on stdin)
  *                                     --comment-url: REQUIRED for --kind thread (either path) — the
@@ -194,6 +196,8 @@
  * every one of them.
  */
 
+import { isFixDependentOutcome, isOutcome } from "./lib/outcome.ts";
+import { summaryAnswerProblem } from "./lib/summary-answer.ts";
 import { writeFileSync } from "node:fs";
 import { claimAdvisoryRepair } from "./lib/state/advisory-repair.ts";
 import {
@@ -222,6 +226,8 @@ import {
 } from "./lib/state/ledger-mirror.ts";
 import { quotaPark } from "./lib/state/quota-park.ts";
 import { framedPark } from "./lib/state/framed-park.ts";
+import { parkChurn } from "./lib/state/churn-park.ts";
+import { recordPathsCommand } from "./lib/state/record-paths.ts";
 import * as decisions from "./lib/state/decisions.ts";
 import { recordEvent } from "./lib/state/events.ts";
 import { recordRuling } from "./lib/state/rulings.ts";
@@ -274,11 +280,8 @@ import {
 import {
   type DriveState,
   ESCALATION_INVARIANT_MAX_LENGTH,
-  foldRoundPaths,
-  normalizeRoundPathsUncapped,
   PROGRESS_PHASES,
   pruneRoundPaths,
-  ROUND_PATHS_MAX_PER_ROUND,
   structuralEscalationArmed,
   withProgress,
 } from "./lib/state/schema.ts";
@@ -328,10 +331,12 @@ function usage(): void {
   set-reflected [PR]                record a completed /reflect at the current round
                                     (also discharges any armed structural
                                     escalation — a /reflect IS the step-back)
-  record-paths [PR] [--path P]... | [--stdin]
+  record-paths [PR] [--path P]... | [--stdin] | [--stdin-json]
                                     record THIS round's reviewer-finding anchor
                                     paths (--stdin: newline-delimited on stdin
-                                    instead); replaces the entry for the current
+                                    instead; --stdin-json: {"paths","severe"?,
+                                    "blobs"?} on stdin, the facts the
+                                    structural-churn brake reads); replaces the entry for the current
                                     round, so a re-read of one head cannot
                                     double-count it. NO --path and no --stdin
                                     records an EMPTY round, which is a real
@@ -352,6 +357,8 @@ function usage(): void {
 . Omitting it clears any prior
                                     claim rather than preserving it.
   park         [PR] --key K --kind thread|finding --class C  (decision record on stdin)
+  park-churn   [PR] --round R      the structural-churn brake's park (decision record on
+                                    stdin), consuming the round evidence up to R
   record-decision [PR]              a decision the agent took, JSON on stdin
   claim-advisory-repair [PR]        charge one answered fix receipt, {key,resolvedAt} on stdin
   reverse-decision [PR]             a person's reversal of a provisional decision, JSON on stdin
@@ -359,7 +366,8 @@ function usage(): void {
   rule         [PR]                 the arbiter's ruling on a thread, JSON on stdin
   unpark       [PR] --key K [--key K …] [--stdin]  every key, or none when one is not parked (--stdin: the consumed verdicts, JSON, for receipts)
   parked-keys  [PR]                 newline-delimited keys (reversal-parked-keys: reversed provisional decisions'')
-  hold        [PR] --key K --kind thread|finding --outcome accepted|moot
+  class-parked-keys [PR] --class C  newline-delimited keys of the parks under class C
+  hold        [PR] --key K --kind thread|finding --outcome OUTCOME
                [--comment-url URL] [--unconfirmed]
                     (--kind finding also requires the reason body on stdin)
                     (--comment-url: REQUIRED for --kind thread — the qualifying comment's url)
@@ -464,6 +472,8 @@ interface Args {
   paths: string[];
   /** `--stdin`: read newline-delimited paths from stdin instead of `--path`. */
   stdin: boolean;
+  /** `--stdin-json`: read one round's paths and facts as JSON from stdin. */
+  stdinJson: boolean;
   /** `set-escalated --invariant "<one sentence>"`; `''` if omitted. */
   invariant: string;
   /**
@@ -547,6 +557,7 @@ const ARG_DEFAULTS: Omit<Args, "cmd" | "paths" | "keys" | "parkedAts"> = {
   createdAt: "",
   checkRunWatermark: "",
   stdin: false,
+  stdinJson: false,
   invariant: "",
   phaseArg: "",
   vendor: "",
@@ -608,6 +619,9 @@ function parseArgs(argv: string[]): Args {
         break;
       case "--stdin":
         a.stdin = true;
+        break;
+      case "--stdin-json":
+        a.stdinJson = true;
         break;
       case "--all":
         a.all = true;
@@ -703,6 +717,7 @@ async function main(): Promise<number> {
     "record-paths",
     "set-escalated",
     "park",
+    "park-churn",
     "unpark",
     "record-decision",
     "claim-advisory-repair",
@@ -835,11 +850,8 @@ async function main(): Promise<number> {
     if (a.pushedSha === "") {
       fail(
         2,
-        "claim-held --kind finding requires --pushed-sha — the push that carries this",
-        "finding's promised fix (`$(git rev-parse HEAD)`, after guarded-push.ts and",
-        "stamp-held, per SKILL.md § 6). Every held finding is fix-dependent by",
-        "construction ('hold' refuses any outcome that is not accepted|moot), so there",
-        "is no claim of one that legitimately has no push to name.",
+        "claim-held --kind finding requires --pushed-sha — the round's verified head",
+        "after guarded-push.ts and stamp-held (SKILL.md § 6).",
       );
     }
     const path = claimRefFor(store.stateDir, pr, a.key);
@@ -976,9 +988,8 @@ async function main(): Promise<number> {
           `claim-held: --pushed-sha ${a.pushedSha} is not the push recorded against`,
           `'${a.key}' itself (${item.verifiedSha === undefined ? "none — no push by the driver that holds it has been verified since it was held" : item.verifiedSha}).`,
           "",
-          "Answering a summary finding is NOT idempotent — it posts a new top-level",
-          "comment every call — so dispatching one against a push that does not carry",
-          "its fix leaves a standing, wrong claim on the PR that no later round undoes.",
+          "The round's verified push binds held answers to this head. A fix-dependent",
+          "marker posted for an unrelated push could mark an unresolved finding answered.",
           "",
           "Two recoveries, and which one applies is decided by the PR, not by this",
           "stored state. Check whether this finding was ALREADY answered — an earlier",
@@ -1061,72 +1072,8 @@ async function main(): Promise<number> {
     // for the reason `reflectDepthPastLast` gives for living there: three
     // divergent formulations of one duty drift apart, and this signal has the
     // same two consumers.
-    case "record-paths": {
-      // Keyed to the CURRENT round rather than to a `--round` argument, and
-      // read inside the same locked update that writes it. A caller-supplied
-      // round could name one that never happened, or straddle a concurrent
-      // `bump-round` and file this round's anchors under the last one — which
-      // would fabricate a same-file pair out of one round's findings read
-      // twice, the single false positive this signal cannot afford.
-      //
-      // Replace-not-append for the same reason `bump-round` counts heads: a
-      // second pass on an unmoved head re-enumerates the SAME threads, and an
-      // appended second entry for one round would let a drive that pushed
-      // nothing arm an escalation against itself.
-      //
-      // Reading stdin is behind an EXPLICIT `--stdin`, never inferred from
-      // "no `--path` was given". Inferring it makes two indistinguishable
-      // cases ambiguous — a round that genuinely found nothing on any file,
-      // and a caller that meant to pipe paths — and resolves them by BLOCKING
-      // on whatever descriptor happens to be attached: an inherited pipe that
-      // never closes hangs the command with no output to say why, and a
-      // terminal hangs it forever. An empty `--path` list is a real answer
-      // here, so it must not be the trigger for asking a different source.
-      if (a.stdin && a.paths.length > 0) {
-        fail(2, "record-paths takes --path or --stdin, not both");
-      }
-      // Round 0 is not a counted round — `freshState` starts there and
-      // `bump-round`/`bump-attempt` is what advances past it. Recording anchors
-      // under it would store a `{round: 0, ...}` entry that becomes adjacent to
-      // round 1's real entry the moment counting begins, letting
-      // `structuralEscalationArmed` treat a pre-counting call and the actual
-      // first round as a false two-round recurrence on any shared path.
-      // `drive-status.ts`'s own path here always bumps first, so this only ever
-      // refuses a direct, out-of-order call.
-      if (store.read().state.rounds < 1) {
-        fail(
-          2,
-          `record-paths: #${pr} has not counted a round yet (rounds=0) — run drive-status.ts (which bumps first) or drive-state.ts bump-round/bump-attempt before recording anchors`,
-        );
-      }
-      const raw = a.stdin ? (await readStdinAll()).split("\n") : a.paths;
-      // The cap `foldRoundPaths` applies is silent by construction — sort,
-      // then slice — so a round with genuinely more distinct anchor paths
-      // than the cap loses the overflow with nothing in the stored state
-      // recording that it happened. Measured here, before the write, against
-      // the SAME filtering `foldRoundPaths` itself applies (never a
-      // hand-rolled trim/dedupe that could drift from it), so the warning is
-      // never wrong about what the cap actually dropped.
-      const distinct = normalizeRoundPathsUncapped(raw);
-      if (distinct.length > ROUND_PATHS_MAX_PER_ROUND) {
-        console.error(
-          `record-paths: #${pr} round ${store.read().state.rounds} has ${distinct.length} distinct anchor path(s), exceeding the ${ROUND_PATHS_MAX_PER_ROUND}-path cap — ${distinct.length - ROUND_PATHS_MAX_PER_ROUND} dropped and will not feed structuralEscalationDue`,
-        );
-      }
-      await store.update((s) => ({
-        ...s,
-        roundPaths: foldRoundPaths(
-          s.roundPaths,
-          s.rounds,
-          raw,
-          s.lastEscalatedRound,
-        ),
-      }));
-      process.stdout.write(
-        `${JSON.stringify(store.read().state.roundPaths)}\n`,
-      );
-      return 0;
-    }
+    case "record-paths":
+      return recordPathsCommand(store, pr, a);
 
     case "round-paths": {
       process.stdout.write(
@@ -1710,6 +1657,18 @@ async function main(): Promise<number> {
       return parked;
     }
 
+    case "park-churn": {
+      const parked = await parkChurn(store, a);
+      await mirrorLedger(pr, store);
+      return parked;
+    }
+
+    case "class-parked-keys":
+      if (a.parkClass === "") fail(2, "class-parked-keys requires --class C");
+      for (const p of store.read().state.parked)
+        if (p.class === a.parkClass) process.stdout.write(`${p.key}\n`);
+      return 0;
+
     case "unpark":
       return unparkCommand(store, a);
 
@@ -1740,13 +1699,13 @@ async function main(): Promise<number> {
       }
       if (a.kind !== "thread" && a.kind !== "finding")
         fail(2, `hold requires --kind thread|finding (got '${a.kind}')`);
-      // Only fix-dependent outcomes wait for a push; merit replies resolve now.
-      if (a.outcome !== "accepted" && a.outcome !== "moot") {
+      if (
+        !isOutcome(a.outcome) ||
+        (a.kind === "thread" && !isFixDependentOutcome(a.outcome))
+      ) {
         fail(
           2,
-          `hold requires --outcome accepted|moot (got '${a.outcome}')`,
-          "Those are the only outcomes whose reply must wait on a push. rejected /",
-          "wont-fix / deferred are answered and resolved in the same step.",
+          `hold requires an outcome allowed for ${a.kind} (got '${a.outcome}'). Only accepted and moot thread replies are held.`,
         );
       }
       // The kind decides which script releases it, so it is recorded rather
@@ -1775,14 +1734,8 @@ async function main(): Promise<number> {
       let heldReason: string | undefined;
       if (a.kind === "finding") {
         const body = await readStdinAll();
-        if (body === "") {
-          fail(
-            2,
-            "hold --kind finding requires the reason body on stdin — it is what",
-            "step 6 pipes to 'answer-summary-finding.ts --pushed-sha' once the push",
-            "lands, and there is nowhere else it survives a crash until then.",
-          );
-        }
+        const problem = summaryAnswerProblem(a.key, body);
+        if (problem !== undefined) fail(2, `hold --kind finding: ${problem}`);
         heldReason = body;
       }
       const kind = a.kind;
