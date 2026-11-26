@@ -3,8 +3,7 @@
 version: 1
 plugin_version: 0.308.0
 date: "2026-11-24"
-# Entries whose evidence names another commit were scored there and not rescored at this one.
-commit: e90cb46dbcb55e3c7d4465bbe1b6bfbee5a87e61
+commit: 4f25e1d0aa729832685df26efd7a274488067e82
 shape: "toolkit"   # library | application | service | monorepo | documentation | …
 profile: team-standard   # solo-lite | team-standard | regulated-strict; null when the team has not chosen
 profile_conditions: [M3, M12]
@@ -64,7 +63,7 @@ criteria:
   M0/runtime-capabilities-name-fallbacks:   # standard, requires convention
     # Every instruction and skill step that relies on a runtime-specific capability (a slash command for a skill outside a plugin, a built-in tool such as a question tool, a tool the host injects) names its portable fallback or the equivalent in each runtime the team uses, and no gate, hook, script or skill step depends on a host-injected tool.
     score: absent
-    evidence: "At e90cb46d plugin/skills/do-item/SKILL.md § Asking the user names AskUserQuestion with a plain-text numbered fallback, a runner route for headless runs, and, with nobody to answer and no runner, an instruction to stop and state the question; Step 4a's delegation names the Task tool for Claude Code, a spawn tool for Codex, and this session where there is no subagent tool. Both gaps recorded at the earlier audit are closed. No check enforces the rule, and the other skills' capability uses were not re-enumerated at this commit, so the score is convention. Other skills' capability uses were not censused at this commit, so the repository-wide convention is not established and the earlier score stands"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit. No rule asked for fallbacks. plugin/skills/do-item/SKILL.md § Asking the user named AskUserQuestion with a plain-text fallback, and plugin/skills/resolve-review-comments/SKILL.md enumerated threads through its GraphQL scripts, not the workspace app's diff-comment tool; but do-item Step 4a delegated with 'the Task tool' and no fallback for another harness, and the question fallback had no branch for a run with nobody to answer"
   M0/deny-lists-per-runtime:   # standard, requires convention
     # Where the team forbids agents commands through a runtime's permission rules, each runtime it uses has its own deny list in that runtime's format, and each file's header names the written policy it mirrors and the command forms it cannot match.
     score: expected-absent
@@ -94,12 +93,12 @@ criteria:
   M0/context-budget-gated:   # strict, requires mechanical
     # CI measures the always-loaded context against the smallest budget of every runtime and reviewer that reads it (the cumulative root-to-directory instruction chain, each skill and agent description, and the aggregate skill listing) in a step that runs before dependencies are installed, and fails when any is over.
     # probe found: .github/workflows/gates.yml
-    score: convention
-    evidence: "At e90cb46d .github/workflows/gates.yml runs scripts/check-context-budget.ts in its checks leg before the dependency install, and scripts/gates.ts registers it as a stage of the gate set (required check `gates`). It measures the cumulative AGENTS.md chain against Codex's 32,768-byte project-doc limit (modules/M0-instruction-architecture/reference/context-budget/check-instruction-chain.ts) and the plugin's skill and agent descriptions and aggregate listing (check-discovery-budget.ts). Not re-derived here: whether the smallest budget of every other runtime and reviewer is modelled. The check's scope stops at the Codex project-doc limit and the plugin's discovery budgets; other runtimes' and reviewers' limits are unverified, so the observed scope is convention"
+    score: absent
+    evidence: "At b144696 .github/workflows/gates.yml has no step measuring an always-loaded budget, and scripts/gates.ts runs no such check"
   M0/skill-invocation-fallback-gated:   # strict, requires mechanical
     # A CI check fails every slash command for one of the repository's own skills that names no fallback for that skill beside it (expected-absent for a repository with no skill of its own).
     score: absent
-    evidence: "At e90cb46d scripts/gates.ts registers check-skill-fallbacks.ts, which fails a slash command for one of Jig's own skills under .claude/skills that names no fallback within 10 lines, across every AGENTS.md and CLAUDE.md, CONTRIBUTING.md and those skills. The plugin's skills under plugin/skills, invoked as /jig:<name>, are left out of its scan, so the criterion's whole scope is not gated and the score is convention. Its scan skips instruction files under fixtures, templates and seeds and matches CONTRIBUTING.md at the root only; the plugin skills' calls are not scanned, so no convention is established for them"
+    evidence: "At b144696 Jig had skills of its own under plugin/skills, but scripts/gates.ts ran no check that reads slash commands for a fallback beside them"
   M0/skill-authoring-ratcheted:   # strict, requires mechanical
     # A structural check counts the skill-authoring rules a script can see (references the entry file does not name, long references without a table of contents, issue-id density, time-sensitive phrasing, negative triggers only in the body) per rule and per skill file, and CI fails a change that adds to any file's count, compared against the merge base or a baseline that may only fall (expected-absent where the repository keeps no skills).
     score: absent
@@ -138,16 +137,16 @@ criteria:
     evidence: "gates.yml pins actions/checkout and jdx/mise-action by SHA in every job; renovate.json5 pins digests for GitHub Actions; Renovate is live and its pull requests run the full required set"
   M1/dependency-release-cooldown:   # standard, requires mechanical
     # A minimum release age holds for application dependencies in the updater's configuration and in every package manager the repository installs with, and its exemptions are a list of exact package names.
-    score: convention
-    evidence: "At e90cb46d renovate.json5 sets minimumReleaseAge: 3 days, bunfig.toml and website/bunfig.toml set minimumReleaseAge = 259200, and .config/supply-chain-policy.yaml lists no exemptions; scripts/check-supply-chain-lockstep.ts holds them to the policy in the gate set and in CI before the install. renovate.json5 also sets vulnerabilityAlerts.minimumReleaseAge: null, which waives the cooldown for security-alert updates as a class, not by exact package name"
+    score: absent
+    evidence: "renovate.json5 sets minimumReleaseAge: 3 days with internalChecksFilter strict, but bunfig.toml has only a [test] section, so bun add and bun update resolve a release of any age; the installer half is missing"
   M1/install-scripts-allowlisted:   # standard, requires mechanical
     # Only the packages a list names may run lifecycle scripts at install time, every installer the repository uses blocks the rest, and the updater never auto-merges a listed package.
-    score: mechanical
-    evidence: "At e90cb46d package.json and website/package.json set trustedDependencies to an empty list, matching the empty install-scripts allow list of .config/supply-chain-policy.yaml, and renovate.json5 has no automerge rule; scripts/check-supply-chain-lockstep.ts holds them to the policy in the gate set and in CI before the install"
+    score: absent
+    evidence: "package.json has no trustedDependencies and no file states which packages may run scripts, so Bun's built-in trusted list applies to any dependency on it; renovate.json5 has no automerge rule"
   M1/supply-chain-policy-lockstep:   # strict, requires mechanical
     # One policy file states the release cooldown, its exemptions and the install-script allowlist, and a gate in the required set checks that every installer and the updater state the same values, running before any install that could run a script.
-    score: convention
-    evidence: "At e90cb46d .config/supply-chain-policy.yaml states the cooldown, its exemptions and the install-script allowlist; .github/workflows/gates.yml runs scripts/check-supply-chain-lockstep.ts before the dependency install and scripts/gates.ts registers it in the gate set (required check `gates`); it compares bunfig.toml, package.json and renovate.json5 for the repository and for the website's install root. The gate compares the top-level values only; the vulnerabilityAlerts minimumReleaseAge: null override in renovate.json5 is an unregistered exception"
+    score: absent
+    evidence: "no policy file (.config/ holds ai-review, change-areas, jig and jig-audit only) and no gate in scripts/gates.ts compares bunfig.toml, package.json and renovate.json5"
   M1/updater-self-checked:   # strict, requires mechanical
     # Range-valued version overrides are excluded from the updater's normal path, and every custom extraction pattern of the updater has a check that re-applies it to the tree and requires exactly one value.
     score: expected-absent
@@ -156,7 +155,7 @@ criteria:
     # A required CI job scans exactly the commits a change introduces for secrets with a pinned scanner, and fails on a finding or on an empty commit range.
     # probe found: .github/workflows/gates.yml
     score: absent
-    evidence: "At e90cb46d the required check is `gates` (required_checks in .config/jig.yaml), the job set of .github/workflows/gates.yml, whose steps run scripts/gates.ts, the test shards and the website steps. git grep over .github, scripts, package.json, mise.toml and renovate.json5 finds no secret scanner, and none of the other workflows (nightly, release, channels, external-preconditions, issue-fields, website) is a required check or runs one. The review check named in the CI row is the reviewer's own check run, whose implementation lies outside this repository and was not inspected"
+    evidence: "the only workflow, .github/workflows/gates.yml, runs the gate set and the separate suites; no step runs a secret scanner"
   M1/secret-scan-local-and-forge-layers:   # strict, requires mechanical
     # Beside the CI scan, a pre-commit hook scans the staged changes for secrets on the committer's machine, and the forge's push protection is on.
     score: absent
@@ -206,7 +205,7 @@ criteria:
   M1/retries-classify-errors:   # strict, requires mechanical
     # Every retry in the pipeline's steps and in the gates and scripts it runs retries only an error a classifier marks transient, aborts at once on any other with the command's own message and status, and the classifier is tested against messages recorded from the real tool.
     score: convention
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: no step of .github/workflows/gates.yml retries; the one retry loop in the gates the pipeline runs, the reflection lock in lib/module-gates.ts, retries only a closed set of error codes (TRANSIENT_LOCK_ERRORS: ENOENT, EPERM, EBUSY, EACCES), the platform's own enumeration rather than guessed wording, and returns any other error with its message at once; the classifier is not tested as the criterion asks: lib/module-gates.test.ts feeds it no recorded message and asserts no answer of it, exercising only one live condition from the set (a lock left unreadable by chmod 0, which the loop retries and then gives up on with its own message), and no test shows a code outside the set aborting at once, so the rule holds in the code alone"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: no step of .github/workflows/gates.yml retries; the one retry loop in the gates the pipeline runs, the reflection lock in lib/module-gates.ts, retries only a closed set of error codes (TRANSIENT_LOCK_ERRORS: ENOENT, EPERM, EBUSY, EACCES), the platform's own enumeration rather than guessed wording, and returns any other error with its message at once; the classifier is not tested as the criterion asks: lib/module-gates.test.ts feeds it no recorded message and asserts no answer of it, exercising only one live condition from the set (a lock left unreadable by chmod 0, which the loop retries and then gives up on with its own message), and no test shows a code outside the set aborting at once, so the rule holds in the code alone"
   # M2 generated-artifact-freshness
   M2/derived-inventory-exists:   # lite, requires convention
     # Every committed derived file is listed in one canonical place together with the command that regenerates it.
@@ -220,8 +219,8 @@ criteria:
     evidence: "No hand-edit ban in AGENTS.md or plugin/AGENTS.md; js-yaml.mjs carries the upstream banner only; its regenerate command lives in a test comment in tools/plugin/plugin.test.ts"
   M2/numbers-in-prose-rule-stated:   # standard, requires convention
     # The universal instruction file states the test for a number in prose: one that constrains its content stays, one that tallies an adjacent list is dropped or registered as a fact a commit-nothing check derives.
-    score: convention
-    evidence: "At e90cb46d AGENTS.md § Writing conventions has a Numbers in prose rule: a number that constrains stays, one that tallies an adjacent list is dropped or registered as a fact a check derives (linking M2's section on which numbers may stay)"
+    score: absent
+    evidence: "AGENTS.md § Writing conventions stated no rule for numbers in prose, and neither did CONTRIBUTING.md or plugin/AGENTS.md; modules/M2-generated-artifact-freshness/README.md had no constraint-versus-tally test and modules/M0-instruction-architecture/templates/AGENTS-skeleton.md no guardrail for it"
   M2/committed-derived-full-triad:   # standard, requires mechanical
     # Every committed derived file has the full freshness triad: a regenerate script, a CI drift check that fails when the file is stale, and a pre-commit hook that regenerates and stages it when its inputs change.
     # prior: absent: The vendored js-yaml has a drift test (tools/plugin/plugin.test.ts compares it with node_modules) but no regenerate script and no hook; bun.lock is checked only by bun install --frozen-lockfile in gates.yml
@@ -230,8 +229,8 @@ criteria:
   M2/instruction-path-references-checked:   # standard, requires mechanical
     # A CI check verifies that repo paths referenced in instruction files resolve to existing files or directories.
     # prior: absent: scripts/check-md-links.ts (in scripts/gates.ts, required CI) fails on unresolved Markdown link targets in all tracked Markdown, AGENTS.md files included; backticked paths, which the criterion includes, are not checked, so the criterion as stated is not met
-    score: convention
-    evidence: "At e90cb46d scripts/gates.ts registers check-instruction-paths.ts, which runs M2's referenced-paths check over every AGENTS.md, CLAUDE.md and CONTRIBUTING.md (fixtures, templates and seeds excluded) and fails when a path named in a link or a code span containing a slash does not resolve; bare file names are not extracted. scripts/check-md-links.ts also checks Markdown link targets. Bare file names and paths in code blocks are not checked, so coverage is partial"
+    score: absent
+    evidence: "scripts/check-md-links.ts checks only Markdown link targets; backticked paths in the AGENTS.md files are unchecked; modules/M2-generated-artifact-freshness/reference/prose-facts/check-referenced-paths.ts runs on fixtures only"
   M2/toolchain-pins-one-source:   # standard, requires mechanical
     # Each toolchain version (the runtime, the compiler, the package manager) is declared in one source file; every other place that repeats it (CI setup steps, container build arguments, package-manager fields, a type package that tracks the runtime) is checked in CI to equal it; and a pin that differs on purpose is registered as an exception with a reason.
     score: absent
@@ -253,8 +252,8 @@ criteria:
     evidence: "No inventory and no generic runner: the derived files' checks were separate (tools/plugin/plugin.test.ts and lib/module-gates.test.ts for the vendored js-yaml, bun install --frozen-lockfile in gates.yml for bun.lock, scripts/check-licences.ts for plugin/LICENSE and plugin/NOTICE), .config/change-areas.yaml declared no generated: entry and modules/M2-generated-artifact-freshness/reference/ had no inventory runner (see M2/derived-inventory-exists)"
   M2/regeneration-after-merge-via-pull-request:   # strict, requires mechanical
     # Every derived file regenerated after a merge reaches the protected branch through a pull request on a fixed branch per generator that a person merges, with no CI-skip marker on its branch commit or its merge commit, published with a credential scoped to contents and pull requests.
-    score: absent
-    evidence: "At e90cb46d .github/workflows/release.yml regenerates files after every merge to main: it writes the change notes into CHANGELOG.md and moves both plugin manifests, then pushes the commit to main directly (`direct` mode, with an App token that may push past the ruleset) rather than through a pull request a person merges; channels.yml also writes generated branches. Other derived files (bun.lock, the vendored js-yaml, plugin/LICENSE and plugin/NOTICE) are regenerated by hand and checked on the pull request"
+    score: expected-absent
+    evidence: "No derived file is regenerated after a merge: .github/workflows/gates.yml, the only workflow, runs the gates on pull requests and pushes and writes nothing; every derived file (bun.lock, the vendored js-yaml, plugin/LICENSE and plugin/NOTICE) is regenerated by hand and checked on the pull request, and modules/M2-generated-artifact-freshness/templates/ had no regenerate-after-merge workflow"
   M2/generator-reaches-every-input:   # standard, requires mechanical
     # Every generator that selects its inputs by a list it maintains has a CI check that the set it reads equals the set of inputs that exist, reporting an unreached input and a listed input that no longer exists.
     score: expected-absent
@@ -755,7 +754,7 @@ criteria:
   M10/pipeline-index-derived-or-gated:   # standard, requires mechanical
     # Where the repository keeps a page listing its pipelines, that page is generated from the pipeline files or a check fails when a pipeline is missing from it or it names one that no longer exists; a hand-kept page with no check does not count.
     score: expected-absent
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: .github/workflows/ holds one workflow (gates.yml) and no page lists the pipelines (no .github/workflows/README.md, no docs page naming them); the provider's list is the index"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: .github/workflows/ holds one workflow (gates.yml) and no page lists the pipelines (no .github/workflows/README.md, no docs page naming them); the provider's list is the index"
   # M11 process-observability
   M11/process-events-documented:   # lite, requires convention
     # The process events the team measures (review outcome + cost, gate pass/fail + duration, cycle times) are named and documented as a closed set, distinct from product analytics.
@@ -780,15 +779,15 @@ criteria:
   M11/scheduled-jobs-staleness-watched:   # standard, requires mechanical
     # Every scheduled job is declared in a cadence registry with the interval it must produce a result at, a check fails a scheduled workflow missing from it, and a scheduled watcher classifies each job's run history and fails for a job that is stale (no result inside its cadence plus grace) or red, so a schedule that stopped running never reads as green (expected-absent for a repository with no scheduled job).
     score: expected-absent
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: .github/workflows/gates.yml is the only workflow and has no schedule: trigger, so no scheduled job existed to declare or watch"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: .github/workflows/gates.yml is the only workflow and has no schedule: trigger, so no scheduled job existed to declare or watch"
   M11/scheduled-failures-reconciled-per-cause:   # standard, requires mechanical
     # Separate evidence-only tests and classified triage maintain one issue per stable cause, closed only on confirmed recovery.
     score: expected-absent
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: .github/workflows/gates.yml is the only workflow and has no schedule: trigger, so no scheduled check existed"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: .github/workflows/gates.yml is the only workflow and has no schedule: trigger, so no scheduled check existed"
   M11/scheduled-failure-flood-breaker:   # standard, requires mechanical
     # An announced per-cause breaker bounds repeated comments after N failures and re-arms only on confirmed recovery.
     score: expected-absent
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: .github/workflows/gates.yml is the only workflow and has no schedule: trigger, so no scheduled-failure reporting needed a breaker"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: .github/workflows/gates.yml is the only workflow and has no schedule: trigger, so no scheduled-failure reporting needed a breaker"
   M11/observability-gates-self-tested:   # strict, requires mechanical
     # The no-dark-instruments gate and the event-schema lint each ship a self-test that runs in CI, so a broken observability gate fails loudly.
     # prior: absent: These gates are not applied to Jig; module reference self-tests cover examples only
@@ -807,7 +806,7 @@ criteria:
   M11/heartbeat-reports-to-external-monitor:   # strict, requires mechanical
     # The heartbeat watcher reports to a monitor outside the system it watches on both outcomes, a success when no job is red or stale and a failure otherwise, and the monitor raises an incident when a report does not arrive, so a watcher that itself stopped is an incident (expected-absent for a repository with no scheduled job).
     score: expected-absent
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: no scheduled job existed, so there was no watcher to report to a monitor"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: no scheduled job existed, so there was no watcher to report to a monitor"
   # M12 parallel-agent-ergonomics
   M12/resource-kinds-declared:
     score: absent
@@ -871,23 +870,23 @@ criteria:
   M12/gate-quiet-invocation-named:   # lite, requires convention
     # The gate commands name a quiet invocation for agents (a reporter flag or a script), with the rule that no filter in a pipe stands between a gate and its exit status.
     score: absent
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: AGENTS.md, CONTRIBUTING.md and package.json name no quiet form of `bun run gates` or its parts, and no written rule forbids piping a gate through a filter"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: AGENTS.md, CONTRIBUTING.md and package.json name no quiet form of `bun run gates` or its parts, and no written rule forbids piping a gate through a filter"
   M12/gate-output-quiet-on-green:   # standard, requires mechanical
     # Each gate command an agent runs has a quiet form that prints a summary on success and the full output on failure, and exits with the gate's own status rather than a filter's.
     score: absent
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: scripts/gates.ts runs each step with inherited output and ends with one line, all gates passed; package.json has no quiet script and no reporter flag on test or lint; no agent-runtime hook is tracked"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: scripts/gates.ts runs each step with inherited output and ends with one line, all gates passed; package.json has no quiet script and no reporter flag on test or lint; no agent-runtime hook is tracked"
   M12/quiet-wrapper-self-tested:   # strict, requires mechanical
     # The quiet wrapper ships a self-test, run in CI, proving that a failing run keeps its status and prints in full, and the agent runtime applies the quiet form by itself where it has a hook for that.
     score: absent
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: no quiet wrapper is tracked (M12/gate-output-quiet-on-green scores it absent), so there is none to self-test, and no agent-runtime hook is tracked"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: no quiet wrapper is tracked (M12/gate-output-quiet-on-green scores it absent), so there is none to self-test, and no agent-runtime hook is tracked"
   M12/verdict-line-per-part:   # standard, requires convention
     # A gate run with several parts ends each part with one named verdict line, and its reader treats a part without one as not run, never as passed.
     score: absent
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: scripts/gates.ts prints no line per step, stops at the first failing step and prints all gates passed only when every step passed; no rule in AGENTS.md or CONTRIBUTING.md reads a missing verdict as not run"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: scripts/gates.ts prints no line per step, stops at the first failing step and prints all gates passed only when every step passed; no rule in AGENTS.md or CONTRIBUTING.md reads a missing verdict as not run"
   M12/merge-conflict-hotspots-measured:   # standard, requires convention
     # A repository working in parallel measures where its merges conflict, and each conflict hotspot is removed at its cause or kept by a recorded decision with a reason and a condition for revisiting it.
     score: absent
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: resolve-conflicts records the decisions of the one operation in progress (conflict-map.ts, record.ts) and reports nothing across merges, no file lists conflicted paths over a window, and the one hotspot mention, in ROADMAP.md, is about code complexity; no hotspot carries a removal or a keep decision"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: resolve-conflicts records the decisions of the one operation in progress (conflict-map.ts, record.ts) and reports nothing across merges, no file lists conflicted paths over a window, and the one hotspot mention, in ROADMAP.md, is about code complexity; no hotspot carries a removal or a keep decision"
   # M13 pipeline-economy
   M13/superseded-pr-runs-cancelled:   # lite, requires mechanical
     # A new push to a pull request cancels that pull request's runs for the older head, so CI is not spent on a head no one will merge.
@@ -932,47 +931,47 @@ criteria:
   M13/ci-hold-fails-held-heads:   # standard, requires mechanical
     # Where a hold label suppresses CI on intermediate heads, a required check fails on every held head from the instant the label is applied, every workflow that honours the label runs on its application and its removal, and only the pull request's own hold label, never the kind of label event, skips work.
     score: expected-absent
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: .config/jig.yaml sets no ci.hold_label, so no head is held; gates.yml triggers on pull_request with the default types and selects its jobs from the change areas a push touches, never from a label"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: .config/jig.yaml sets no ci.hold_label, so no head is held; gates.yml triggers on pull_request with the default types and selects its jobs from the change areas a push touches, never from a label"
   M13/ci-hold-shape-linted:   # strict, requires mechanical
     # Where a hold label is configured, the CI-configuration lint fails a workflow of the hold that misses a label event, a skipped job whose condition is not a negated test of the pull request's labels for the exact hold label, and a hold with no step that fails a required check while the label is present.
     score: expected-absent
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: .config/jig.yaml sets no ci.hold_label, so there is no hold whose shape a lint could check, and no workflow of the one tracked (.github/workflows/gates.yml) reads a label"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: .config/jig.yaml sets no ci.hold_label, so there is no hold whose shape a lint could check, and no workflow of the one tracked (.github/workflows/gates.yml) reads a label"
   M13/cache-keys-complete:   # standard, requires convention
     # Every cache the pipeline uses has a written key scheme naming every input that changes its output, the values of the environment variables the task reads included, and no workflow carries a standing cache bypass in place of a complete key.
     score: absent
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: the one cache is the tool cache of jdx/mise-action in gates.yml, the only workflow, on by that action's default, keyed by the action itself (its prefix and version, the platform, the mise configuration's hash); no page in the repository names the cache or what its key covers; no step forces a rerun or disables it"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: the one cache is the tool cache of jdx/mise-action in gates.yml, the only workflow, on by that action's default, keyed by the action itself (its prefix and version, the platform, the mise configuration's hash); no page in the repository names the cache or what its key covers; no step forces a rerun or disables it"
   M13/cache-one-namespace:   # standard, requires mechanical
     # Pipelines that share a cache produce an identical key-affecting environment, checked by a lint, and a job whose cache credential is empty fails before its first task rather than running apart from the shared cache.
     score: expected-absent
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: the mise-action tool cache's key takes no environment variable and no credential from the workflow, so there is no key-affecting environment to compare and no credential to require; no job of gates.yml runs a task runner with a remote cache, so no two jobs share a cache"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: the mise-action tool cache's key takes no environment variable and no credential from the workflow, so there is no key-affecting environment to compare and no credential to require; no job of gates.yml runs a task runner with a remote cache, so no two jobs share a cache"
   M13/cache-hit-rate-reported:   # standard, requires mechanical
     # Every run that uses a cache reports its hit rate (hits and misses) in the run's summary, and the rate is a registered process metric.
     score: absent
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: no step reads mise-action's cache-hit output or writes it to the job summary, and the repository keeps no metric registry (M11/metrics-registry-no-dark-instruments scores it absent)"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: no step reads mise-action's cache-hit output or writes it to the job summary, and the repository keeps no metric registry (M11/metrics-registry-no-dark-instruments scores it absent)"
   M13/cache-retention-bounded:   # strict, requires mechanical
     # Every cache has a retention bound that a scheduled prune or the store's own eviction enforces, with the window written beside its key scheme, and a declared cache that stores nothing is detected.
     score: absent
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: the provider evicts a cache entry unused for 7 days, but no page records the tool cache or its bound, and nothing reads the repository's cache usage or alarms on a run that never hits"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: the provider evicts a cache entry unused for 7 days, but no page records the tool cache or its bound, and nothing reads the repository's cache usage or alarms on a run that never hits"
   M13/cache-wiring-checked:   # strict, requires mechanical
     # A gate fails a cache wired on some steps and not on others: in a container build, every step that invokes the package manager in a stage whose store is on a cache mount carries the mount, and no step pins the store with a per-command flag.
     score: expected-absent
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: no tracked file is a Dockerfile and no workflow builds a container image, so no build keeps a store on a cache mount"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: no tracked file is a Dockerfile and no workflow builds a container image, so no build keeps a store on a cache mount"
   M13/cache-trust-boundary:   # strict, requires mechanical
     # Only trusted contexts write to a shared cache, its entries are signed or verified on read, and an untrusted run (a pull request from a fork) gets no cache credentials and runs uncached rather than under a namespace of its own.
     score: expected-absent
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: no cache is shared through credentials; the mise-action tool cache is the provider's own, scoped by branch by the provider, and gates.yml runs on pull_request, never pull_request_target, so a fork's run gets no secrets"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: no cache is shared through credentials; the mise-action tool cache is the provider's own, scoped by branch by the provider, and gates.yml runs on pull_request, never pull_request_target, so a fork's run gets no secrets"
   M13/runner-class-follows-work:   # standard, requires convention
     # Each CI job's runner class is written down with the measurement behind it, the jobs that only decide or report (the resolver, the aggregator, an echo job) run on the smallest class, and a machine's parallelism is set once as a product, the task runner's package concurrency times the workers per package, at or below its cores.
     score: absent
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: gates.yml runs every job on the provider's hosted default class, areas (the resolver) and gates (the aggregator) on ubuntu-latest and platform-gates on a matrix of three operating systems (ubuntu-latest, macos-latest, windows-latest) of that one class, and no page or comment records a measurement behind a class; no task runner runs packages in parallel (bun test is one process per run), so there is no parallelism product to cap"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: gates.yml runs every job on the provider's hosted default class, areas (the resolver) and gates (the aggregator) on ubuntu-latest and platform-gates on a matrix of three operating systems (ubuntu-latest, macos-latest, windows-latest) of that one class, and no page or comment records a measurement behind a class; no task runner runs packages in parallel (bun test is one process per run), so there is no parallelism product to cap"
   M13/one-authoritative-leg:   # standard, requires convention
     # CI is the single authority for every check: the written record says so and that skipping a hook never changes what merges, each leg before CI (a hook, a remote sandbox) selects no more work than CI does for the same change, and a leg that holds a machine beyond CI is an opt-in recorded with the failure class it catches that CI cannot and a checkable reopen condition in each direction.
     score: expected-absent
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: no hook configuration is tracked (no lefthook.yml, .husky/ or .pre-commit-config.yaml; modules/M1's hook file is a template) and no remote sandbox exists, so no leg runs before CI and gates.yml is the only leg; AGENTS.md at that commit states no authority rule and nothing about skipping a hook, which becomes the criterion's question once a hook exists"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: no hook configuration is tracked (no lefthook.yml, .husky/ or .pre-commit-config.yaml; modules/M1's hook file is a template) and no remote sandbox exists, so no leg runs before CI and gates.yml is the only leg; AGENTS.md at that commit states no authority rule and nothing about skipping a hook, which becomes the criterion's question once a hook exists"
   M13/cost-decisions-reopenable:   # strict, requires mechanical
     # Every decision that changed what the pipeline spends (a runner resized, a leg narrowed or added, a suite moved, a cache turned on) is in a cost ledger with its measurement before and after in one unit, or a due date for the after, and a reopen condition naming a registered metric, a comparator, a threshold and a window; a gate fails an entry without them.
     score: absent
-    evidence: "Scored by hand at b144696, the commit this entry was first scored at, because the criterion postdates the audit: no cost ledger exists and no decision about what CI spends (the runner classes in gates.yml included) is recorded with a measurement or a reopen condition, and nothing checks for one"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: no cost ledger exists and no decision about what CI spends (the runner classes in gates.yml included) is recorded with a measurement or a reopen condition, and nothing checks for one"
   # M14 testing-strategy
   M14/test-tiers-declared:   # lite, requires convention
     # Every test suite has a written tier (unit, integration, end-to-end or the repository's own names) with the trigger that runs it and its time budget.
