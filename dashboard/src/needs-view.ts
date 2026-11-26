@@ -6,11 +6,16 @@ import type {
   LineDecision,
   LineLinks,
   LineNeed,
+  LineReady,
   NeedCause,
   LineOption,
   LineSession,
   LineSnapshot,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
+import {
+  ACT_WORDS,
+  type Act,
+} from "../../plugin/skills/drive-pr/scripts/lib/merge-ready.ts";
 import {
   actOfLineNeed,
   NEED_ACTS,
@@ -324,9 +329,91 @@ function notMoving(line: LineSnapshot, nowMs: number): LineSession[] {
   );
 }
 
+export interface ReadyNeedView {
+  rowKey: string;
+  /** What the person does about it, which groups the card in Needs you. */
+  act: NeedAct;
+  /** The board's specific person act in words; `null` when absent. */
+  boardAct: string | null;
+  target: string;
+  title: string;
+  repo: string;
+  url: string;
+  age: string;
+  role: Role;
+  says: string;
+  command: string;
+  failing: string[];
+  failingOmitted: number;
+  conditions: LineReady["conditions"];
+  unblocks: number[];
+  /** The work the line links it to; absent when the line does not say. */
+  links?: LineLinks;
+}
+
+/** How each board person-act groups under Needs you's closed acts (design/dispatch-board.md § What each card waits on). */
+const READY_ACT_GROUP: Record<Act, NeedAct> = {
+  merge: "Merge",
+  approve: "Authorize",
+  "request-review": "Authorize",
+  "update-branch": "Do",
+  answer: "Reply",
+  "re-arm": "Investigate",
+  "re-run-check": "Do",
+  "mark-ready": "Do",
+  "remove-label": "Do",
+  "open-pr": "Do",
+};
+
+function readyNeedAct(r: LineReady): NeedAct {
+  return r.act === null ? "Investigate" : READY_ACT_GROUP[r.act];
+}
+
+function readySince(r: LineReady, fallback: string): string {
+  return Number.isFinite(Date.parse(r.since)) ? r.since : fallback;
+}
+
+/** Converged pull requests the board read placed in Needs you, skipping any PR that already has a need on the line. */
+function readyNeeds(line: LineSnapshot): LineReady[] {
+  return (line.ready ?? []).filter(
+    (r) =>
+      r.place === "needs-you" &&
+      r.lane === null &&
+      !line.needs.some((n) => n.repo === r.repo && n.pr === r.pr),
+  );
+}
+
+/** One converged pull request placed in Needs you by the board read, as its card shows it. */
+function readyNeedView(
+  r: LineReady,
+  line: LineSnapshot,
+  clockNow: Clock,
+): ReadyNeedView {
+  const since = readySince(r, line.finishedAt);
+  return {
+    rowKey: `${r.repo} ${r.pr} ${r.head}`,
+    act: readyNeedAct(r),
+    boardAct: r.act === null ? null : ACT_WORDS[r.act],
+    target: `PR #${r.pr}`,
+    title: r.title,
+    repo: r.repo,
+    url: r.url,
+    age: ago(Date.parse(since), clockNow.nowMs),
+    role: ROLES.needs,
+    says: r.says,
+    command: `jig ask drive@${r.repo}#${r.pr}`,
+    failing: r.failing,
+    failingOmitted: r.failingOmitted,
+    conditions: r.conditions,
+    unblocks: r.unblocks,
+    ...(r.links === undefined ? {} : { links: r.links }),
+  };
+}
+
 export type NeedRow =
   | { type: "head"; head: string }
   | { type: "need"; need: NeedView; since: string }
+  | { type: "ready"; ready: ReadyNeedView; since: string }
   | { type: "stuck"; slot: SlotView; since: string };
 
 /** A need's card, or the one card of a question group of two or more, where its oldest need would be. */
@@ -350,9 +437,10 @@ function needCardOf(
 /**
  * The rows of Needs you: one group per act, in the acts' order, then the
  * sessions not moving. Needs whose decisions are identical apart from their
- * own target are one card (`shared/question-group.ts`). Filtered to one
- * person, only the needs that wait on them stay; a session not moving names
- * nobody, so it goes too.
+ * own target are one card (`shared/question-group.ts`). Converged pull
+ * requests the board read placed in Needs you join their mapped act group,
+ * oldest first. Filtered to one person, only the needs that wait on them
+ * stay; board cards and sessions not moving name nobody, so they go too.
  */
 export function needRows(
   line: LineSnapshot,
@@ -361,17 +449,28 @@ export function needRows(
 ): NeedRow[] {
   const rows: NeedRow[] = [];
   const ordered = orderedNeeds(line.needs).filter((n) => waitsOn(n, person));
+  const board = person === null ? readyNeeds(line) : [];
   for (const act of NEED_ACTS) {
     const list = ordered.filter((n) => needAct(n) === act);
-    if (list.length === 0) continue;
+    const readyList = board.filter((r) => readyNeedAct(r) === act);
+    if (list.length === 0 && readyList.length === 0) continue;
     rows.push({ type: "head", head: act });
+    const grouped: Array<Extract<NeedRow, { type: "need" | "ready" }>> = [];
     for (const [first, ...more] of questionGroups(list))
       if (first !== undefined)
-        rows.push({
+        grouped.push({
           type: "need",
           need: needCardOf(first, more, line, clockNow),
           since: first.since,
         });
+    for (const r of readyList)
+      grouped.push({
+        type: "ready",
+        ready: readyNeedView(r, line, clockNow),
+        since: readySince(r, line.finishedAt),
+      });
+    grouped.sort((a, b) => Date.parse(a.since) - Date.parse(b.since));
+    rows.push(...grouped);
   }
   if (person !== null) return rows;
   const stuck = notMoving(line, clockNow.nowMs).sort(
@@ -391,7 +490,11 @@ export function needRows(
 
 /** Counts records needing a person without formatting evidence that belongs inside a panel. */
 export function needCount(line: LineSnapshot | null, nowMs: number): number {
-  return line === null ? 0 : line.needs.length + notMoving(line, nowMs).length;
+  return line === null
+    ? 0
+    : line.needs.length +
+        readyNeeds(line).length +
+        notMoving(line, nowMs).length;
 }
 
 /** Whether What needs you exists on this page, which decides the page's shape. */
@@ -399,6 +502,7 @@ export function hasNeedRows(line: LineSnapshot | null, nowMs: number): boolean {
   return (
     line !== null &&
     (line.needs.length > 0 ||
+      readyNeeds(line).length > 0 ||
       (line.answeredHolds?.length ?? 0) > 0 ||
       (line.settled?.length ?? 0) > 0 ||
       notMoving(line, nowMs).length > 0)
@@ -434,21 +538,47 @@ export function answerBand(
     (k) => k === "working" || k === "takeover",
   ).length;
   const stuck = notMoving(line, nowMs).length;
-  const needs = orderedNeeds(line.needs);
-  const first = needs[0];
+  const board = readyNeeds(line);
+  const all = NEED_ACTS.flatMap((act) => {
+    const entries: Array<
+      | { kind: "need"; need: LineNeed; sinceMs: number }
+      | { kind: "ready"; ready: LineReady; sinceMs: number }
+    > = [
+      ...line.needs
+        .filter((n) => needAct(n) === act)
+        .map((need) => ({
+          kind: "need" as const,
+          need,
+          sinceMs: Date.parse(need.since),
+        })),
+      ...board
+        .filter((r) => readyNeedAct(r) === act)
+        .map((ready) => ({
+          kind: "ready" as const,
+          ready,
+          sinceMs: Date.parse(readySince(ready, line.finishedAt)),
+        })),
+    ];
+    return entries.sort((a, b) => a.sinceMs - b.sinceMs);
+  });
+  const first = all[0];
   const tickClock = clock(Date.parse(line.startedAt), timeZone);
   const unread = unreadText(line, timeZone);
   if (first !== undefined) {
-    const oldest = Math.min(...needs.map((n) => Date.parse(n.since)));
+    const oldest = Math.min(...all.map((e) => e.sinceMs));
     const stuckText =
       stuck > 0 ? `${plural(stuck, "session")} not moving. ` : "";
+    const firstText =
+      first.kind === "need"
+        ? `${first.need.target}, ${recordedWord(first.need, trackerOf(line, first.need.repo))}`
+        : `PR #${first.ready.pr}, ${first.ready.act === null ? "converged, needs a person" : `converged, ${ACT_WORDS[first.ready.act]}`}`;
     return {
       title: pastTense
-        ? `${needs.length} needed a person at the ${tickClock} tick.`
-        : needs.length === 1
+        ? `${all.length} needed a person at the ${tickClock} tick.`
+        : all.length === 1
           ? "1 needs a person."
-          : `${needs.length} need a person.`,
-      sub: `Oldest ${ago(oldest, nowMs)}. ${stuckText}${plural(moving, "session")} working. First: ${first.target}, ${recordedWord(first, trackerOf(line, first.repo))}.${unread === null ? "" : ` ${unread}`}`,
+          : `${all.length} need a person.`,
+      sub: `Oldest ${ago(oldest, nowMs)}. ${stuckText}${plural(moving, "session")} working. First: ${firstText}.${unread === null ? "" : ` ${unread}`}`,
       loud: true,
     };
   }

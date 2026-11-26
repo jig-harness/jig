@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type {
   LineNeed,
+  LineReady,
   LineSession,
   LineSnapshot,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
@@ -594,5 +595,145 @@ describe("the answer", () => {
     expect(answerBand(null, CLOCK, true, false).sub).toBe(
       "The timer writes the first receipt at its first tick.",
     );
+  });
+});
+
+describe("converged pull requests placed in needs-you by the board read", () => {
+  const readyCard = (over: Partial<LineReady> = {}): LineReady => ({
+    repo: "example-org/web",
+    pr: 501,
+    url: "https://forge.example/example-org/web/pull/501",
+    title: "Tighten the cache header",
+    head: "a".repeat(40),
+    place: "needs-you",
+    lane: null,
+    says: "the forge blocks the merge (BLOCKED) on a rule the board cannot tell, such as signed commits or a deployment: open the pull request",
+    act: "open-pr",
+    waitingFor: null,
+    command: null,
+    withheld: null,
+    requested: [],
+    failing: [],
+    failingOmitted: 0,
+    conditions: [
+      {
+        name: "protection lets it merge",
+        met: false,
+        fact: "merge state BLOCKED",
+      },
+    ],
+    unblocks: [],
+    since: iso(15, 0),
+    ...over,
+  });
+
+  it("surfaces a BLOCKED converged PR in Needs you under Do, counts it, and updates the answer band", () => {
+    const blocked = readyCard();
+    const line: LineSnapshot = {
+      ...lineOf("quiet"),
+      needs: [],
+      ready: [blocked],
+    };
+    expect(hasNeedRows(line, NOW)).toBe(true);
+    expect(needCount(line, NOW)).toBe(1);
+    const rows = needRows(line, CLOCK);
+    expect(rows.map((r) => r.type)).toEqual(["head", "ready"]);
+    expect(rows[0]).toEqual({ type: "head", head: "Do" });
+    expect(rows[1]).toMatchObject({
+      type: "ready",
+      since: blocked.since,
+      ready: {
+        act: "Do",
+        boardAct: "open the pull request",
+        target: "PR #501",
+        repo: "example-org/web",
+        title: blocked.title,
+        says: blocked.says,
+        command: "jig ask drive@example-org/web#501",
+      },
+    });
+    const band = answerBand(line, CLOCK, true, false);
+    expect(band.loud).toBe(true);
+    expect(band.title).toBe("1 needs a person.");
+    expect(band.sub).toContain("PR #501");
+  });
+
+  it("groups each board act under its Needs-you act and orders oldest first beside line.needs", () => {
+    const line: LineSnapshot = {
+      ...lineOf("quiet"),
+      needs: [
+        {
+          ...NEED,
+          cause: "assigner-cannot-write",
+          pr: 10,
+          target: "PR #10",
+          since: iso(14, 0),
+        },
+      ],
+      ready: [
+        readyCard({ pr: 501, act: "open-pr", since: iso(13, 0) }),
+        readyCard({ pr: 502, act: "answer", since: iso(14, 30) }),
+        readyCard({ pr: 503, act: "re-arm", since: iso(15, 0) }),
+        readyCard({ pr: 504, act: "re-run-check", since: iso(15, 30) }),
+        readyCard({ pr: 505, act: "mark-ready", since: "" }),
+        readyCard({ pr: 506, act: null, since: iso(15, 45) }),
+      ],
+    };
+    const rows = needRows(line, CLOCK);
+    expect(
+      rows.map((r) =>
+        r.type === "head"
+          ? `HEAD:${r.head}`
+          : r.type === "need"
+            ? r.need.target
+            : r.type === "ready"
+              ? r.ready.target
+              : r.slot.target,
+      ),
+    ).toEqual([
+      "HEAD:Reply",
+      "PR #502",
+      "HEAD:Do",
+      "PR #501",
+      "PR #10",
+      "PR #504",
+      "PR #505",
+      "HEAD:Investigate",
+      "PR #503",
+      "PR #506",
+    ]);
+    // Empty since falls back to the tick's finishedAt rather than producing NaN.
+    const emptySinceRow = rows.find(
+      (r) => r.type === "ready" && r.ready.target === "PR #505",
+    );
+    expect(
+      emptySinceRow?.type === "ready" && emptySinceRow.ready.age,
+    ).not.toContain("NaN");
+  });
+
+  it("ignores non-needs-you board cards, avoids duplicating a PR already in line.needs, and excludes board cards when filtering to one person", () => {
+    const line: LineSnapshot = {
+      ...lineOf("quiet"),
+      needs: [{ ...NEED, pr: 501, target: "PR #501" }],
+      ready: [
+        readyCard({ pr: 501, place: "needs-you", lane: null }),
+        readyCard({ pr: 502, place: "needs-you", lane: null }),
+        readyCard({
+          pr: 503,
+          place: "ready",
+          lane: "merge-now",
+          act: "merge",
+        }),
+        readyCard({ pr: 504, place: "coming", lane: null, act: null }),
+        readyCard({ pr: 505, place: "stay", lane: null, act: null }),
+      ],
+    };
+    expect(needCount(line, NOW)).toBe(2);
+    expect(
+      needRows(line, CLOCK).flatMap((r) =>
+        r.type === "ready" ? [r.ready.target] : [],
+      ),
+    ).toEqual(["PR #502"]);
+    expect(needRows(line, CLOCK, "maintainer-a")).toEqual([]);
   });
 });

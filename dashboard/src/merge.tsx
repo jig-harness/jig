@@ -25,6 +25,31 @@ import { RepoLink } from "./pr.tsx";
 import { LinkedDetail, WorkLead } from "./work.tsx";
 import type { Clock } from "./view.ts";
 
+/** The Ready conditions checklist folded inside both Merge and Needs-you board cards. */
+export function ReadyConditions({
+  conditions,
+}: {
+  conditions: MergeCardView["conditions"];
+}) {
+  return (
+    <>
+      <h3 className="sm">Ready conditions</h3>
+      <ul className="mConds sm">
+        {conditions.map((c) => (
+          <li key={c.name}>
+            <span className="m" aria-hidden="true">
+              {c.met === true ? "✓" : c.met === false ? "✗" : "?"}
+            </span>{" "}
+            <b>{c.name}</b>
+            {c.met === null ? " (not read)" : c.met ? "" : " (not met)"}:{" "}
+            {c.fact}
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 function MergeItem({ card }: { card: MergeCardView }) {
   const info = mergeCard(card);
   return (
@@ -76,19 +101,7 @@ function MergeItem({ card }: { card: MergeCardView }) {
       }
       detail={
         <>
-          <h3 className="sm">Ready conditions</h3>
-          <ul className="mConds sm">
-            {card.conditions.map((c) => (
-              <li key={c.name}>
-                <span className="m" aria-hidden="true">
-                  {c.met === true ? "✓" : c.met === false ? "✗" : "?"}
-                </span>{" "}
-                <b>{c.name}</b>
-                {c.met === null ? " (not read)" : c.met ? "" : " (not met)"}:{" "}
-                {c.fact}
-              </li>
-            ))}
-          </ul>
+          <ReadyConditions conditions={card.conditions} />
           <LinkedDetail
             repo={card.repo}
             target={card.target}

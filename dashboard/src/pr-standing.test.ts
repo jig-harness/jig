@@ -147,3 +147,37 @@ test("a follow-up session keeps the merged forge standing when the forge was not
   l.sessions = [{ ...session, stage: "rearm" }];
   expect(forgeStanding(l, session.repo, session.pr, null)).toBe("not read");
 });
+
+test("a converged PR placed in needs-you by the board read stands as needing a person", () => {
+  const l = line("quiet");
+  l.needs = [];
+  l.sessions = [];
+  l.queue = [];
+  l.ready = [
+    {
+      repo: "acme/widget",
+      pr: 42,
+      url: "https://github.com/acme/widget/pull/42",
+      title: "Tighten check",
+      head: "a".repeat(40),
+      place: "needs-you",
+      lane: null,
+      says: "the forge blocks the merge (BLOCKED) on a rule the board cannot tell: open the pull request",
+      act: "open-pr",
+      waitingFor: null,
+      command: null,
+      withheld: null,
+      requested: [],
+      failing: [],
+      failingOmitted: 0,
+      conditions: [],
+      unblocks: [],
+      since: "2026-11-08T10:00:00Z",
+    },
+  ];
+  const s = prStanding(l, "acme/widget", 42, null, clock);
+  expect(s.kind).toBe("needs-person");
+  expect(s.tone).toBe("needs");
+  expect(s.label).toContain("open the pull request");
+  expect(s.facts[0]).toContain("BLOCKED");
+});

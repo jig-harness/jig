@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { fixture } from "../fixtures.ts";
-import { allCards } from "./cards.ts";
+import { allCards, tabCounts } from "./cards.ts";
 import { matching, paletteEntries } from "./palette.tsx";
 
 const CLOCK = { nowMs: Date.UTC(2026, 10, 3, 16, 47, 30), timeZone: "UTC" };
@@ -58,6 +58,48 @@ describe("the palette", () => {
   it("keeps everything for an empty query, and nothing for one that matches none", () => {
     expect(matching(entries(), "  ")).toHaveLength(entries().length);
     expect(matching(entries(), "no-such-thing")).toEqual([]);
+  });
+
+  it("includes converged PRs placed in needs-you on Needs you, not Merge", () => {
+    const base = lineOf("quiet");
+    const line: LineSnapshot = {
+      ...base,
+      needs: [],
+      ready: [
+        {
+          repo: "example-org/web",
+          pr: 509,
+          url: "https://forge.example/example-org/web/pull/509",
+          title: "Require signed commits",
+          head: "b".repeat(40),
+          place: "needs-you",
+          lane: null,
+          says: "the forge blocks the merge (BLOCKED) on a rule the board cannot tell: open the pull request",
+          act: "open-pr",
+          waitingFor: null,
+          command: null,
+          withheld: null,
+          requested: [],
+          failing: [],
+          failingOmitted: 0,
+          conditions: [],
+          unblocks: [],
+          since: "2026-11-03T15:00:00.000Z",
+        },
+      ],
+    };
+    const counts = tabCounts(line, CLOCK, null);
+    expect(counts.merge).toBe(0);
+    expect(counts.needs).toBe(1);
+    const list = paletteEntries(allCards(line, CLOCK), counts);
+    expect(matching(list, "#509")[0]?.run).toMatchObject({
+      kind: "card",
+      card: {
+        view: "needs",
+        target: "PR #509",
+        command: "jig ask drive@example-org/web#509",
+      },
+    });
   });
 });
 
