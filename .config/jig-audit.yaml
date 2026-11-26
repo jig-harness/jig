@@ -63,7 +63,7 @@ criteria:
   M0/runtime-capabilities-name-fallbacks:   # standard, requires convention
     # Every instruction and skill step that relies on a runtime-specific capability (a slash command for a skill outside a plugin, a built-in tool such as a question tool, a tool the host injects) names its portable fallback or the equivalent in each runtime the team uses, and no gate, hook, script or skill step depends on a host-injected tool.
     score: absent
-    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit. No rule asked for fallbacks. plugin/skills/do-item/SKILL.md § Asking the user named AskUserQuestion with a plain-text fallback, and plugin/skills/resolve-review-comments/SKILL.md enumerated threads through its GraphQL scripts, not the workspace app's diff-comment tool; but do-item Step 4a delegated with 'the Task tool' and no fallback for another harness, and the question fallback had no branch for a run with nobody to answer"
+    evidence: "Scored by hand at b144696, an earlier audited commit, because the criterion postdates the audit. No rule asked for fallbacks. plugin/skills/do-item/SKILL.md § Asking the user named AskUserQuestion with a plain-text fallback, and plugin/skills/resolve-review-comments/SKILL.md enumerated threads through its GraphQL scripts, not the workspace app's diff-comment tool; but do-item Step 4a delegated with 'the Task tool' and no fallback for another harness, and the question fallback had no branch for a run with nobody to answer"
   M0/deny-lists-per-runtime:   # standard, requires convention
     # Where the team forbids agents commands through a runtime's permission rules, each runtime it uses has its own deny list in that runtime's format, and each file's header names the written policy it mirrors and the command forms it cannot match.
     score: expected-absent
@@ -155,7 +155,7 @@ criteria:
     # A required CI job scans exactly the commits a change introduces for secrets with a pinned scanner, and fails on a finding or on an empty commit range.
     # probe found: .github/workflows/gates.yml
     score: absent
-    evidence: "the only workflow, .github/workflows/gates.yml, runs the gate set and the separate suites; no step runs a secret scanner"
+    evidence: ".github/workflows/gates.yml runs the gate set and the separate suites; no step in it runs a secret scanner"
   M1/secret-scan-local-and-forge-layers:   # strict, requires mechanical
     # Beside the CI scan, a pre-commit hook scans the staged changes for secrets on the committer's machine, and the forge's push protection is on.
     score: absent
