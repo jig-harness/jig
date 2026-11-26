@@ -16,6 +16,7 @@ import { type ReactNode, useId, useRef, useState } from "react";
 import { DecisionCounts, filterAnswerStates } from "./decision-counts.tsx";
 import { needCard, readyNeedCard, slotCard } from "./cards.ts";
 import { CopyButton } from "./copy.tsx";
+import { BoardCardLead, BoardStatus } from "./board-status.tsx";
 import { CommitControls, DecisionRows } from "./decision-rows.tsx";
 import { facetAttrs, memberAttrs } from "./facets.ts";
 import { answerCommentUrl, cardAttrs } from "./keys.ts";
@@ -197,6 +198,12 @@ function NeedAsk({ need }: { need: NeedView }) {
       )}
       <AnswerNotes need={need} />
       <WaitsOn need={need} />
+      {need.board === undefined ? null : (
+        <>
+          <p className="q">{need.board.says}</p>
+          <ReadyConditions conditions={need.board.conditions} />
+        </>
+      )}
     </>
   );
 }
@@ -233,6 +240,22 @@ function NeedDetail({ need }: { need: NeedView }) {
         </>
       )}
       <Evidence rows={need.evidence} />
+      {need.board === undefined ? null : (
+        <>
+          <p className="sm">
+            Board action: {need.board.boardAct ?? "needs a person"}.
+          </p>
+          {need.board.failing.length === 0 ? null : (
+            <p className="sm">
+              Failing: {need.board.failing.join(", ")}
+              {need.board.failingOmitted > 0
+                ? ` (+${need.board.failingOmitted} more)`
+                : ""}
+              .
+            </p>
+          )}
+        </>
+      )}
       <LinkedDetail repo={need.repo} target={need.target} links={need.links} />
     </>
   );
@@ -402,37 +425,25 @@ function ReadyNeedItem({
       label={`Ready conditions for ${card.target}`}
       face={
         <>
-          <div className="rowTop">
+          <BoardCardLead
+            repo={card.repo}
+            target={card.target}
+            url={card.url}
+            title={card.title}
+            links={card.links}
+            age={card.age}
+            action={card.boardAct}
+          >
             <ActPill act={card.act} />
             <Mark role={card.role} />
-            <WorkLead
-              repo={card.repo}
-              target={card.target}
-              url={card.url}
-              title={card.title}
-              links={card.links}
-            />
-            <span className="m sm mut end nowrap">{card.age}</span>
-            <span className="br" />
-            <RepoLink repo={card.repo} url={card.url} />
-            {card.boardAct === null ? null : (
-              <span className="chip">{card.boardAct}</span>
-            )}
-          </div>
+          </BoardCardLead>
           <ItemTitle title={card.title} />
           <p className="q">{card.says}</p>
-          {card.failing.length === 0 ? null : (
-            <p className="sm">
-              Failing: {card.failing.join(", ")}
-              {card.failingOmitted > 0 ? ` (+${card.failingOmitted} more)` : ""}
-              .
-            </p>
-          )}
-          {card.unblocks.length === 0 ? null : (
-            <p className="sm">
-              Unblocks {card.unblocks.map((n) => `#${n}`).join(", ")}.
-            </p>
-          )}
+          <BoardStatus
+            failing={card.failing}
+            failingOmitted={card.failingOmitted}
+            unblocks={card.unblocks}
+          />
           <div className="goto">
             <span className="m sm mCommand">{card.command}</span>
             <CopyButton

@@ -8,6 +8,7 @@ import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.
 import { cardAttrs } from "./keys.ts";
 import { mergeCard } from "./cards.ts";
 import { CopyButton } from "./copy.tsx";
+import { BoardCardLead, BoardStatus } from "./board-status.tsx";
 import { PanelHelp } from "./fold.tsx";
 import { GutterCard } from "./gutter.tsx";
 import { Glyph } from "./icon-word.tsx";
@@ -21,8 +22,7 @@ import {
   type MergeCardView,
   mergeLanes,
 } from "./merge-view.ts";
-import { RepoLink } from "./pr.tsx";
-import { LinkedDetail, WorkLead } from "./work.tsx";
+import { LinkedDetail } from "./work.tsx";
 import type { Clock } from "./view.ts";
 
 /** The Ready conditions checklist folded inside both Merge and Needs-you board cards. */
@@ -59,31 +59,18 @@ function MergeItem({ card }: { card: MergeCardView }) {
       label={`Ready conditions for ${card.target}`}
       face={
         <>
-          <div className="rowTop">
-            <WorkLead
-              repo={card.repo}
-              target={card.target}
-              url={card.url}
-              title={card.title}
-              links={card.links}
-            />
-            <span className="m sm mut end nowrap">ready {card.age}</span>
-            <span className="br" />
-            <RepoLink repo={card.repo} url={card.url} />
-            {card.act === null ? null : (
-              <span className="chip">{card.act}</span>
-            )}
-          </div>
+          <BoardCardLead
+            repo={card.repo}
+            target={card.target}
+            url={card.url}
+            title={card.title}
+            links={card.links}
+            age={`ready ${card.age}`}
+            action={card.act}
+          />
           <q className="sm mTitle">{card.title}</q>
           <p className="sm mut">{card.says}</p>
-          {card.failing.length === 0 ? null : (
-            <p className="sm">Failing: {card.failing.join(", ")}.</p>
-          )}
-          {card.unblocks.length === 0 ? null : (
-            <p className="sm">
-              Unblocks {card.unblocks.map((n) => `#${n}`).join(", ")}.
-            </p>
-          )}
+          <BoardStatus failing={card.failing} unblocks={card.unblocks} />
           <div className="goto">
             <span className="m sm mCommand">{card.command}</span>
             <CopyButton

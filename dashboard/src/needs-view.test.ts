@@ -658,6 +658,43 @@ describe("converged pull requests placed in needs-you by the board read", () => 
     expect(band.sub).toContain("PR #501");
   });
 
+  it("keeps a matching need and carries the board action and conditions onto it", () => {
+    const blocked = readyCard();
+    const need = { ...NEED, pr: blocked.pr, target: `PR #${blocked.pr}` };
+    const line: LineSnapshot = {
+      ...lineOf("quiet"),
+      needs: [need],
+      ready: [blocked],
+    };
+    expect(needCount(line, NOW)).toBe(1);
+    const row = needRows(line, CLOCK).find((r) => r.type === "need");
+    expect(row).toMatchObject({
+      type: "need",
+      need: { board: { says: blocked.says, conditions: blocked.conditions } },
+    });
+  });
+
+  it("does not say nothing needs a person when board cards were unread or omitted", () => {
+    const quiet = lineOf("quiet");
+    const repo = quiet.repos[0];
+    if (repo === undefined) throw new Error("Quiet fixture has no repository");
+    const line: LineSnapshot = {
+      ...quiet,
+      repos: [
+        {
+          ...repo,
+          boardUnread: "rate limited",
+          readyOmitted: 2,
+        },
+      ],
+    };
+    const band = answerBand(line, CLOCK, true, false);
+    expect(band.title).toBe("Nothing needs a person in what was read.");
+    expect(band.loud).toBe(true);
+    expect(band.sub).toContain("board not read in full");
+    expect(band.sub).toContain("2 more board cards not shown");
+  });
+
   it("groups each board act under its Needs-you act and orders oldest first beside line.needs", () => {
     const line: LineSnapshot = {
       ...lineOf("quiet"),

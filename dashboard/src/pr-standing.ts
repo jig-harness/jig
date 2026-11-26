@@ -226,12 +226,7 @@ function lineStanding(
   // A launch record stuck on the PR is a session's story, not a need's.
   if (need !== undefined && need.stuckRecord == null)
     return needStanding(need, clock);
-  if (session !== undefined)
-    return {
-      ...sessionStanding(session, clock),
-      facts: sessionFacts(session, clock),
-    };
-  if (need !== undefined) return needStanding(need, clock);
+  // A board placement is the current actionable state, so it outranks a retained session.
   if (ready !== undefined)
     return {
       kind: "needs-person",
@@ -246,6 +241,12 @@ function lineStanding(
           : []),
       ],
     };
+  if (session !== undefined)
+    return {
+      ...sessionStanding(session, clock),
+      facts: sessionFacts(session, clock),
+    };
+  if (need !== undefined) return needStanding(need, clock);
   if (queued !== undefined) return queuedStanding(queued, clock);
   return null;
 }
