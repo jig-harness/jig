@@ -17,7 +17,7 @@ import { HANDOFF_TELLS_REFUSED } from "./../state/ledger-mirror.ts";
 import { driveState } from "./paths.ts";
 import { openStore } from "./../state/store.ts";
 import { driverRuntime } from "./runtime.ts";
-import { isCeilingStop } from "./stop-pickup.ts";
+import { isWorkOwningStop } from "./stop-pickup.ts";
 import {
   type CircuitLimits,
   clearCircuitStop,
@@ -174,9 +174,10 @@ async function publishGrant(pr: string, required = true): Promise<void> {
  * tree of the stop immediately before it, when that stop measured one, so
  * the next arm reads the work the earlier stop left from the last stop
  * alone (`stop-pickup.ts`). A later stop that measured nothing supersedes
- * an older measurement: it is never reached past. Only a ceiling stop's
- * measurement is carried: another stop's (a `WORKTREE_UNCLEAN` one asking
- * a person to finish the edits) is not evidence of a wall-clock kill, so a
+ * an older measurement: it is never reached past. Only the measurement of a stop
+ * that owns its unfinished work is carried (a ceiling stop, `PASS_DEADLINE`,
+ * `STALLED`, `CHECK_RUNS_UNREADABLE`): another stop's (a `WORKTREE_UNCLEAN`
+ * one asking a person to finish the edits) is not evidence of a kill, so a
  * circuit stop after it records no measurement of its own.
  */
 async function carryStopMeasure(pr: string): Promise<void> {
@@ -184,7 +185,7 @@ async function carryStopMeasure(pr: string): Promise<void> {
   const measured = events.findLast((e) => e.kind === "stop");
   if (
     measured !== undefined &&
-    isCeilingStop(measured) &&
+    isWorkOwningStop(measured) &&
     measured.leftWork !== undefined &&
     measured.tree !== undefined
   )

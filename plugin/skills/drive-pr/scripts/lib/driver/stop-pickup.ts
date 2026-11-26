@@ -128,6 +128,11 @@ export function isCeilingStop(stop: DriveEvent): boolean {
   );
 }
 
+/** A stop whose measurement is evidence of a kill or stall that left work: a ceiling stop, or one of the stops a first pass is told of. */
+export function isWorkOwningStop(stop: DriveEvent): boolean {
+  return isCeilingStop(stop) || OWN_STOPS.has(Number(stop.cause));
+}
+
 /** What a drive armed after `state`'s last stop hands its first pass. */
 export async function stopPickup(
   pr: string,

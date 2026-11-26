@@ -224,6 +224,40 @@ describe("the round ceiling", () => {
 
 describe("a refused re-arm after a stop that is not a ceiling stop", () => {
   it.skipIf(skipLongDriveFixture)(
+    "carries a PASS_DEADLINE stop's measurement through the refusal",
+    async () => {
+      const f = writeFixture({ threads: [bot("PRRT_a")] });
+      seedRounds(f.stateDir, 2, PREV);
+      editState(f.stateDir, "999", (s) => ({
+        ...s,
+        events: [
+          ...((s.events as unknown[]) ?? []),
+          {
+            at: "2026-11-07T10:00:00.000Z",
+            round: 2,
+            kind: "stop",
+            cause: "15",
+            leftWork: true,
+            tree: "someone@somewhere",
+          },
+        ],
+      }));
+      const rearmed = await drive(f, { max_total_rounds: 2 }, [
+        "--max-rounds",
+        "1",
+        "--rearm-budget",
+      ]);
+      expectSpawnExit({ ...rearmed, stdout: null }, 8);
+      const events = (readState(f.stateDir, "999")?.events ?? []) as {
+        kind: string;
+        leftWork?: boolean;
+      }[];
+      expect(events.findLast((e) => e.kind === "stop")?.leftWork).toBe(true);
+    },
+    MULTI_ROUND_TIMEOUT_MS,
+  );
+
+  it.skipIf(skipLongDriveFixture)(
     "does not carry a WORKTREE_UNCLEAN stop's measurement as a wall-clock kill",
     async () => {
       const f = writeFixture({ threads: [bot("PRRT_a")] });
