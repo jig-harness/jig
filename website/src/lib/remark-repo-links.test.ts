@@ -83,3 +83,17 @@ test("a link to a module opens what it solves; a bare id reads as an id", () => 
     "data-tip-head": expect.stringMatching(/^M9 · /),
   });
 });
+
+test("glossary list items keep their entry id even with a leading inline <a id>", () => {
+  const tree = fromMarkdown(
+    '- <a id="model-tier"></a>**Model tier** — a cost class.\n',
+  );
+  remarkRepoLinks({ repoRoot })()(tree as never, {
+    path: join(repoRoot, "GLOSSARY.md"),
+  });
+  const list = (tree as { children: { children: { data?: unknown }[] }[] })
+    .children[0];
+  expect(list?.children[0]?.data).toEqual({
+    hProperties: { id: "model-tier" },
+  });
+});

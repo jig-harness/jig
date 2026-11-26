@@ -5,9 +5,10 @@
  * dash: `- **SSoT (single source of truth)** — the one authoritative place…`,
  * under a `## Group` heading. A parenthesis after the bold term, before the
  * dash, qualifies it (`- **Trend** (audit) — …`): the page prints it with
- * the term, but it names nothing a link can use. Its anchor comes from the
- * term before any parenthesis (`ssot`), so the anchors stay short and
- * survive a reworded expansion. The documents link to the glossary without an anchor, by the
+ * the term, but it names nothing a link can use. An explicit `<a id="…"></a>`
+ * anchor on the line before an entry or right after `- ` sets its anchor;
+ * otherwise its anchor comes from the term before any parenthesis (`ssot`), so
+ * the anchors stay short and survive a reworded expansion. The documents link to the glossary without an anchor, by the
  * term's own words in the link text; `anchorFor` finds the entry those words
  * name.
  */
@@ -48,36 +49,62 @@ function namesOf(term: string): string[] {
   return [...names];
 }
 
+/** An explicit HTML anchor written on its own line before a glossary entry. */
+const STANDALONE_ANCHOR = /^<a\s+id="([^"]+)"><\/a>\s*$/;
+
+/** A glossary list item, with an optional inline `<a id="..."></a>` before the bold term. */
+const ENTRY_LINE =
+  /^- (?:<a\s+id="([^"]+)"><\/a>\s*)?\*\*(.+?)\*\*( \([^)]*\))? — (.*)$/;
+
+/** A unique anchor for an entry, honoring an explicit `<a id>` when present. */
+function uniqueAnchor(preferred: string, seen: Set<string>): string {
+  let anchor = preferred;
+  for (let n = 2; seen.has(anchor); n++) anchor = `${preferred}-${n}`;
+  seen.add(anchor);
+  return anchor;
+}
+
 export function parseGlossary(markdown: string): GlossaryEntry[] {
   const entries: GlossaryEntry[] = [];
   const seen = new Set<string>();
   let group = "";
   let current: GlossaryEntry | null = null;
+  let pendingId: string | undefined;
   for (const line of markdown.split("\n")) {
     const heading = /^## (.+)/.exec(line)?.[1];
     if (heading) {
       group = heading.trim();
       current = null;
+      pendingId = undefined;
       continue;
     }
-    const m = /^- \*\*(.+?)\*\*( \([^)]*\))? — (.*)$/.exec(line);
-    if (m?.[1]) {
-      const term = m[1].replace(/`/g, "");
+    const standalone = STANDALONE_ANCHOR.exec(line)?.[1];
+    if (standalone) {
+      pendingId = standalone;
+      current = null;
+      continue;
+    }
+    const m = ENTRY_LINE.exec(line);
+    if (m?.[2]) {
+      const term = m[2].replace(/`/g, "");
       const base = /^(.*?)\s*\(/.exec(term)?.[1] ?? term;
-      let anchor = slug(base);
-      for (let n = 2; seen.has(anchor); n++) anchor = `${slug(base)}-${n}`;
-      seen.add(anchor);
+      const anchor = uniqueAnchor(m[1] || pendingId || slug(base), seen);
+      pendingId = undefined;
       current = {
-        term: `${term}${m[2] ?? ""}`,
+        term: `${term}${m[3] ?? ""}`,
         anchor,
         group,
-        definition: m[3] ?? "",
+        definition: m[4] ?? "",
         names: namesOf(term),
       };
       entries.push(current);
-    } else if (current && /^\s{2,}\S/.test(line))
+    } else if (current && /^\s{2,}\S/.test(line)) {
       current.definition += ` ${line.trim()}`;
-    else if (!line.trim()) current = null;
+    } else if (!line.trim()) {
+      current = null;
+    } else {
+      pendingId = undefined;
+    }
   }
   return entries;
 }

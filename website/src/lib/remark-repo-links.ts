@@ -65,11 +65,24 @@ function withProps(node: MdNode, props: Record<string, unknown>): void {
   };
 }
 
+/** An inline HTML fragment belonging to a leading `<a id="…"></a>` anchor. */
+function isAnchorHtml(node: MdNode): boolean {
+  return (
+    node.type === "html" &&
+    /^(?:<a\s+id="[^"]+">(?:<\/a>)?|<\/a>)$/.test((node.value ?? "").trim())
+  );
+}
+
 /** The bold term a glossary list item opens with, if it is an entry. */
 function entryTerm(item: MdNode): string | null {
   const para = item.children?.[0];
-  const strong = para?.type === "paragraph" ? para.children?.[0] : undefined;
-  return strong?.type === "strong" ? textOf(strong) : null;
+  if (para?.type !== "paragraph") return null;
+  const first = para.children?.find(
+    (child) =>
+      !isAnchorHtml(child) &&
+      !(child.type === "text" && !(child.value ?? "").trim()),
+  );
+  return first?.type === "strong" ? textOf(first) : null;
 }
 
 /** The address and title of each link definition, by its identifier. */

@@ -189,6 +189,34 @@ describe("glossary", () => {
     expect(second?.names).toEqual(["facet store"]);
   });
 
+  test("honors an explicit <a id> anchor before or inside a glossary bullet", () => {
+    const parsed = parseGlossary(
+      [
+        "## Routing",
+        "",
+        '<a id="explicit-before"></a>',
+        "",
+        "- **Preceding anchor** — separated by a blank line.",
+        '<a id="explicit-tight"></a>',
+        "- **Tight anchor** — on the immediately preceding line.",
+        '- <a id="explicit-inline"></a>**Inline anchor** — inside the list item',
+        "  with a continuation line.",
+        "",
+      ].join("\n"),
+    );
+    expect(parsed.map((e) => ({ term: e.term, anchor: e.anchor }))).toEqual([
+      { term: "Preceding anchor", anchor: "explicit-before" },
+      { term: "Tight anchor", anchor: "explicit-tight" },
+      { term: "Inline anchor", anchor: "explicit-inline" },
+    ]);
+    expect(parsed[2]?.definition).toBe(
+      "inside the list item with a continuation line.",
+    );
+    expect(entries.find((e) => e.anchor === "model-tier")?.term).toBe(
+      "Model tier",
+    );
+  });
+
   test("finds the entry a link text names", () => {
     expect(anchorFor(entries, "SSoT")).toBe("ssot");
     expect(anchorFor(entries, "single source of truth")).toBe("ssot");
