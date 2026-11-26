@@ -3,7 +3,7 @@
 version: 1
 plugin_version: 0.308.0
 date: "2026-11-24"
-commit: 4f25e1d0aa729832685df26efd7a274488067e82
+commit: e90cb46dbcb55e3c7d4465bbe1b6bfbee5a87e61
 shape: "toolkit"   # library | application | service | monorepo | documentation | …
 profile: team-standard   # solo-lite | team-standard | regulated-strict; null when the team has not chosen
 profile_conditions: [M3, M12]
