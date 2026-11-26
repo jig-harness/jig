@@ -1937,7 +1937,8 @@ make, use the entry's term instead.
   implementation to gather facts; part of tiered model routing (expensive
   models decide, cheap models explore).
 
-- <a id="model-tier"></a>**Model tier** — the cost class of model an agent or
+<a id="model-tier"></a>
+- **Model tier** — the cost class of model an agent or
   skill runs on, named by role: *Judgment*, Strategic, Execution or *Scout*;
   it is not chosen from how important the job sounds.
   In agent and skill metadata the tier follows from the model pin, as the
