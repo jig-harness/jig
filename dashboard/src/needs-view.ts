@@ -454,6 +454,53 @@ function needCardOf(
     : groupedNeedView(lead, more.map(viewed), id);
 }
 
+type CardNeedRow = Extract<NeedRow, { type: "need" | "ready" }>;
+
+/** The cards under one action heading, oldest first across line and board records. */
+function actRows(
+  act: NeedAct,
+  needs: LineNeed[],
+  board: LineReady[],
+  line: LineSnapshot,
+  clockNow: Clock,
+): CardNeedRow[] {
+  const rows: CardNeedRow[] = [];
+  for (const [first, ...more] of questionGroups(
+    needs.filter((n) => needAct(n) === act),
+  )) {
+    if (first !== undefined)
+      rows.push({
+        type: "need",
+        need: needCardOf(first, more, line, clockNow),
+        since: first.since,
+      });
+  }
+  for (const ready of board.filter((r) => readyNeedAct(r) === act))
+    rows.push({
+      type: "ready",
+      ready: readyNeedView(ready, line, clockNow),
+      since: readySince(ready, line.finishedAt),
+    });
+  return rows.sort((a, b) => Date.parse(a.since) - Date.parse(b.since));
+}
+
+/** The sessions not moving, below all action groups. */
+function stuckRows(line: LineSnapshot, clockNow: Clock): NeedRow[] {
+  const stuck = notMoving(line, clockNow.nowMs).sort(
+    (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
+  );
+  return stuck.length === 0
+    ? []
+    : [
+        { type: "head", head: "Not moving" },
+        ...stuck.map((slot) => ({
+          type: "stuck" as const,
+          slot: slotView(slot, clockNow, line),
+          since: slot.createdAt,
+        })),
+      ];
+}
+
 /**
  * The rows of Needs you: one group per act, in the acts' order, then the
  * sessions not moving. Needs whose decisions are identical apart from their
@@ -468,44 +515,15 @@ export function needRows(
   person: string | null = null,
 ): NeedRow[] {
   const rows: NeedRow[] = [];
-  const ordered = orderedNeeds(line.needs).filter((n) => waitsOn(n, person));
+  const needs = orderedNeeds(line.needs).filter((n) => waitsOn(n, person));
   const board = person === null ? readyNeeds(line) : [];
   for (const act of NEED_ACTS) {
-    const list = ordered.filter((n) => needAct(n) === act);
-    const readyList = board.filter((r) => readyNeedAct(r) === act);
-    if (list.length === 0 && readyList.length === 0) continue;
+    const cards = actRows(act, needs, board, line, clockNow);
+    if (cards.length === 0) continue;
     rows.push({ type: "head", head: act });
-    const grouped: Array<Extract<NeedRow, { type: "need" | "ready" }>> = [];
-    for (const [first, ...more] of questionGroups(list))
-      if (first !== undefined)
-        grouped.push({
-          type: "need",
-          need: needCardOf(first, more, line, clockNow),
-          since: first.since,
-        });
-    for (const r of readyList)
-      grouped.push({
-        type: "ready",
-        ready: readyNeedView(r, line, clockNow),
-        since: readySince(r, line.finishedAt),
-      });
-    grouped.sort((a, b) => Date.parse(a.since) - Date.parse(b.since));
-    rows.push(...grouped);
+    rows.push(...cards);
   }
-  if (person !== null) return rows;
-  const stuck = notMoving(line, clockNow.nowMs).sort(
-    (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
-  );
-  if (stuck.length > 0) {
-    rows.push({ type: "head", head: "Not moving" });
-    for (const s of stuck)
-      rows.push({
-        type: "stuck",
-        slot: slotView(s, clockNow, line),
-        since: s.createdAt,
-      });
-  }
-  return rows;
+  return person === null ? [...rows, ...stuckRows(line, clockNow)] : rows;
 }
 
 /** Counts records needing a person without formatting evidence that belongs inside a panel. */
