@@ -1938,6 +1938,7 @@ make, use the entry's term instead.
   models decide, cheap models explore).
 
 <a id="model-tier"></a>
+
 - **Model tier** — the cost class of model an agent or
   skill runs on, named by role: *Judgment*, Strategic, Execution or *Scout*;
   it is not chosen from how important the job sounds.
