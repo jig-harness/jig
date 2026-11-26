@@ -11,6 +11,7 @@ import type {
   LineSnapshot,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import type { DashboardPr } from "../../plugin/dispatch/lib/dashboard-pr.ts";
+import { ACT_WORDS } from "../../plugin/skills/drive-pr/scripts/lib/merge-ready.ts";
 import { ago } from "./format.ts";
 import type { ForgeStanding } from "./icons.ts";
 import { queuedFollowup } from "./followup-view.ts";
@@ -214,10 +215,32 @@ function lineStanding(
 ): Found | null {
   const need = line?.needs.find((n) => n.repo === repo && n.pr === pr);
   const session = line?.sessions.find((s) => s.repo === repo && s.pr === pr);
+  const ready = line?.ready?.find(
+    (r) =>
+      r.repo === repo &&
+      r.pr === pr &&
+      r.place === "needs-you" &&
+      r.lane === null,
+  );
   const queued = line?.queue.find((q) => q.repo === repo && q.pr === pr);
   // A launch record stuck on the PR is a session's story, not a need's.
   if (need !== undefined && need.stuckRecord == null)
     return needStanding(need, clock);
+  // A board placement is the current actionable state, so it outranks a retained session.
+  if (ready !== undefined)
+    return {
+      kind: "needs-person",
+      label:
+        ready.act === null
+          ? "Converged; needs a person"
+          : `Converged; ${ACT_WORDS[ready.act]}`,
+      facts: [
+        ready.says,
+        ...(Number.isFinite(Date.parse(ready.since))
+          ? [`Waiting ${ago(Date.parse(ready.since), clock.nowMs)}`]
+          : []),
+      ],
+    };
   if (session !== undefined)
     return {
       ...sessionStanding(session, clock),
