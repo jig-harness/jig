@@ -222,6 +222,44 @@ describe("the round ceiling", () => {
   );
 });
 
+describe("a refused re-arm after a stop that is not a ceiling stop", () => {
+  it.skipIf(skipLongDriveFixture)(
+    "does not carry a WORKTREE_UNCLEAN stop's measurement as a wall-clock kill",
+    async () => {
+      const f = writeFixture({ threads: [bot("PRRT_a")] });
+      seedRounds(f.stateDir, 2, PREV);
+      editState(f.stateDir, "999", (s) => ({
+        ...s,
+        events: [
+          ...((s.events as unknown[]) ?? []),
+          {
+            at: "2026-11-07T10:00:00.000Z",
+            round: 2,
+            kind: "stop",
+            cause: "12",
+            leftWork: true,
+            tree: "someone@somewhere",
+          },
+        ],
+      }));
+      const rearmed = await drive(f, { max_total_rounds: 2 }, [
+        "--max-rounds",
+        "1",
+        "--rearm-budget",
+      ]);
+      expectSpawnExit({ ...rearmed, stdout: null }, 8);
+      const events = (readState(f.stateDir, "999")?.events ?? []) as {
+        kind: string;
+        leftWork?: boolean;
+      }[];
+      expect(
+        events.findLast((e) => e.kind === "stop")?.leftWork,
+      ).toBeUndefined();
+    },
+    MULTI_ROUND_TIMEOUT_MS,
+  );
+});
+
 describe("a person's answer that keeps the drive stopped", () => {
   it.skipIf(skipLongDriveFixture)(
     "stops every launch without asking again, a re-arm included, until --past-ceiling",

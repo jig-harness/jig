@@ -119,7 +119,7 @@ async function stallHeadline(
  * recorded, or the no-pass stop a person's answer to the park keeps the
  * drive at (`INDETERMINATE`, which carries the earlier stop's measurement).
  */
-function isCeilingStop(stop: DriveEvent): boolean {
+export function isCeilingStop(stop: DriveEvent): boolean {
   const code = Number(stop.cause);
   return (
     code === DRIVE_EXIT.HITL_PARKED ||
