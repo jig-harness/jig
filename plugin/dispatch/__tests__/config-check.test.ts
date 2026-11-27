@@ -167,9 +167,13 @@ describe("jig dispatch check fails with the tick's message", () => {
   });
 });
 
-describe("checkConfiguration", () => {
+/** A temporary checkout factory; its roots are removed after the suite. */
+const checkoutFactory = () => {
   const roots: string[] = [];
-  const rootWith = (files: Record<string, string>): string => {
+  afterAll(() => {
+    for (const root of roots) rmSync(root, { recursive: true, force: true });
+  });
+  return (files: Record<string, string> = {}): string => {
     const root = mkdtempSync(join(tmpdir(), "config-check-"));
     roots.push(root);
     for (const [path, text] of Object.entries(files)) {
@@ -178,9 +182,20 @@ describe("checkConfiguration", () => {
     }
     return root;
   };
-  afterAll(() => {
-    for (const root of roots) rmSync(root, { recursive: true, force: true });
-  });
+};
+
+/** Commit everything in a checkout, optionally with CRLF conversion on. */
+const commitAll = (root: string, crlf = false): void => {
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-C", root, ...args], { stdio: "ignore" });
+  git("init", "-q");
+  if (crlf) git("config", "core.autocrlf", "true");
+  git("add", "-A");
+  git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x");
+};
+
+describe("checkConfiguration", () => {
+  const rootWith = checkoutFactory();
 
   it("reads a checkout with no configuration file as the tick reads a default branch with none", () => {
     expect(checkConfiguration(rootWith({}))).toEqual([]);
@@ -240,19 +255,7 @@ describe("checkConfiguration", () => {
 });
 
 describe("checkConfiguration reads only what the tick can read", () => {
-  const roots: string[] = [];
-  const dir = (files: Record<string, string> = {}): string => {
-    const root = mkdtempSync(join(tmpdir(), "config-check-"));
-    roots.push(root);
-    for (const [path, text] of Object.entries(files)) {
-      mkdirSync(dirname(join(root, path)), { recursive: true });
-      writeFileSync(join(root, path), text);
-    }
-    return root;
-  };
-  afterAll(() => {
-    for (const root of roots) rmSync(root, { recursive: true, force: true });
-  });
+  const dir = checkoutFactory();
   const withCatalog = (path: string) =>
     `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\ndrive:\n  change_areas_catalog: ${path}\n`;
 
@@ -295,12 +298,7 @@ describe("checkConfiguration reads only what the tick can read", () => {
       ".config/jig.yaml": withCatalog("catalog.yaml"),
       "catalog.yaml": `${body}#${"x".repeat(INLINE_CONTENT_LIMIT - body.length - 2 - 20)}\n${"\n".repeat(19)}`,
     });
-    const git = (...args: string[]) =>
-      execFileSync("git", ["-C", root, ...args], { stdio: "ignore" });
-    git("init", "-q");
-    git("config", "core.autocrlf", "true");
-    git("add", "-A");
-    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x");
+    commitAll(root, true);
     // The same file as a checkout with CRLF conversion would write it.
     const crlf = readFileSync(join(root, "catalog.yaml"), "utf8").replace(
       /\n/g,
@@ -317,11 +315,7 @@ describe("checkConfiguration reads only what the tick can read", () => {
       ".config/jig.yaml": withCatalog("catalog.yaml"),
       "catalog.yaml": body,
     });
-    const git = (...args: string[]) =>
-      execFileSync("git", ["-C", root, ...args], { stdio: "ignore" });
-    git("init", "-q");
-    git("add", "-A");
-    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x");
+    commitAll(root);
     writeFileSync(
       join(root, "catalog.yaml"),
       `${body}#${"x".repeat(INLINE_CONTENT_LIMIT)}\n`,
@@ -335,12 +329,7 @@ describe("checkConfiguration reads only what the tick can read", () => {
       ".config/jig.yaml": withCatalog("catalog.yaml"),
       "catalog.yaml": body,
     });
-    const git = (...args: string[]) =>
-      execFileSync("git", ["-C", root, ...args], { stdio: "ignore" });
-    git("init", "-q");
-    git("config", "core.autocrlf", "true");
-    git("add", "-A");
-    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x");
+    commitAll(root, true);
     const edited = `${body}#${"x".repeat(INLINE_CONTENT_LIMIT - body.length - 2 - 20)}\n${"\n".repeat(19)}`;
     writeFileSync(join(root, "catalog.yaml"), edited.replace(/\n/g, "\r\n"));
     expect(checkConfiguration(root).map((f) => f.part)).toEqual(["catalog"]);
@@ -353,11 +342,7 @@ describe("checkConfiguration reads only what the tick can read", () => {
       ":(glob)nomatch.yaml": body,
       "other.yaml": body,
     });
-    const git = (...args: string[]) =>
-      execFileSync("git", ["-C", root, ...args], { stdio: "ignore" });
-    git("init", "-q");
-    git("add", "-A");
-    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x");
+    commitAll(root);
     writeFileSync(
       join(root, ":(glob)nomatch.yaml"),
       `${body}#${"x".repeat(INLINE_CONTENT_LIMIT)}\n`,
