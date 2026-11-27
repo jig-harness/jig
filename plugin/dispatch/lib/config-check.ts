@@ -15,15 +15,7 @@
  * detected store) is left to the tick.
  */
 import { execFileSync } from "node:child_process";
-import {
-  lstatSync,
-  mkdtempSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  statSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 import {
   attempt,
@@ -70,7 +62,8 @@ export const INLINE_CONTENT_LIMIT = 1024 * 1024;
  * The size of the file as the tick's forge read counts it: the committed
  * blob, which a checkout's line-ending conversion does not change. Where the
  * committed blob does not stand for the file's contents (an untracked or
- * modified file, no git), the size of the file on disk stands.
+ * modified file, no git), the size of the file on disk stands: the bytes the
+ * check then parses. No git filter runs, so the check changes nothing.
  */
 function committedSize(root: string, path: string, onDisk: number): number {
   try {
@@ -94,59 +87,7 @@ function committedSize(root: string, path: string, onDisk: number): number {
     const size = Number(out.trim());
     return Number.isSafeInteger(size) && size >= 0 ? size : onDisk;
   } catch {
-    return normalizedSize(root, path, onDisk);
-  }
-}
-
-/**
- * The size a modified file would have once committed: git itself cleans it
- * (the attributes, filters and line-ending settings that apply to the path),
- * into a scratch object directory so the repository gains nothing, and the
- * stored blob's size is read back. A file too large to bother with, or a
- * failure of any step, counts its bytes on disk.
- */
-function normalizedSize(root: string, path: string, onDisk: number): number {
-  if (onDisk > 2 * INLINE_CONTENT_LIMIT) return onDisk;
-  let scratch: string | null = null;
-  try {
-    const objects = execFileSync(
-      "git",
-      ["rev-parse", "--path-format=absolute", "--git-path", "objects"],
-      {
-        cwd: root,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-        timeout: 10_000,
-      },
-    ).trim();
-    scratch = mkdtempSync(join(tmpdir(), "jig-clean-"));
-    const env = {
-      ...process.env,
-      GIT_OBJECT_DIRECTORY: scratch,
-      GIT_ALTERNATE_OBJECT_DIRECTORIES: objects,
-    };
-    const run = (args: string[]) =>
-      execFileSync("git", args, {
-        cwd: root,
-        env,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-        timeout: 10_000,
-      }).trim();
-    const oid = run([
-      "--literal-pathspecs",
-      "hash-object",
-      "-w",
-      `--path=${path}`,
-      "--",
-      join(root, path),
-    ]);
-    const size = Number(run(["cat-file", "-s", oid]));
-    return Number.isSafeInteger(size) && size >= 0 ? size : onDisk;
-  } catch {
     return onDisk;
-  } finally {
-    if (scratch) rmSync(scratch, { recursive: true, force: true });
   }
 }
 

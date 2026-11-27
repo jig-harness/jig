@@ -329,7 +329,7 @@ describe("checkConfiguration reads only what the tick can read", () => {
     expect(checkConfiguration(root).map((f) => f.part)).toEqual(["catalog"]);
   });
 
-  it("measures a modified catalog under a checkout's CRLF conversion by the bytes a commit would store", () => {
+  it("counts the bytes on disk of a modified catalog, since those are the bytes the check parses", () => {
     const body = "areas:\n  docs:\n    paths: [docs/**]\n";
     const root = dir({
       ".config/jig.yaml": withCatalog("catalog.yaml"),
@@ -339,26 +339,6 @@ describe("checkConfiguration reads only what the tick can read", () => {
       execFileSync("git", ["-C", root, ...args], { stdio: "ignore" });
     git("init", "-q");
     git("config", "core.autocrlf", "true");
-    git("add", "-A");
-    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x");
-    const edited = `${body}#${"x".repeat(INLINE_CONTENT_LIMIT - body.length - 2 - 20)}\n${"\n".repeat(19)}`;
-    writeFileSync(join(root, "catalog.yaml"), edited.replace(/\n/g, "\r\n"));
-    expect(Buffer.byteLength(edited.replace(/\n/g, "\r\n"))).toBeGreaterThan(
-      INLINE_CONTENT_LIMIT,
-    );
-    expect(checkConfiguration(root)).toEqual([]);
-  });
-
-  it("counts the CRLF bytes of a modified catalog that .gitattributes marks -text, since git stores them unchanged", () => {
-    const body = "areas:\n  docs:\n    paths: [docs/**]\n";
-    const root = dir({
-      ".config/jig.yaml": withCatalog("catalog.yaml"),
-      ".gitattributes": "catalog.yaml -text\n",
-      "catalog.yaml": body,
-    });
-    const git = (...args: string[]) =>
-      execFileSync("git", ["-C", root, ...args], { stdio: "ignore" });
-    git("init", "-q");
     git("add", "-A");
     git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x");
     const edited = `${body}#${"x".repeat(INLINE_CONTENT_LIMIT - body.length - 2 - 20)}\n${"\n".repeat(19)}`;
