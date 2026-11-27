@@ -502,17 +502,12 @@ export function dispatchSection(
   if (!launching.ok) return launching;
   const ready = pool(values, section, picked.value.identity, tracker);
   if (!ready.ok) return ready;
-  const reviewerFailureThreshold = reviewerFailures(
-    section.reviewer_failures_before_escalation,
-  );
-  if (!reviewerFailureThreshold.ok) return reviewerFailureThreshold;
-  const overlap = parseOverlap(section.overlap);
-  if (!overlap.ok) return overlap;
-  const redrive = redriveSection(section.redrive);
-  if (!redrive.ok) return redrive;
+  const stops = stopRules(section);
+  if (!stops.ok) return stops;
+  const { overlap, reviewerFailureThreshold, redrive } = stops.value;
   return ok({
     ...(ready.value === undefined ? {} : { pool: ready.value }),
-    ...(redrive.value === undefined ? {} : { redrive: redrive.value }),
+    ...(redrive === undefined ? {} : { redrive }),
     ...picked.value,
     ...waits.value,
     ...launching.value,
@@ -522,13 +517,27 @@ export function dispatchSection(
             "dispatch.epic_width is retired and ignored. Use dispatch.overlap to weigh shared files, or use execution plan dependency edges or a serialized area for one child at a time.",
         }
       : {}),
-    overlap: overlap.value,
-    reviewerFailures: reviewerFailurePolicy(
-      values,
-      reviewerFailureThreshold.value,
-    ),
+    overlap,
+    reviewerFailures: reviewerFailurePolicy(values, reviewerFailureThreshold),
     labels: rules.value.labels,
     adopt: adopt.value,
+  });
+}
+
+/** How the section weighs shared files and settles stopped drives: `overlap`, the reviewer failures before escalation, and the re-drives per change (`redrive`). */
+function stopRules(section: Record<string, unknown>) {
+  const reviewerFailureThreshold = reviewerFailures(
+    section.reviewer_failures_before_escalation,
+  );
+  if (!reviewerFailureThreshold.ok) return reviewerFailureThreshold;
+  const overlap = parseOverlap(section.overlap);
+  if (!overlap.ok) return overlap;
+  const redrive = redriveSection(section.redrive);
+  if (!redrive.ok) return redrive;
+  return ok({
+    overlap: overlap.value,
+    reviewerFailureThreshold: reviewerFailureThreshold.value,
+    redrive: redrive.value,
   });
 }
 
