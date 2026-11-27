@@ -192,7 +192,7 @@ export interface MachineConfig {
   dashboardRequireToken: boolean;
   /** The host names a front forwards under (`dashboard.allowed_hosts`), lower-cased; empty unless the file lists some. */
   dashboardAllowedHosts: string[];
-  /** The token-free HTTPS address a private-network front publishes for the dashboard (`dashboard.front`), in its canonical form; `null` unless the file names one, which only `require_token: false` accepts. */
+  /** The token-free HTTPS address a private-network front publishes for the dashboard (`dashboard.front`), in its canonical form; `null` unless the file names one, which only `require_token: false` or `dashboard.socket` accepts. */
   dashboardFront: string | null;
   /** The absolute path of the private Unix socket the dashboard also listens on (`dashboard.socket`); `null` unless the file names one. */
   dashboardSocket: string | null;

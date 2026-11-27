@@ -12,6 +12,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -138,15 +139,28 @@ describe("the private socket", () => {
     expect((await overSocket(socket)).ok).toBe(true);
   });
 
-  it("removes only its own socket when it stops", () => {
+  it("removes only its own socket when it stops, without overwriting an existing aside file", () => {
     const dir = scratch();
     const socket = join(dir, "d.sock");
     const served = serve(socket);
+    const existingAside = `${socket}.${process.pid}.0.aside`;
+    writeFileSync(existingAside, "keep");
     rmSync(socket);
     const other = Bun.serve({ unix: socket, fetch: () => new Response("x") });
     cleanups.push(() => other.stop(true));
     served.stop();
     expect(existsSync(socket)).toBe(true);
+    expect(readFileSync(existingAside, "utf8")).toBe("keep");
+  });
+
+  it("stops cleanly when its socket pathname was already removed", () => {
+    const dir = scratch();
+    const socket = join(dir, "d.sock");
+    const served = serve(socket);
+    rmSync(socket);
+    served.stop();
+    expect(existsSync(socket)).toBe(false);
+    expect(existsSync(`${socket}.${process.pid}.0.aside`)).toBe(false);
   });
 
   it("refuses a parent directory that others can write to", () => {
@@ -215,16 +229,19 @@ describe("the private socket", () => {
     const base = scratch();
     const open = join(base, "open");
     mkdirSync(open, { mode: 0o700 });
+    const decoy = join(open, "decoy");
+    mkdirSync(decoy, { mode: 0o700 });
     const inner = join(base, "inner");
     mkdirSync(inner, { mode: 0o700 });
     const uid = process.getuid?.();
-    const path = `${open}/../inner`;
+    // Build the traversal as a raw string so `..` reaches linkChainProblem unnormalised.
+    const path = `${decoy}/../../inner`;
     expect(linkChainProblem(path, uid)).toBeNull();
     chmodSync(open, 0o777);
-    expect(linkChainProblem(path, uid)).toBeNull();
-    // The walk must flag a visited component owned by another user.
-    expect(linkChainProblem(path, (uid ?? 0) + 12345)).toContain(
-      "owned by user",
+    expect(ancestorProblem(inner, uid)).toBeNull();
+    // `open` is writable by others while holding the discarded `decoy` component.
+    expect(linkChainProblem(path, uid)).toContain(
+      `others can write to (${open})`,
     );
   });
 
@@ -291,6 +308,7 @@ describe("Funnel", () => {
       "unix:/run/user/1000/jig-dashboard.sock",
       "http://127.0.0.1:8765",
       "http://localhost:8765/",
+      "http://[::1]:8765/sub/path",
     ]) {
       const found = funnelExposure(route("h.ts.net:443", target), mine);
       expect(found).toMatchObject({ ok: true, value: ["h.ts.net:443"] });

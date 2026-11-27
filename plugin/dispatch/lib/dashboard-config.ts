@@ -29,8 +29,8 @@ export function dashboardAllowedHosts(value: unknown): Checked<string[]> {
  * or parameter in its path, whose host is a name or a private address other
  * than loopback and link-local. It is printed in URL-canonical form, so it must not
  * carry a token anywhere. A name is taken as written: Jig never resolves it,
- * nor infers how far it reaches. Only a tokenless dashboard has a front to
- * name.
+ * nor infers how far it reaches. Only a tokenless dashboard or one with a
+ * private socket has a front to name.
  */
 export function dashboardFront(
   value: unknown,

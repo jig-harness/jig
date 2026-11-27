@@ -22,8 +22,14 @@ const LOOPBACK_NAMES = ["localhost", "127.0.0.1", "::1"];
 
 /** The host (lower case) and port a `host:port` target, with or without a scheme or path, names. */
 function hostAndPort(target: string): { host: string; port: string } | null {
-  const bare = target.replace(/^[a-z+]+:\/\//i, "").replace(/\/.*$/, "");
-  const at = /^(?:\[(.+)\]|([^:]+)):(\d+)$/.exec(bare);
+  const scheme = target.indexOf("://");
+  const afterScheme =
+    scheme > 0 && /^[a-z+]+$/i.test(target.slice(0, scheme))
+      ? target.slice(scheme + 3)
+      : target;
+  const slash = afterScheme.indexOf("/");
+  const bare = slash === -1 ? afterScheme : afterScheme.slice(0, slash);
+  const at = /^(?:\[([^\]]+)\]|([^:]+)):(\d+)$/.exec(bare);
   if (at === null) return null;
   return { host: (at[1] ?? at[2] ?? "").toLowerCase(), port: at[3] as string };
 }
