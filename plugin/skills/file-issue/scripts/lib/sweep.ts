@@ -284,12 +284,19 @@ async function stillEligible(
       ? now.priority === 0
       : (f !== "size" || !now.isEpic) && now[f] === null,
   );
+  const unavailable = await tracker.unavailableFacets?.(
+    now.nativeType ?? null,
+    missing,
+    now.identifier,
+    signal,
+  );
   const labels = [...now.labels, ...(now.hiddenLabels ?? [])].map((l) =>
     l.toLowerCase(),
   );
   const retired = issue.retired.filter((l) => labels.includes(l.toLowerCase()));
   if (
     missing.length !== issue.missing.length ||
+    (unavailable?.length ?? 0) > 0 ||
     retired.length !== issue.retired.length
   )
     throw new SweepChanged("issue fields changed since the census");
@@ -539,6 +546,11 @@ function storeLines(report: SweepReport): string[] {
       ? []
       : [
           `${facet}: ${c.lacking} of ${c.required} open issues outside triage lack it`,
+          ...(c.unavailable === undefined
+            ? []
+            : [
+                `${facet}: passed over ${c.unavailable} open issue(s) whose Jira screens lack the field`,
+              ]),
         ],
   );
   return [...stores, ...counts];

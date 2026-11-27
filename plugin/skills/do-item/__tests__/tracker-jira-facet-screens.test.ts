@@ -1,4 +1,7 @@
 import { describe, expect, it } from "bun:test";
+import { pacedWriter } from "../../file-issue/scripts/lib/pace.ts";
+import { sweep, sweepLines } from "../../file-issue/scripts/lib/sweep.ts";
+import { checkedTracker } from "../scripts/lib/tracker/facets/complete.ts";
 import { JIG_TAXONOMY } from "./github-fixtures.ts";
 import { TYPES } from "./jira-facet-fixtures.ts";
 import {
@@ -42,13 +45,18 @@ const filed = (calls: Call[]) =>
 describe("Jira: a facet field missing from an issue type's screen", () => {
   /** A create screen holding the Story Points field. */
   const POINTS = {
-    fields: [{ fieldId: "customfield_10016" }],
+    fields: [{ fieldId: "customfield_10016" }, { fieldId: "priority" }],
+    startAt: 0,
+    maxResults: 100,
+    total: 2,
+  };
+  /** A create screen without it. */
+  const BARE = {
+    fields: [{ fieldId: "priority" }],
     startAt: 0,
     maxResults: 100,
     total: 1,
   };
-  /** A create screen without it. */
-  const BARE = { fields: [], startAt: 0, maxResults: 100, total: 0 };
   /** Size in the Story Points number field, type in the issue types. */
   const POINTED = (
     jira: Record<string, unknown> = {},
@@ -56,6 +64,7 @@ describe("Jira: a facet field missing from an issue type's screen", () => {
     typeValues: Record<string, string> = { feature: "Story" },
   ): Overlay => ({
     issue_tracker: {
+      states: { todo: "To Do" },
       jira,
       ...(epicTypes.length === 0 ? {} : { labels: { epic_types: epicTypes } }),
       facets: {
@@ -113,6 +122,87 @@ describe("Jira: a facet field missing from an issue type's screen", () => {
     });
   });
 
+  it("files without a size only when the issue type's create screen lacks its field", async () => {
+    const { t, calls, client } = jira(
+      routes({
+        ...site("t1"),
+        "POST issue": { id: "1", key: "ENG-9" },
+      }),
+      POINTED(),
+    );
+    const tracker = checkedTracker(t, client.facets, null);
+    await expect(
+      file(tracker, { type: "docs", size: undefined }),
+    ).rejects.toThrow("no size");
+    expect(writes(calls)).toEqual([]);
+    await expect(file(tracker, { size: undefined })).resolves.toMatchObject({
+      identifier: "ENG-9",
+    });
+    expect(filed(calls)).toHaveProperty("issuetype", { name: "Bug" });
+    expect(filed(calls)).not.toHaveProperty("customfield_10016");
+  });
+
+  it("sweeps only the issues whose screens can hold a missing size", async () => {
+    const { t, calls } = jira(
+      routes({
+        ...site("t1"),
+        "POST search/jql": page(
+          issue({ key: "ENG-1", type: "Bug" }),
+          issue({
+            key: "ENG-2",
+            labels: ["docs"],
+            fields: { customfield_10016: null },
+          }),
+          issue({
+            key: "ENG-3",
+            labels: ["docs"],
+            fields: { customfield_10016: 2 },
+          }),
+          issue({ key: "ENG-4", type: "Bug" }),
+          issue({
+            key: "ENG-5",
+            labels: ["docs"],
+            fields: { customfield_10016: 2 },
+          }),
+        ),
+        "GET issue/ENG-1/editmeta": { fields: { summary: {} } },
+        "GET issue/ENG-4/editmeta": {
+          fields: { summary: {}, customfield_10016: {} },
+        },
+      }),
+      POINTED(),
+    );
+    const report = await sweep(t, {
+      apply: false,
+      retired: () => [],
+      writer: pacedWriter(),
+    });
+    expect(report.storeProblem).toBeNull();
+    expect(report.listed.map((i) => [i.identifier, i.missing])).toEqual([
+      ["ENG-2", ["size"]],
+      ["ENG-4", ["size"]],
+    ]);
+    expect(report.storeProblem).toBeNull();
+    expect(sweepLines(report)).toContain(
+      "size: passed over 1 open issue(s) whose Jira screens lack the field",
+    );
+    expect(calls.filter((c) => c.route.endsWith("/editmeta"))).toHaveLength(2);
+  });
+
+  it("fails the census rather than exempt a facet from a permission-filtered edit screen", async () => {
+    const { t } = jira(
+      routes({
+        ...site("t1"),
+        "POST search/jql": page(issue({ key: "ENG-1", type: "Bug" })),
+        "GET issue/ENG-1/editmeta": { fields: {} },
+      }),
+      POINTED(),
+    );
+    await expect(
+      sweep(t, { apply: false, retired: () => [], writer: pacedWriter() }),
+    ).rejects.toThrow("lists no summary");
+  });
+
   it("refuses to set or clear a size whose field is not on the issue's edit screen, naming its issue type", async () => {
     const { t, calls } = jira(
       routes({
@@ -154,7 +244,7 @@ describe("Jira: a facet field missing from an issue type's screen", () => {
       unavailable: false,
       error:
         "size is kept in the field 'Story Points' (customfield_10016), which is not on the create screens of Sub-task and Bug in ENG; add it to those screens, or keep size in labels (store: label)",
-      fails: "filing a Sub-task or a Bug fails",
+      fails: "filing a Sub-task or a Bug with the facet set fails",
     });
     // An epic type is asked no size, so its screen may lack the field.
     expect(
@@ -170,7 +260,7 @@ describe("Jira: a facet field missing from an issue type's screen", () => {
     ).toMatchObject({
       status: "failed",
       error: expect.stringContaining("not on the create screen of Epic in ENG"),
-      fails: "filing an Epic fails",
+      fails: "filing an Epic with the facet set fails",
     });
   });
 
@@ -252,7 +342,7 @@ describe("Jira: a facet field missing from an issue type's screen", () => {
       status: "failed",
       unavailable: false,
       error: expect.stringContaining("which has Small, Medium"),
-      fails: "filing a Sub-task fails",
+      fails: "filing a Sub-task with the facet set fails",
     });
     // A screen without the field does not hide the restricted screens.
     expect(
@@ -263,7 +353,7 @@ describe("Jira: a facet field missing from an issue type's screen", () => {
     ).toMatchObject({
       status: "failed",
       error: expect.stringContaining("not on the create screen of Bug"),
-      fails: "filing a Bug or a Sub-task fails",
+      fails: "filing a Bug or a Sub-task with the facet set fails",
     });
   });
 });
