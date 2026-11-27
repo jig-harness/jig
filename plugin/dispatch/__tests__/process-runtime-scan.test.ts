@@ -66,7 +66,9 @@ const listed = await runtime.sessions(
 );
 if (!listed.ok) throw new Error(listed.reason);
 console.log(JSON.stringify({
-  calls: calls.length,
+  // The listing takes three words; a carrier probe adds its entry and pids.
+  calls: calls.filter((c) => c.length === 3).length,
+  carrierProbes: calls.filter((c) => c.length > 3).length,
   trees: listed.workspaces.length,
   unverifiable: Object.fromEntries(
     listed.workspaces.map((w) => [w.path.split("/").pop(), w.unverifiableTerminals]),
@@ -82,6 +84,8 @@ console.log(JSON.stringify({
       const seen = JSON.parse(child.stdout.toString().trim());
       expect(seen.trees).toBe(WORKTREES + 1);
       expect(seen.calls).toBe(1);
+      // Only the one tree with a holder asks which of them its hook started.
+      expect(seen.carrierProbes).toBe(1);
       // Each worktree is judged on the one answer: only the one a process works in has a terminal.
       expect(seen.unverifiable).toEqual(
         Object.fromEntries([

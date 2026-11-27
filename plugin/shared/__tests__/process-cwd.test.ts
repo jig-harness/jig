@@ -8,6 +8,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   cwdHolders,
+  detachedCarriers,
   holdersIn,
   parseCwdListing,
   scanCwds,
@@ -178,6 +179,109 @@ describe("cwdHolders", () => {
       unknown: "the process listing failed (exit 0): no output",
     });
   });
+});
+
+describe("detachedCarriers", () => {
+  const ENTRY = "JIG_HOOK_WORKTREE=/w/a";
+  const LATEST = 4_000_000_000;
+
+  test("passes only numeric pids to one probe, and reads a failed probe as none", async () => {
+    const calls: string[][] = [];
+    const failing: AsyncProbeRun = async (argv, cwd) => {
+      calls.push(argv);
+      expect(cwd).toBe("/");
+      return result(2, "", "sh: broken");
+    };
+    expect(
+      await detachedCarriers(failing, ["12", "../self", "13"], ENTRY, LATEST),
+    ).toEqual(new Set());
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.slice(3)).toEqual([
+      "sh",
+      ENTRY,
+      String(LATEST),
+      "12",
+      "13",
+    ]);
+    expect(await detachedCarriers(failing, ["x"], ENTRY, LATEST)).toEqual(
+      new Set(),
+    );
+    expect(calls).toHaveLength(1);
+  });
+
+  test("keeps only the pids it was asked about", async () => {
+    const run: AsyncProbeRun = async () => result(0, "12\n99\n");
+    expect(await detachedCarriers(run, ["12", "13"], ENTRY, LATEST)).toEqual(
+      new Set(["12"]),
+    );
+  });
+
+  test.skipIf(process.platform !== "linux")(
+    "finds a detached process started with the entry, never one with a terminal or without it",
+    async () => {
+      const run: AsyncProbeRun = async (argv, cwd) => {
+        const r = Bun.spawnSync(argv, {
+          cwd: cwd ?? "/",
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        return {
+          status: r.exitCode,
+          stdout: r.stdout.toString(),
+          stderr: r.stderr.toString(),
+        };
+      };
+      const env = { ...process.env, JIG_HOOK_WORKTREE: "/w/a" };
+      const spawn = (argv: string[], withEntry: boolean) =>
+        Bun.spawn(argv, {
+          env: withEntry ? env : { ...process.env, JIG_HOOK_WORKTREE: "/w/b" },
+          stdio: ["ignore", "ignore", "ignore"],
+        });
+      const daemon = spawn(["setsid", "sleep", "600"], true);
+      const other = spawn(["setsid", "sleep", "600"], false);
+      // `script` gives the shell it starts a terminal of its own.
+      const typed = spawn(
+        ["setsid", "script", "-qec", "exec sleep 600", "/dev/null"],
+        true,
+      );
+      let shell: string | undefined;
+      try {
+        const until = performance.now() + 10_000;
+        while (shell === undefined && performance.now() < until) {
+          const children = Bun.spawnSync([
+            "ps",
+            "-o",
+            "pid=",
+            "--ppid",
+            String(typed.pid),
+          ]);
+          shell =
+            children.stdout.toString().trim().split("\n")[0]?.trim() ||
+            undefined;
+          if (shell === undefined) await Bun.sleep(20);
+        }
+        if (shell === undefined) throw new Error("script started no shell");
+        const pids = [String(daemon.pid), String(other.pid), shell];
+        let found = new Set<string>();
+        while (performance.now() < until) {
+          found = await detachedCarriers(run, pids, ENTRY, LATEST);
+          if (found.has(String(daemon.pid))) break;
+          await Bun.sleep(20);
+        }
+        expect(found).toEqual(new Set([String(daemon.pid)]));
+        // Work that started after the bound inherited the entry from elsewhere.
+        const early = Date.now() / 1000 - 3600;
+        expect(
+          await detachedCarriers(run, [String(daemon.pid)], ENTRY, early),
+        ).toEqual(new Set());
+      } finally {
+        for (const child of [daemon, other, typed]) child.kill("SIGKILL");
+        // SIGKILL does not reach the child `script` started.
+        if (shell !== undefined) Bun.spawnSync(["kill", "-KILL", shell]);
+      }
+    },
+    20_000,
+  );
 });
 
 describe("scanCwds and holdersIn", () => {
