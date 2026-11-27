@@ -10,6 +10,7 @@
  * reason included, means a process in the tree could have been missed.
  */
 import type { RunResult } from "./orca-workspace/runner.ts";
+import { currentMs } from "./time.ts";
 
 /** Runs one probe command on the host the tree is on; `cwd` is where it runs. */
 export type ProbeRun = (argv: string[], cwd?: string) => RunResult;
@@ -246,10 +247,10 @@ export async function scanCwds(
   bounds: ScanBounds = {},
 ): Promise<CwdScan> {
   const { signal, deadlineMs } = bounds;
-  const end = deadlineMs === undefined ? null : Date.now() + deadlineMs;
+  const end = deadlineMs === undefined ? null : currentMs() + deadlineMs;
   const stopped = (): string | null => {
     if (signal?.aborted) return "the process scan was stopped";
-    return end !== null && Date.now() >= end
+    return end !== null && currentMs() >= end
       ? "the process scan ran past its deadline"
       : null;
   };
@@ -257,7 +258,7 @@ export async function scanCwds(
   const left = (): number | undefined =>
     end === null
       ? undefined
-      : Math.max(1, Math.ceil((end - Date.now()) / 1000));
+      : Math.max(1, Math.ceil((end - currentMs()) / 1000));
   const first = stopped();
   if (first !== null) return { unknown: first };
   const probed = readProbe(await run(["sh", "-c", CWD_PROBE], "/", left()));
