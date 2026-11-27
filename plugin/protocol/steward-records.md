@@ -44,9 +44,9 @@ The tick reads each kept record through the same reader before it applies
 it. Applying one is the tick's alone. It applies only a record whose targets
 are in the pass's own digest, and checks again the facts each kind's meaning
 below names. It claims a re-arm, a resume, a facet or a cause before it acts
-on it, so none is applied twice; a need's framing and a queue order hold for
-as long as their need or their tie does. A record whose facts no longer hold
-is refused for good, except a resume refused for a fact that can change (the
+on it, so none is applied twice; a need's framing holds for as long as its
+need does, and a queue order the tick took for as long as its targets tie.
+A record whose facts no longer hold is refused for good, except a resume refused for a fact that can change (the
 autonomy policy, a pass the steward named wrongly), whose pass the next
 digest offers again.
 
@@ -72,7 +72,7 @@ The registry's kind the host keeps the submitted records as:
 
 | Kind | Medium | Markers | Version | Key | Meaning |
 | --- | --- | --- | --- | --- | --- |
-| `dispatch-steward-record` | machine |  | 53 | — | The closed records a steward pass submitted. The next tick claims each before acting on it, and first checks again the stops, holds and budgets that apply. |
+| `dispatch-steward-record` | machine |  | 54 | — | The closed records a steward pass submitted. The next tick claims each before acting on it, and first checks again the stops, holds and budgets that apply. |
 
 <!-- /protocol:generated -->
 
@@ -86,7 +86,7 @@ The registry's kind the host keeps the submitted records as:
 | `resume` | Resume an ended pickup or follow-up pass that stopped on a question outside the repository's human-decision classes and recommended one option. The tick launches it again with one fixed instruction, to take the option it recommended and record it as a decision taken unattended, after checking the account, holds and recovery budget again; no free text reaches the session. |
 | `need` | Frame a need that arrived with no framing and stays a person's: the act it asks for and a one-sentence ask. The tick shows them on the need while its cause and question are unchanged; a need that arrived framed is never framed again, and a record for one is refused. |
 | `facet` | Fill a missing priority, type or size of an assigned issue in the queue. The tick posts the proposal and its reason on the issue, reads the issue again, and writes the value only while the facet is still empty and the issue still assigned as the digest read it. |
-| `order` | Order issues of the queue its own rules leave tied (priority, unblocking, epic order, size and age). The tick exchanges only the places of the members that are still tied, and never moves an issue past one the rules rank apart. |
+| `order` | Order issues of the queue its own rules leave tied: equal on priority, unblocking, epic order, size and the exact creation time. The tick takes the record when every target is wanted and tied, exchanges their places while they stay so, and never moves an issue past one the rules rank apart; otherwise it refuses the record for good with its reason, and the next digest lists the refusal while the targets read as they did. |
 | `cause` | Say why a pickup's or a follow-up's run that ended without a closing report fell short, read from the excerpt of its transcript. The tick records it as the run's closing report, written by the steward, only while the run holds none; otherwise it refuses the record. |
 
 <!-- /protocol:generated -->

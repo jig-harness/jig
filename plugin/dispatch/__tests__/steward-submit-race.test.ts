@@ -26,7 +26,9 @@ test("steward submission reserves its write before reading while another connect
   const db = stateDb(root);
   const other = new Database(join(root, "state.sqlite"));
   other.run("PRAGMA busy_timeout = 0");
-  const statement = db.query("SELECT submitted FROM steward_runs WHERE id = ?");
+  const statement = db.query(
+    "SELECT submitted, digest FROM steward_runs WHERE id = ?",
+  );
   const get = statement.get.bind(statement);
   let writerWaited = false;
   const update = () =>
