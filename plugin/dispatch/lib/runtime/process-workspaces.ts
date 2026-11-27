@@ -1,4 +1,5 @@
 /** Worktree opening and publication for the process runtime. */
+import type { HolderPolicy } from "../../../shared/orca-workspace/holder.ts";
 import { failed, ok } from "../../../shared/outcome.ts";
 import {
   captureIdentity,
@@ -97,6 +98,7 @@ export async function processOpen(
   repo: RepoTarget,
   target: Target,
   timeoutMs: number,
+  holders?: HolderPolicy,
 ): Promise<RuntimeReceipt> {
   const launch = marksIn(target.dispatched.mark)[0]?.launch;
   if (launch == null)
@@ -121,7 +123,13 @@ export async function processOpen(
     return { ok: false, detail: expected.failure.reason };
   let left: DetachedCheckout | undefined;
   const opened = await openProcessWorktree(
-    { host, runHook: supervisedHook, drivers: treeDrivers },
+    {
+      host,
+      runHook: supervisedHook,
+      drivers: treeDrivers,
+      // The policy reaches only a pull request's open, the one a rescue comment reports on.
+      ...(holders === undefined || !("pr" in target) ? {} : { holders }),
+    },
     {
       repository: repo.path,
       branch,
