@@ -46,8 +46,8 @@ criteria:
       comment-only until it clears a pre-committed precision bar for flipping
       it (or a lens) to blocking, and that bar is written down.
     observe:
-      - "an automated reviewer is active: its configuration or workflow wiring is present, or host-side evidence (check runs, reviews or comments by a named app) shows it reviewed recent pull requests (a badge or sponsor mention is not a reviewer; with none, this is absent)"
-      - "for every active reviewer or lens, the review config sets a comment-only starting posture; one already promoted shows the bar it cleared"
+      - "an automated reviewer is active: a workflow step invokes it on pull requests, or host-side evidence (check runs, reviews or comments by a named app) shows it reviewed recent pull requests (configuration alone, a badge or a sponsor mention is not a reviewer; with none, this is absent)"
+      - "for every active reviewer or lens, the review config sets a comment-only starting posture; one already promoted shows its comment-only history and the bar it cleared"
       - "a precision bar (and who measures it) is recorded, not implied, and applies to every active reviewer or lens"
 
   - id: automated-review-source-independent

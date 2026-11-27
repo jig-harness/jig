@@ -394,7 +394,7 @@ criteria:
   M7/automated-reviewer-comment-only-with-bar:   # standard, requires convention
     # At least one automated reviewer reviews pull requests, each runs comment-only until it clears a pre-committed precision bar for flipping it (or a lens) to blocking, and that bar is written down.
     score: absent
-    evidence: "No automated reviewer is wired: no review-bot configuration in git ls-files, no reviewer job in .github/workflows/main.yml, and all review authors across the last 100 merged PRs are humans (comment and check-run channels were not searched separately). A reviewer vendor appears only as a sponsor logo (readme.md:26), which is not a reviewer. Adding one is M7's Standard step."
+    evidence: "No automated reviewer is wired: no review-bot configuration in git ls-files, no reviewer job in .github/workflows/main.yml, and all review authors across the last 100 merged PRs are humans (comment and check-run channels were not searched separately, so this absence is qualified to submitted reviews; re-check those channels for the calibration window before relying on it). A reviewer vendor appears only as a sponsor logo (readme.md:26), which is not a reviewer. Adding one is M7's Standard step."
   M7/automated-review-source-independent:   # standard, requires mechanical
     # The repository runs an automated reviewer, and every one that bears a secret or affects the merge gets its runtime, prompts, and active policy from a pinned external source, separately hosted service, or target base branch — never the PR head it reviews.
     # Rescored under the current rules; the 0.15.0 run recorded expected-absent here.

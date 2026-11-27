@@ -160,7 +160,7 @@ export const ruledOutRecord = (): string =>
     "M6/lifecycle-owners-resolve-gated": "expected-absent",
   });
 
-/** What the audit of that era recorded for a repository with no automated reviewer, before it scored those criteria absent. */
+/** Synthetic scores for a repository with no automated reviewer, as an audit would have recorded them before those criteria scored absent (not a published record). */
 const HISTORICAL_NO_REVIEWER = {
   "M7/automated-reviewer-comment-only-with-bar": "expected-absent",
   "M7/automated-review-source-independent": "expected-absent",

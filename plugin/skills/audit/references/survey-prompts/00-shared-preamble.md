@@ -60,7 +60,8 @@ Calibration rules (learned from audit runs):
   and greps you ran and the closest files that *do* exist.
 - **Mentioned ≠ wired in.** A vendor name in a readme, sponsor logo, or
   badge is not a configured tool. Claim a bot/tool is in use only with its
-  config file or workflow step as evidence.
+  config file or workflow step as evidence (for a hosted app that leaves no
+  checked-in wiring, host-side evidence of its reviews).
 - **Configured to do Y needs the line; installed needs the app.** A claim
   that "tool X is configured to do Y" quotes the configuration line that
   does Y, with its path and line number. "Installed" or "running" needs an

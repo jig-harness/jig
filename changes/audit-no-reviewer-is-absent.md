@@ -8,7 +8,7 @@ release: patch
   `expected-absent` on M7's reviewer criteria, which counts as met, so it
   could reach M7 Standard without a reviewer and was never told to add one.
   M7's criteria now ask, at Standard, that at least one automated reviewer
-  start comment-only under a written precision bar (one already promoted shows the bar it cleared), and the criteria about
+  start comment-only under a written precision bar (one already promoted shows its comment-only history and the bar it cleared; the starting posture and bar apply to every active reviewer or lens), and the criteria about
   where that reviewer's runtime and policy come from and how it is promoted
   to blocking are no longer met by having no reviewer; the lint that keeps a
   reviewer workflow bearing a secret off fork code is a gap while no lint

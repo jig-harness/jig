@@ -4,6 +4,7 @@
  * to close, never practices the repository's shape rules out.
  */
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "bun:test";
 import { renderReportMarkdown } from "../scripts/report/markdown.ts";
 import { mapRows, targetsOf } from "../scripts/report/model.ts";
@@ -15,10 +16,7 @@ const input = reportInput({
     noProfile(s);
     (s.recommendations as unknown[]).push({
       id: "R9",
-      refs: [
-        "M7/automated-reviewer-comment-only-with-bar",
-        "M7/automated-review-source-independent",
-      ],
+      refs: ["M7/automated-reviewer-comment-only-with-bar"],
       title: "Add an automated pull-request reviewer",
       finding: "No automated reviewer reviews pull requests.",
       action: "Install one comment-only and write down its precision bar.",
@@ -74,13 +72,14 @@ describe("a repository with no automated reviewer, against Team/Standard", () =>
   });
 
   test("the scoring guidance behind the scores says a missing reviewer is absent, and a draft leaves unexamined criteria alone", () => {
-    const root = new URL("../", import.meta.url).pathname;
+    const root = fileURLToPath(new URL("../", import.meta.url));
     const survey = readFileSync(
       `${root}references/survey-prompts/04-review-learning-loop.md`,
       "utf8",
     );
     expect(survey).toContain("`absent`, never");
     expect(survey).toContain("When examined");
+    expect(survey).toContain("a draft's unexamined criteria stay as they are");
     const criteria = readFileSync(
       `${root}criteria/M7-pr-lifecycle-review.yaml`,
       "utf8",
