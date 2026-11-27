@@ -133,9 +133,13 @@ function keepOnRescue(
     "--quiet",
     `refs/heads/${branch}^{commit}`,
   ]);
-  if (read.status !== 0 || read.stdout.trim() !== head)
+  const rescue = { branch, clone };
+  if (read.status !== 0 || read.stdout.trim() !== head) {
+    // The branch was made, so it is dropped (only while still at `head`) rather than left unreported.
+    dropRescue(port, rescue, head);
     return { failed: `${branch} does not read back at ${head.slice(0, 12)}` };
-  return { branch, clone };
+  }
+  return rescue;
 }
 
 /** Delete the rescue branch a detach that failed did not need, only while it is still at `head`; a delete that fails leaves it, which loses nothing. */

@@ -344,6 +344,28 @@ describe("openBranch with the host's holder policy", () => {
     expect(rescues(clone)).toEqual([]);
   });
 
+  test("a rescue branch whose readback fails is removed and the holder is left as it is", () => {
+    const { root, clone, holder, head } = unpushedTree();
+    const { port } = withPolicy(
+      root,
+      clone,
+      RESCUE,
+      () => [],
+      (ctx) => ({
+        ...ctx,
+        run: (argv, options) =>
+          argv.includes("rev-parse") &&
+          argv.some((a) => a.startsWith(`refs/heads/${RESCUE_PREFIX}`))
+            ? { status: 1, stdout: "", stderr: "" }
+            : ctx.run(argv, options),
+      }),
+    );
+    expect(() => open(port, clone)).toThrow(BusyHolderError);
+    expect(symbolic(holder)).toBe(BRANCH);
+    expect(git(holder, "rev-parse", "HEAD")).toBe(head);
+    expect(rescues(clone)).toEqual([]);
+  });
+
   test("a detach that fails after the rescue removes the rescue branch it no longer needs", () => {
     const { root, clone, holder, head } = unpushedTree();
     const { port } = withPolicy(

@@ -426,7 +426,6 @@ export function orcaRuntime(
           found,
           target,
           deadlines.workspaceTimeoutMs,
-          deadlines.holders,
         );
       return "pr" in target
         ? openPullRequestWorkspace(
@@ -435,12 +434,7 @@ export function orcaRuntime(
             deadlines.workspaceTimeoutMs,
             deadlines.holders,
           )
-        : openItemWorkspace(
-            found,
-            target,
-            deadlines.workspaceTimeoutMs,
-            deadlines.holders,
-          );
+        : openItemWorkspace(found, target, deadlines.workspaceTimeoutMs);
     },
     verifyWorkspace: (repo, workspace, target, timeoutMs) =>
       verifyPullRequestWorkspace(

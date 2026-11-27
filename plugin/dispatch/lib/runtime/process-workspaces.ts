@@ -127,7 +127,8 @@ export async function processOpen(
       host,
       runHook: supervisedHook,
       drivers: treeDrivers,
-      ...(holders === undefined ? {} : { holders }),
+      // The policy reaches only a pull request's open, the one a rescue comment reports on.
+      ...(holders === undefined || !("pr" in target) ? {} : { holders }),
     },
     {
       repository: repo.path,

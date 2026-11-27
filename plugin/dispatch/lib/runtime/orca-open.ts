@@ -12,7 +12,8 @@
  * A checkout Orca does not list that holds the branch is detached when it
  * is idle, judged with the drive's records of what drives a tree
  * (`tree-drivers.ts`), or busy only in the ways the host's holder policy
- * waives (`holders`, `shared/orca-workspace/holder.ts`), and the receipt
+ * waives (`holders`, `shared/orca-workspace/holder.ts`; applied only to a
+ * pull request's open, the one that reports a rescue), and the receipt
  * names it (`detached`, with its rescue branch where it has one); one in use
  * refuses the open, and the receipt names it (`busyHolder`) for the notice
  * a person gets.
@@ -108,7 +109,6 @@ export async function openNoticesWorkspace(
   repo: { id: string; path: string },
   target: NoticesTarget,
   timeoutMs: number,
-  holders?: HolderPolicy,
 ): Promise<RuntimeReceipt> {
   const started = currentMs();
   const opened = await open(
@@ -120,7 +120,7 @@ export async function openNoticesWorkspace(
       createHook: false,
     },
     timeoutMs,
-    holders,
+    undefined,
   );
   if (!opened.ok || opened.workspace === undefined || opened.reattached)
     return withoutReattached(opened);
@@ -159,7 +159,6 @@ export function openItemWorkspace(
   repo: { id: string; path: string },
   target: ItemTarget,
   timeoutMs: number,
-  holders?: HolderPolicy,
 ): Promise<RuntimeReceipt> {
   return open(
     repo,
@@ -169,7 +168,7 @@ export function openItemWorkspace(
       createFlags: itemLink(target),
     },
     timeoutMs,
-    holders,
+    undefined,
   );
 }
 
