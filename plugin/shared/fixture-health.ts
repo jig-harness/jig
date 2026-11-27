@@ -80,8 +80,8 @@ export function fixtureRegistryCheck(): DoctorCheck {
     : {
         id,
         status: "fail",
-        detail: `${detail} and exceeds its limit`,
-        fix: "Run jig gc --collect and inspect the receipt for retained registrations",
+        detail: `${detail} and exceeds its limit, so the scratch kind of jig gc fails a scheduled run that retires no registration`,
+        fix: "Run jig gc --kind scratch --collect and inspect the receipt for retained registrations; when no registered repository declares the scratch kind, add it to that repository's gc.kinds, declare its scratch prefixes, and refresh the installed collector first: collection intersects the base declaration recorded at install, and a machine that disables the kind skips it",
       };
 }
 
@@ -92,7 +92,7 @@ export function fixtureCapacityFailure(reason: string): Failure | null {
   return count > limit
     ? failed(
         "fixture-registry-over-limit",
-        `${count} registrations exceed the limit of ${limit}. ${reason} Run jig gc --collect and inspect the receipt.`,
+        `${count} registrations exceed the limit of ${limit}. ${reason} Run jig gc --kind scratch --collect and inspect the receipt.`,
       ).failure
     : null;
 }
