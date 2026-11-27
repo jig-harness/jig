@@ -114,6 +114,7 @@ describe("the ledger written from the drive state", () => {
     expectSpawnExit(r, 0);
     const ledgers = ledgersOn(forge);
     expect([...ledgers.values()].map((l) => l.generation)).toEqual([1]);
+    expect([...ledgers.values()].map((l) => l.ledgerVersion)).toEqual([2]);
     expect(r.stderr).toContain("ledger: generation 1 written");
     const got = await runScript(forge, "drive-state.ts", ["get", "999"]);
     expect(JSON.parse(got.stdout).ledgerGeneration).toBe(1);
@@ -378,7 +379,7 @@ describe("the ledger written from the drive state", () => {
 
   it("never overwrites a ledger in a version this code does not read", async () => {
     const v9 = ledgerBody(ledger(3)).replace(
-      `"ledgerVersion":${LEDGER_VERSION}`,
+      '"ledgerVersion":2',
       '"ledgerVersion":9',
     );
     const forge = fakeForge([forgeComment(40, v9)], { login: "drive-bot" });
@@ -774,7 +775,7 @@ describe("the population for the morning report", () => {
         forgeComment(
           70,
           ledgerBody(ledger(2)).replace(
-            `"ledgerVersion":${LEDGER_VERSION}`,
+            '"ledgerVersion":2',
             '"ledgerVersion":9',
           ),
         ),

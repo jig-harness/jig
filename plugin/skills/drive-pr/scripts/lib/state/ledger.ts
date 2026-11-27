@@ -214,7 +214,9 @@ export function ledgerFromState(
   },
 ): Ledger {
   return {
-    ledgerVersion: LEDGER_VERSION,
+    // New ordinary ledgers remain readable by hosts that predate the
+    // managed-user grammar. A managed recipient raises this on render.
+    ledgerVersion: OPERATOR_STOP_LEDGER_VERSION,
     generation: opts.generation,
     pr: s.pr,
     round: s.rounds,
@@ -426,10 +428,13 @@ export function renderLedger(
 ): { body: string; ledger: Ledger } | { error: string } {
   let l: Ledger = {
     ...ledger,
-    ledgerVersion:
-      ledger.driver.personStop === undefined
+    ledgerVersion: ledger.parked.some(
+      (park) => park.person?.includes("_") === true,
+    )
+      ? LEDGER_VERSION
+      : ledger.driver.personStop === undefined
         ? ledger.ledgerVersion
-        : LEDGER_VERSION,
+        : Math.max(ledger.ledgerVersion, OPERATOR_STOP_LEDGER_VERSION),
     // A receipt or churn-evidence loss the state already carries stays named, whatever this render drops.
     cut: ledger.cut.filter(
       (c) =>

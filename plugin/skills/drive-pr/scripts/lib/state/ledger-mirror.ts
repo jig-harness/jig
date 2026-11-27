@@ -343,9 +343,8 @@ async function mirrorUnlocked(
         })),
       },
     );
-    // A shape-only upgrade remains readable by the prior ledger reader. Keep
-    // that version when updating its existing record, unless a parked managed
-    // user needs the v3 login grammar that the older reader cannot parse.
+    // Preserve an existing reader-compatible version. Rendering raises it
+    // only for an operator stop (v2) or a managed recipient (v3).
     return existingVersion === undefined
       ? ledger
       : {
