@@ -17,6 +17,7 @@ import { lockRow, putLock } from "./state-rows.ts";
 import {
   type Ledger,
   ledgerFromState,
+  LEDGER_VERSION,
   parseLedger,
   renderClaim,
 } from "../scripts/lib/state/ledger.ts";
@@ -345,7 +346,7 @@ describe("the ledger written from the drive state", () => {
 
   it("never overwrites a ledger in a version this code does not read", async () => {
     const v9 = ledgerBody(ledger(3)).replace(
-      '"ledgerVersion":1',
+      `"ledgerVersion":${LEDGER_VERSION}`,
       '"ledgerVersion":9',
     );
     const forge = fakeForge([forgeComment(40, v9)], { login: "drive-bot" });
@@ -741,7 +742,7 @@ describe("the population for the morning report", () => {
         forgeComment(
           70,
           ledgerBody(ledger(2)).replace(
-            '"ledgerVersion":1',
+            `"ledgerVersion":${LEDGER_VERSION}`,
             '"ledgerVersion":9',
           ),
         ),

@@ -8,6 +8,7 @@ import { isOptionalEvents, recordEvent } from "../scripts/lib/state/events.ts";
 import { isOptionalCiActions } from "../scripts/lib/state/ci-actions.ts";
 import {
   ledgerFromState,
+  LEDGER_VERSION,
   LEDGER_MARKER,
   parseLedger,
   renderLedger,
@@ -69,7 +70,7 @@ describe("additive CI telemetry", () => {
     expect(isUsableState(state, 999)).toBe(true);
   });
 
-  it("round-trips and seeds telemetry in an ordinary version-one ledger", () => {
+  it("round-trips and seeds telemetry in an ordinary current-version ledger", () => {
     const state: DriveState = {
       ...freshState(999),
       ciActions: [
@@ -95,7 +96,7 @@ describe("additive CI telemetry", () => {
     const rendered = renderLedger(ledger);
     expect("error" in rendered).toBe(false);
     if ("error" in rendered) return;
-    expect(rendered.ledger.ledgerVersion).toBe(1);
+    expect(rendered.ledger.ledgerVersion).toBe(LEDGER_VERSION);
     expect(rendered.body).toContain("CI rerun:");
     const parsed = parseLedger(rendered.body);
     expect(parsed?.kind).toBe("ledger");
