@@ -1,7 +1,7 @@
 /**
  * A launch the workspace runtime refused because a checkout it does not
  * list holds the launch's branch and is in use (`LaunchOutcome.holder`)
- * becomes a notification to a person (cause `needs-person`), keyed by the
+ * becomes a notification to a person (cause `busy-holder`), keyed by the
  * target, the branch and that checkout's path. It goes through the
  * notifications' suppression records like every other cause, so it is sent
  * once per holder, then on `dispatch.renotify_after` while the holder stays
@@ -48,7 +48,7 @@ export function holderActions(
         branch: holder.branch,
         busy: holder.reasons.join("; "),
       },
-      cause: "needs-person",
+      cause: "busy-holder",
       notice,
     });
   }

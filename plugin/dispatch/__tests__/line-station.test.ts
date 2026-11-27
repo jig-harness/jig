@@ -193,7 +193,7 @@ describe("a need's framed decision", () => {
   it("frames a checkout an unlisted tree holds by the stage that waits on it", () => {
     const line = lineOf([
       need({
-        cause: "needs-person",
+        cause: "busy-holder",
         target: "PR #879",
         record: "runtime",
         evidence: {

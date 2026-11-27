@@ -185,6 +185,7 @@ const FACTS: Partial<
   stalled: stalledFacts,
   "pickup-question": pickupQuestionFacts,
   "pickup-ended": pickupEndedFacts,
+  "busy-holder": (action) => needsPersonFacts(action, null),
   "needs-person": (action) => needsPersonFacts(action, prOf(action.target)),
   "stopped-unknown": (action) => needsPersonFacts(action, prOf(action.target)),
 };
