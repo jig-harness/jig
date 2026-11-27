@@ -72,10 +72,27 @@ export type ClaimResult =
       reason: string;
     };
 
+type ClaimRefusal = Extract<ClaimResult, { outcome: "refused" }>;
+
 const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 function names(users: TrackerUser[]): string {
   return users.map((u) => u.name).join(", ");
+}
+
+function freshAssigneeRefusal(
+  key: string,
+  issue: PoolIssue,
+  me: TrackerUser,
+): ClaimRefusal | null {
+  const assignee = issue.assignee;
+  if (assignee === null || assignee.id === me.id) return null;
+  return {
+    outcome: "refused",
+    issue: key,
+    why: "assigned",
+    reason: `${key} is assigned to ${assignee.name}, not to ${me.name}`,
+  };
 }
 
 /** The canonical states whose tracker name is `name`; empty when none is. */
@@ -102,7 +119,7 @@ export function claimFromRefusal(
   stateName: string,
   claimFrom: readonly CanonicalState[] | null,
   context: StateContext = null,
-): ClaimResult | null {
+): ClaimRefusal | null {
   if (claimFrom === null) return null;
   const states = canonicalStatesOf(tracker, stateName, context);
   if (states.some((s) => claimFrom.includes(s))) return null;
@@ -126,7 +143,7 @@ export function blockedStateRefusal(
   key: string,
   stateName: string,
   context: StateContext = null,
-): ClaimResult | null {
+): ClaimRefusal | null {
   const blocked = tracker.stateName("blocked", context);
   if (blocked === null || !sameName(stateName, blocked)) return null;
   return {
@@ -141,7 +158,7 @@ export function blockedStateRefusal(
 export function epicClaimRefusal(
   key: string,
   issue: PoolIssue | null,
-): ClaimResult | null {
+): ClaimRefusal | null {
   return issue !== null && isEpicPickup(issue)
     ? {
         outcome: "refused",
@@ -192,12 +209,14 @@ export async function claimIssue(
     };
   const beforeWriteAdmission = startAdmission(tracker, key, beforeWrite, rules);
   if ("refusal" in beforeWriteAdmission) return beforeWriteAdmission.refusal;
+  const beforeWriteAssignee = freshAssigneeRefusal(key, beforeWrite, me);
+  if (beforeWriteAssignee !== null) return beforeWriteAssignee;
 
   // The assignment first: a claim racing this one then reads it and refuses.
   if (!holders.some((u) => u.id === me.id)) await tracker.assign(key, me);
 
-  // An item can become an epic after assignment but before transition. Keep
-  // the assignment's race protection, but do not start work on that parent.
+  // Keep the assignment's race protection, but do not transition an item
+  // whose admission changed between assignment and the state write.
   const beforeTransition = await tracker.poolIssue(key);
   if (beforeTransition === null)
     return {
@@ -205,8 +224,29 @@ export async function claimIssue(
       issue: key,
       reason: `another change landed first: ${key} is gone`,
     };
-  if (isEpicPickup(beforeTransition))
-    return { outcome: "stood_down", issue: key, reason: EPIC_PICKUP_REASON };
+  const beforeTransitionAdmission = startAdmission(
+    tracker,
+    key,
+    beforeTransition,
+    rules,
+  );
+  if ("refusal" in beforeTransitionAdmission)
+    return {
+      outcome: "stood_down",
+      issue: key,
+      reason: beforeTransitionAdmission.refusal.reason,
+    };
+  const beforeTransitionAssignee = freshAssigneeRefusal(
+    key,
+    beforeTransition,
+    me,
+  );
+  if (beforeTransitionAssignee !== null)
+    return {
+      outcome: "stood_down",
+      issue: key,
+      reason: beforeTransitionAssignee.reason,
+    };
   await tracker.transition(key, "in_progress");
 
   const now = await tracker.assignees(key);
@@ -260,7 +300,7 @@ function startAdmission(
   key: string,
   before: PoolIssue,
   rules: ClaimRules,
-): { started: string } | { refusal: ClaimResult } {
+): { started: string } | { refusal: ClaimRefusal } {
   const epic = epicClaimRefusal(key, before);
   if (epic) return { refusal: epic };
   const context = before.nativeType ?? null;

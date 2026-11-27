@@ -205,7 +205,46 @@ describe("claimIssue", () => {
     expect(await claimIssue(tracker, "#5")).toEqual({
       outcome: "stood_down",
       issue: "#5",
-      reason: "epics are worked through their children",
+      reason: "#5 is an epic; epics are worked through their children",
+    });
+    expect(log).toEqual(["assign factory"]);
+  });
+
+  it("refuses when another user is assigned before the claim writes", async () => {
+    const { tracker, log } = memory("Todo", []);
+    const poolIssue = tracker.poolIssue;
+    let reads = 0;
+    tracker.poolIssue = async (key) => {
+      const issue = await poolIssue(key);
+      reads += 1;
+      return issue === null || reads !== 2
+        ? issue
+        : { ...issue, assignee: DANA };
+    };
+    expect(await claimIssue(tracker, "#5")).toEqual({
+      outcome: "refused",
+      issue: "#5",
+      why: "assigned",
+      reason: "#5 is assigned to dana, not to factory",
+    });
+    expect(log).toEqual([]);
+  });
+
+  it("stands down before transition when another user is assigned", async () => {
+    const { tracker, log } = memory("Todo", []);
+    const poolIssue = tracker.poolIssue;
+    let reads = 0;
+    tracker.poolIssue = async (key) => {
+      const issue = await poolIssue(key);
+      reads += 1;
+      return issue === null || reads !== 3
+        ? issue
+        : { ...issue, assignee: DANA };
+    };
+    expect(await claimIssue(tracker, "#5")).toEqual({
+      outcome: "stood_down",
+      issue: "#5",
+      reason: "#5 is assigned to dana, not to factory",
     });
     expect(log).toEqual(["assign factory"]);
   });
