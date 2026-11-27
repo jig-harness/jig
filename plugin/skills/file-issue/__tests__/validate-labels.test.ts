@@ -741,6 +741,15 @@ describe("--check-tracker", () => {
     expect(placementMayChangeInvalidity(initial, taxonomy)).toBe(true);
   });
 
+  test("does not treat an absent category as a rule an epic could satisfy", () => {
+    const initial = validateLabels([...base, "roadmap"], taxonomy);
+    expect(initial.valid).toBe(false);
+    expect(placementMayChangeInvalidity(initial, taxonomy)).toBe(true);
+
+    const withoutCategory = validateLabels(base, taxonomy);
+    expect(placementMayChangeInvalidity(withoutCategory, taxonomy)).toBe(false);
+  });
+
   test("passes when every label names exactly one tracker label", async () => {
     const { code } = await capture(
       ["--check-tracker", "--taxonomy", fixture, ...base],
@@ -845,6 +854,32 @@ describe("--check-tracker", () => {
       "no size (one of: xs, small, medium, large, xl)",
       "more than one label of group 'repo': app, website (pick one)",
     ]);
+    expect(opened).toBe(0);
+  });
+
+  test("a draft with an unrelated error does not open the tracker for an epic flag", async () => {
+    let opened = 0;
+    const { code, out } = await capture(
+      ["--check-tracker", "--json", "--taxonomy", fixture],
+      {
+        openTracker: () => {
+          opened++;
+          throw new Error("Jira configuration is unavailable");
+        },
+        readStdin: async () =>
+          JSON.stringify({
+            title: "Draft",
+            description: "",
+            type: "bug",
+            priority: 3,
+            labels: ["app", "roadmap", "unknown"],
+          }),
+      },
+    );
+    expect(code).toBe(3);
+    expect(JSON.parse(out).errors).toContain(
+      "unknown label: unknown (not in the taxonomy)",
+    );
     expect(opened).toBe(0);
   });
 

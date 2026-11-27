@@ -392,7 +392,7 @@ export function placementMayChangeInvalidity(
     ) ||
     taxonomy.categories.some(
       (category) =>
-        initial.parsed.categories[category.id]?.length !== 0 &&
+        (initial.parsed.categories[category.id]?.length ?? 0) !== 0 &&
         category.requires.includes(epic),
     ) ||
     taxonomy.flags.some(
@@ -400,6 +400,23 @@ export function placementMayChangeInvalidity(
         initial.parsed.flags.includes(flag.id) && flag.requires.includes(epic),
     )
   );
+}
+
+/** Whether a prospective epic placement can clear every non-facet error. */
+function placementCouldChangeInvalidity(
+  initial: Validation,
+  taxonomy: Taxonomy,
+  issue: IssueRead,
+): boolean {
+  if (!placementMayChangeInvalidity(initial, taxonomy)) return false;
+  if (initial.errors.length === initial.missing.length) return true;
+  const labels = parseTrackerLabels(readConfig());
+  const nativeType = labels.epicTypes[0];
+  if (nativeType === undefined) return false;
+  return validateLabels(issue.labels, taxonomy, issue.facets, {
+    nativeType,
+    epics: labels,
+  }).valid;
 }
 
 /** The tracker the check reads, or the stop that says it could not be opened. */
@@ -428,12 +445,23 @@ async function checkTracker(
   // Placement can only exempt a missing facet. Other taxonomy errors already
   // decide the result, except where its native epic type can satisfy a label
   // rule. In that case validateFiling must get the chance to revalidate it.
-  if (
-    !initial.valid &&
-    initial.errors.length > initial.missing.length &&
-    !placementMayChangeInvalidity(initial, taxonomy)
-  )
-    return initial;
+  if (!initial.valid && initial.errors.length > initial.missing.length) {
+    let placementCanChange: boolean;
+    try {
+      placementCanChange = placementCouldChangeInvalidity(
+        initial,
+        taxonomy,
+        issue,
+      );
+    } catch (e) {
+      throw new Stop(
+        1,
+        `ERROR: the label roles (issue_tracker.labels) could not be read: ${reason(e)}`,
+        { cause: e },
+      );
+    }
+    if (!placementCanChange) return initial;
+  }
   const tracker = openLabelTracker(deps);
   const result = await validateFiling(tracker, issue, taxonomy, initial);
   if (!result.valid) return result;
