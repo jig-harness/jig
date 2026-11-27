@@ -68,40 +68,39 @@ export interface Occurrence {
 /** The parts of a launch record this module reads. */
 interface Launch {
   id: string;
-  action: string;
   createdMs: number;
-  /** The change a re-drive re-drove (`head <sha>, stopped <exit>`), and of which stop. */
-  redrive: { change: string; mechanicalStop: string | null } | null;
+  /** For a re-drive: the change it re-drove (`head <sha>, stopped <exit>`); `null` for any other launch. */
+  change: string | null;
+  /** Whether it re-drove a stall. */
+  redroveStall: boolean;
   heads: string | null;
 }
 
-function launchOf(text: string): Launch | null {
-  let value: unknown;
+const textOf = (value: unknown): string | null =>
+  typeof value === "string" ? value : null;
+
+function parsed(text: string): Record<string, unknown> | null {
   try {
-    value = JSON.parse(text);
+    const value: unknown = JSON.parse(text);
+    return isMapping(value) ? value : null;
   } catch (error) {
-    swallow(error, "a launch record does not read");
+    swallow(error, "a stored row does not read");
     return null;
   }
-  if (!isMapping(value) || typeof value.id !== "string") return null;
-  const createdMs = parseMs(String(value.createdAt));
-  if (!Number.isFinite(createdMs)) return null;
-  const redrive = isMapping(value.redrive) ? value.redrive : null;
+}
+
+function launchOf(text: string): Launch | null {
+  const value = parsed(text);
+  const id = textOf(value?.id);
+  const createdMs = parseMs(textOf(value?.createdAt) ?? "");
+  if (value === null || id === null || !Number.isFinite(createdMs)) return null;
+  const redrive = isMapping(value.redrive) ? value.redrive : {};
   return {
-    id: value.id,
-    action: String(value.action),
+    id,
     createdMs,
-    redrive:
-      redrive !== null && typeof redrive.change === "string"
-        ? {
-            change: redrive.change,
-            mechanicalStop:
-              typeof redrive.mechanicalStop === "string"
-                ? redrive.mechanicalStop
-                : null,
-          }
-        : null,
-    heads: typeof value.heads === "string" ? value.heads : null,
+    change: textOf(redrive.change),
+    redroveStall: redrive.mechanicalStop === "stall",
+    heads: textOf(value.heads),
   };
 }
 
@@ -120,26 +119,10 @@ function drivesOfPr(db: Database, repo: string, pr: number): Launch[] {
 }
 
 const SHORT = 7;
-const headOfChange = (change: string | undefined) =>
+const headOfChange = (change: string | null | undefined) =>
   /^head ([0-9a-f]{7,40})\b/.exec(change ?? "")?.[1] ?? null;
 const short = (sha: string | null) =>
   sha === null ? null : sha.slice(0, SHORT);
-
-/** The row's text, as `log.ts` keeps it, for its record and closing report. */
-interface RowText {
-  record?: unknown;
-  concluded?: unknown;
-}
-
-function rowText(text: string): RowText {
-  try {
-    const value: unknown = JSON.parse(text);
-    return isMapping(value) ? value : {};
-  } catch (error) {
-    swallow(error, "a log row does not read");
-    return {};
-  }
-}
 
 const CONCLUDED_CHARS = 160;
 
@@ -161,14 +144,17 @@ function againstRedrive(
   record: unknown,
   atMs: number,
 ): Pick<Occurrence, "head" | "redrive"> {
-  const own = launches.find((l) => l.id === record);
+  const own = launches.find((l) => l.id === record) ?? null;
   const next = launches.find((l) => l.createdMs > atMs);
-  const redrove = next?.redrive?.mechanicalStop === "stall" ? next : undefined;
-  const head =
-    headOfChange(redrove?.redrive?.change) ??
-    headOfChange(own?.redrive?.change) ??
-    prHeadOf(own?.heads);
-  return { head: short(head), redrive: redrove?.id ?? null };
+  const redrove = next?.redroveStall === true ? next : null;
+  return { head: short(headOf(redrove, own)), redrive: redrove?.id ?? null };
+}
+
+/** The head a stall stopped at: the change its re-drive re-drove, else the one it re-drove itself, else the head it launched at. */
+function headOf(redrove: Launch | null, own: Launch | null): string | null {
+  const stopped = headOfChange(redrove?.change);
+  if (stopped !== null) return stopped;
+  return headOfChange(own?.change) ?? prHeadOf(own?.heads);
 }
 
 const PR_TARGET = /^PR #(\d+)$/;
@@ -207,7 +193,7 @@ export function occurrences(
     return read;
   };
   return rows.map((row) => {
-    const text = rowText(row.row);
+    const text = parsed(row.row) ?? {};
     const target = row.target ?? "";
     const pr = DRIVE_STAGES.includes(r.stage)
       ? PR_TARGET.exec(target)?.[1]
