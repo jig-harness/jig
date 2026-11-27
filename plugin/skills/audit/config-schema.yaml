@@ -1482,12 +1482,12 @@ fields:
         source: string
       optional: [source]
     read_by: [reflect]
-    since: next
+    since: 0.318.0
   reflection.classes_from:
     type: path
     pattern: '^(?!\s*[A-Za-z][A-Za-z0-9+.-]*://)(?!\s*[\\/]{2})[^\u0000]*$'
     read_by: [reflect]
-    since: next
+    since: 0.318.0
   reflection.escalate_after:
     type: integer
     min: 1
