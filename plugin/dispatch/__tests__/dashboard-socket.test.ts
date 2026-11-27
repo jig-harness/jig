@@ -218,7 +218,7 @@ describe("the private socket", () => {
     const inner = join(base, "inner");
     mkdirSync(inner, { mode: 0o700 });
     const uid = process.getuid?.();
-    const path = join(open, "..", "inner");
+    const path = `${open}/../inner`;
     expect(linkChainProblem(path, uid)).toBeNull();
     chmodSync(open, 0o777);
     expect(linkChainProblem(path, uid)).toBeNull();
