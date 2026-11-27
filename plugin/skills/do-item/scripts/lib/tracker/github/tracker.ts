@@ -186,6 +186,8 @@ export interface CommentNode {
   trusted: boolean;
   /** GitHub's `authorAssociation`, as it gave it. */
   association: string;
+  /** Whether the signed-in credential wrote the comment. */
+  self: boolean;
   author: TrackerUser | null;
   url?: string;
   editedAt: string | null;
@@ -251,6 +253,7 @@ export function gitHubTracker(client: Client): Tracker {
             n.authorAssociation !== ""
               ? n.authorAssociation
               : UNKNOWN_ASSOCIATION,
+          self: n.viewerDidAuthor === true,
           author: authorOf(n.author),
           ...(typeof n.url === "string" && n.url !== "" ? { url: n.url } : {}),
           // A supplied but malformed edit time is kept as written so the
@@ -715,6 +718,7 @@ export function gitHubTracker(client: Client): Tracker {
           createdAt: c.createdAt,
           ...(c.author === null ? {} : { author: c.author.name }),
           authorAssociation: c.association,
+          ...(c.self ? { self: true } : {}),
         }),
       );
       return out.sort((a, b) =>

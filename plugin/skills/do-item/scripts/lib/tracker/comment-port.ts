@@ -25,6 +25,8 @@ export interface IssueComment {
    * `UNKNOWN` when it cannot say.
    */
   authorAssociation?: string;
+  /** True when the signed-in credential wrote the comment, which the tracker may not vouch for by association. */
+  self?: boolean;
 }
 
 /** The association of a comment whose author the tracker cannot vouch for. */
@@ -43,6 +45,8 @@ export interface CommentFact {
   trusted: boolean;
   /** The author's association in `IssueComment.authorAssociation`'s words, where the adapter reads it. */
   association?: string;
+  /** Whether the signed-in credential wrote the comment. */
+  self?: boolean;
   /**
    * Who wrote the comment, where the adapter names comment authors
    * (`Tracker.commentAuthors`); `null` when the tracker names no user (a

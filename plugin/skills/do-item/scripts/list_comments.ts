@@ -39,6 +39,7 @@ export async function listComments(
         createdAt: c.createdAt,
         author: c.author,
         authorAssociation: c.authorAssociation,
+        self: c.self,
       }),
     }));
   } catch (err) {

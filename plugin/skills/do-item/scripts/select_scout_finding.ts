@@ -44,6 +44,8 @@ export interface ScoutFindingsComment {
   author?: string;
   /** What the tracker vouches for about the author (`MEMBER`, `NONE`, …). */
   authorAssociation?: string;
+  /** True when the signed-in credential wrote the comment. */
+  self?: boolean;
 }
 
 /** Runtime guard for one parsed-JSON array element — see the `main()` call site. */
@@ -58,7 +60,8 @@ export function isScoutFindingsCommentShape(
     (v.createdAt === undefined || typeof v.createdAt === "string") &&
     (v.author === undefined || typeof v.author === "string") &&
     (v.authorAssociation === undefined ||
-      typeof v.authorAssociation === "string")
+      typeof v.authorAssociation === "string") &&
+    (v.self === undefined || typeof v.self === "boolean")
   );
 }
 
@@ -88,7 +91,11 @@ function isScoutFindingsComment(body: string): boolean {
  * that carries none, a tool that drops it) is not vouched for.
  */
 function isTrustedComment(c: ScoutFindingsComment): boolean {
-  return isTrustedAuthor(c.author ?? "", c.authorAssociation ?? "", null);
+  return isTrustedAuthor(
+    c.author ?? "",
+    c.authorAssociation ?? "",
+    c.self === true ? (c.author ?? "") : null,
+  );
 }
 
 /**

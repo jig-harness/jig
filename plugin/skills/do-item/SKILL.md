@@ -458,17 +458,19 @@ where its verification commands are handed to the implementer.
 **exact** — Fetch the complete comment context and use the selector result;
 do not judge freshness by hand.
 
-Fetch the comments with the script, whatever launcher context carried: the
-launcher's cached comments name no author association, so the selector would
-treat every findings comment in them as untrusted.
+Branch on Step 1's `trackerTransport`. On `"script"`, fetch the comments with
+the script, whatever launcher context carried: the launcher's cached comments
+name no author association, so the selector would treat every findings comment
+in them as untrusted.
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/list_comments.ts" "<KEY>"
 ```
 
-(**judgment** — native, Linear: `mcp__linear__list_comments({ issueId: <KEY> })`.
-It names no author association, so the selector ignores every findings comment
-in its answer and the action is `run`; use the script form when it can run.)
+On `"native"` the script never runs (**judgment** — Linear:
+`mcp__linear__list_comments({ issueId: <KEY> })`). Its answer names no author
+association, so it is untrusted for reuse: take the `run` action below and
+never reuse a findings comment from it.
 
 Exit `0` prints a JSON array of `{ body, createdAt, author,
 authorAssociation }`; an empty array is a legitimate "no comments yet".
@@ -498,7 +500,7 @@ bun "${CLAUDE_SKILL_DIR}/scripts/select_scout_finding.ts" --input comments.json 
 Write the comment array verbatim to `comments.json` with the file-writing tool;
 `--git-head` reads the current short hash internally. Pass each comment through verbatim; each comment needs `body` plus
 whichever of `created_at` or `createdAt` it carries, and its `author` and
-`authorAssociation`. The script keeps comments whose body opens with
+`authorAssociation` (and `self` where the list carries it: the signed-in credential wrote the comment, which counts as trusted). The script keeps comments whose body opens with
 `## Scout Findings` and whose author is trusted, lists the indexes of the
 others in `untrusted` and ignores them, and returns
 `{"action", "selectedIndex", "selectedHash", "untrusted", "reason"}`:

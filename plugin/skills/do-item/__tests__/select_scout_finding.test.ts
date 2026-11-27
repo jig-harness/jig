@@ -396,6 +396,16 @@ describe("selectScoutFinding: who wrote the findings", () => {
     }
   });
 
+  it("trusts a findings comment the signed-in credential wrote, whatever its association", () => {
+    const r = selectScoutFinding(
+      [finding("abc1234", { authorAssociation: "NONE", self: true })],
+      "abc1234",
+      NOW,
+    );
+    expect(r.action).toBe("reuse");
+    expect(r.untrusted).toEqual([]);
+  });
+
   it("does not let a newer untrusted comment displace a trusted one", () => {
     const trusted = {
       ...planted("MEMBER"),

@@ -449,7 +449,12 @@ export function jiraTracker(client: Client): Tracker {
           ...(author === null ? {} : { author: author.name }),
           authorAssociation: commentAssociation(
             c.author,
-            await client.trusted(c.author, signal),
+            // An unavailable or refused lookup leaves this author unvouched
+            // for; the comments themselves were read. A cancellation travels.
+            await client.trusted(c.author, signal).catch(() => {
+              signal?.throwIfAborted();
+              return null;
+            }),
           ),
         });
       }

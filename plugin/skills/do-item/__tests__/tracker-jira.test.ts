@@ -220,6 +220,24 @@ describe("Jira adapter: reading an issue", () => {
       },
     ]);
   });
+
+  it("keeps the readable comments when the assignable-user lookup fails", async () => {
+    const { t } = jira(
+      routes({
+        "GET issue/ENG-1/comment": comments(
+          comment("1", "first", MEMBER, "2026-01-04T09:00:00.000+0000"),
+        ),
+      }),
+    );
+    expect(await t.listComments("ENG-1")).toEqual([
+      {
+        body: "first",
+        createdAt: "2026-01-04T09:00:00.000Z",
+        author: MEMBER.displayName,
+        authorAssociation: "UNKNOWN",
+      },
+    ]);
+  });
 });
 
 describe("Jira adapter: transitions", () => {

@@ -62,8 +62,9 @@ export function commentAuthor(
  */
 export function commentAssociation(
   author: Record<string, unknown> | null,
-  trusted: boolean,
+  trusted: boolean | null,
 ): string {
+  if (trusted === null) return UNKNOWN_ASSOCIATION;
   if (trusted) return "MEMBER";
   return commentAuthor(author) === null ? UNKNOWN_ASSOCIATION : "NONE";
 }
