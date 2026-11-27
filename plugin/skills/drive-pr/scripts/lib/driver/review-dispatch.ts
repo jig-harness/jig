@@ -39,6 +39,11 @@ import { unpushedNoticeFor } from "./unpushed.ts";
 import { resolveStateDir } from "./../state/store.ts";
 
 import { fail } from "./../cli.ts";
+import {
+  passDeadlineUnderCap,
+  stopAtCeiling,
+  wallClockReached,
+} from "./circuit-breaker.ts";
 
 import { span } from "./../../../../../shared/trace.ts";
 
@@ -93,7 +98,10 @@ export async function prepareReviewPass(
   // accessor for exactly this (one spawned helper, whole-invocation bound,
   // 120s default); expiring it is the same bounded loss as any other
   // failure on this best-effort path.
-  const passDeadlineSec = passTimeoutSeconds();
+  const passDeadlineSec = passDeadlineUnderCap(
+    context.circuit,
+    passTimeoutSeconds(),
+  );
   // One more refresh, immediately before THIS spawn — not only at the
   // PRIOR pass's exit. The exit-time call closes the gap up to that
   // instant, but everything between it and here (triage, fixes, the full
@@ -204,7 +212,6 @@ export async function dispatchReviewPass(
   round: number,
   prepared: PreparedSpawn | null,
   baseEnv: NodeJS.ProcessEnv,
-  passDeadlineSec: number,
 ): Promise<
   | number
   | "continue"
@@ -234,6 +241,12 @@ export async function dispatchReviewPass(
   // caught before this dispatch, only at the next checkpoint — accepted
   // deliberately, because closing it would need the charge and the spawn
   // to be literally the same operation, which they cannot be.
+  // The wall-clock cap is read again here, after every await above, so the
+  // time those reads took is not lost to the pass: a spent cap stops the
+  // drive before any budget is charged.
+  if (context.circuit !== undefined && wallClockReached(context.circuit)) {
+    return await stopAtCeiling(context.circuit, "wall-clock", round, false);
+  }
   context.passes += 1;
   const bump = await run(
     tsArgv(driveState, ["bump-attempt", context.pr, "--head", apiHead]),
@@ -261,8 +274,22 @@ export async function dispatchReviewPass(
       `cannot record this pass against PR #${context.pr}'s head; stopping rather than driving unbounded`,
     );
   }
+  // The attempt write above is the last await before the spawn; a cap that
+  // ran out during it stops the drive here instead of starting an agent with
+  // a one-second deadline. The write landed, so the local pass counter is
+  // given back to stay in step with what ran.
+  if (context.circuit !== undefined && wallClockReached(context.circuit)) {
+    context.passes -= 1;
+    return await stopAtCeiling(context.circuit, "wall-clock", round, false);
+  }
   context.passIdentity = resolveAccountIdentity(context.agent);
   const session = prepared?.correlation.sessionId ?? null;
+  // Recalculated immediately before the spawn: the preparation, the mailbox
+  // checkpoint and the attempt write all ran after the first calculation.
+  const spawnDeadlineSec = passDeadlineUnderCap(
+    context.circuit,
+    passTimeoutSeconds(),
+  );
   const passRes = await span("pass", { round }, () =>
     runRoundPass(
       prepared?.argv ?? context.agent,
@@ -271,7 +298,7 @@ export async function dispatchReviewPass(
         env: prepared?.env ?? baseEnv,
         // `0` disables, matching every other deadline knob in this skill; `run()`
         // takes the absence of the field as "no deadline" rather than a zero.
-        ...(passDeadlineSec > 0 ? { timeoutSec: passDeadlineSec } : {}),
+        ...(spawnDeadlineSec > 0 ? { timeoutSec: spawnDeadlineSec } : {}),
         onSpawn: () => {
           passSpawnProgressStamp = run(
             tsArgv(driveState, [

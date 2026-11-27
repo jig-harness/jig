@@ -1096,7 +1096,21 @@ stops admit it on a mechanical state:
   a takeover (it is published to the ledger) and is never renewed without the flag, so the drive stops on
   [`MAX_ROUNDS`](../../protocol/drive-exits.md) again once it spends it. Without the flag the re-arm stops
   at once on the spent budget. Pass the flag only on a person's re-arm,
-  after the handoff file was read.
+  after the handoff file was read. The budget a drive enforces never
+  reaches past the pull request's round ceiling (`drive.max_total_rounds`,
+  default 8, counted across every launch, re-arm and takeover): a re-arm
+  that finds the ceiling spent parks `round-ceiling` at once, and so does
+  the round check that counts a head past it, or past the optional
+  wall-clock cap (`drive.max_wall_clock_hours`, from the first launch).
+  Only a person's override raises the ceiling by one `--max-rounds` block,
+  recorded as `ceilingRaised` and published to the ledger: an answer to the
+  park choosing **Allow one more budget**, read by the next re-arm, or
+  `--past-ceiling` on `drive.ts` or `arm-drive.ts`, which implies
+  `--rearm-budget`. Any other answer to `round-ceiling`, and any answer to
+  `divergence-stop` but **Continue driving**, keeps the drive stopped: the
+  re-arm records it as `circuitStop` and stops with `INDETERMINATE`, asking
+  nothing again, until a person's `--past-ceiling`. An agent never passes
+  `--past-ceiling`, and never answers these parks for a person.
 - **[`HITL_PARKED`](../../protocol/drive-exits.md).** Once **every** parked item has an answer — a
   comment by an author GitHub reports as the repository's owner, member or
   collaborator, last edited (or posted) later than the park, on the item's
@@ -1448,7 +1462,7 @@ could forge or forget.
    it. `--max-rounds` counts from the durable state, so
    re-arming a PR that has already run rounds resumes it ("at round 4 of 10")
    rather than restarting the budget; only `--rearm-budget` extends a spent
-   one (§ Picking up a stopped drive). `--pass-model` names the model each
+   one, within the round ceiling (§ Picking up a stopped drive). `--pass-model` names the model each
    pass runs on for this drive (a model id, a Claude Code alias or a routing
    tier) over `drive.pass_model`; the driver log and `drives.ts` name it.
 5. **Check the spawn once, a few seconds later** — not immediately and not in a

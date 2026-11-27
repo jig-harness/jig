@@ -331,10 +331,10 @@ describe("answer-summary-finding.ts", () => {
   // reviewer has reviewed that head and is STILL reporting the finding. Without
   // it the marker is content-keyed and suppresses a regression forever.
   it("stamps the pushed SHA and the sticky round into an accepted marker", async () => {
-    // The round is what bounds the winddown exemption in `collectAddressed`
-    //. It is read back off the SAME reconciliation call this script
-    // already makes, so producer and consumer read one field off one comment
-    // rather than two sources that can disagree.
+    // The round records when the answer was posted. It is read back off the
+    // SAME reconciliation call this script already makes, so the marker and
+    // the reconciliation read one field off one comment rather than two
+    // sources that can disagree.
     const r = await answer(
       [
         "--outcome",
@@ -354,10 +354,9 @@ describe("answer-summary-finding.ts", () => {
   });
 
   it("omits the round when the sticky stamps none, rather than inventing one", async () => {
-    // No round to measure elapsed rounds against means the exemption cannot be
-    // bounded, and an unbounded exemption is the defect. The marker therefore
-    // carries no round and `collectAddressed` withholds the exemption from it —
-    // one re-answer, which stamps a round once the reviewer emits one again.
+    // With no round on the sticky there is nothing true to stamp, so the
+    // marker carries none; `collectAddressed` reads no round, so the answer
+    // counts the same either way.
     const r = await answer(
       [
         "--outcome",
@@ -413,12 +412,10 @@ describe("answer-summary-finding.ts", () => {
     );
   });
 
-  it("renews a lapsed marker at the same head — the re-answer path", async () => {
-    // A marker whose winddown exemption has lapsed (posted at round 1, sticky
-    // now at 7, bound 3) is expired but still ON the PR, over a fix that landed
-    // rounds ago and is still perfectly good: `collectAddressed` re-asks the
-    // finding and the driver renews the marker at the SAME head, because there
-    // is nothing new to commit.
+  it("posts nothing for a winddown finding answered rounds ago at the same head", async () => {
+    // The marker was posted in round 1 and the sticky is now at round 7. An
+    // answer stays standing however many rounds pass, so a second answer at
+    // the same head is the duplicate the reconciliation exists to skip.
     const r = await answer(
       [
         "--outcome",
@@ -428,7 +425,7 @@ describe("answer-summary-finding.ts", () => {
         "--pushed-sha",
         scratchClean.head,
       ],
-      "still fixed; renewing the lapsed marker.",
+      "still fixed.",
       {
         head: scratchClean.head,
         cwd: scratchClean.dir,
@@ -443,9 +440,8 @@ describe("answer-summary-finding.ts", () => {
       },
     );
     expect(r.exitCode).toBe(0);
-    expect(JSON.parse(r.posted).body as string).toContain(
-      `<!-- drive-pr-addressed: b9a7a18089043564@${scratchClean.head}#${STICKY_ROUND} -->`,
-    );
+    expect(r.stderr).toContain("already dispatched by an earlier pass");
+    expect(r.posted).toBe("");
   });
 
   // The API check alone is satisfied BEFORE any push: local HEAD already equals

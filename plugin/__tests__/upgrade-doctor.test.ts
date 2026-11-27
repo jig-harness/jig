@@ -44,8 +44,8 @@ test.skipIf(onWindows)(
         expect.objectContaining({
           id: "gc:fixture-registry",
           status: "fail",
-          detail: expect.stringContaining("2 of 1"),
-          fix: expect.stringContaining("jig gc"),
+          detail: expect.stringMatching(/2 of 1.*scratch kind/),
+          fix: expect.stringContaining("jig gc --kind scratch"),
         }),
         expect.objectContaining({
           id: "gc:state-inodes",
