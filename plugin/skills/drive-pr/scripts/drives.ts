@@ -269,6 +269,7 @@ const stopHint = (pr: string): string => formatStopCommand(SELF, pr);
 
 export { gatherWorktreeLeftovers } from "./lib/worktree-leftovers.ts";
 import { gatherWorktreeLeftovers } from "./lib/worktree-leftovers.ts";
+import { holdStderr } from "./lib/held-stderr.ts";
 import { currentMs, parseMs } from "../../../shared/time.ts";
 
 /**
@@ -1094,34 +1095,22 @@ async function listDrives(
 ): Promise<number> {
   const { json, doctorMode, onlyPr } = mode;
   const lockRows = listRows(stateDir);
-  // `--doctor`'s population is locks ∪ states; the plain listing and
-  // plain `--json` stay lock rows only (`listStateOnlyRows` says why).
-  // One question of the forge client, shared by the whole run.
+  // `--doctor` reads locks ∪ states, the plain listing lock rows only
+  // (`listStateOnlyRows` says why); the whole run asks the forge client once.
   const ask = askedOnce();
-  // A run the client's missing login refuses prints that refusal's one line
-  // and nothing else, so its diagnostics wait until the answer is known.
-  const held: unknown[][] = [];
-  const writeError = console.error;
-  if (doctorMode) console.error = (...args: unknown[]) => void held.push(args);
-  let doctored: Awaited<ReturnType<typeof attachDoctorVerdicts>>;
-  try {
-    const rows = doctorMode
+  // A missing login prints its refusal alone: diagnostics wait for the answer.
+  const stderr = holdStderr(doctorMode);
+  const doctored = await stderr.during(async () => {
+    const all = doctorMode
       ? await doctorRows(stateDir, lockRows, onlyPr, ask)
       : lockRows;
-    doctored = await attachDoctorVerdicts(
-      stateDir,
-      onlyPr === ""
-        ? rows
-        : rows.filter((row) => row.kind === "pr" && row.key === onlyPr),
-      SELF,
-      doctorMode,
-      ask,
+    const rows = all.filter(
+      (r) => onlyPr === "" || (r.kind === "pr" && r.key === onlyPr),
     );
-  } finally {
-    console.error = writeError;
-  }
+    return attachDoctorVerdicts(stateDir, rows, SELF, doctorMode, ask);
+  });
   if (doctorMode && ask.refused()) return refuseNoLogin();
-  for (const args of held) console.error(...args);
+  stderr.flush();
   const repository = await driveRepository();
   const withRepository = doctored.map((row) => ({ ...row, repository }));
   if (json)
