@@ -3,6 +3,8 @@ import type { RunHandle } from "../proc.ts";
 
 import type { DriveRoundContext } from "./round-context.ts";
 
+import { stopAtCeiling, wallClockReached } from "./circuit-breaker.ts";
+
 import { PASS_DEADLINE_EXIT } from "./settings.ts";
 
 import type { run } from "./../proc.ts";
@@ -73,6 +75,20 @@ async function handlePassDeadline(
   // A directive sent WHILE this pass ran is honored before anything else.
   const mailboxAfterDeadline = await context.mailboxCheckpoint();
   if (typeof mailboxAfterDeadline === "number") return mailboxAfterDeadline;
+  // A pass killed while the wall-clock cap is spent was bounded by the cap,
+  // not by its own deadline: park the ceiling decision and spend no
+  // deadline retry on it.
+  if (context.circuit !== undefined && wallClockReached(context.circuit)) {
+    console.error(
+      `  The wall-clock cap is spent: the pass's ${passDeadlineSec}s deadline was cut to it.`,
+    );
+    // The killed pass's leftovers stay in this tree: say so and record them on
+    // the stop, as the deadline stop does, so a re-arm here inherits them.
+    for (const line of describeLeftovers(await passLeftovers()))
+      console.error(`  ${line}`);
+    driverRuntime.stopLeftWork = await measureStop();
+    return await stopAtCeiling(context.circuit, "wall-clock", round, false);
+  }
   return await restartAfterDeadline(passDeadlineSec, round, context);
 }
 

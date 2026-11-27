@@ -27,6 +27,7 @@ import { runRoundIteration } from "./round-step.ts";
 
 import { clearDeadlineRetries, prReadsClosed } from "./restart.ts";
 
+import type { CircuitLimits } from "./circuit-breaker.ts";
 import { ledgerRenewal } from "./ledger.ts";
 import {
   roundBoundaryTakeoverCheck,
@@ -45,6 +46,8 @@ interface DriverRoundOptions {
   maxRoundsN: number;
   /** The passes allowed on one head: the base budget, which a re-arm resets rather than raises. */
   maxAttemptsN: number;
+  /** The round ceiling and wall-clock cap (`circuit-breaker.ts`). */
+  circuit?: CircuitLimits;
   forward: string[];
   probeFlags: string[];
   markReadyPolicy: MarkReady;
@@ -67,6 +70,7 @@ export async function runDriverRounds({
   held,
   maxRoundsN,
   maxAttemptsN,
+  circuit,
   forward,
   probeFlags,
   markReadyPolicy,
@@ -213,6 +217,7 @@ export async function runDriverRounds({
     finalRegateLimit: finalRegateLimit(),
     maxRoundsN,
     maxAttemptsN,
+    ...(circuit === undefined ? {} : { circuit }),
     budgetAtLimit: false,
     deadlineRetryBudget,
     stallExtraRound: false,

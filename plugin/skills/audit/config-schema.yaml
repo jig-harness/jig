@@ -704,6 +704,18 @@ fields:
     default: 10
     since: 0.33.0
     read_by: [drive-pr]
+  drive.max_total_rounds:
+    type: integer
+    min: 1
+    max: 50
+    default: 8
+    since: 0.312.0
+    read_by: [drive-pr]
+  drive.max_wall_clock_hours:
+    type: number
+    min: 0.1
+    since: 0.312.0
+    read_by: [drive-pr]
   drive.churn_rounds:
     type: integer
     min: 0

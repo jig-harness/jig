@@ -105,13 +105,21 @@ export const RERUN_OPTION = "rerun";
  * option; a provisional decision, a disputed set or another option grants none.
  */
 export function answerGrantsRerun(verdict: PendingVerdict): boolean {
-  if (verdict.key !== "cancelled-ci" || verdict.provisional === true)
-    return false;
-  const option = verdict.decision?.call.options.find(
-    (o) => o.id === RERUN_OPTION,
-  );
-  // A note may narrow the option with a condition no recovery can establish:
-  // such an answer goes to the pass, which honors or parks it.
+  return answersChooseOption(verdict, "cancelled-ci", RERUN_OPTION);
+}
+
+/**
+ * Whether every answer to the `key` park chooses the option `id` with no
+ * note. A note may narrow the option with a condition no recovery can
+ * establish: such an answer goes to the pass, which honors or parks it.
+ */
+export function answersChooseOption(
+  verdict: PendingVerdict,
+  key: string,
+  id: string,
+): boolean {
+  if (verdict.key !== key || verdict.provisional === true) return false;
+  const option = verdict.decision?.call.options.find((o) => o.id === id);
   return (
     option !== undefined &&
     verdict.answers.length > 0 &&

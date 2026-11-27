@@ -50,7 +50,11 @@ re-drive path. A conflict re-drives once for the pull request head and
 base head, then goes to a person if it remains at that pair. An explicit
 rearm also starts a drive. Whenever a drive spends its round budget
 (`MAX_ROUNDS`, exit `6`), the ended row hands it to a person to investigate
-using the closing-report instruction below.
+using the closing-report instruction below. A pull request that spends its
+round ceiling (`drive.max_total_rounds`) or its wall-clock cap
+(`drive.max_wall_clock_hours`), or whose rounds diverge, stops `HITL_PARKED`
+(exit `8`) on a `round-ceiling` or `divergence-stop` decision: a rearm grants
+no rounds past the ceiling, and only a person's override raises it.
 
 ## When the drive parks itself on structural churn
 
@@ -96,7 +100,7 @@ person re-arms the drive once the failure is addressed. A repository's `autonomy
 | `POLL_BUDGET_SPENT` | state | 4 | 4 | no | The poll budget ended before the next iteration or before a pull-request read could start. The probe reports how long it waited. A request that was sent and failed retains its read failure. |
 | `NOT_SETTLED` | class-label | 4 | 4 | no | The name of every state that shares exit `4`: the pull request is not ready to judge yet. Never itself a `state`; the caller waits and runs the drive again. `drive.ts` also exits `4` after the review converged when another driver holds the mark-Ready lease, when the head moved, the CI hold label changed or the forge could not be read as the hold was released, when a read of the cancelled-run recovery kept failing in a way waiting can clear, when no fresh result of a required check came in time (where a skipped or cancelled check means waiting cannot help: re-run the check, then re-arm), and when the drive keeps a draft that the reviewer skips (mark it Ready, then re-arm). |
 | `PR_NOT_OPEN` | state | 5 | 5 | yes | The pull request was merged or closed. Stop, and push nothing to it. |
-| `MAX_ROUNDS` | driver-only | — | 6 | yes | The drive spent its round budget (`--max-rounds`, with any rounds a re-arm granted) without converging. Read the handoff file before re-arming: a re-arm a person asks for grants one more round budget. |
+| `MAX_ROUNDS` | driver-only | — | 6 | yes | The drive spent its round budget (`--max-rounds`, with any rounds a re-arm granted) without converging. Read the handoff file before re-arming: a re-arm a person asks for grants one more round budget, never past the pull request's round ceiling (`drive.max_total_rounds`), whose spending parks the drive instead. |
 | `REVIEWER_FAILED` | state | 7 | 7 | yes | The reviewer's check failed or says the review did not complete. The drive stops. The dispatcher can retry a neutral check that reports an incomplete review and escalate repeated stops on that head. |
 | `HITL_PARKED` | state | 8 | 8 | yes | Everything left waits on a person's decision, each framed on its thread or, for a park with no thread, as a pull-request comment `answer <key>`, or the drive parked itself on structural churn (class `structural-churn`), a park that holds even live work. The drive does not wake itself: once every one is answered, re-arm it. |
 | `PR_CONFLICTING` | state | 9 | 9 | yes | The pull request conflicts with its base and has no other workable finding, or the drive parked itself on structural churn on a conflicting pull request, whose live work then waits for that answer; `drive.ts` ends with it once its conflict-repair passes are spent. Merge the base in, then re-arm. |
