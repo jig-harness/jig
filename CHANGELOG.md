@@ -404,6 +404,20 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.317.1] - 2026-11-27
+
+### Fixed
+
+- The dispatcher's board, the merge-ready announcement and `jig ask` now
+  follow a pull request's labels, review threads, review requests and
+  latest reviews past their first page, up to three pages each under the
+  read's deadline, as they already follow check contexts. A pull request
+  with more than 100 review threads (a long drive with an AI reviewer) no
+  longer stays partial while it is open: it is placed on all of its
+  threads, and an unresolved thread on a later page keeps it out of Ready to
+  merge with the count named. Past the cap, on a moved head or past the
+  deadline the card stays partial and names the connection and the reason.
+
 ## [0.317.0] - 2026-11-27
 
 ### Fixed
@@ -11525,7 +11539,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.317.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.317.1...HEAD
+[0.317.1]: https://github.com/jig-harness/jig/compare/v0.317.0...v0.317.1
 [0.317.0]: https://github.com/jig-harness/jig/compare/v0.316.0...v0.317.0
 [0.316.0]: https://github.com/jig-harness/jig/compare/v0.315.0...v0.316.0
 [0.315.0]: https://github.com/jig-harness/jig/compare/v0.314.3...v0.315.0
