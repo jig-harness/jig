@@ -113,7 +113,7 @@ function startupReport(
     schema: CLOSING_REPORT_SCHEMA,
     concluded:
       startup === "quota"
-        ? "The pass could not start: its account met a usage limit, and the account is walled."
+        ? "The pass stopped at its account's usage limit, and the account is walled."
         : startup === "sign-in"
           ? "The vendor refused the account's sign-in, and the account backs off."
           : startup === "breaker"

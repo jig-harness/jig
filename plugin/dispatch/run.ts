@@ -82,7 +82,8 @@
  * wall, which lifts at the reset the notice states (`wall_backoff` from now
  * when that does not read); otherwise its cause stays unknown and the
  * account backs off for `wall_backoff`. An unreadable transcript scan
- * withholds that classification.
+ * withholds that classification. A failing pass, however long it ran, whose
+ * output or transcript ends on the usage notice is a quota wall too.
  * Before it records the exit of a pass that left no closing report, the
  * wrapper records what it saw as the report, `by: wrapper` (a pass that
  * could not start, one it stopped at its deadline, any steward pass), or,
@@ -191,7 +192,7 @@ import {
   quickStartupDeath,
   type SignInPhrase,
   type StartupFailure,
-  startupReset,
+  startupWall,
 } from "./lib/session-startup.ts";
 import { settleUnreported } from "./lib/end-report.ts";
 import {
@@ -623,14 +624,16 @@ function startupOf(
     return {};
   const started = ran.started;
   const exited = ran.exited;
-  if (
-    readResult(record.id) !== null ||
-    ran.code === 0 ||
-    ran.said ||
-    passedStartupWindow(started, exited)
-  ) {
+  if (readResult(record.id) !== null || ran.code === 0 || ran.said) {
     recordWorkingStartup(record, isoFromMs(started));
     return {};
+  }
+  if (passedStartupWindow(started, exited)) {
+    recordWorkingStartup(record, isoFromMs(started));
+    // A pass that worked, then stopped at its account's usage limit, walls it too.
+    const output = startupOutputOf(ran);
+    const late = failedStartup(record, ran.code, started, output, exited);
+    return late === "quota" ? { startup: late } : {};
   }
   if (!quickStartupDeath(record, ran.code, started, exited)) return {};
   let phrase: SignInPhrase | undefined;
@@ -682,26 +685,18 @@ function sessionOf(record: LaunchRecord, ran: Ran): string | null {
 }
 
 /**
- * Wall an account before releasing the slot held by an unstarted session:
- * until the reset its usage notice states, else `wall_backoff` from now. The
- * notice is read before the write, so only the write's failure is the
- * wall's to absorb.
+ * Wall an account before releasing the slot held by a pass that stopped on
+ * its account (`startupWall`). The notice is read before the write, so only
+ * the write's failure is the wall's to absorb.
  */
 function recordStartupWall(
   record: LaunchRecord,
   startup: string,
   output: string,
 ): boolean {
-  const now = currentMs();
-  const notice = startup === "quota" ? startupReset(output, now) : null;
+  const wall = startupWall(record, startup, output, currentMs());
   try {
-    writeWall({
-      account: record.account,
-      vendor: record.vendor,
-      configDir: record.configDir,
-      resetAt: notice?.resetAt ?? isoFromMs(now + record.wallBackoffMs),
-      source: startupWallSource(startup, notice),
-    });
+    writeWall(wall);
     return true;
   } catch (error) {
     swallow(
@@ -710,18 +705,6 @@ function recordStartupWall(
     );
     return false;
   }
-}
-
-/** Where a startup wall's reset came from: the notice's reset, or the backoff, naming a notice clause that did not read. */
-function startupWallSource(
-  startup: string,
-  notice: ReturnType<typeof startupReset>,
-): string {
-  if (notice?.resetAt != null)
-    return `session could not start (${startup}); the usage notice's reset`;
-  if (notice?.clause != null)
-    return `session could not start (${startup}); the notice's "${notice.clause.slice(0, 80)}" did not read; wall_backoff`;
-  return `session could not start (${startup}); wall_backoff`;
 }
 
 /** Keep the wrapper's explanation or transcript before publishing the exit. */

@@ -497,12 +497,11 @@ function ordinaryStartupClass(
 ): { class: OutcomeClass; reason: string } | null {
   if (state.kind !== "ended" || state.exit.startup === undefined) return null;
   const quota = state.exit.startup === "quota";
-  const startup = quota
-    ? "vendor usage-limit notice"
-    : "quick unsuccessful exit without a transcript";
   return {
     class: quota ? "quota wall" : "refused",
-    reason: `session could not start: ${startup}; exit ${state.exit.code}`,
+    reason: quota
+      ? `session stopped on a vendor usage-limit notice; exit ${state.exit.code}`
+      : `session could not start: quick unsuccessful exit without a transcript; exit ${state.exit.code}`,
   };
 }
 
