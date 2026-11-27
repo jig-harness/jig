@@ -280,9 +280,14 @@ The collector includes the runs root even when the host uses another runtime.
 A process owner is collectible only when every launch it names, and every
 other launch naming the checkout, has a readable recorded exit and every
 recorded wrapper, supervisor and child identity is dead. Missing or malformed
-records keep the checkout. A process-owned checkout also listed by Orca is kept
-as unverified until its runtime ownership is reconciled, so neither runtime's
-session evidence can be skipped. Git, pull request, ignored-content, process-holder
+records keep the checkout. Orca lists every Git worktree of a repository whose
+external worktrees it shows, so a process-owned checkout is often listed by
+Orca too. It is then collectible only when both runtimes' evidence says it is
+finished: the process owner's (above) and Orca's registry, which must show no
+agent at work and no live terminal in it. Neither runtime's evidence stands
+in for the other's. A registry that cannot be read, or that counts a terminal
+whose agents it cannot report, keeps the checkout as unverified and the reason
+names Orca. Git, pull request, ignored-content, process-holder
 and idleness checks still apply. A checkout without a pull request may be
 collected only when its commits are already on the base branch.
 

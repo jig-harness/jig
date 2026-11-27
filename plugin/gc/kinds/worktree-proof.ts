@@ -247,11 +247,15 @@ export function canonicalWorktree(path: string): string {
  * (working, or waiting on a person) keeps the worktree, whatever git says.
  * A registry that cannot be read, is cut short, or does not list the worktree
  * proves nothing, so collection is refused. Null when Orca reports no agent
- * still at work in it.
+ * still at work in it. With `terminals`, a live terminal, or one whose agents
+ * Orca cannot report, keeps the worktree too, and so does a row that does not
+ * count them: a process-owned worktree Orca also lists has no session
+ * admission to stand in for a terminal, so Orca's own count is the evidence.
  */
 export async function orcaLiveness(
   command: string,
   path: string,
+  terminals = false,
 ): Promise<Proof | null> {
   const unread = (why: string): Proof => ({
     state: "unverified",
@@ -289,7 +293,29 @@ export async function orcaLiveness(
         reason: `Orca's registry reports an agent ${agent.state} in the worktree`,
       };
   }
-  return null;
+  return terminals ? terminalLiveness(row, unread) : null;
+}
+/** What the row's terminal counts say: live, unreadable, or null when it shows none. */
+function terminalLiveness(
+  row: Record<string, unknown>,
+  unread: (why: string) => Proof,
+): Proof | null {
+  const live = row.liveTerminalCount;
+  const unreadable = row.unverifiableTerminalCount;
+  if (!isCount(live) || !isCount(unreadable))
+    return unread("lists no terminal counts for it");
+  if (live > 0)
+    return {
+      state: "live",
+      reason: `Orca's registry reports ${live} live terminal(s) in the worktree`,
+    };
+  return unreadable > 0
+    ? unread(`lists ${unreadable} terminal(s) whose agents it cannot report`)
+    : null;
+}
+/** A terminal count Orca's registry gave: a whole number, never negative. */
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 /** The runtime that manages a worktree, when one does: Orca, by its command. */
 export interface WorktreeRuntime {
