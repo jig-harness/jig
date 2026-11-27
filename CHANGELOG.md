@@ -404,6 +404,20 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.314.1] - 2026-11-27
+
+### Fixed
+
+- When Jira's changelog has no record of the current assignment, Jig explains that Jira omits assignments made at issue creation and asks a trusted person to unassign and reassign the issue to start a pickup.
+- The working-directory probe that dispatch, the idle-worktree checks and
+  `jig gc` use no longer reports every worktree as unknowable while a
+  container runs under the host user's uid: a process whose directory its
+  owner cannot read is now accepted when it runs in a nested PID namespace
+  (more than one pid on `NStgid:` in its `/proc/<pid>/status`), as one
+  holding privileges its owner lacks already was. A process of the probe's
+  own PID namespace whose directory cannot be read still makes the answer
+  unknown.
+
 ## [0.314.0] - 2026-11-27
 
 The dispatcher's outcome log now records a need's life, and every record names the release that ran it.
@@ -11377,7 +11391,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.314.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.314.1...HEAD
+[0.314.1]: https://github.com/jig-harness/jig/compare/v0.314.0...v0.314.1
 [0.314.0]: https://github.com/jig-harness/jig/compare/v0.313.4...v0.314.0
 [0.313.4]: https://github.com/jig-harness/jig/compare/v0.313.3...v0.313.4
 [0.313.3]: https://github.com/jig-harness/jig/compare/v0.313.2...v0.313.3

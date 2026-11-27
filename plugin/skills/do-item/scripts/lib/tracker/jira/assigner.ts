@@ -66,7 +66,7 @@ async function latestAssigner(
     .at(-1);
   if (latest === undefined)
     throw new AssignerUnknown(
-      `issue ${key}: its changelog holds no assignment of ${who}`,
+      `issue ${key}: its changelog holds no assignment of ${who}. Jira omits assignments made at issue creation. To start a pickup, have a trusted person unassign the issue and assign it again.`,
     );
   return latest.author;
 }
