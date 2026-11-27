@@ -2267,6 +2267,21 @@ code when `dashboard.front` names one; `--uninstall --yes` removes it.
 See [the dashboard's availability and host checks](README.md#the-dispatcher)
 and [opening it from a phone](phone-access.md).
 
+The dashboard only reads. Besides the page, `GET /state`, `GET /rows`,
+`GET /receipt` and `GET /pr`, it answers two reads over what the host
+recorded, each as `{ok: true, value}` or a coded failure, under the same token
+and host checks:
+
+- `GET /scoreboard[?window=7d|30d]`: six numbers per release that ran
+  something in the window (merged pull requests, answers per merge, median need
+  age, session-hours not converged, idle slot-hours, median rounds), the newest
+  release first, and the end causes new under a release (absent for 14 days,
+  then three runs under one release). A record counts under the release it
+  names; those that name none count under `null`. Idle slot-hours are an
+  estimate from the accounts' caps in the newest line.
+- `GET /checks`: the live-check report, or the failure `checks-unavailable`
+  while this release has none.
+
 Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
 under `~/.local/state/jig/dispatch/`. The files there are `receipts/` (one
 per run), `walls/` (each account's usage-limit wall, which lifts at its
