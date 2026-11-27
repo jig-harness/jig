@@ -41,6 +41,8 @@ import { input as lineInput, REPO, report } from "./line-fixtures.ts";
 import { planInput } from "./plan-input-fixtures.ts";
 import { BRANCH, endedPickup, idleSessions } from "./ended-pickup-fixtures.ts";
 import { SLUG } from "./fixtures.ts";
+import { ok } from "../../shared/outcome.ts";
+import type { SharedClaim } from "../../shared/records/shared.ts";
 import { parseMs } from "../../shared/time.ts";
 
 const NOW = parseMs("2026-11-14T17:14:00Z");
@@ -245,6 +247,123 @@ describe("a claimed item an open pull request carries", () => {
     expect(waiting.quiet).toContainEqual(
       expect.objectContaining({ target: "#12", class: "claimed-carried" }),
     );
+  });
+
+  describe("an unarmed drive another host already armed at its head", () => {
+    const asked = drive("unarmed", { ledger: "none", headSha: "abc123" });
+    asked.why =
+      "no drive ledger, and a person's drive label asks for one: arm a drive on any account";
+
+    /** Another host's launch claim on the drive at this head, ended on `exit`. */
+    function foreignClaim(exit: number): SharedClaim {
+      return {
+        id: 41,
+        stage: "drive",
+        login: "maintainer",
+        createdAt: "2026-11-14T16:00:00.000Z",
+        trusted: true,
+        says: ok({
+          pr: 31,
+          attempt: 1,
+          at: "2026-11-14T16:00:00.000Z",
+          run: "tick",
+          action: "rearm",
+          record: "20261114T160000Z-f0f0f0f0",
+          host: "other-host",
+          owner: true,
+          facts: factsOf(asked),
+          change: null,
+          conflictStop: false,
+          end: {
+            state: "ended",
+            at: "2026-11-14T16:05:00.000Z",
+            exit,
+            outcome: null,
+          },
+          legacy: false,
+        }),
+      };
+    }
+
+    /** The tick beside that claim, with `drives` as the ledgers read and `launches` as this host's records. */
+    function planWith(
+      claim: SharedClaim,
+      drives: DrivenPr[] = [asked],
+      extra: ReadRecord[] = [],
+    ) {
+      const pickups = input(stalled([pr()], drives));
+      return planTick(
+        planInput(NOW, {
+          ...pickups,
+          drives,
+          launches: [...pickups.launches, ...extra],
+          shared: {
+            host: "this-host",
+            drives: new Map([[31, ok([claim])]]),
+          },
+        }),
+      );
+    }
+
+    for (const [name, exit, words] of [
+      [
+        "armed",
+        1,
+        "armed it at this head; it is not armed again until its head moves",
+      ],
+      [
+        "refused",
+        DRIVE_EXIT.SINGLE_INSTANCE_LOCK,
+        "drive.ts's refusal, on these same ledger facts",
+      ],
+    ] as const) {
+      it(`is a stalled pickup naming that host's ${name} claim`, () => {
+        const plan = planWith(foreignClaim(exit));
+        const stall = plan.actions.find((a) => a.cause === "stalled");
+        expect(stall?.target).toBe("#12");
+        expect(stall?.reason).toContain(
+          "host other-host's launch claim (comment 41, attempt 1",
+        );
+        expect(stall?.reason).toContain(words);
+        expect(plan.quiet).not.toContainEqual(
+          expect.objectContaining({ class: "claimed-carried" }),
+        );
+      });
+    }
+
+    it("reads no foreign claim while one of this host's launches holds the drive", () => {
+      const holding: ReadRecord = {
+        record: {
+          id: "20261114T170000Z-0123abcd",
+          action: "rearm",
+          repo: SLUG,
+          item: null,
+          pr: 31,
+          released: false,
+          createdAt: "2026-11-14T17:00:00.000Z",
+          facts: factsOf(asked),
+          attempts: [],
+        } as unknown as LaunchRecord,
+        state: { kind: "pending" },
+        result: null,
+      };
+      const plan = planWith(foreignClaim(1), [asked], [holding]);
+      expect(plan.actions.filter((a) => a.cause === "stalled")).toEqual([]);
+      expect(plan.quiet).toContainEqual(
+        expect.objectContaining({ target: "#12", class: "claimed-carried" }),
+      );
+    });
+
+    it("names the spent arm as the reason on an automation pull request: idleness never holds an unarmed drive", () => {
+      const idle: DrivenPr = {
+        ...asked,
+        evidence: { ...asked.evidence, automationIdle: true },
+      };
+      const plan = planWith(foreignClaim(1), [idle]);
+      const stall = plan.actions.find((a) => a.cause === "stalled");
+      expect(stall?.reason).toContain("armed it at this head");
+      expect(stall?.reason).not.toContain("automation pull request");
+    });
   });
 
   it("raises no stall need while the drive is parked on a question, stopped, or undecided this tick, and is reported with the drive's state", () => {
