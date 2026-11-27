@@ -1,3 +1,7 @@
+import {
+  EPIC_PICKUP_REASON,
+  isEpicPickup,
+} from "../../../shared/epic-pickup.ts";
 import type { PlanMergeReader } from "./plan-merges.ts";
 /**
  * Served assignments, inherited through epics, with metadata kept at
@@ -328,6 +332,7 @@ export async function freshServedPickup(
       !ready(issue, tracker.stateName("blocked", issue.nativeType ?? null))
     )
       return "the served item is no longer open and not started";
+    if (isEpicPickup(issue)) return EPIC_PICKUP_REASON;
     if (policy.repoScope?.invalid !== undefined)
       return `the repository scope is invalid: ${policy.repoScope.invalid}`;
     const elsewhere = otherRepoLabel(issue.labels, policy.repoScope);
@@ -657,6 +662,8 @@ async function placeNode(
   const { tracker, identity, options, cache, view } = ctx;
   const { issue, ancestor } = node;
   const unplace = unplacer(issue, options.trackerNamespace, found);
+  if (isEpicPickup(issue) && !(issue.isEpic && issue.hasOpenChildren))
+    return void unplace(EPIC_PICKUP_REASON);
   const carried = carriedRelations(view, issue.identifier);
   const meta = await metadata(tracker, issue, identity, cache, carried, view);
   // A kept no-assigner answer is reported as the item's unreadable row.
@@ -960,8 +967,7 @@ async function freshPulledAuthority(
 ): Promise<string | null> {
   if (issue.assignee !== null)
     return "the pulled blocker has acquired an assignee";
-  if (issue.hasOpenChildren || issue.isEpic)
-    return "the pulled blocker has become an epic";
+  if (isEpicPickup(issue)) return "the pulled blocker has become an epic";
   const origin = await tracker.poolIssue(blockingFor);
   if (
     origin === null ||

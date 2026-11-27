@@ -1,3 +1,7 @@
+import {
+  EPIC_PICKUP_REASON,
+  isEpicPickup,
+} from "../../../shared/epic-pickup.ts";
 import { factoryWalkView } from "./factory-walk-view.ts";
 /**
  * The pickups the tracker wants: the items assigned to the repository's
@@ -613,6 +617,7 @@ export async function freshPickup(
       : pooled;
   }
   if (issue === undefined) return unassigned;
+  if (isEpicPickup(issue)) return EPIC_PICKUP_REASON;
   // The assignment authorizes the pickup: who made it is read again, so a
   // reassignment by someone without write access, or an assigner whose access
   // ended since the plan, starts nothing.

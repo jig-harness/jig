@@ -88,6 +88,24 @@ function memory(
 }
 
 describe("claimIssue", () => {
+  it.each([{ isEpic: true }, { hasOpenChildren: true }, { hasChildren: true }])(
+    "refuses to claim an epic before writing",
+    async (facts) => {
+      const { tracker, log } = memory("Todo", []);
+      const poolIssue = tracker.poolIssue;
+      tracker.poolIssue = async (key) => {
+        const before = await poolIssue(key);
+        return before === null ? null : { ...before, ...facts };
+      };
+      expect(await claimIssue(tracker, "#5")).toMatchObject({
+        outcome: "refused",
+        why: "epic",
+        reason: "#5 is an epic; epics are worked through their children",
+      });
+      expect(log).toEqual([]);
+    },
+  );
+
   it("refuses an issue whose pull request is open, writing nothing", async () => {
     const states = parseTrackerConfig({
       issue_tracker: { states: { pr_open: "Awaiting Review" } },

@@ -11,6 +11,10 @@
  */
 
 import {
+  EPIC_PICKUP_REASON,
+  isEpicPickup,
+} from "../../../../shared/epic-pickup.ts";
+import {
   CANONICAL_STATES,
   type CanonicalState,
   type StateContext,
@@ -45,6 +49,7 @@ export type ClaimResult =
       outcome: "refused";
       issue: string;
       why:
+        | "epic"
         | "in_progress"
         | "pr_open"
         | "assigned"
@@ -132,6 +137,21 @@ export function blockedStateRefusal(
   };
 }
 
+/** A named refusal shared by direct, served and inherited claims. */
+export function epicClaimRefusal(
+  key: string,
+  issue: PoolIssue | null,
+): ClaimResult | null {
+  return issue !== null && isEpicPickup(issue)
+    ? {
+        outcome: "refused",
+        issue: key,
+        why: "epic",
+        reason: `${key} is an epic; ${EPIC_PICKUP_REASON}`,
+      }
+    : null;
+}
+
 /** What a repository's configuration adds to a claim's own rules. */
 export interface ClaimRules {
   /** `do_item.claim_from`: the canonical states work may start from; `null` keeps every open state. */
@@ -177,6 +197,8 @@ export async function claimIssue(
           ? `another claim landed first: ${key} is now assigned to ${names(landed)}`
           : `another claim landed first: ${key} is no longer assigned to ${me.name}`,
     };
+  if (after !== null && isEpicPickup(after))
+    return { outcome: "stood_down", issue: key, reason: EPIC_PICKUP_REASON };
   if (after === null || !sameName(after.state.name, started))
     return {
       outcome: "stood_down",
@@ -202,6 +224,7 @@ export async function claimStillStands(
   ]);
   if (holders.length !== 1 || holders[0]?.id !== claimed.claimant.id)
     return `its assignee is no longer ${claimed.claimant.name} alone`;
+  if (issue !== null && isEpicPickup(issue)) return EPIC_PICKUP_REASON;
   if (issue === null || !sameName(issue.state.name, claimed.state))
     return `it is now ${issue?.state.name ?? "gone"}, not ${claimed.state}`;
   return null;
@@ -214,6 +237,8 @@ function startAdmission(
   before: PoolIssue,
   rules: ClaimRules,
 ): { started: string } | { refusal: ClaimResult } {
+  const epic = epicClaimRefusal(key, before);
+  if (epic) return { refusal: epic };
   const context = before.nativeType ?? null;
   const started = tracker.stateName("in_progress", context);
   if (started === null)

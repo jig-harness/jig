@@ -2,6 +2,7 @@
 import {
   type ClaimResult,
   blockedStateRefusal,
+  epicClaimRefusal,
   claimFromRefusal,
 } from "./claim.ts";
 import { blocksWithin } from "./blocker-chain.ts";
@@ -354,6 +355,8 @@ export async function claimServedIssue(
   key: string,
   options: ServedClaim,
 ): Promise<ClaimResult> {
+  const epic = epicClaimRefusal(key, await tracker.poolIssue(key));
+  if (epic) return epic;
   const claimFrom = options.claimFrom ?? null;
   if (claimFrom === null) return claimServed(tracker, key, options);
   const start = await tracker.getIssue(key);
@@ -461,6 +464,7 @@ async function startedStandDown(
   const after = await tracker.poolIssue(key);
   if (
     !after ||
+    epicClaimRefusal(key, after) !== null ||
     after.truncated.length > 0 ||
     hold(after.labels, options) ||
     after.state.name.toLowerCase() !==
@@ -547,6 +551,8 @@ async function assignInherited(
   if (!inherits || !assignUnassigned) return null;
   const outsideNow = await stateBeforeAssignment(tracker, key, options);
   if (outsideNow) return outsideNow;
+  const epic = epicClaimRefusal(key, await tracker.poolIssue(key));
+  if (epic) return epic;
   const assignment = await assignUnassigned(key, user);
   if (assignment.assigned) return null;
   return {
@@ -578,6 +584,8 @@ async function claimServed(
   if (outside) return outside;
   if (
     !before ||
+    before.isEpic ||
+    (before.children?.length ?? 0) > 0 ||
     !waiting(before.state.type) ||
     hold(before.labels, options) ||
     !only(await tracker.assignees(key), user)
