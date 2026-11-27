@@ -12,11 +12,9 @@ import { slotSettings } from "../../shared/resource-lock.ts";
 
 /**
  * The slots the lock admits at the host's load other than its own runs.
- * `settled` is the distinct runs holding the lock long enough for the load
- * average to show them: their cost is taken out, since a slot they release
- * goes to the next run only while the rest of the host leaves room for it. A
- * holder too fresh to show is not in the average, so nothing is taken out
- * for it.
+ * The load reading already holds the runs settled on the lock at their real
+ * cost, so no configured cost is taken out for them (`_settled`, their count,
+ * is kept for callers).
  * Each run then counts from none, at its full cost, as the lock counts a run
  * too fresh for the average to show. Memory is read as it stands; below the
  * floor the lock admits one run at a time. `env` is the environment the lock
@@ -25,7 +23,7 @@ import { slotSettings } from "../../shared/resource-lock.ts";
  */
 export function lockSlots(
   host: HostLoad,
-  settled: number,
+  _settled: number,
   env: Record<string, string | undefined>,
 ): Outcome<number, "lock-slots-unread"> {
   const settings = attempt(
@@ -36,17 +34,14 @@ export function lockSlots(
   if (!settings.ok) return settings;
   const { slots, adaptive, policy } = settings.value;
   if (!adaptive) return { ok: true, value: slots };
-  const rest: HostLoad = {
-    ...host,
-    load1:
-      host.load1 === null
-        ? null
-        : Math.max(0, host.load1 - policy.runCost * Math.max(0, settled)),
-  };
+  // The measured load already holds every settled holder at its real cost,
+  // which is never assumed from the configured one; counting each run from
+  // none on top of it errs toward fewer slots, never toward a queue the lock
+  // would refuse.
   let count = 0;
   while (
     count < slots &&
-    roomForOneMore(rest, { count, fresh: count }, policy).admit
+    roomForOneMore(host, { count, fresh: count }, policy).admit
   )
     count++;
   return { ok: true, value: Math.max(1, count) };

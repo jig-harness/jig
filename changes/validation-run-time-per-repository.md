@@ -13,7 +13,8 @@ release: patch
   repository's full gate runs. A repository without its own measure keeps
   every repository's figure.
 - The gauge's runs at once is now at least the slots the test lock's own
-  load and memory check admits on the host as the tick reads it, with the
-  lock's settled holders taken out of the load, up to `LOCK_SLOTS`, and the
-  observed peak where that is higher; the reason names the count, or why it
-  was not read.
+  load and memory check admits on the host as the tick reads it, up to
+  `LOCK_SLOTS`, and the observed peak (itself held to the current
+  `LOCK_SLOTS`) where that is higher; the reason names the count, or why it
+  was not read. A `LOCK_SLOTS` or `LOCK_STATIC_SLOTS` the lock refuses holds
+  the pass at admission, as an unusable `LOCK_TIMEOUT` does.

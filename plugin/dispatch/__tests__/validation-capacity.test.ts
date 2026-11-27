@@ -744,7 +744,7 @@ describe("validation forecast", () => {
       1,
       {},
     );
-    expect(slots).toEqual({ ok: true, value: 3 });
+    expect(slots).toEqual({ ok: true, value: 2 });
     const withSlots = measureValidation(
       samples,
       [...passes, ...inFlight],

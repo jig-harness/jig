@@ -1,7 +1,10 @@
 /** Adapt the host's lock and launch records to the validation forecast. */
 import { dirname, resolve } from "node:path";
 import { lockPlace } from "../../shared/resource-lock-waits.ts";
-import { MAX_TIMEOUT_SECONDS } from "../../shared/resource-lock.ts";
+import {
+  MAX_TIMEOUT_SECONDS,
+  slotSettings,
+} from "../../shared/resource-lock.ts";
 import type { HostLoad } from "../../shared/host-load.ts";
 import { readResourceLockSamples } from "../../shared/resource-lock-samples.ts";
 import { parseMs } from "../../shared/time.ts";
@@ -33,6 +36,8 @@ export interface ValidationLoad {
   waitSource: string;
   /** Set when the launch's `LOCK_TIMEOUT` is one the lock refuses: validation fails at once. */
   waitInvalid?: string;
+  /** Set when the lock's slot settings are ones it refuses: validation fails at once. */
+  slotsInvalid?: string;
   driveDeadlineMs: number;
   admittedRuns: number;
 }
@@ -153,13 +158,22 @@ export function readValidationLoad(
     }),
   );
   const slots = slotsOf(host, lock, env);
+  let ceiling: number | null = null;
+  let slotsInvalid: string | undefined;
+  try {
+    ceiling = slotSettings(env).slots;
+  } catch (error) {
+    slotsInvalid = `${error instanceof Error ? error.message : String(error)}, so a launched pass's validation is refused by the lock`;
+  }
   const measured = measureValidation(
     samples,
     passes,
     "slots" in slots ? slots.slots : null,
+    ceiling,
   );
   return {
     measured,
+    ...(slotsInvalid === undefined ? {} : { slotsInvalid }),
     ...("unread" in slots ? { slotsUnread: slots.unread } : {}),
     demand:
       "unread" in lock
@@ -293,11 +307,15 @@ function driveReserve(
   // to validation is therefore time in which the pickup's whole service
   // waves can finish. Keep only the runs that can still occupy the lock
   // when that downstream drive asks for it.
+  // A wave lasts as long as the longest run in it, so the pickup's own run
+  // time bounds the credit when it exceeds every repository's.
+  const waveMs = Math.max(
+    state.measured.runMs,
+    state.measured.candidateRunMs ?? 0,
+  );
   const completedBeforeDrive =
     state.measured.concurrency *
-    Math.floor(
-      state.measured.kinds.drive.timeToValidationMs / state.measured.runMs,
-    );
+    Math.floor(state.measured.kinds.drive.timeToValidationMs / waveMs);
   // Work already forecast ahead of this pickup spends the early service
   // first. Only remaining service can complete the pickup before a drive
   // reaches validation; otherwise the pickup is incorrectly given the same
@@ -343,6 +361,8 @@ export function validationHold(
   // occupancy, so it is judged before the occupancy reading.
   if (load.waitInvalid !== undefined)
     return `waits on validation capacity: ${load.waitInvalid}`;
+  if (load.slotsInvalid !== undefined)
+    return `waits on validation capacity: ${load.slotsInvalid}`;
   const { demand } = load;
   if ("unread" in demand) return null;
   const state = {

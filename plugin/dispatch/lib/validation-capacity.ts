@@ -299,6 +299,7 @@ export function measureValidation(
   samples: readonly ValidationSample[],
   passes: readonly ValidationPass[],
   lockSlots?: number | null,
+  ceiling?: number | null,
 ): ValidationMeasurements {
   const defaults: string[] = [];
   const measuredOr = (
@@ -315,7 +316,10 @@ export function measureValidation(
     15 * 60_000,
     "run time",
   );
-  const peak = concurrencyOf(samples);
+  const seen = concurrencyOf(samples);
+  // The lock's current hard ceiling bounds what an older sample's peak says.
+  const peak =
+    seen !== null && ceiling != null ? Math.min(seen, ceiling) : seen;
   const slots = lockSlots ?? null;
   const concurrency = measuredOr(
     slots === null ? peak : Math.max(peak ?? 0, slots),

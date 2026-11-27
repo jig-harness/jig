@@ -281,10 +281,25 @@ describe("the lock's load-derived slot count", () => {
     expect(lockSlots(host(30, 16), 2, {})).toEqual({ ok: true, value: 1 });
   });
 
-  test("the runs holding the lock are not counted as load other work puts on the host", () => {
-    // A load of 8 is two runs of 4: the rest of the host is idle.
-    expect(lockSlots(host(8, 16), 2, {})).toEqual({ ok: true, value: 3 });
-    expect(lockSlots(host(8, 16), 0, {})).toEqual({ ok: true, value: 1 });
+  test("holders are never assumed to carry the configured run cost", () => {
+    // Load 12 on 16 cores: the lock refuses a second run, whatever the holders weigh.
+    expect(lockSlots(host(12, 16), 2, {})).toEqual({ ok: true, value: 1 });
+  });
+
+  test("the lock's current ceiling bounds an older sample's peak", () => {
+    const sample = (i: number) => ({
+      workspace: null,
+      requestedAtMs: 0,
+      waitMs: 0,
+      holdMs: 60_000 + i,
+    });
+    const measured = measureValidation(
+      Array.from({ length: 8 }, (_, i) => sample(i)),
+      [],
+      null,
+      1,
+    );
+    expect(measured.concurrency).toBe(1);
   });
 
   test("below the memory floor the lock admits one run at a time", () => {
@@ -368,11 +383,8 @@ describe("the lock's load-derived slot count", () => {
         {},
         host(4, 16),
       ).measured.lockSlots;
-    // One settled holder, an exclusive one across every slot, is the whole
-    // load of 4: the rest of the host is idle.
-    expect(read(1)).toBe(3);
-    // A holder too fresh to show, or a reading that does not say, leaves the
-    // load as it reads.
+    // A settled holder is in the reading at its real load: nothing is taken out.
+    expect(read(1)).toBe(2);
     expect(read(0)).toBe(2);
     expect(read()).toBe(2);
   });
@@ -409,6 +421,23 @@ describe("the lock's load-derived slot count", () => {
     );
     expect(lockUnread.slotsUnread).toBe("the test lock not read: denied");
     expect(validationGauge(lockUnread, 1).fill).toBeNull();
+  });
+});
+
+describe("a refused slot setting", () => {
+  test("holds a pass at admission instead of forecasting from the peak", () => {
+    const load = readValidationLoad(
+      [],
+      { runs: [], holders: 0, settled: 0 } as never,
+      0,
+      90 * MINUTE,
+      { LOCK_SLOTS: "99" },
+      host(0, 16),
+    );
+    expect(load.slotsInvalid).toContain("LOCK_SLOTS");
+    expect(validationHold(load, 1, "pickup", 60 * MINUTE)).toContain(
+      "LOCK_SLOTS",
+    );
   });
 });
 
