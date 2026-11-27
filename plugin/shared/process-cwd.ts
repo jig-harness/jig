@@ -13,7 +13,9 @@
  *
  * The nested-namespace boundary: `NStgid:` lists a process's pid in each
  * PID namespace from the probe's own down to the process's, so more than
- * one pid means a namespace nested under the probe's. A container's
+ * one pid means a namespace nested under the probe's, provided `/proc`
+ * is the probe's own namespace's (checked before any such process is
+ * accepted: the probe's own `NStgid:` holds one pid). A container's
  * processes also live in a mount namespace of their own, outside what the
  * probe can inspect, and no session a host starts runs only there: a
  * sandbox an agent starts itself (an unprivileged user namespace, as
@@ -223,6 +225,16 @@ function deniedReason(pid: string, status: RunResult): string | null {
   return nested ? null : `process ${pid}'s working directory cannot be read`;
 }
 
+/**
+ * Whether `/proc` is the probe's own PID namespace's: the probe's own
+ * `/proc/self/status` names one pid on `NStgid:`. With more, procfs belongs
+ * to an ancestor namespace and a process's pid count says nothing about
+ * where it runs relative to the probe.
+ */
+function ownProcfs(own: RunResult): boolean {
+  return own.status === 0 && /^NStgid:[ \t]*\d+[ \t]*$/m.test(own.stdout);
+}
+
 /** The probe's listing, or why it is no answer, with the pids its errors say it could not read. */
 function readProbe(
   listed: RunResult,
@@ -247,7 +259,12 @@ export function cwdHolders(run: ProbeRun, top: string): CwdAnswer {
   if ("unknown" in probed) return probed;
   const { pids, unread, partial } = parseCwdListing(probed.listing, top);
   if (partial.length > 0) return partialAnswer(partial[0] as string);
-  for (const pid of new Set([...probed.denied, ...unread])) {
+  const unreadable = new Set([...probed.denied, ...unread]);
+  if (unreadable.size > 0 && !ownProcfs(run(["cat", "/proc/self/status"])))
+    return {
+      unknown: "the /proc mounted here is not the probe's own PID namespace's",
+    };
+  for (const pid of unreadable) {
     const why = deniedReason(pid, run(["cat", `/proc/${pid}/status`]));
     if (why !== null) return { unknown: why };
   }
@@ -374,7 +391,16 @@ export async function scanCwds(
   const entries = parseEntries(probed.listing);
   const unread = entries.filter((e) => e.unread).map((e) => e.pid);
   let blocked: string | null = null;
-  for (const pid of new Set([...probed.denied, ...unread])) {
+  const unreadable = new Set([...probed.denied, ...unread]);
+  if (unreadable.size > 0) {
+    const why = stopped();
+    if (why !== null) return { unknown: why };
+    const own = await read(["cat", "/proc/self/status"], undefined);
+    if (own === null) return { unknown: "the process scan was stopped" };
+    if (!ownProcfs(own))
+      blocked = "the /proc mounted here is not the probe's own PID namespace's";
+  }
+  for (const pid of blocked === null ? unreadable : []) {
     const why = stopped();
     if (why !== null) return { unknown: why };
     const status = await read(["cat", `/proc/${pid}/status`], undefined);

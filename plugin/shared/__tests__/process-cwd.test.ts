@@ -30,6 +30,8 @@ const statusFile = (permitted: string, nstgid?: string) =>
     0,
     `Name:\tx\nTgid:\t42\n${nstgid === undefined ? "" : `NStgid:\t${nstgid}\n`}CapInh:\t0\nCapPrm:\t${permitted}\nCapEff:\t0\n`,
   );
+/** The probe's own status in its own PID namespace: one pid on `NStgid:`. */
+const SELF = result(0, "Name:\tcat\nTgid:\t9\nNStgid:\t9\n");
 const NO_CAPS = "0000000000000000";
 
 /** A runner answering the listing with `listing`, and each `cat /proc/<pid>/status` from `statuses`. */
@@ -44,6 +46,7 @@ function runner(
       expect(cwd).toBe("/");
       return listing;
     }
+    if (argv[1] === "/proc/self/status") return statuses.self ?? SELF;
     const pid = /^\/proc\/(\d+)\/status$/.exec(argv[1] ?? "")?.[1] ?? "";
     return (
       statuses[pid] ??
@@ -457,6 +460,22 @@ describe("scanCwds and holdersIn", () => {
     expect(limits[0]).toBeLessThanOrEqual(5);
   });
 
+  test("is no answer when /proc is an ancestor namespace's, whatever a denied process shows", async () => {
+    const listing = result(
+      1,
+      "/proc/1\t/\n/proc/42\t\n",
+      "find: '/proc/42/cwd': Permission denied\n",
+    );
+    const { run } = runner(listing, {
+      "42": statusFile(NO_CAPS, "42\t1"),
+      self: result(0, "Name:\tcat\nNStgid:\t90\t9\n"),
+    });
+    const answer = cwdHolders(run, TOP);
+    expect(answer).toHaveProperty("unknown");
+    const scan = await scanCwds(async (argv, cwd) => run(argv, cwd));
+    expect(holdersIn(scan, TOP)).toHaveProperty("unknown");
+  });
+
   test("stops waiting for a read in flight when the signal fires", async () => {
     const abort = new AbortController();
     const scan = scanCwds(() => new Promise<never>(() => undefined), {
@@ -508,9 +527,10 @@ describe("scanCwds and holdersIn", () => {
     expect(
       answers.filter((a) => "pids" in a && a.pids.length > 0),
     ).toHaveLength(1);
-    // The listing, and the one denied process's status; never one per tree.
+    // The listing, the probe's own status and the one denied process's; never one per tree.
     expect(calls).toEqual([
       ["sh", "-c", expect.any(String)],
+      ["cat", "/proc/self/status"],
       ["cat", "/proc/42/status"],
     ]);
   });
