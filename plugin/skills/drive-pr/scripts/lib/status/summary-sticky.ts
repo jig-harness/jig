@@ -139,12 +139,8 @@ function considerComment<T extends { body?: string | null | undefined }>(
   // reviewed nothing, so it neither replaces the selection nor raises the
   // ordering watermark that would hide a later finding-bearing summary.
   if (!carries && reviewedSha === "") {
-    if (state.selected === undefined) {
-      state.selected = comment;
-      state.round = round;
-      state.reviewedSha = reviewedSha;
-      state.carriesFindings = carries;
-    }
+    if (state.selected === undefined)
+      select(state, comment, { round, reviewedSha, carries });
     return;
   }
   // A round number alone never retires findings: a clean replacement of a
@@ -162,18 +158,28 @@ function considerComment<T extends { body?: string | null | undefined }>(
   // malformed finding-bearing summary. An unorderable malformed comment
   // remains a stopper until the reviewer repairs its protocol evidence.
   if (advances && round !== null && reviewedSha !== "")
-    state.malformed = state.malformed.filter(
-      (malformed) => malformed.round === null || round <= malformed.round,
-    );
+    retireOrderedMalformed(state, round);
   // A newer declared round is the reviewer's explicit replacement boundary.
   if (round !== null)
     state.highestRound = Math.max(state.highestRound ?? round, round);
-  if (advances) {
-    state.selected = comment;
-    state.round = round;
-    state.reviewedSha = reviewedSha;
-    state.carriesFindings = carries;
-  }
+  if (advances) select(state, comment, { round, reviewedSha, carries });
+}
+
+function retireOrderedMalformed<T>(state: Selection<T>, round: number): void {
+  state.malformed = state.malformed.filter(
+    (malformed) => malformed.round === null || round <= malformed.round,
+  );
+}
+
+function select<T>(
+  state: Selection<T>,
+  comment: T,
+  chosen: { round: number | null; reviewedSha: string; carries: boolean },
+): void {
+  state.selected = comment;
+  state.round = chosen.round;
+  state.reviewedSha = chosen.reviewedSha;
+  state.carriesFindings = chosen.carries;
 }
 
 function isSkipOnly(comment: { body?: string | null | undefined }): boolean {
