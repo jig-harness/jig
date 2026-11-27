@@ -499,29 +499,35 @@ export function validationDemand(
   const unestimated: TimedRuns[] = [];
   const atLockRunMs: number[] = [];
   for (const pass of inFlight) {
-    const held =
-      pass.workspace === null ? [] : (active.get(pass.workspace) ?? []);
-    if (pass.workspace !== null) active.delete(pass.workspace);
+    const atLock = takeHeld(active, pass);
     const runMs = runMsFor(measured, pass.repo);
-    if (runMs !== measured.runMs) atLockRunMs.push(...held.map(() => runMs));
+    if (runMs !== measured.runMs)
+      atLockRunMs.push(...Array<number>(atLock).fill(runMs));
     const made = completed.get(pass)?.count ?? 0;
-    const owed = passDemand(
-      measured,
-      pass,
-      { made, atLock: held.length },
-      nowMs,
-    );
+    const owed = passDemand(measured, pass, { made, atLock }, nowMs);
     toArrive += owed.runs;
     if (owed.arrival !== null) arrivals.push(owed.arrival);
     if (owed.unestimated !== null) unestimated.push(owed.unestimated);
   }
-  const timed = {
-    ...(unestimated.length > 0 ? { unestimated } : {}),
-    ...(atLockRunMs.length > 0 ? { atLockRunMs } : {}),
+  const demand: ValidationDemand = {
+    atLock: lockRuns.length,
+    toArrive,
+    ...(nowMs === undefined ? {} : { arrivals }),
   };
-  return nowMs === undefined
-    ? { atLock: lockRuns.length, toArrive, ...timed }
-    : { atLock: lockRuns.length, toArrive, arrivals, ...timed };
+  if (unestimated.length > 0) demand.unestimated = unestimated;
+  if (atLockRunMs.length > 0) demand.atLockRunMs = atLockRunMs;
+  return demand;
+}
+
+/** The runs at the lock from `pass`'s workspace, taken so no other pass counts them. */
+function takeHeld(
+  active: Map<string, unknown[]>,
+  pass: ValidationPass,
+): number {
+  if (pass.workspace === null) return 0;
+  const held = active.get(pass.workspace)?.length ?? 0;
+  active.delete(pass.workspace);
+  return held;
 }
 
 interface QueueEstimate {

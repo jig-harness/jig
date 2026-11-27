@@ -415,11 +415,11 @@ describe("the lock's load-derived slot count", () => {
 describe("the replays with the slot count read", () => {
   test("November 14: a host the passes loaded still holds launches before the deadline wave", () => {
     // The ticks of the November 14 replay (validation-capacity.test.ts),
-    // with the slot count read from a host other work had loaded past its
-    // cores. The receipts carry no load figure: this reading reproduces what
-    // the lock did that day, admitting one run at a time once a holder
-    // released. On a host with room for more, the count reads higher and the
-    // forecast admits more; the peak the samples saw would raise it as much.
+    // with the slot count read from a host other work has loaded past its
+    // cores. The receipts carry no load figure, so this reading is chosen so
+    // that the lock admits one run at a time once a holder releases. On a
+    // host with room for more, the count reads higher and the forecast
+    // admits more, as a peak in the samples would.
     const replay = [
       { holding: 4, waiting: 4, openPickups: 3, openDrives: 1, launches: 4 },
       { holding: 5, waiting: 13, openPickups: 7, openDrives: 3, launches: 6 },
