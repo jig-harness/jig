@@ -1555,10 +1555,14 @@ The driver sets `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` for spawned passes.
 Claude Code removes background tool parameters and auto-backgrounding under
 this setting; other runtimes follow the foreground rule below. A process a
 pass leaves running when it exits (a shell `&`, a background terminal) is
-found by the `$JIG_DRIVE_PASS_TOKEN` it inherits and stopped. When the pass
-left work in the tree, it is restarted with a notice that starts
+found by the `$JIG_DRIVE_PASS_TOKEN` it inherits and stopped, and the pass is
+restarted, with or without work in the tree, with a notice that starts
 `RESTARTED AFTER A PASS LEFT A BACKGROUND TASK`, within
-`drive.pass_deadline_retries`. If a pass
+`drive.pass_deadline_retries`. Only Linux's `/proc` shows the token: on
+another POSIX host only a process still in the pass's process group is
+found, and on Windows none is, so never rely on that cleanup there. A
+scan that cannot look, or cannot inspect a process of the driver's own user,
+stops the drive with its locks held. If a pass
 exits `0` with uncommitted edits and this tree's unverified holds from the
 current round, the driver stops as [`WORKTREE_UNCLEAN`](../../protocol/drive-exits.md), naming the
 unfinished held fixes. This stop does not claim convergence.

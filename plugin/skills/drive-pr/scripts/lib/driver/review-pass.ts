@@ -125,23 +125,22 @@ export async function runReviewPassPhase(
     launchOf(process.env) ?? "",
     round,
   );
+  const disposition = passExitDisposition(passRes.code);
+  // What a pass that exited 0 left running is stopped, or witnessed gone,
+  // before any verdict from its finish record releases the drive's locks.
+  const pending =
+    disposition.kind === "ok"
+      ? await restartAfterPendingTasks(context, round, baseEnv, passHandle?.pid)
+      : null;
+  if (typeof pending === "number") return pending;
   if (hasCheckRunsUnreadableFinish(finish, passRes.timedOut))
     return await stopOnPassListing(context, finish, round);
-  const disposition = passExitDisposition(passRes.code);
+  if (pending !== null) return pending;
   // A pass that completed has acted on what it was carried. Until one does (a
   // quota wall retried, say), every pass is told again. Whether it pushed what
   // it inherited is not taken on its word: the next gate measures the tree
   // again (`unpushed.ts`) and hands on any commit it left unpushed.
   if (disposition.kind === "ok") {
-    // A task the pass left running in the background reports to nobody:
-    // restart the pass rather than stop over the fixes it never shipped.
-    const pending = await restartAfterPendingTasks(
-      context,
-      round,
-      baseEnv,
-      passHandle?.pid,
-    );
-    if (pending !== null) return pending;
     const incomplete = await incompletePassExit(context.pr);
     if (incomplete !== null) return incomplete;
     context.settleWorktree = false;

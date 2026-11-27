@@ -9,19 +9,22 @@
  * process group or session included. When the pass exits `0`, a live process
  * still carrying the token, or still in the pass's process group, after a
  * short grace for one already on its way out, is such a task. The driver
- * stops it, witnessed. When the pass left work in the tree (uncommitted
- * edits, unpushed commits, an open git operation), the driver restarts the
- * pass in the same tree and tells it what happened, within the restarts the
- * drive has for a pass killed at its deadline (`drive.pass_deadline_retries`,
- * one count for both causes). A pass that left nothing to finish, or one past
- * the budget, is taken as a completed pass.
+ * stops it, witnessed, binding each signal to the process's creation
+ * identity. It then restarts the pass in the same tree and tells it what
+ * happened, within the restarts the drive has for a pass killed at its
+ * deadline (`drive.pass_deadline_retries`, one count for both causes); the
+ * stopped task may have been validation, so a clean tree does not excuse the
+ * restart. A pass past the budget is taken as a completed pass. A scan that
+ * cannot look, or cannot inspect a process of the driver's user, stops the
+ * drive with its locks held. Only the program name of a task is recorded.
  *
  * The token is read from `/proc/<pid>/environ`, so the environment scan is
  * Linux's; another POSIX host finds only the pass's own process group, and a
  * Windows host finds nothing.
  */
 import { randomUUID } from "node:crypto";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { basename } from "node:path";
 
 import { errnoCode, swallow } from "../../../../../shared/errors.ts";
 import { processTable } from "../../../../../shared/process-table.ts";
@@ -53,15 +56,35 @@ export function newPassToken(): string {
 /** A process a pass left running. */
 export interface PendingTask {
   pid: number;
-  /** Its command line, shortened; `''` when it could not be read. */
+  /**
+   * Its program name only, never its arguments, which can carry credentials;
+   * `''` when it could not be read.
+   */
   command: string;
+  /** Its process group; `null` when the scan did not read it. */
+  pgrp: number | null;
+  /** Its creation identity, which a signal is bound to; `''` when unread. */
+  start: string;
 }
 
-/** The processes a scan found, or why it could not look. */
+/**
+ * The processes a scan found, or why it could not look. A scan that found
+ * some processes but could not inspect others says so in `unknown` too: a
+ * process it could not inspect may still be running.
+ */
 export type PendingScan = { tasks: PendingTask[] } | { unknown: string };
 
-/** How much of a task's command line the driver prints. */
-const COMMAND_CHARS = 160;
+/** How much of a program name the driver prints. */
+const COMMAND_CHARS = 80;
+
+/** A command line reduced to its program name, shortened. */
+function programOf(commandLine: string): string {
+  const first = commandLine.trim().split(/\s+/)[0] ?? "";
+  const name = basename(first);
+  return name.length > COMMAND_CHARS
+    ? `${name.slice(0, COMMAND_CHARS - 1)}…`
+    : name;
+}
 
 /** `/proc`, or the fixture tree a test points `DRIVE_PR_PROC_ROOT` at. */
 const procRoot = (): string => process.env.DRIVE_PR_PROC_ROOT ?? "/proc";
@@ -83,7 +106,9 @@ function procFile(dir: string, file: string): string | null {
  * parentheses may hold spaces and parentheses, so fields are read after the
  * last `)`.
  */
-function statOf(text: string): { state: string; pgrp: number } | null {
+function statOf(
+  text: string,
+): { state: string; pgrp: number; start: string } | null {
   const close = text.lastIndexOf(")");
   if (close === -1) return null;
   const fields = text
@@ -93,41 +118,93 @@ function statOf(text: string): { state: string; pgrp: number } | null {
   const pgrp = Number.parseInt(fields[2] ?? "", 10);
   return fields[0] === undefined || !Number.isFinite(pgrp)
     ? null
-    : { state: fields[0], pgrp };
+    : { state: fields[0], pgrp, start: fields[19] ?? "" };
+}
+
+/** What a look at one `/proc` entry found. */
+type Carried =
+  | { kind: "no" }
+  | { kind: "unknown"; why: string }
+  | { kind: "yes"; pgrp: number; start: string };
+
+/** Whether the entry at `dir` belongs to the user the driver runs as. */
+function ownedByUs(dir: string): boolean {
+  try {
+    return typeof process.getuid !== "function"
+      ? true
+      : statSync(dir).uid === process.getuid();
+  } catch (err) {
+    swallow(err, `${dir} could not be inspected`);
+    return false;
+  }
 }
 
 /**
  * Whether the live process at `dir` carries `entry` in its environment or
- * is in process group `pgid`; a zombie or an unreadable process does not.
+ * is in process group `pgid`; a zombie or a process of another user does not.
+ * A process of this user whose environment cannot be read is `unknown`: it
+ * may carry the token.
  */
-function carries(dir: string, entry: string | null, pgid?: number): boolean {
+function carries(dir: string, entry: string | null, pgid?: number): Carried {
   const text = procFile(dir, "stat");
   const stat = text === null ? null : statOf(text);
-  if (stat === null || stat.state === "Z") return false;
-  if (pgid !== undefined && stat.pgrp === pgid) return true;
-  if (entry === null) return false;
-  return (procFile(dir, "environ") ?? "").split("\0").includes(entry);
+  if (stat === null || stat.state === "Z") return { kind: "no" };
+  const yes: Carried = { kind: "yes", pgrp: stat.pgrp, start: stat.start };
+  if (pgid !== undefined && stat.pgrp === pgid) return yes;
+  if (entry === null) return { kind: "no" };
+  const environ = environOf(dir);
+  if (environ === "denied")
+    return ownedByUs(dir) && startedSinceDriver(stat.start)
+      ? { kind: "unknown", why: `${dir}/environ could not be read` }
+      : { kind: "no" };
+  if (environ === null) return { kind: "no" };
+  return environ.split("\0").includes(entry) ? yes : { kind: "no" };
 }
 
-/** A process's command line from `/proc`, shortened. */
+/**
+ * Whether a process with creation identity `start` began after this driver
+ * did, so it could descend from a pass the driver spawned; one that began
+ * earlier (a long-running agent or key daemon) cannot. Unreadable or
+ * incomparable identities count as later.
+ */
+function startedSinceDriver(start: string): boolean {
+  const own = statOf(procFile(`${procRoot()}/self`, "stat") ?? "")?.start;
+  const mine = Number(own);
+  const theirs = Number(start);
+  return !(Number.isFinite(mine) && Number.isFinite(theirs) && theirs < mine);
+}
+
+/**
+ * `dir/environ`: its text, `"denied"` when the system refused it to us, or
+ * `null` when it is gone or absent.
+ */
+function environOf(dir: string): string | "denied" | null {
+  try {
+    return readFileSync(`${dir}/environ`, "utf8");
+  } catch (err) {
+    const code = errnoCode(err);
+    if (code === "EACCES" || code === "EPERM") return "denied";
+    swallow(err, `${dir}/environ is not there`);
+    return null;
+  }
+}
+
+/** A process's program name from `/proc`. */
 function procCommand(dir: string): string {
-  const text = (procFile(dir, "cmdline") ?? "")
-    .split("\0")
-    .filter((part) => part !== "")
-    .join(" ");
-  return text.length > COMMAND_CHARS
-    ? `${text.slice(0, COMMAND_CHARS - 1)}…`
-    : text;
+  return programOf(
+    (procFile(dir, "cmdline") ?? "").split("\0").find((p) => p !== "") ?? "",
+  );
 }
 
 /**
  * The live processes carrying `token` in their environment or in process
- * group `pgid`, read from `/proc`; `null` when `/proc` cannot be listed.
+ * group `pgid`, read from `/proc`, with the reasons a process of this user
+ * could not be inspected; `null` when `/proc` cannot be listed.
  */
 export function pendingTasksLinux(
   token: string,
   pgid: number | undefined,
-): PendingTask[] | null {
+): { tasks: PendingTask[]; uninspected: string[] } | null {
   let entries: string[];
   try {
     entries = readdirSync(procRoot());
@@ -137,14 +214,22 @@ export function pendingTasksLinux(
   }
   const entry = token === "" ? null : `${PASS_TOKEN_VARIABLE}=${token}`;
   const tasks: PendingTask[] = [];
+  const uninspected: string[] = [];
   for (const name of entries) {
     const pid = /^[0-9]+$/.test(name) ? Number.parseInt(name, 10) : null;
     if (pid === null || pid === process.pid) continue;
     const dir = `${procRoot()}/${name}`;
-    if (carries(dir, entry, pgid))
-      tasks.push({ pid, command: procCommand(dir) });
+    const found = carries(dir, entry, pgid);
+    if (found.kind === "yes")
+      tasks.push({
+        pid,
+        command: procCommand(dir),
+        pgrp: found.pgrp,
+        start: found.start,
+      });
+    else if (found.kind === "unknown") uninspected.push(`pid ${pid}`);
   }
-  return tasks;
+  return { tasks, uninspected };
 }
 
 /**
@@ -156,7 +241,12 @@ export async function pendingTasks(
   pgid: number | undefined,
 ): Promise<PendingScan> {
   const viaProc = pendingTasksLinux(token, pgid);
-  if (viaProc !== null) return { tasks: viaProc };
+  if (viaProc !== null)
+    return viaProc.uninspected.length > 0
+      ? {
+          unknown: `${viaProc.uninspected.join(", ")} of this user could not be inspected and may carry the token`,
+        }
+      : { tasks: viaProc.tasks };
   if (pgid === undefined)
     return {
       unknown: "/proc cannot be read and the pass had no process group",
@@ -172,7 +262,9 @@ export async function pendingTasks(
     )
     .map((row) => ({
       pid: row.pid,
-      command: row.args.slice(0, COMMAND_CHARS),
+      command: programOf(row.args),
+      pgrp: row.pgid,
+      start: row.start,
     }));
   return { tasks };
 }
@@ -196,9 +288,45 @@ async function waitForTasks(
   const until = currentMs() + waitMs;
   for (;;) {
     const scan = await pendingTasks(token, pgid);
-    if ("unknown" in scan || scan.tasks.length === 0) return scan;
+    // An unknown answer is retried until the wait ends: a process on its way
+    // out can be unreadable for a moment.
+    if ("tasks" in scan && scan.tasks.length === 0) return scan;
     if (currentMs() >= until) return scan;
     await sleep(POLL_MS);
+  }
+}
+
+/**
+ * The tasks of `found` still the processes the scan saw: the same pid with
+ * the same creation identity. A pid whose identity cannot be compared is not
+ * signalled, since it may have been reused.
+ */
+async function stillSame(found: PendingTask[]): Promise<PendingTask[]> {
+  const rows = await rowsOf();
+  return found.filter((task) => {
+    if (task.start === "") return false;
+    if (rows === "proc") {
+      const text = procFile(`${procRoot()}/${task.pid}`, "stat");
+      const stat = text === null ? null : statOf(text);
+      return stat !== null && stat.start === task.start && stat.state !== "Z";
+    }
+    return (
+      rows !== null &&
+      rows.some((row) => row.pid === task.pid && row.start === task.start)
+    );
+  });
+}
+
+/** Which source identities are re-read from: `/proc` where it lists. */
+async function rowsOf(): Promise<
+  "proc" | Awaited<ReturnType<typeof processTable>>
+> {
+  try {
+    readdirSync(procRoot());
+    return "proc";
+  } catch (err) {
+    swallow(err, "/proc cannot be listed; re-reading identities from ps");
+    return await processTable();
   }
 }
 
@@ -260,9 +388,13 @@ async function signalAndWait(
   const found = await pendingTasks(token, pgid);
   if ("unknown" in found) return found.unknown;
   if (found.tasks.length === 0) return null;
+  // Only a process still the one the scan saw is signalled, and the group
+  // only while one of its members is: a reused id belongs to someone else.
+  const same = await stillSame(found.tasks);
   // The group itself first: it reaches a member started since the scan.
-  if (pgid !== undefined) signalOf(-pgid, sig);
-  for (const task of found.tasks) {
+  if (pgid !== undefined && same.some((task) => task.pgrp === pgid))
+    signalOf(-pgid, sig);
+  for (const task of same) {
     const why = signalOf(task.pid, sig);
     if (why !== null) refused.push(why);
   }
@@ -305,12 +437,12 @@ const PERSON_STOP_EXIT = 1;
 
 /**
  * After a pass that exited `0` with `passEnv`: stop any task it left running
- * and, when it left work in the tree, restart the pass within the drive's
- * restart budget (`"continue"`). `null` when it left no task, when none can
- * be told, when it left no work, or when the budget is spent: the drive then
- * goes on as for any completed pass. An exit when a task could not be
- * witnessed gone (the locks stay held) or a directive arrived while the pass
- * ran.
+ * and restart the pass within the drive's restart budget (`"continue"`),
+ * whatever the tree holds: the task may have been validation the pass never
+ * saw finish. `null` when it left no task or when the budget is spent: the
+ * drive then goes on as for any completed pass. An exit when a task could
+ * not be witnessed gone or not be looked for (the locks stay held) or a
+ * directive arrived while the pass ran.
  */
 export async function restartAfterPendingTasks(
   context: DriveRoundContext,
@@ -325,9 +457,11 @@ export async function restartAfterPendingTasks(
   const scan = await waitForTasks(token, pgid, KILL_ESCALATE_MS);
   if ("unknown" in scan) {
     console.error(
-      `could not look for processes the pass on round ${round} left running: ${scan.unknown}.`,
+      `could not look for processes the pass on round ${round} left running: ${scan.unknown}. NOT releasing this drive's locks: a live task under a released lock could go on writing the tree. Stop what the pass left, then re-arm.`,
     );
-    return null;
+    context.held.length = 0;
+    driverRuntime.stopLeftWork = await measureStop();
+    return PERSON_STOP_EXIT;
   }
   const { tasks } = scan;
   if (tasks.length === 0) return null;
@@ -349,12 +483,9 @@ export async function restartAfterPendingTasks(
   if (typeof mailbox === "number") return mailbox;
   const leftovers = await passLeftovers();
   for (const line of describeLeftovers(leftovers)) console.error(`  ${line}`);
-  if (inheritedHeadOf(leftovers) === "") {
-    console.error(
-      "  The pass left no work in the tree: taking it as a completed pass.",
-    );
-    return null;
-  }
+  // A clean tree does not show the stopped task was irrelevant: it may have
+  // been the gates of a fix the pass had already pushed. The pass runs again
+  // either way, within the budget.
   return await admitRestart(context, round, tasks, leftovers);
 }
 

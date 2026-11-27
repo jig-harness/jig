@@ -133,19 +133,19 @@ describe("a successful pass that left a background task running", () => {
     expect(await backgroundGone(name, 2)).toBe(true);
   }, 120_000);
 
-  it("is not restarted when it left no work in the tree, and its task is still stopped", async () => {
+  it("is restarted even when it left no work in the tree, since the stopped task may have been validation", async () => {
     const name = "pending-bg-no-work";
     const script = passScript(name, 1, false, false);
     const r = await runDrive(
       work,
-      ["--no-head-sync", "--max-rounds", "1", "--", process.execPath, script],
+      ["--no-head-sync", "--max-rounds", "2", "--", process.execPath, script],
       trackedTree(name),
     );
     expectSpawnExit({ ...r, stdout: null }, 6);
     expect(r.stderr).toContain("still running in the background");
     expect(r.stderr).toContain("Stopped them.");
-    expect(r.stderr).toContain("left no work in the tree");
-    expect(r.stderr).not.toContain("pass restart 1");
+    expect(r.stderr).toContain("pass restart 1 of 2");
+    expect(r.stderr).toContain("RESTART_NOTICE_2");
     expect(await backgroundGone(name, 1)).toBe(true);
   }, 120_000);
 });
