@@ -186,18 +186,20 @@ export function scopeOf(
 }
 
 /**
- * Keeps one report of each item that needs a repository label: repositories
+ * Keeps one report of each item that needs a repository label, and of each
+ * epic whose execution plan holds children for a person: repositories
  * sharing a tracker team all read the same unplaced item, and the first
  * report of it (in the order given) is the one a person sees.
  */
-export function dropRepeatedLabelNeeds(
+export function dropRepeatedItemNeeds(
   reports: readonly { unplaced: Unplaced[] }[],
 ): void {
   const seen = new Set<string>();
   for (const report of reports)
     report.unplaced = report.unplaced.filter((u) => {
-      if (u.cause !== "needs-repository-label") return true;
-      const key = `${u.source ?? ""}:${u.target}`;
+      if (u.cause !== "needs-repository-label" && u.cause !== "epic-plan")
+        return true;
+      const key = `${u.cause}:${u.source ?? ""}:${u.target}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;

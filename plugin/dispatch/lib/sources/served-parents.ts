@@ -10,6 +10,7 @@ import type { PickupReads } from "../pickup-reads.ts";
 import { trackerScope, type HeldIssue } from "./served-reads.ts";
 import { planMergeEvidence, type PlanMergeReader } from "./plan-merges.ts";
 import { planKeys, servedPlan } from "./served-plan.ts";
+import { childPlanHold, type PlanNeeds } from "./epic-plan-needs.ts";
 import { freshReads } from "./fresh-reads.ts";
 
 /**
@@ -213,7 +214,8 @@ async function readParent(
 /**
  * Tracker completion never substitutes for directly verified delivering
  * merges. Without `reads`, the check reads fresh: straight from the tracker,
- * a plan's steps in one batch.
+ * a plan's steps in one batch. An ancestor whose plan no rule will let
+ * release the item records its need in `needs`.
  */
 export async function servedParentHold(
   tracker: Tracker,
@@ -223,6 +225,7 @@ export async function servedParentHold(
   reads: ParentReads = freshReads(tracker),
   merges?: PlanMergeReader,
   personHold: (key: string) => string | null = () => null,
+  needs?: PlanNeeds,
 ): Promise<string | null> {
   const seen = new Set<string>();
   let child = issue;
@@ -240,8 +243,8 @@ export async function servedParentHold(
     const { parent, parentBody } = read;
     const held = await parentStepHold(
       reads,
-      child.identifier,
-      parent.identifier,
+      child,
+      parent,
       parentBody.description,
       block,
       async (description, block) =>
@@ -249,6 +252,7 @@ export async function servedParentHold(
           merged: [],
           held: {},
         },
+      needs,
     );
     if (held !== null) return held;
     child = parent;
@@ -275,26 +279,21 @@ async function planLive(
 
 async function parentStepHold(
   reads: ParentReads,
-  child: string,
-  parent: string,
+  child: PoolIssue,
+  parent: PoolIssue,
   description: string,
   block?: string,
   merges?: PlanMergeReader,
+  needs?: PlanNeeds,
 ): Promise<string | null> {
   const selected = servedPlan(
     description,
-    parent,
+    parent.identifier,
     await planLive(reads, description, block),
     block,
     await merges?.(description, block),
   );
-  if (selected.error) return selected.error;
-  if (!selected.present) return null;
-  const held = selected.holds[child];
-  if (held) return held;
-  return selected.order.includes(child)
-    ? null
-    : "waiting on the epic execution plan";
+  return childPlanHold(selected, child, parent, needs) ?? null;
 }
 
 /** The complete ancestor chain, with the direct child whose slot each parent owns. */

@@ -33,7 +33,49 @@ export interface ServedPlan {
   present: boolean;
   order: string[];
   holds: Record<string, string>;
+  /** The issues the plan places as its steps, when it could be applied. */
+  steps?: string[];
   error?: string;
+}
+
+/** A plan step's state as a reader of the Queue says it. */
+const STATE_WORDS: Readonly<Record<string, string>> = {
+  triage: "in triage",
+  backlog: "in the backlog",
+  unstarted: "not started",
+  started: "in progress",
+  completed: "done",
+  canceled: "canceled",
+};
+
+/**
+ * Why a plan step does not start yet: the predecessors it waits on, each
+ * with its state (its plan edges not yet released and the other steps the
+ * tracker records as blocking it), or the plan alone when none is named.
+ */
+function waitReason(
+  plan: ExecutionPlan,
+  step: string,
+  live: Record<string, LiveIssue>,
+  merged: readonly string[],
+): string {
+  const done = (key: string) => live[key]?.state === "completed";
+  const state = (key: string) =>
+    STATE_WORDS[live[key]?.state ?? ""] ?? "its state not read";
+  const waits = new Map<string, string>();
+  for (const edge of plan.edges) {
+    if (edge.to !== step) continue;
+    if (edge.completion === "merged") {
+      if (!merged.includes(`${edge.from}>${edge.to}`))
+        waits.set(edge.from, `${state(edge.from)}, until its merge is proven`);
+    } else if (!done(edge.from)) waits.set(edge.from, state(edge.from));
+  }
+  const blockers = live[step]?.blockedBy;
+  for (const key of Array.isArray(blockers) ? blockers : [])
+    if (!done(key) && !waits.has(key)) waits.set(key, state(key));
+  if (waits.size === 0) return "waiting on the epic execution plan";
+  const named = [...waits].map(([key, how]) => `${key} (${how})`);
+  return `waiting on ${named.join(", ")}, which the epic execution plan puts before it`;
 }
 export function servedPlan(
   description: string,
@@ -81,14 +123,15 @@ export function servedPlan(
             )
           : item.blockedBy,
       };
-    const order = eligibleIssues(plan, inPlan, evidence?.merged ?? []);
+    const merged = evidence?.merged ?? [];
+    const order = eligibleIssues(plan, inPlan, merged);
     const holds: Record<string, string> = {};
     for (const step of plan.steps)
       if (!order.includes(step.issue))
-        holds[step.issue] = "waiting on the epic execution plan";
+        holds[step.issue] = waitReason(plan, step.issue, inPlan, merged);
     mergeHolds(plan, evidence?.held ?? {}, holds);
     for (const gate of humanGates(plan)) holds[gate.issue] = PERSON_HOLD;
-    return { present: true, order, holds };
+    return { present: true, order, holds, steps: [...steps] };
   } catch (error) {
     return { present: true, order: [], holds: {}, error: failureText(error) };
   }

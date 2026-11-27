@@ -384,9 +384,11 @@ export interface Unplaced {
   url?: string | null;
   /**
    * Set for an item only a person can settle: assigned by someone who cannot
-   * write, or placed in no repository by its labels and no default.
+   * write, placed in no repository by its labels and no default, or an epic
+   * whose execution plan holds children no rule will release
+   * (`sources/epic-plan-needs.ts`).
    */
-  cause?: "assigner-cannot-write" | "needs-repository-label";
+  cause?: "assigner-cannot-write" | "needs-repository-label" | "epic-plan";
   /** A person held this pickup on the dispatcher host. */
   pickupHold?: { by: string; at: string };
   /** Set when reading the record failed (a comment listing, an unreadable ledger), as against a state the record legitimately leaves unplaced. */

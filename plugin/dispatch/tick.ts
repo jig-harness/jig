@@ -103,7 +103,7 @@ import { settleFollowups } from "./lib/followup-outcomes.ts";
 import { type ReadRecord, readLaunches } from "./lib/launches.ts";
 import type { MachineConfig } from "./lib/machine-config.ts";
 import { PhaseTimer } from "./lib/phase-timer.ts";
-import { dropRepeatedLabelNeeds } from "./lib/sources/served-repo.ts";
+import { dropRepeatedItemNeeds } from "./lib/sources/served-repo.ts";
 import { dropRepeatedScopeFailures } from "./lib/sources/scope-failures.ts";
 import { processRuntime } from "./lib/runtime/process.ts";
 import { orcaRuntime } from "./lib/runtime/orca.ts";
@@ -578,7 +578,7 @@ async function actAll(
     return ["report" in observed ? observed.report : observed.opened.report];
   });
   dropRepeatedScopeFailures(reports);
-  dropRepeatedLabelNeeds(reports);
+  dropRepeatedItemNeeds(reports);
   for (const path of new Set(order)) {
     const observed = observe.observed.get(path);
     if (observed === undefined) continue;

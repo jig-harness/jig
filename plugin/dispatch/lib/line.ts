@@ -33,6 +33,7 @@ export { decisionOf } from "./line-decision.ts";
 import { holds, targetOf } from "./launches.ts";
 import {
   type QueuedFields,
+  unplacedNeedCause,
   unplacedQueueFields,
 } from "./person-pickup-holds.ts";
 import { SERIAL_UNDECIDED } from "./contention.ts";
@@ -519,12 +520,13 @@ function needsOf(
       ...heldSinceOf(action),
     };
   });
-  const refused = view.report.unplaced
-    .filter((u) => u.cause === "assigner-cannot-write")
-    .map(
-      (u): LineNeed => ({
-        cause: "assigner-cannot-write",
-        act: actOfNeed({ cause: "assigner-cannot-write" }),
+  const refused = view.report.unplaced.flatMap((u): LineNeed[] => {
+    const cause = unplacedNeedCause(u);
+    if (cause === null) return [];
+    return [
+      {
+        cause,
+        act: actOfNeed({ cause }),
         stage: "pickup",
         repo: view.slug,
         target: u.target,
@@ -540,16 +542,15 @@ function needsOf(
           view.input?.sessions,
           view.records,
         ),
-        since:
-          firstSeen(previous, view.slug, u.target, "assigner-cannot-write") ??
-          nowIso,
+        since: firstSeen(previous, view.slug, u.target, cause) ?? nowIso,
         reason: u.reason,
         question: null,
         decisions: [],
         notified: null,
         workspaces: [],
-      }),
-    );
+      },
+    ];
+  });
   return [...planned, ...refused];
 }
 
@@ -719,7 +720,7 @@ function queueOf(view: RepoView): LineQueued[] {
     .filter((u) => u.reason.startsWith(SERIAL_UNDECIDED))
     .map((u) => entry("held", "held", u.target, u.reason));
   const refused = unplaced
-    .filter((u) => u.record === "tracker")
+    .filter((u) => u.record === "tracker" && u.cause !== "epic-plan")
     .map((u) => queued(view, unplacedQueueFields(u)));
   return [planned, replayed, serial, undecided, labelled, refused].flat();
 }

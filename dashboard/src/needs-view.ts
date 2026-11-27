@@ -124,6 +124,7 @@ function recordedWord(n: LineNeed, tracker: Tracker): string {
     return "repeated no-cause stops (needs a person)";
   if (n.cause === "parked") return "parked for a person";
   if (n.cause === "assigner-cannot-write") return "assigner cannot write";
+  if (n.cause === "epic-plan") return "epic plan cannot place its children";
   if (n.cause === "tracker-unreachable")
     return `${itemWords(tracker).name ?? "issues"} unreachable`;
   if (n.cause === "account-sign-in") return "sign-in refused";

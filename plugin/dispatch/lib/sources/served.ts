@@ -52,8 +52,8 @@ import {
   type OpenBlocker,
   type PullOrigin,
 } from "./served-pull.ts";
+import { childPlanHold, type PlanNeeds } from "./epic-plan-needs.ts";
 import {
-  childPlanHold,
   type PassOver,
   parkedOnPerson,
   noteUnreadChild,
@@ -128,6 +128,7 @@ const itemOf = (i: PoolIssue) => ({
 /** What the walks of every served identity in one reading share about epics. */
 interface EpicState {
   walks: EpicWalk[];
+  planNeeds: PlanNeeds;
   /** Items whose failed read is already recorded, so a later visit does not report it again. */
   reported: Set<string>;
 }
@@ -235,6 +236,7 @@ export async function readServedPickups(
   const seen = new Set<string>();
   const shared: EpicState = {
     walks: [],
+    planNeeds: new Map(),
     reported: new Set(),
   };
   let limited: PersonReading["limited"] = null;
@@ -386,15 +388,13 @@ interface Pending {
   /** Set for a blocker pulled forward: the item whose authority it is worked on. */
   pull?: PullOrigin | undefined;
 }
-interface WalkContext {
+interface WalkContext extends EpicState {
   tracker: Tracker;
   identity: string;
   options: ServedOptions;
   cache: PickupReads;
   view: ServedView;
   seen: Set<string>;
-  walks: EpicWalk[];
-  reported: Set<string>;
 }
 /** What one node of the walk found, merged in the walk's order. */
 interface Found {
@@ -519,7 +519,7 @@ async function enqueueChildren(
   candidate: Candidate,
   found: Found,
 ): Promise<void> {
-  const { options } = ctx;
+  const { options, planNeeds } = ctx;
   const { children, unread } = await readChildren(ctx, meta, found);
   const planned = servedPlan(
     meta.description ?? "",
@@ -562,7 +562,7 @@ async function enqueueChildren(
       epicOrder: selection.present
         ? selection.order.indexOf(child.identifier)
         : undefined,
-      planHold: childPlanHold(selection, child.identifier),
+      planHold: childPlanHold(selection, child, issue, planNeeds),
     });
   }
 }
@@ -747,6 +747,7 @@ async function placeLeaf(
     view,
     options.mergeEvidence,
     options.personHold,
+    ctx.planNeeds,
   );
   if (parentHoldUnread(parentHold)) itemFailed(found);
   if (parentHold !== null) return void unplace(parentHold);
@@ -906,6 +907,7 @@ async function heldReason(
     view,
     options.mergeEvidence,
     options.personHold,
+    ctx.planNeeds,
   );
   if (parentHoldUnread(parentHold)) itemFailed(found);
   if (parentHold !== null) return parentHold;

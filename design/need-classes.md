@@ -77,6 +77,7 @@ below is a gap, and its weekly reflection finding proposes a row.
 | A step a person owes after a merge | a failed follow-up asking about a step | at the source; by an answer for the rest |
 | A follow-up that cannot reach the tracker | a failed follow-up on every merge of one repository | at the source; the credential by a person alone, once per account |
 | A pickup's scope or batch question | a pickup's question | by an answer |
+| An epic plan that cannot place its children | `epic-plan` on the epic; its children held naming it | by a person alone, once per epic and cause |
 | A label write failing | `action-failing` on many pull requests at once | at the source |
 | A branch to keep or delete | a failed follow-up | at the source (built) |
 | A drive stopped with no exit | `stopped-unknown` | at the source (built) |
@@ -378,6 +379,22 @@ need is raised for them. A question that names no member is about the whole
 batch: it is one need, on the batch's anchor, the other members wait on it
 with no need of their own, and its answer releases every member the record
 still holds that the pass never claimed.
+
+#### An epic plan that cannot place its children
+
+An epic's execution plan alone decides which of its children may start, and
+in two cases no rule will release a child it holds: the plan cannot be
+applied (its Execution Plan heading has no machine-readable block, it was
+written for another epic, or the tracker's `blocks` relations contradict
+it), or it does not name the child, such as a sub-issue added after the plan
+was written. Only a person settles either, by re-running the planner or
+removing the plan, so the epic raises one need of cause `epic-plan`, act
+Do, once per reading and cause, framed with both choices (#1144). Each
+child it holds says, in its Queue line, that it waits on that need; a child
+the plan leaves out reads "not in" the epic's plan, never as a wait. A plan
+step waiting on its predecessors is a wait that ends by itself: it names
+each predecessor and its state ("waiting on #12 (in progress)") and raises
+no need. Repositories that read the same tracker report the need once.
 
 #### A label write failing
 

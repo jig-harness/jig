@@ -8,6 +8,7 @@ import {
   type EpicWalk,
   type PassedChild,
 } from "./served-epics.ts";
+import { planNeedRows, type PlanNeeds } from "./epic-plan-needs.ts";
 
 export interface Candidate extends QueueItem {
   identity: string;
@@ -23,7 +24,7 @@ export interface Candidate extends QueueItem {
 
 export function finishAdmission(
   candidates: Candidate[],
-  shared: { walks: EpicWalk[] },
+  shared: { walks: EpicWalk[]; planNeeds?: PlanNeeds },
   out: ServedReading,
   options: ServedOptions,
 ): void {
@@ -47,6 +48,9 @@ export function finishAdmission(
     ),
     out.unplaced,
     passed,
+  );
+  out.unplaced.push(
+    ...planNeedRows(shared.planNeeds, options.trackerNamespace),
   );
   out.wanted = ranked.map((c) => ({
     key: c.issue.identifier,
