@@ -94,21 +94,12 @@ export async function applySteward(
   const skip = (status: string) => {
     report.steward = { status };
   };
-  if (!opened.owner) return skip("another host owns this repository");
-  if (!opened.stages.has("steward") || !config?.enabled)
-    return skip("steward is disabled on this host");
+  const off = notRunning(opened, config);
+  if (off !== null) return skip(off);
   await replayPending(state, repo.slug, report);
   const request = pendingStewardRequest(stateDb(state.root), repo.slug);
-  if (request !== null) {
-    // Only a launch created after the request, and past pending, answers it
-    // (`answerRequest`); a launch still pending may belong to another trigger or
-    // hold an acknowledgment nobody claimed yet, so the request waits for it.
-    if (answerRequest(state, repo.slug, request, skip)) return;
-    if (pendingLaunch(state, repo.slug))
-      return skip(
-        `${request.by}'s request is kept: a pending steward launch is not settled yet`,
-      );
-  }
+  if (request !== null && settleRequest(state, repo.slug, request, skip))
+    return;
   if (!mayStart(state, observation, request)) return;
   const judged = judgedMembers(
     repo.slug,
@@ -189,8 +180,42 @@ export async function applySteward(
   // A launch still pending may never have started a pass: the request stays
   // until the replay settles it (`answerRequest` takes it once the pass is
   // known to exist; a replay that takes the run back leaves it to start anew).
-  if (kept && (launch.outcome === "launched" || launch.outcome === "retried"))
+  if (kept && started(launch))
     takeRequestWith(state, repo.slug, request, record.id);
+}
+
+const started = (launch: LaunchOutcome): boolean =>
+  launch.outcome === "launched" || launch.outcome === "retried";
+
+/** Why the steward does not run on this repository at all, or `null`. */
+function notRunning(
+  opened: RepoObservation["opened"],
+  config: ApplyState["machine"]["steward"],
+): string | null {
+  if (!opened.owner) return "another host owns this repository";
+  if (!opened.stages.has("steward") || !config?.enabled)
+    return "steward is disabled on this host";
+  return null;
+}
+
+/**
+ * Only a launch created after the request, and past pending, answers it
+ * (`answerRequest`); a launch still pending may belong to another trigger or
+ * hold an acknowledgment nobody claimed yet, so the request waits for it.
+ * Whether the request needs no further handling this tick.
+ */
+function settleRequest(
+  state: ApplyState,
+  slug: string,
+  request: StewardRequest,
+  skip: (status: string) => void,
+): boolean {
+  if (answerRequest(state, slug, request, skip)) return true;
+  if (!pendingLaunch(state, slug)) return false;
+  skip(
+    `${request.by}'s request is kept: a pending steward launch is not settled yet`,
+  );
+  return true;
 }
 
 /** The vendor and complex-tier model the admitted account runs the steward on; `undefined` when the runtime has none. */
