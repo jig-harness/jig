@@ -178,7 +178,11 @@ export async function applySteward(
   report.launches.push(launch);
   const kept = state.records.some((r) => r.record.id === record.id);
   report.steward = stewardStatus(launch, kept, counts, hash, request);
-  if (kept) takeRequestWith(state, repo.slug, request, record.id);
+  // A launch still pending may never have started a pass: the request stays
+  // until the replay settles it (`answerRequest` takes it once the pass is
+  // known to exist; a replay that takes the run back leaves it to start anew).
+  if (kept && (launch.outcome === "launched" || launch.outcome === "retried"))
+    takeRequestWith(state, repo.slug, request, record.id);
 }
 
 /** The vendor and complex-tier model the admitted account runs the steward on; `undefined` when the runtime has none. */
