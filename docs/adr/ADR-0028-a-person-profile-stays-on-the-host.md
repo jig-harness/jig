@@ -131,8 +131,11 @@ access did not. The owner-only assumption is therefore checked, not hoped
 for: for every profile the reader reads, whether named by `serve[].profile`
 or found at `$JIG_HOME/person.yaml`, it refuses when the resolved file, its
 directory or any ancestor directory up to the filesystem root is writable by
-anyone but its owner or root. A sticky directory (such as `/tmp`) does not
-count as safe for this purpose.
+anyone but its owner or root, and when the file or any of those directories
+is owned by anyone but the user the reader runs as or root: a trusted owner
+is a named, closed set of two, never "whoever owns that level", so a profile
+beneath another user's private directory is refused. A sticky directory
+(such as `/tmp`) does not count as safe for this purpose.
 
 ### 2. One schedule and time-zone primitive (ruling 2A-i)
 
