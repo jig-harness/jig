@@ -1207,8 +1207,12 @@ names, which is the host's own identity. The dispatcher never removes `automatio
 or an `automation:` label, and never puts either on a person's pull
 request. With `only_labeled`, the dispatcher reads only the pull requests
 that carry a label of the set, which includes one a drive armed by hand
-has labelled `jig:driving`; `jig:hold` keeps such a pull request out. The labels must exist first, and no writer
-creates one: `jig dispatch labels [--repo <path>] [--yes]` lists the missing
+has labelled `jig:driving`; `jig:hold` keeps such a pull request out. The labels must exist first. A drive or a
+follow-up never creates one; the dispatcher's `--apply` run creates a
+missing label of the set or a missing marker label when a write it makes
+is refused for it, writes again in the same run, and when the signed-in
+account may not create labels, tells a person once for the repository,
+naming the label, rather than once per pull request. `jig dispatch labels [--repo <path>] [--yes]` lists the missing
 ones, the marker labels with them, and the labels of the set whose
 description or color is not the one this release gives them, with no job
 installed, and with `--yes` names each it created or updated (only what

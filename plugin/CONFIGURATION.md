@@ -2042,12 +2042,19 @@ since it read it, so a drive's label written for a newer ledger is not
 replaced from the older one the run planned from. A run without `--apply`,
 or for a repository the machine file does not list, writes nothing and
 reports what it would write. A write the forge refuses is reported and
-tried again at the next run; it does not fail the run. With `only_labeled`
+tried again at the next run; it does not fail the run. A write refused for
+a label of the set or a marker label the repository does not have yet
+creates the label as `jig dispatch labels --yes` does and writes again in
+the same run; a create the forge refuses is counted once for the
+repository, keyed by the label (`label create <name>` in the failure
+ledger), so past `failures.notify_after` a person is told once, with the
+command that creates it, and the writes that add it wait while it backs
+off. With `only_labeled`
 off, a drive a person armed by hand on a pull request with no label gets
 its label from the drive itself.
 
-The labels must exist before anything writes them, and no writer creates
-one: setting them up is a one-time step,
+The labels should exist before anything writes them, and only the
+dispatcher's run creates a missing one: setting them up is a one-time step,
 
 ```sh
 jig dispatch labels [--repo <path>]... [--yes]
