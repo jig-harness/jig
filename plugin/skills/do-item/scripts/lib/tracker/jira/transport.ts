@@ -798,8 +798,10 @@ function repeatFilter(opts: OffsetOptions): (id: unknown) => boolean {
 /**
  * Every item of an offset-paged listing. The end is `isLast: true`, else
  * `startAt + items.length >= total`; a page with neither, an item seen on
- * an earlier page (unless `dropRepeats`), or an empty page before the end
- * fails the read.
+ * an earlier page (unless `dropRepeats`), or a page before the end that is
+ * empty or holds only items read before fails the read: such a page moves
+ * the read on without bringing anything, as a server that ignores `startAt`
+ * does, and could otherwise repeat until the deadline.
  */
 export async function offsetPages(
   transport: JiraTransport,
@@ -814,6 +816,7 @@ export async function offsetPages(
     const query = { ...request.query, startAt, maxResults };
     const page = await transport({ ...request, query }, opts.signal);
     const items = offsetItems(page, opts);
+    const read = out.length;
     for (const item of items)
       if (keep(opts.strings === true ? item.name : opts.idOf(item)))
         out.push(item);
@@ -822,6 +825,11 @@ export async function offsetPages(
       return out;
     if (items.length === 0)
       throw shape(opts.where, "an empty page before the end of the list");
+    if (out.length === read)
+      throw shape(
+        opts.where,
+        "a page before the end holds only items read before",
+      );
     startAt = next;
   }
 }

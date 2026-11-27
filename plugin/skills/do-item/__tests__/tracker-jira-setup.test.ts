@@ -636,6 +636,28 @@ describe("Jira pagers", () => {
     await expect(
       offsetPages(paged(pages), { method: "GET", path: "label" }, opts),
     ).rejects.toThrow("labels: b repeated across pages");
+    const ignored: JiraTransport = async () => ({
+      values: ["a", "b"],
+      isLast: false,
+    });
+    await expect(
+      offsetPages(
+        ignored,
+        { method: "GET", path: "label" },
+        { ...opts, dropRepeats: true },
+      ),
+    ).rejects.toThrow(
+      "labels: a page before the end holds only items read before",
+    );
+    const tail = await offsetPages(
+      paged([
+        { values: ["a", "b"], isLast: false },
+        { values: ["b"], isLast: true },
+      ]),
+      { method: "GET", path: "label" },
+      { ...opts, dropRepeats: true },
+    );
+    expect(tail.map((v) => v.name)).toEqual(["a", "b"]);
   });
 
   it("reads search pages by token and fails a repeated key or a missing isLast", async () => {
