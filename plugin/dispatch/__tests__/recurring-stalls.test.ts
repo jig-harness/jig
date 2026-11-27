@@ -200,6 +200,51 @@ describe("a drive's stall the re-drive followed", () => {
     expect(stalled(f.root, WEDNESDAY).map((r) => r.rows)).toEqual([3]);
   });
 
+  it("counts a stall when later launches share a timestamp", () => {
+    const f = fixture();
+    for (const back of [0, 1, 2]) {
+      const pr = 80 + back;
+      const at = WEDNESDAY - back * DAY - 2 * HOUR;
+      launch(f.root, `drive-${pr}`, pr, at - HOUR);
+      ended(f.root, `drive-${pr}`, pr, at);
+      // Neither order at this instant is known, so the re-drive cannot prove
+      // it immediately followed the stalled drive.
+      launch(f.root, `a-redrive-${pr}`, pr, at + HOUR / 2, true);
+      launch(f.root, `z-takeover-${pr}`, pr, at + HOUR / 2);
+    }
+    expect(stalled(f.root, WEDNESDAY).map((r) => r.rows)).toEqual([3]);
+  });
+
+  it("counts a stall when a launch's ordering timestamp is unreadable", () => {
+    const f = fixture();
+    for (const back of [0, 1, 2]) {
+      const pr = 90 + back;
+      const at = WEDNESDAY - back * DAY - 2 * HOUR;
+      launch(f.root, `drive-${pr}`, pr, at - HOUR);
+      ended(f.root, `drive-${pr}`, pr, at);
+      launch(f.root, `redrive-${pr}`, pr, at + HOUR / 2, true);
+      const launchRecord = record({
+        id: `unknown-time-${pr}`,
+        repo: REPO,
+        pr,
+        createdAt: iso(at + HOUR),
+      }).record;
+      stateDb(f.root)
+        .query(
+          "INSERT INTO launches (id, repo, action, pr, created_at, record) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          `unknown-time-${pr}`,
+          REPO,
+          "takeover",
+          pr,
+          "not a timestamp",
+          JSON.stringify(launchRecord),
+        );
+    }
+    expect(stalled(f.root, WEDNESDAY).map((r) => r.rows)).toEqual([3]);
+  });
+
   it("counts a stall when its launch record has expired", () => {
     const f = fixture();
     for (const back of [0, 1, 2]) {

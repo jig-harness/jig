@@ -1674,8 +1674,8 @@ as `dispatch-recurring-gates-failed`), with the repository, the stage, the
 days, the row count, the reasons the rows give most often, up to ten rows it
 counted (the pull request or item, when, the head commit where a launch
 record names it, the reason and what the run's closing report concluded; any
-remaining rows are counted and appear in History, subject to History's newest
-5,000 matching rows limit)
+remaining rows are counted but need not appear in History, whose matching-row
+view is limited to its newest 5,000 rows)
 and the dashboard filter that shows them. The dashboard counts every matching
 row, while History shows its newest 5,000 matching rows. A drive's stall that
 the once-per-head re-drive followed is that re-drive's to settle: it is left

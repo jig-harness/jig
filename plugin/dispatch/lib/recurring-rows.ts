@@ -175,17 +175,16 @@ function againstRedrive(
   const ownIndex = launches.findIndex((l) => l.launch?.id === row.record);
   if (ownIndex < 0) return { head: null, redrive: null };
   const own = launches[ownIndex]?.launch ?? null;
+  // The table records only whole milliseconds. A tied or unreadable ordering
+  // timestamp means no record can establish which launch immediately followed
+  // another, so retain the stall instead of crediting a possible re-drive.
+  const ordered = launches.every((launch) => launch.createdMs !== null);
+  const distinct =
+    ordered &&
+    new Set(launches.map((launch) => launch.createdMs)).size ===
+      launches.length;
+  if (!distinct) return { head: short(headOf(null, own)), redrive: null };
   const successor = launches[ownIndex + 1] ?? null;
-  // Launch records have millisecond precision. A record at the same instant
-  // could have been inserted on either side of `own`, so it cannot establish
-  // which launch followed it.
-  const tied =
-    own !== null &&
-    launches.some(
-      (launch, index) =>
-        index !== ownIndex && launch.createdMs === own.createdMs,
-    );
-  if (tied) return { head: short(headOf(null, own)), redrive: null };
   const next = successor?.launch ?? null;
   const redrove =
     next?.redroveStall === true && STALL_EXIT.test(row.reason) ? next : null;
