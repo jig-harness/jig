@@ -282,6 +282,15 @@ function fenceStep(
   fence: Fence,
 ): { fence: Fence; delimiter: boolean; columns: number } {
   const { columns } = markdownIndentation(line);
+  // A line dedented below the content column of the list item a fence opened
+  // in ends that item, and the fence with it.
+  if (
+    fence !== null &&
+    fence.indent > 0 &&
+    line.trim() !== "" &&
+    columns < fence.indent
+  )
+    return fenceStep(line, null);
   const { text, indent, relative } = fenceFrame(line, fence, columns);
   const token =
     relative >= 0 && relative <= 3

@@ -125,7 +125,7 @@ export function selectReviewerSticky<
       (round !== null && (selectedRound === null || round > selectedRound)) ||
       (replacesSelection &&
         (round === null || selectedRound === null || round === selectedRound));
-    if (advancesSelection && round !== null) {
+    if (advancesSelection && round !== null && reviewedSha !== "") {
       // An explicit newer round is the only evidence that can supersede a
       // malformed finding-bearing summary. An unorderable malformed comment
       // remains a stopper until the reviewer repairs its protocol evidence.
