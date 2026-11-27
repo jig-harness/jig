@@ -1,6 +1,7 @@
 /** A fixed batch's proposal: the dispatcher names the members, and no size is a question. */
 import { describe, expect, it } from "bun:test";
 import { renderTable, run, verdictPrompt } from "../scripts/candidates.ts";
+import { leftOutLines } from "../scripts/lib/fixed-batch.ts";
 import { catalog, fakeTracker, issue, policy, relabel } from "./helpers.ts";
 
 const P = policy();
@@ -9,23 +10,25 @@ const medium = (key: string) =>
   issue(key, { labels: relabel(base, ["small"], ["medium"]) });
 const large = (key: string) =>
   issue(key, { labels: relabel(base, ["small"], ["large"]) });
-const options = (fixed?: string[]) => ({
+const options = (fixed?: string[], missingPriority?: "hold" | "start") => ({
   limit: P.maxItems,
   budget: P.pointBudget,
   claimed: new Set(fixed ?? []),
   ...(fixed === undefined ? {} : { fixed: new Set(fixed) }),
+  ...(missingPriority === undefined ? {} : { missingPriority }),
 });
 const propose = (
   issues: ReturnType<typeof issue>[],
   anchor: string,
   fixed?: string[],
+  missingPriority?: "hold" | "start",
 ) =>
   run(
     fakeTracker(issues),
     catalog(),
     P,
     anchor,
-    options(fixed),
+    options(fixed, missingPriority),
     import.meta.dir,
   );
 const ids = (rows: readonly { identifier: string }[]) =>
@@ -162,6 +165,134 @@ describe("a fixed batch with a member of the most expensive size", () => {
     await expect(propose(pool(), "billing", members)).rejects.toThrow(
       "--fixed needs an issue's key as its anchor",
     );
+  });
+});
+
+describe("the member a fixed batch with fewer than two kept works alone", () => {
+  const unranked = (key: string) => issue(key, { priority: 0 });
+
+  it("names none while two or more stay", async () => {
+    const p = await propose([issue("ENG-1"), issue("ENG-2")], "ENG-1", [
+      "ENG-1",
+      "ENG-2",
+    ]);
+    expect(p.alone).toBeUndefined();
+  });
+
+  it("works the one member kept", async () => {
+    const p = await propose([unranked("ENG-1"), issue("ENG-2")], "ENG-1", [
+      "ENG-1",
+      "ENG-2",
+    ]);
+    expect(p.alone).toEqual({
+      missingPriority: "hold",
+      claim: "ENG-2",
+      heldForPriority: [],
+    });
+  });
+
+  it("works the first member left out whose priority is set when none stays", async () => {
+    const p = await propose([unranked("ENG-1"), medium("ENG-2")], "ENG-1", [
+      "ENG-1",
+      "ENG-2",
+    ]);
+    expect(p.alone?.claim).toBe("ENG-2");
+    expect(p.leftOut.map((l) => [l.identifier, l.noPriority])).toEqual([
+      ["ENG-1", true],
+      ["ENG-2", false],
+    ]);
+  });
+
+  it("starts no member when every one left out lost its priority, unless the launch said start", async () => {
+    const pool = () => [unranked("ENG-1"), unranked("ENG-2")];
+    const fixed = ["ENG-1", "ENG-2"];
+    for (const policy of [undefined, "hold"] as const) {
+      const p = await propose(pool(), "ENG-1", fixed, policy);
+      expect(p.alone).toEqual({
+        missingPriority: "hold",
+        claim: null,
+        heldForPriority: ["ENG-1", "ENG-2"],
+      });
+      expect(renderTable(p, P)).toContain(
+        "none may start (dispatch.missing_priority: hold): ENG-1, ENG-2 lost their priority",
+      );
+    }
+    const started = await propose(pool(), "ENG-1", fixed, "start");
+    expect(started.alone).toEqual({
+      missingPriority: "start",
+      claim: "ENG-1",
+      heldForPriority: [],
+    });
+    expect(renderTable(started, P)).toContain("work ENG-1 alone");
+  });
+
+  it("names another guard, not priority, when every left-out member is barred by one", () => {
+    const lines = leftOutLines([], {
+      missingPriority: "hold",
+      claim: null,
+      heldForPriority: [],
+    });
+    expect(lines.join("\n")).toContain(
+      "none may start: another guard bars every left-out member.",
+    );
+    expect(lines.join("\n")).not.toContain("dispatch.missing_priority");
+  });
+
+  it("starts no member that lost its priority as well as its size, whichever reason its exclusion shows", async () => {
+    const both = issue("ENG-2", {
+      priority: 0,
+      labels: relabel(base, ["small"], ["large"]),
+    });
+    const p = await propose([unranked("ENG-1"), both], "ENG-1", [
+      "ENG-1",
+      "ENG-2",
+    ]);
+    expect(p.leftOut.map((l) => [l.identifier, l.size, l.noPriority])).toEqual([
+      ["ENG-1", null, true],
+      ["ENG-2", "large", true],
+    ]);
+    expect(p.alone).toEqual({
+      missingPriority: "hold",
+      claim: null,
+      heldForPriority: ["ENG-1", "ENG-2"],
+    });
+  });
+
+  it("does not hold a member whose priority is set to a value nothing maps", async () => {
+    const mapped = issue("ENG-2", {
+      priority: 0,
+      unmappedFacets: ["priority"],
+    });
+    const p = await propose([unranked("ENG-1"), mapped], "ENG-1", [
+      "ENG-1",
+      "ENG-2",
+    ]);
+    expect(p.leftOut.map((l) => [l.identifier, l.noPriority])).toEqual([
+      ["ENG-1", true],
+      ["ENG-2", false],
+    ]);
+    expect(p.alone?.claim).toBe("ENG-2");
+  });
+
+  it("does not work alone a member another guard bars behind its size", async () => {
+    const hidden = issue("ENG-2", {
+      hasOpenChildren: true,
+      labels: relabel(base, ["small"], ["large"]),
+    });
+    const p = await propose([medium("ENG-1"), hidden], "ENG-1", [
+      "ENG-1",
+      "ENG-2",
+    ]);
+    expect(p.leftOut.map((l) => [l.identifier, l.blocked])).toEqual([
+      ["ENG-1", false],
+      ["ENG-2", true],
+    ]);
+    expect(p.alone?.claim).toBe("ENG-1");
+  });
+
+  it("is no part of a proposal that names no fixed batch", async () => {
+    const p = await propose([issue("ENG-1")], "ENG-1");
+    expect(p.alone).toBeUndefined();
   });
 });
 

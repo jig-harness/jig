@@ -9,7 +9,7 @@
  * being replayed. This module states the role of each side explicitly so a
  * resolver never has to remember which way round it is.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { consumerRoot, readRemoteName } from "../../../../shared/consumer.ts";
 import { detachedTreeRecordSync } from "../../../../shared/driven-tree.ts";
@@ -90,11 +90,59 @@ function replayInputs(
   const mergeHead = resolveCommit(root, "MERGE_HEAD");
   if (mergeHead === null)
     return { theirs: incoming, base: parentOf(root, incoming) };
-  const result = gitRaw(root, ["merge-base", head, mergeHead]);
-  return {
-    theirs: mergeHead,
-    base: result.code === 0 ? result.stdout.trim() : null,
-  };
+  return { theirs: mergeHead, base: mergeBaseOf(root, head, mergeHead) };
+}
+
+/** The file in git's directory where `start-merge.ts` records its chosen merge base. */
+export const MERGE_BASE_RECORD = "JIG_MERGE_BASE";
+
+/**
+ * The merge base `start-merge.ts` chose for the open merge, read from its own
+ * record (`<base> <MERGE_HEAD> <HEAD>`, never from the editable merge
+ * message). The record belongs to this merge only while it names the merge's
+ * current `MERGE_HEAD` and the `HEAD` the merge started on, the base is an
+ * ancestor of `head`, and it was written strictly after git's own
+ * `MERGE_HEAD` (an aborted merge leaves the record behind, and a later
+ * ordinary merge of the same commit writes a newer `MERGE_HEAD`); null when
+ * there is none.
+ */
+export function recordedMergeBase(root: string, head: string): string | null {
+  const recordPath = gitPath(root, MERGE_BASE_RECORD);
+  const parts = read(recordPath)?.split(" ");
+  const mergeHead = resolveCommit(root, "MERGE_HEAD");
+  const recorded = parts?.[0];
+  if (
+    recorded === undefined ||
+    !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(recorded) ||
+    mergeHead === null ||
+    parts?.[1] !== mergeHead ||
+    parts?.[2] !== head
+  )
+    return null;
+  const written = statSync(recordPath, { throwIfNoEntry: false });
+  const started = statSync(gitPath(root, "MERGE_HEAD"), {
+    throwIfNoEntry: false,
+  });
+  if (written === undefined || started === undefined) return null;
+  // Equal times cannot order the two files on a coarse-resolution filesystem,
+  // so they read as stale: falling back to git's own base is the safe side.
+  if (written.mtimeMs <= started.mtimeMs) return null;
+  return gitRaw(root, ["merge-base", "--is-ancestor", recorded, head]).code ===
+    0
+    ? recorded
+    : null;
+}
+
+/** The merge base of an open merge: the recorded one, else git's own. */
+function mergeBaseOf(
+  root: string,
+  head: string,
+  incoming: string,
+): string | null {
+  const recorded = recordedMergeBase(root, head);
+  if (recorded !== null) return recorded;
+  const result = gitRaw(root, ["merge-base", head, incoming]);
+  return result.code === 0 ? result.stdout.trim() : null;
 }
 
 /** The id of the empty tree in this repository's hash format. */
@@ -246,7 +294,6 @@ export function detectOperation(
       throw new NoOperation("MERGE_HEAD does not name a commit.");
     const branch = currentBranch(root);
     const theirsRef = mergedRef(root) ?? refAt(root, incoming);
-    const mergeBase = gitRaw(root, ["merge-base", head, incoming]);
     let integration: SideName = "theirs";
     let why =
       "assumed: merging another branch into the checked-out branch brings in its base; pass --integration ours to override";
@@ -264,7 +311,7 @@ export function detectOperation(
       kind: "merge",
       head,
       incoming,
-      base: mergeBase.code === 0 ? mergeBase.stdout.trim() : null,
+      base: mergeBaseOf(root, head, incoming),
       ours: side(
         root,
         head,

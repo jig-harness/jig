@@ -12,6 +12,8 @@ import {
 } from "./gh-conditional.ts";
 import { waitingChecksMaxAgeMs } from "./status/waiting-cache.ts";
 import { type Clock, systemClock } from "../../../../shared/clock.ts";
+import { optionalPollPacing, readStatusPolling } from "./status/poll-pacing.ts";
+import { readConfig } from "../../../../shared/consumer.ts";
 import { currentMs } from "../../../../shared/time.ts";
 
 export interface FinalCiSignals {
@@ -24,6 +26,7 @@ export interface FinalCiSignals {
 
 export interface FinalCiWaitDeps extends Pick<Clock, "now"> {
   signals(pr: string): Promise<FinalCiSignals | null>;
+  deferPoll?: ReturnType<typeof optionalPollPacing>;
 }
 
 async function signals(pr: string): Promise<FinalCiSignals | null> {
@@ -96,12 +99,19 @@ export class FinalCiWait {
   constructor(
     pr: string,
     maxAgeMs = ghCacheDir() === null ? 0 : waitingChecksMaxAgeMs(),
-    deps: FinalCiWaitDeps = { now: systemClock.now, signals },
+    deps?: FinalCiWaitDeps,
     witnessUnitMs = 10_000,
   ) {
     this.pr = pr;
     this.maxAgeMs = maxAgeMs;
-    this.deps = deps;
+    this.deps = deps ?? {
+      now: systemClock.now,
+      signals,
+      deferPoll: optionalPollPacing(
+        readStatusPolling(readConfig()),
+        "drive final CI",
+      ),
+    };
     this.witnessUnitMs = witnessUnitMs;
   }
 
@@ -157,12 +167,10 @@ export class FinalCiWait {
   ): Promise<"witness" | "pending" | null> {
     const previous = this.waiting;
     if (previous === null) return null;
-    const age = this.deps.now() - previous.at;
+    const deadline = this.evidenceDeadline(previous, witnessDeadline);
     // At the bound, gather live evidence before the driver's give-up branch.
     if (
-      age < 0 ||
-      age >= this.maxAgeMs ||
-      (previous.unwitnessed && this.deps.now() >= witnessDeadline) ||
+      this.evidenceExpired(previous.at, deadline) ||
       (previous.unwitnessed && witnessLimit > 0 && witnessWaits >= witnessLimit)
     ) {
       this.clear();
@@ -170,15 +178,12 @@ export class FinalCiWait {
     }
     // This is only permission to keep waiting, never evidence for a verdict.
     // Local controls still run every ten seconds in the driver boundary.
-    if (this.deps.now() < this.nextProbeAt)
-      return previous.unwitnessed ? "witness" : "pending";
+    const waiting = previous.unwitnessed ? "witness" : "pending";
+    if (this.pollDeferred(deadline)) return waiting;
     const current = await this.deps.signals(this.pr);
-    const ageAfterRead = this.deps.now() - previous.at;
     if (
       current === null ||
-      (previous.unwitnessed && this.deps.now() >= witnessDeadline) ||
-      ageAfterRead < 0 ||
-      ageAfterRead >= this.maxAgeMs ||
+      this.evidenceExpired(previous.at, deadline) ||
       !current.unchanged ||
       current.head !== previous.signals.head ||
       current.pull !== previous.signals.pull
@@ -188,6 +193,33 @@ export class FinalCiWait {
     }
     this.probeIntervalMs = Math.min(60_000, this.probeIntervalMs * 2);
     this.nextProbeAt = current.observedAt + this.probeIntervalMs;
-    return previous.unwitnessed ? "witness" : "pending";
+    return waiting;
+  }
+
+  private evidenceDeadline(
+    previous: { at: number; unwitnessed: boolean },
+    witnessDeadline: number,
+  ): number {
+    return Math.min(
+      previous.at + this.maxAgeMs,
+      previous.unwitnessed ? witnessDeadline : Infinity,
+    );
+  }
+
+  private evidenceExpired(observedAt: number, deadline: number): boolean {
+    const now = this.deps.now();
+    return now < observedAt || now >= deadline;
+  }
+
+  private pollDeferred(deadline: number): boolean {
+    if (this.deps.now() < this.nextProbeAt) return true;
+    if (this.nextProbeAt === 0) return false;
+    return (
+      this.deps.deferPoll?.(
+        this.nextProbeAt - this.probeIntervalMs,
+        this.probeIntervalMs,
+        deadline,
+      ) === true
+    );
   }
 }

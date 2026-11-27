@@ -17,6 +17,11 @@
 import { swallow } from "../../../../../shared/errors.ts";
 import { isGithubLogin } from "../../../../../shared/forge-logins.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
+import { failed, ok, type Outcome } from "../../../../../shared/outcome.ts";
+import {
+  forgeIdentityReused,
+  forgeLogin,
+} from "../../../../../shared/outbound/github-budget.ts";
 import { localWriter } from "../../../../../shared/records/writer.ts";
 import { ghCall } from "../proc.ts";
 import {
@@ -42,9 +47,11 @@ export async function forge(
   stdin?: string,
   timeoutSec?: number,
   signal?: AbortSignal,
-): Promise<{ ok: true; stdout: string } | { ok: false; why: string }> {
+): Promise<
+  { ok: true; stdout: string } | { ok: false; why: string; unsent?: true }
+> {
   const aborted = abortReason(signal);
-  if (aborted !== null) return { ok: false, why: aborted };
+  if (aborted !== null) return { ok: false, why: aborted, unsent: true };
   // A signal that fires while the call runs ends the child, so the call does not outlive the caller's deadline.
   let stop: (() => void) | undefined;
   const r = await ghCall(args, {
@@ -67,6 +74,7 @@ export async function forge(
   return {
     ok: false,
     why: `gh exited ${r.code}${tail === "" ? "" : `: ${tail}`}`,
+    ...(r.held !== undefined || r.spawnFailed ? { unsent: true } : {}),
   };
 }
 
@@ -80,19 +88,89 @@ function json(text: string, what: string): unknown {
   }
 }
 
-/** The login the forge client is signed in as; `null` when it cannot say. `timeoutSec` shortens the call's deadline. */
-export async function resolveLogin(
+type LoginRead = Outcome<string, "unreadable" | "malformed">;
+type DirectLoginRead = LoginRead & { unsent?: true };
+
+let directLogin: Promise<DirectLoginRead> | undefined;
+
+/** Let one collector stop waiting without cancelling the shared identity lookup. */
+async function whileActive<T>(
+  pending: Promise<T>,
+  signal: AbortSignal | undefined,
+  aborted: () => T,
+): Promise<T> {
+  if (signal === undefined) return pending;
+  if (signal.aborted) return aborted();
+  let stop: (() => void) | undefined;
+  const stopped = new Promise<T>((resolve) => {
+    stop = () => resolve(aborted());
+    signal.addEventListener("abort", stop, { once: true });
+  });
+  return Promise.race([pending, stopped]).finally(() => {
+    if (stop !== undefined) signal.removeEventListener("abort", stop);
+  });
+}
+
+/** Resolve the authenticated actor through the forge transport. */
+export async function readLogin(
   timeoutSec?: number,
   signal?: AbortSignal,
-): Promise<string | null> {
+): Promise<LoginRead> {
+  if (signal?.aborted)
+    return failed("unreadable", "the collector deadline passed");
+  // Other commands use this reader too, including a dispatcher that can
+  // visit repositories routed to different accounts in the same process.
+  if (!forgeIdentityReused()) return readDirectLogin(timeoutSec, signal);
+  const login = await whileActive(
+    forgeLogin(timeoutSec === undefined ? undefined : timeoutSec * 1000),
+    signal,
+    () => undefined,
+  );
+  if (signal?.aborted)
+    return failed("unreadable", "the collector deadline passed");
+  if (login !== undefined)
+    return login.ok
+      ? login
+      : failed(
+          login.failure.code === "invalid" ? "malformed" : "unreadable",
+          login.failure.reason,
+        );
+  directLogin ??= readDirectLogin(timeoutSec, signal);
+  const attempt = directLogin;
+  const read = await attempt;
+  if (!read.ok && directLogin === attempt) directLogin = undefined;
+  return read;
+}
+
+/** Quota discovery is inactive for some credentials and when the budget is off. */
+async function readDirectLogin(
+  timeoutSec?: number,
+  signal?: AbortSignal,
+): Promise<DirectLoginRead> {
   const r = await forge(
     ["api", "user", "--jq", ".login"],
     undefined,
     timeoutSec,
     signal,
   );
-  const login = r.ok ? r.stdout.trim() : "";
-  return isGithubLogin(login, { bot: true }) ? login : null;
+  if (!r.ok)
+    return {
+      ...failed("unreadable", r.why),
+      ...(r.unsent ? { unsent: true } : {}),
+    };
+  const login = r.stdout.trim();
+  if (!isGithubLogin(login, { bot: true }))
+    return failed("malformed", "the answer names no login");
+  return ok(login);
+}
+
+/** The login the forge client is signed in as; `null` when it cannot say. */
+export async function resolveLogin(
+  timeoutSec?: number,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const read = await readLogin(timeoutSec, signal);
+  return read.ok ? read.value : null;
 }
 
 function forgeComment(c: unknown): ForgeComment | null {

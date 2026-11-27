@@ -64,7 +64,7 @@ import { recordCall } from "./ledger.ts";
 import { errnoCode, swallow } from "../errors.ts";
 import { isGithubLogin } from "../forge-logins.ts";
 import { isRecord } from "../guards.ts";
-import { type OutboundFailure, outboundFailure } from "./failure.ts";
+import { failureOf, type OutboundFailure, outboundFailure } from "./failure.ts";
 import { type GhRun, ghRunFailure } from "./github.ts";
 import {
   declaredInstallation,
@@ -212,7 +212,9 @@ export type DiscoverUser = (
   env: Env,
   deadlineMs: number,
   cwd?: string,
-) => Promise<{ user: GithubUser } | { failure: OutboundFailure }>;
+) => Promise<
+  { user: GithubUser } | { failure: OutboundFailure; unsent?: true }
+>;
 
 /** The user an answer to `GET /user` names; `null` when it names none. */
 export function userOf(body: string): GithubUser | null {
@@ -257,6 +259,7 @@ const ghUser: DiscoverUser = async (env, deadlineMs, cwd) => {
   if (runner === null)
     return {
       failure: outboundFailure("unauthorized", "no gh runner to ask with"),
+      unsent: true,
     };
   const began = currentMs();
   const result = await runner(
@@ -266,7 +269,10 @@ const ghUser: DiscoverUser = async (env, deadlineMs, cwd) => {
     cwd,
   );
   const failure = ghRunFailure(result, currentMs() - began);
-  if (failure !== null) return { failure };
+  if (failure !== null)
+    return result.held !== undefined || result.spawnFailed === true
+      ? { failure, unsent: true }
+      : { failure };
   const user = userOf(typeof result.stdout === "string" ? result.stdout : "");
   return user === null
     ? {
@@ -285,6 +291,8 @@ export interface OwnerResolution {
   verified: boolean;
   /** The login the discovery answered with, when one did. */
   login: string | null;
+  /** Why this process could not establish the signed-in user's login. */
+  discoveryFailure?: OutboundFailure;
   /** Whose allowance the owner's record keeps, for a person: `GitHub account <login>`, `installation <id>`, `user ID <id>`, or the host's shared record. */
   account: string;
 }
@@ -350,6 +358,8 @@ export function githubOwnerResolver(deps: {
   clock?: () => number;
   /** Waits `ms`; give it with a pinned `clock` so contention can be tested without real time. */
   sleep?: (ms: number) => Promise<void>;
+  /** Drives reuse the first authenticated-user lookup for each credential and scope. */
+  singleLookup?: () => boolean;
 }): GithubOwnerResolver {
   const clock = deps.clock ?? currentMs;
   const sleep =
@@ -360,6 +370,7 @@ export function githubOwnerResolver(deps: {
     { resolution: OwnerResolution; until: number }
   >();
   const inflight = new Map<string, Promise<OwnerResolution>>();
+  const queried = new Map<string, OutboundFailure | null>();
   const seeded = new Set<string>();
   /** Discovery windows not yet carried to their owner, by owner, until the lock is free. */
   const unsettled = new Map<string, BudgetRecord>();
@@ -465,6 +476,49 @@ export function githubOwnerResolver(deps: {
       await sleep(SETTLE_POLL_MS);
   };
 
+  /** A busy or held store sends nothing. */
+  const admitDiscovery = (owner: string): OutboundFailure | null => {
+    // Discovery is admitted against the host's unverified record until its
+    // answer names the owner. A busy or held store sends nothing.
+    try {
+      deps.governor?.admit("GitHub", owner, {
+        windows: ["requests"],
+        reserve: null,
+        nonblocking: true,
+      });
+    } catch (error) {
+      if (isRateLimited(error)) return failureOf(error);
+      busyOrThrow(error);
+      return outboundFailure("unreachable", "the GitHub budget store is busy");
+    }
+    return null;
+  };
+
+  const withDiscoveryFailure = (
+    found: OwnerResolution,
+    failure: OutboundFailure | null,
+  ): OwnerResolution => {
+    if (found.login !== null || failure === null) return found;
+    return { ...found, discoveryFailure: failure };
+  };
+
+  const discoverOnce = async (
+    asked: Question,
+    slot: string,
+    owner: string,
+    deadlineMs: number,
+  ): ReturnType<DiscoverUser> => {
+    const admission = admitDiscovery(owner);
+    if (admission !== null) return { failure: admission, unsent: true };
+    const answer = await discover(asked.env, deadlineMs, asked.cwd);
+    // A drive needs one successful identity per slot, but a sent failure is
+    // recoverable after the persisted backoff. Keeping it here would turn a
+    // transient forge outage into a process-lifetime failure.
+    if (deps.singleLookup?.() === true && "user" in answer)
+      queried.set(slot, null);
+    return answer;
+  };
+
   const ask = async (
     env: Env,
     credential: string,
@@ -478,24 +532,15 @@ export function githubOwnerResolver(deps: {
       Math.max(0, until - now),
     );
     const fallback = unverified(env, credential);
-    // The request is admitted, observed and recorded as any run of `gh` is,
-    // against the unverified record, the owner not being known yet.
-    // While the unverified record is held nothing is sent.
-    try {
-      deps.governor?.admit("GitHub", fallback.owner, {
-        windows: ["requests"],
-        reserve: null,
-        nonblocking: true,
-      });
-    } catch (error) {
-      // A busy store sends nothing either: discovery waits for a later check.
-      if (!isRateLimited(error)) busyOrThrow(error);
-      return entry?.verified === true
-        ? fromEntry(env, credential, entry)
-        : fallback;
-    }
+    const slot = `${asked.slot}@${githubHost(env)}`;
+    const current =
+      entry?.verified === true ? fromEntry(env, credential, entry) : fallback;
+    const earlier = queried.get(slot);
+    if (earlier !== undefined) return withDiscoveryFailure(current, earlier);
     const began = currentMs();
-    const answer = await discover(asked.env, deadlineMs, asked.cwd);
+    const answer = await discoverOnce(asked, slot, fallback.owner, deadlineMs);
+    if ("unsent" in answer)
+      return withDiscoveryFailure(current, answer.failure);
     const user = "user" in answer ? answer.user : null;
     const owner =
       user !== null
@@ -520,7 +565,10 @@ export function githubOwnerResolver(deps: {
       ledgerLookup(credential, owner, answer, currentMs() - began);
     const next = nextEntry(user, owner, entry, now, githubToken(env) !== null);
     deps.owners.write(asked.slot, githubHost(env), next);
-    return fromEntry(env, credential, next);
+    return withDiscoveryFailure(
+      fromEntry(env, credential, next),
+      "failure" in answer ? answer.failure : null,
+    );
   };
 
   const known = (env: Env, scope?: string | null): OwnerResolution | null => {
@@ -545,6 +593,7 @@ export function githubOwnerResolver(deps: {
     const owner = userOwner(host, userId);
     named.set(owner, `user ID ${userId}`);
     memo.delete(`${key}@${host}`);
+    queried.delete(`${key}@${host}`);
     // Kept as the named user's until the next run asks again: a run that
     // cannot ask (the shared record held, a busy store) is admitted
     // against the allowance GitHub named.
@@ -630,7 +679,16 @@ export function githubOwnerResolver(deps: {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const expired = new Promise<OwnerResolution>((resolve) => {
       timer = setTimeout(
-        () => resolve(unverified(env, githubCredential(env))),
+        () =>
+          resolve(
+            withDiscoveryFailure(
+              unverified(env, githubCredential(env)),
+              outboundFailure(
+                "unreachable",
+                "the GitHub identity lookup exceeded its deadline",
+              ),
+            ),
+          ),
         Math.max(0, bound),
       );
     });
