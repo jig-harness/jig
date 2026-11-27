@@ -46,14 +46,17 @@ import { isRecord } from "../../../../../shared/guards.ts";
 import { parseJson, recordDriveEvent } from "./rearm.ts";
 
 /**
- * Admit one more pass-deadline restart within `budget`, counting it in the
- * drive state only when it is admitted, so a deadline that stops the drive is
- * never recorded as a restart taken. Returns the restarts taken, with this
- * one when admitted; `null` when the count could not be read or recorded.
+ * Admit one more pass restart within `budget`, counting it in the drive state
+ * only when it is admitted, so a stop is never recorded as a restart taken.
+ * One count serves both causes: a pass killed at its deadline
+ * (`pass-deadline`) and one that ended with a background task still running
+ * (`background-pending`). Returns the restarts taken, with this one when
+ * admitted; `null` when the count could not be read or recorded.
  */
-export async function admitDeadlineRestart(
+export async function admitPassRestart(
   pr: string,
   budget: number,
+  cause: "pass-deadline" | "background-pending",
 ): Promise<{ admitted: boolean; taken: number } | null> {
   const got = await run(tsArgv(driveState, ["get", pr]), {
     stderr: "inherit",
@@ -67,12 +70,12 @@ export async function admitDeadlineRestart(
   if (taken >= budget) return { admitted: false, taken };
   const bumped = await bumpDeadlineRetries(pr);
   if (bumped === null) return null;
-  await recordDriveEvent(pr, "restart", "pass-deadline");
+  await recordDriveEvent(pr, "restart", cause);
   return { admitted: true, taken: bumped };
 }
 
 /**
- * Count one more pass-deadline restart in the drive state and return the
+ * Count one more pass restart in the drive state and return the
  * drive's total; `null` when it could not be recorded.
  */
 async function bumpDeadlineRetries(pr: string): Promise<number | null> {

@@ -1,4 +1,3 @@
-import { factoryWalkView } from "./factory-walk-view.ts";
 /**
  * The pickups the tracker wants: the items assigned to the repository's
  * factory identity (`dispatch.identity`) in a dispatch state
@@ -22,6 +21,11 @@ import { factoryWalkView } from "./factory-walk-view.ts";
  * known, as when their read fails; each is a failed read, so the tick
  * reports it.
  */
+import {
+  EPIC_PICKUP_REASON,
+  isEpicPickup,
+} from "../../../shared/epic-pickup.ts";
+import { factoryWalkView } from "./factory-walk-view.ts";
 import { cacheForTracker } from "./tracker-cache.ts";
 import { sharedView, type ServedView } from "./served-reads.ts";
 import { nativeQueueRequirements } from "../../../skills/do-item/scripts/lib/tracker/dispatch-source.ts";
@@ -543,9 +547,7 @@ function epicRootsOf(
   claimed: Array<ClaimedItem & { queueIssue: PoolIssue }> | Unplaced,
 ): PoolIssue[] {
   if (!Array.isArray(claimed)) return [];
-  return claimed
-    .map((c) => c.queueIssue)
-    .filter((i) => i.isEpic && i.hasOpenChildren);
+  return claimed.map((c) => c.queueIssue).filter((i) => i.hasOpenChildren);
 }
 
 /**
@@ -613,6 +615,7 @@ export async function freshPickup(
       : pooled;
   }
   if (issue === undefined) return unassigned;
+  if (isEpicPickup(issue)) return EPIC_PICKUP_REASON;
   // The assignment authorizes the pickup: who made it is read again, so a
   // reassignment by someone without write access, or an assigner whose access
   // ended since the plan, starts nothing.

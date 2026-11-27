@@ -1,4 +1,3 @@
-import type { PlanMergeReader } from "./plan-merges.ts";
 /**
  * Served assignments, inherited through epics, with metadata kept at
  * updatedAt. The tracker is read through the tick's view of the person's
@@ -7,6 +6,11 @@ import type { PlanMergeReader } from "./plan-merges.ts";
  * read the tracker's rate limit refuses stops the walk, which reports the
  * limit once rather than one unplaced row per item.
  */
+import {
+  EPIC_PICKUP_REASON,
+  isEpicPickup,
+} from "../../../shared/epic-pickup.ts";
+import type { PlanMergeReader } from "./plan-merges.ts";
 import { finishAdmission, type Candidate } from "./served-admission.ts";
 import { cacheForTracker } from "./tracker-cache.ts";
 import {
@@ -334,6 +338,7 @@ export async function freshServedPickup(
       !ready(issue, tracker.stateName("blocked", issue.nativeType ?? null))
     )
       return "the served item is no longer open and not started";
+    if (isEpicPickup(issue)) return EPIC_PICKUP_REASON;
     if (policy.repoScope?.invalid !== undefined)
       return `the repository scope is invalid: ${policy.repoScope.invalid}`;
     const elsewhere = otherRepoLabel(issue.labels, policy.repoScope);
@@ -585,7 +590,7 @@ function leavesNode(
   seen: ReadonlySet<string>,
   tracker: Pick<Tracker, "stateName">,
 ): boolean {
-  const walkedEpic = issue.isEpic && issue.hasOpenChildren && !closed(issue);
+  const walkedEpic = issue.hasOpenChildren && !closed(issue);
   if (
     seenOrHeld(issue, options, seen) ||
     (!readyForWalk(issue, tracker, options) && !walkedEpic)
@@ -664,6 +669,8 @@ async function placeNode(
   const { tracker, identity, options, cache, view } = ctx;
   const { issue, ancestor } = node;
   const unplace = unplacer(issue, options.trackerNamespace, found);
+  if (isEpicPickup(issue) && !issue.hasOpenChildren)
+    return void unplace(EPIC_PICKUP_REASON);
   const carried = carriedRelations(view, issue.identifier);
   const meta = await metadata(tracker, issue, identity, cache, carried, view);
   // A kept no-assigner answer is reported as the item's unreadable row.
@@ -696,7 +703,7 @@ async function placeNode(
       candidate,
       found,
     );
-  if (issue.isEpic && issue.hasOpenChildren) {
+  if (issue.hasOpenChildren) {
     itemFailed(found);
     return void unplace(
       "the epic reports open children but its children cannot be read",
@@ -972,8 +979,7 @@ async function freshPulledAuthority(
 ): Promise<string | null> {
   if (issue.assignee !== null)
     return "the pulled blocker has acquired an assignee";
-  if (issue.hasOpenChildren || issue.isEpic)
-    return "the pulled blocker has become an epic";
+  if (isEpicPickup(issue)) return "the pulled blocker has become an epic";
   const origin = await tracker.poolIssue(blockingFor);
   if (
     origin === null ||

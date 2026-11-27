@@ -43,7 +43,7 @@ export function parkedOnPerson(
         (state) => state === "ops_pending" || state === "in_review",
       )) ||
     (child.state.type !== "started" &&
-      (forStart || !(child.isEpic && child.hasOpenChildren)) &&
+      (forStart || !child.hasOpenChildren) &&
       policy.personHold?.(child.identifier) != null) ||
     queueHold({ issue: child, blockers: [], unblocks: 0 }, labelHolds) ===
       PERSON_HOLD

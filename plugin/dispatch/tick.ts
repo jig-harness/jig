@@ -107,6 +107,7 @@ import { dropRepeatedItemNeeds } from "./lib/sources/served-repo.ts";
 import { dropRepeatedScopeFailures } from "./lib/sources/scope-failures.ts";
 import { processRuntime } from "./lib/runtime/process.ts";
 import { orcaRuntime } from "./lib/runtime/orca.ts";
+import { withRescueComments } from "./lib/runtime/rescue-comment.ts";
 import type { SessionRuntime } from "./lib/runtime/port.ts";
 import { signInFallbackReport } from "./lib/actions/account-sign-in.ts";
 import { retireStaleWeightsRecords } from "./lib/actions/notify.ts";
@@ -202,13 +203,11 @@ const ACT_LOCK_POLL_MS = 250;
 export const SWEEP_OBSERVE_WAIT_MS = 120_000;
 
 function defaultRuntime(machine: MachineConfig | null): SessionRuntime {
-  if (machine?.runtime === "process") return processRuntime(machine);
-  return machine === null
-    ? orcaRuntime()
-    : orcaRuntime({
-        runtimeTimeoutMs: machine.runtimeTimeoutMs,
-        workspaceTimeoutMs: machine.workspaceTimeoutMs,
-      });
+  if (machine?.runtime === "process")
+    return withRescueComments(processRuntime(machine));
+  return withRescueComments(
+    machine === null ? orcaRuntime() : orcaRuntime(machine),
+  );
 }
 
 /** A tick once it started: its receipt so far, the context its turns share, and, once the act phase began, why `--apply` was withheld. */

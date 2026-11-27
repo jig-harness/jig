@@ -40,6 +40,7 @@
  * whose wrapper died before it could, by the run-tab idle checks
  * (`orca-end-run.ts`).
  */
+import type { HolderPolicy } from "../../../shared/orca-workspace/holder.ts";
 import { realpathSync } from "node:fs";
 import {
   orcaCommandOrInstalled,
@@ -393,7 +394,7 @@ async function sessionsFrom(
 }
 
 export function orcaRuntime(
-  deadlines: OrcaDeadlines = {
+  deadlines: OrcaDeadlines & { holders?: HolderPolicy } = {
     runtimeTimeoutMs: ORCA_TIMEOUT_SEC * 1000,
     workspaceTimeoutMs: ORCA_TIMEOUT_SEC * 1000,
   },
@@ -427,7 +428,12 @@ export function orcaRuntime(
           deadlines.workspaceTimeoutMs,
         );
       return "pr" in target
-        ? openPullRequestWorkspace(found, target, deadlines.workspaceTimeoutMs)
+        ? openPullRequestWorkspace(
+            found,
+            target,
+            deadlines.workspaceTimeoutMs,
+            deadlines.holders,
+          )
         : openItemWorkspace(found, target, deadlines.workspaceTimeoutMs);
     },
     verifyWorkspace: (repo, workspace, target, timeoutMs) =>

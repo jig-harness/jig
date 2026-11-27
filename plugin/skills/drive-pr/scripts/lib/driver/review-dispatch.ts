@@ -21,6 +21,7 @@ import {
 import { resolveAccountIdentity } from "./../identity.ts";
 
 import { passEnv } from "./repair.ts";
+import { newPassToken, PASS_TOKEN_VARIABLE } from "./pending-background.ts";
 
 import { runRoundPass, withPassRound } from "./pass-round.ts";
 
@@ -160,6 +161,9 @@ export async function prepareReviewPass(
   const preexistingSnapshot = snapshotQuotaSessions();
   const preexistingSessions = preexistingSnapshot.files;
   const baseEnv = withPassRound(passEnv(), round);
+  // Everything the pass starts inherits it, so a task it leaves running when
+  // it exits can be found (`pending-background.ts`).
+  baseEnv[PASS_TOKEN_VARIABLE] = newPassToken();
   // A stop the driver recovered from (a killed pass, a stall, a takeover, a
   // re-arm with answers) is told to every review pass until one completes,
   // and the commits the last gate found unpushed to every pass they remain

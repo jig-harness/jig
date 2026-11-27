@@ -141,7 +141,9 @@ if (args[0] === "pr" && args[1] === "view" && args.some((a) => a.includes("headR
   const listed = JSON.parse(fs.readFileSync(F + "/prs-open.json", "utf8")).find((p) => p.number === Number(args[2]));
   if (listed === undefined) { process.stderr.write("gh: no pull requests found\\n"); process.exit(1); }
   if (args.some((a) => a.includes("headRepositoryOwner"))) {
-    const head = Bun.spawnSync(["git", "rev-parse", "--verify", "refs/heads/" + listed.headRefName]);
+    // pr-head-from-origin: the head as origin has it, as a forge reports it, not the clone's local branch.
+    const ref = (fs.existsSync(F + "/pr-head-from-origin") ? "refs/remotes/origin/" : "refs/heads/") + listed.headRefName;
+    const head = Bun.spawnSync(["git", "rev-parse", "--verify", ref]);
     out({ ...listed, state: "OPEN", headRefOid: head.exitCode === 0 ? head.stdout.toString().trim() : listed.headRefOid,
       isCrossRepository: false, headRepositoryOwner: { login: "example-org" }, headRepository: { name: "example-repo" },
       url: "https://github.com/${SLUG}/pull/" + listed.number });

@@ -847,6 +847,29 @@ export async function editLabels(
   return edited.ok ? ok(undefined) : edited;
 }
 
+/** Post `body` as a comment on pull request `pr` of `slug`, one REST call; `refused` with the forge's reason. */
+export async function commentOnPull(
+  slug: string,
+  pr: number,
+  body: string,
+  timeoutSec?: number,
+): Promise<Outcome<void, "refused">> {
+  const posted = await gh(
+    [
+      "api",
+      "--method",
+      "POST",
+      `repos/${slug}/issues/${pr}/comments`,
+      "-f",
+      `body=${body}`,
+    ],
+    "refused",
+    undefined,
+    timeoutSec,
+  );
+  return posted.ok ? ok(undefined) : posted;
+}
+
 /** One label the repository has, as the install compares it with the set. */
 export interface RepositoryLabel {
   name: string;

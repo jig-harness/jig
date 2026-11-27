@@ -91,6 +91,8 @@ import type { NotSettledSettings } from "./not-settled-config.ts";
 import { notSettledSettings } from "./not-settled-config.ts";
 import { type PreflightProbe, preflightSetting } from "./preflight-config.ts";
 import { redriveMax } from "./redrive-config.ts";
+import type { HolderPolicy } from "../../shared/orca-workspace/holder.ts";
+import { HOLDER_KEYS, holderSettings } from "./holder-config.ts";
 import { type ServedPerson, servedPeople } from "./serve-config.ts";
 import { isoFromMs, parseMs } from "../../shared/time.ts";
 import { duration } from "./duration.ts";
@@ -219,6 +221,8 @@ export interface MachineConfig {
   notifyChannels?: NotifyChannelConfig[];
   /** How re-arms that keep stopping `NOT_SETTLED` on one head back off and when they are a person's (`not_settled`). */
   notSettled?: NotSettledSettings;
+  /** What the open detaches beyond an idle holder without asking (`detach_idle_holders`, `rescue_unpushed`): `holder-config.ts`. */
+  holders?: HolderPolicy;
 }
 
 const DEFAULTS = {
@@ -264,6 +268,7 @@ const TOP_KEYS = [
   "preflight",
   "notify",
   "not_settled",
+  ...HOLDER_KEYS,
 ];
 const FAILURES_KEYS = [
   "backoff",
@@ -621,14 +626,14 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   if (!priorities.ok) return priorities;
   const tracker = trackerSettings(top);
   if (!tracker.ok) return tracker;
-  const notSettled = notSettledSettings(top.not_settled);
-  if (!notSettled.ok) return notSettled;
-  const redrives = redriveMax(top.redrive_max);
-  if (!redrives.ok) return redrives;
+  const redrive = redriveSettings(top);
+  if (!redrive.ok) return redrive;
+  const holders = holderSettings(top);
+  if (!holders.ok) return holders;
   return ok({
     ...tracker.value,
-    notSettled: notSettled.value,
-    redriveMax: redrives.value,
+    ...redrive.value,
+    ...holders.value,
     ...repos.value,
     path: where,
     serve: serve.value,
@@ -640,6 +645,17 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
     steward: steward.value,
     priorities: priorities.value,
   });
+}
+
+/** How re-drives back off and how many a change gets (`not_settled`, `redrive_max`). */
+function redriveSettings(
+  top: Record<string, unknown>,
+): Checked<Pick<MachineConfig, "notSettled" | "redriveMax">> {
+  const notSettled = notSettledSettings(top.not_settled);
+  if (!notSettled.ok) return notSettled;
+  const redrives = redriveMax(top.redrive_max);
+  if (!redrives.ok) return redrives;
+  return ok({ notSettled: notSettled.value, redriveMax: redrives.value });
 }
 
 /** The tick's share of each credential's budget, and the checks run on each account before a tracker stage. */

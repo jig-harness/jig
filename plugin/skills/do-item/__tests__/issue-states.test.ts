@@ -129,6 +129,7 @@ describe("tracker.ts issue-states", () => {
           state: { id: "s", name: "State", type },
           assignee: null,
           labels: { pageInfo: { hasNextPage: false }, nodes: [] },
+          allChildren: { nodes: [] },
           children: { pageInfo: { hasNextPage: false }, nodes: [] },
         },
       },

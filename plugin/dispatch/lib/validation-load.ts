@@ -1,13 +1,19 @@
 /** Adapt the host's lock and launch records to the validation forecast. */
 import { dirname, resolve } from "node:path";
 import { lockPlace } from "../../shared/resource-lock-waits.ts";
-import { MAX_TIMEOUT_SECONDS } from "../../shared/resource-lock.ts";
+import {
+  MAX_TIMEOUT_SECONDS,
+  slotSettings,
+} from "../../shared/resource-lock.ts";
+import type { HostLoad } from "../../shared/host-load.ts";
 import { readResourceLockSamples } from "../../shared/resource-lock-samples.ts";
 import { parseMs } from "../../shared/time.ts";
 import type { LineLoadGauge } from "./dashboard-contract.ts";
 import { holds, type ReadRecord } from "./launches.ts";
 import type { LoadReading } from "./load-read.ts";
 import { DEFAULT_PICKUP_DEADLINE_MS } from "./section.ts";
+import { arrivalQueue } from "./validation-arrivals.ts";
+import { lockSlots } from "./validation-slots.ts";
 import {
   forecastValidation,
   measurementsFor,
@@ -22,6 +28,8 @@ import {
 
 export interface ValidationLoad {
   measured: ValidationMeasurements;
+  /** Why the lock's slot count was not read, so runs at once is the peak the samples saw. */
+  slotsUnread?: string;
   demand: ValidationDemand | { unread: string };
   /** How long a launched pass's test stage waits for the lock. */
   waitLimitMs: number;
@@ -29,6 +37,8 @@ export interface ValidationLoad {
   waitSource: string;
   /** Set when the launch's `LOCK_TIMEOUT` is one the lock refuses: validation fails at once. */
   waitInvalid?: string;
+  /** Set when the lock's slot settings are ones it refuses: validation fails at once. */
+  slotsInvalid?: string;
   driveDeadlineMs: number;
   admittedRuns: number;
 }
@@ -111,12 +121,29 @@ export function validationPassesOf(
   return records.flatMap((record) => passOf(record) ?? []);
 }
 
+/**
+ * The slots the lock admits now, from the host's reading and the lock's
+ * holders the load average shows, or why they cannot be read. A reading
+ * that does not say which holders it shows takes none out of the load.
+ */
+function slotsOf(
+  host: HostLoad | undefined,
+  lock: LoadReading["lock"],
+  env: Record<string, string | undefined>,
+): { slots: number } | { unread: string } {
+  if (host === undefined) return { unread: "no host reading" };
+  if ("unread" in lock) return { unread: lock.unread };
+  const slots = lockSlots(host, lock.settled ?? 0, env);
+  return slots.ok ? { slots: slots.value } : { unread: slots.failure.reason };
+}
+
 export function readValidationLoad(
   records: readonly ReadRecord[],
   lock: LoadReading["lock"],
   nowMs: number,
   driveDeadlineMs: number,
   env: Record<string, string | undefined> = process.env,
+  host?: HostLoad,
 ): ValidationLoad {
   const { name } = lockPlace(env);
   const passes = validationPassesOf(records);
@@ -131,9 +158,24 @@ export function readValidationLoad(
       holdMs,
     }),
   );
-  const measured = measureValidation(samples, passes);
+  const slots = slotsOf(host, lock, env);
+  let ceiling: number | null = null;
+  let slotsInvalid: string | undefined;
+  try {
+    ceiling = slotSettings(env).slots;
+  } catch (error) {
+    slotsInvalid = `${error instanceof Error ? error.message : String(error)}, so a launched pass's validation is refused by the lock`;
+  }
+  const measured = measureValidation(
+    samples,
+    passes,
+    "slots" in slots ? slots.slots : null,
+    ceiling,
+  );
   return {
     measured,
+    ...(slotsInvalid === undefined ? {} : { slotsInvalid }),
+    ...("unread" in slots ? { slotsUnread: slots.unread } : {}),
     demand:
       "unread" in lock
         ? lock
@@ -174,6 +216,26 @@ function forecast(
   );
 }
 
+/** Where runs at once came from, when not only from the samples. */
+function concurrencySource(state: ValidationLoad): string {
+  const { concurrency, lockSlots: slots } = state.measured;
+  if (slots !== undefined)
+    return slots === concurrency
+      ? ` (the lock's load check admits ${slots})`
+      : ` (the most seen together; the lock's load check admits ${slots})`;
+  return state.slotsUnread === undefined
+    ? ""
+    : ` (the most seen together; the lock's slot count unread: ${state.slotsUnread})`;
+}
+
+/** The candidate's own run time, when its repository's differs from every repository's. */
+function ownRunTime(measured: ValidationMeasurements): string {
+  const own = measured.candidateRunMs;
+  return own === undefined || own === measured.runMs
+    ? ""
+    : `, its repository's runs ${Math.round(own / 60_000)} min`;
+}
+
 function describe(state: ValidationLoad, result: ValidationForecast): string {
   const { concurrency, runMs } = state.measured;
   const ahead = Number(result.ahead.toFixed(2));
@@ -208,7 +270,7 @@ function describe(state: ValidationLoad, result: ValidationForecast): string {
     result.later > 0
       ? `, and ${result.later} arriving after its first run ahead of a later one`
       : "";
-  return `${ahead} runs ahead${served}${later}, about ${waited} min at ${concurrency} concurrent runs of ${minutes(runMs)} min, capacity ${Number(result.capacity.toFixed(2))} in a ${window}${short}${note}`;
+  return `${ahead} runs ahead${served}${later}, about ${waited} min at ${concurrency} concurrent runs${concurrencySource(state)} of ${minutes(runMs)} min${ownRunTime(state.measured)}, capacity ${Number(result.capacity.toFixed(2))} in a ${window}${short}${note}`;
 }
 
 /**
@@ -231,6 +293,54 @@ function arrivingAt(
 }
 
 /**
+ * How many of a pickup's sequential runs the lock has released by the time a
+ * drive launched after it asks for the lock, from the arrival queue itself.
+ * A concurrency that is not whole cannot be simulated; no run is credited.
+ */
+function completedBeforeDrive(
+  state: ValidationLoad & { demand: ValidationDemand },
+  ownRuns: number,
+): number {
+  const { measured, demand } = state;
+  if (!Number.isInteger(measured.concurrency)) return 0;
+  const arrivals = demand.arrivals ?? [];
+  const unestimated = demand.unestimated ?? [];
+  const runsOf = (timed: readonly { runs: number }[]) =>
+    timed.reduce((sum, { runs }) => sum + runs, 0);
+  const arriveMs = measured.kinds.pickup.timeToValidationMs;
+  const releasedByMs = arriveMs + measured.kinds.drive.timeToValidationMs;
+  const ownRunMs = measured.candidateRunMs ?? measured.runMs;
+  let completed = 0;
+  for (let runs = 1; runs <= Math.ceil(ownRuns); runs++) {
+    const { lastStartMs } = arrivalQueue({
+      concurrency: measured.concurrency,
+      runMs: measured.runMs,
+      ...(measured.candidateRunMs === undefined
+        ? {}
+        : { candidateRunMs: measured.candidateRunMs }),
+      atLock: demand.atLock,
+      ...(demand.atLockRunMs === undefined
+        ? {}
+        : { atLockRunMs: demand.atLockRunMs }),
+      arrivals,
+      unknownRuns: Math.max(
+        0,
+        demand.toArrive +
+          state.admittedRuns -
+          runsOf(arrivals) -
+          runsOf(unestimated),
+      ),
+      unestimated,
+      arriveMs,
+      candidateRuns: runs,
+    });
+    if (lastStartMs + ownRunMs > releasedByMs) break;
+    completed = runs;
+  }
+  return Math.min(completed, ownRuns);
+}
+
+/**
  * The demand a drive launched after this pickup meets: everything ahead of
  * the pickup, the runs this tick admitted, and the pickup's runs still on the
  * lock when the drive asks for it.
@@ -242,34 +352,31 @@ function driveReserve(
   // An immediately admitted pickup still occupies its slot when a drive
   // arrives next. Reserve every run this pickup commits, not only runs that
   // wait before their own acquisition.
-  // A reserved drive starts after this pickup has begun. Its measured time
-  // to validation is therefore time in which the pickup's whole service
-  // waves can finish. Keep only the runs that can still occupy the lock
-  // when that downstream drive asks for it.
-  const completedBeforeDrive =
-    state.measured.concurrency *
-    Math.floor(
-      state.measured.kinds.drive.timeToValidationMs / state.measured.runMs,
-    );
-  // Work already forecast ahead of this pickup spends the early service
-  // first. Only remaining service can complete the pickup before a drive
-  // reaches validation; otherwise the pickup is incorrectly given the same
-  // capacity credit as its predecessors.
-  const predecessorRuns =
-    state.demand.atLock + state.demand.toArrive + state.admittedRuns;
-  const pickupCompletedBeforeDrive = Math.max(
-    0,
-    Math.min(ownRuns, completedBeforeDrive - predecessorRuns),
-  );
+  // The pickup's runs are served by the same queue every other forecast
+  // reads: predecessors at the lock, estimated and unestimated arrivals and
+  // this tick's admitted runs all occupy slots ahead of it, each for its own
+  // run time and in whole requests. A run counts as finished before the
+  // drive asks for the lock when the simulated queue releases it by then.
+  const pickupCompletedBeforeDrive = completedBeforeDrive(state, ownRuns);
   const stillRunning = Math.max(0, ownRuns - pickupCompletedBeforeDrive);
   // Only work at the lock, and passes in flight with an arrival estimate,
   // may consume service before the drive arrives. Admitted passes still have
   // to reach validation, even when their eventual runs are being reserved
   // for this downstream drive, so they and the pickup's own runs are counted
-  // ahead of it.
+  // ahead of it, the pickup's at its repository's run time.
+  const { candidateRunMs, runMs } = state.measured;
+  const timed =
+    candidateRunMs === undefined ||
+    candidateRunMs === runMs ||
+    stillRunning <= 0
+      ? []
+      : [{ runs: stillRunning, runMs: candidateRunMs }];
   return {
     ...state.demand,
     toArrive: state.demand.toArrive + state.admittedRuns + stillRunning,
+    ...(timed.length > 0
+      ? { unestimated: [...(state.demand.unestimated ?? []), ...timed] }
+      : {}),
   };
 }
 
@@ -286,6 +393,8 @@ export function validationHold(
   // occupancy, so it is judged before the occupancy reading.
   if (load.waitInvalid !== undefined)
     return `waits on validation capacity: ${load.waitInvalid}`;
+  if (load.slotsInvalid !== undefined)
+    return `waits on validation capacity: ${load.slotsInvalid}`;
   const { demand } = load;
   if ("unread" in demand) return null;
   const state = {
@@ -332,9 +441,10 @@ export function validationGauge(
 ): LineLoadGauge {
   const line = `${Math.round(share * 100)}% of validation capacity`;
   const result = forecast(state, "pickup", DEFAULT_PICKUP_DEADLINE_MS, 0);
+  const invalid = state.waitInvalid ?? state.slotsInvalid;
   const reads =
-    state.waitInvalid !== undefined
-      ? state.waitInvalid
+    invalid !== undefined
+      ? invalid
       : result === null
         ? "unread" in state.demand
           ? state.demand.unread
@@ -343,7 +453,7 @@ export function validationGauge(
   return {
     gauge: "validation",
     fill:
-      state.waitInvalid !== undefined
+      invalid !== undefined
         ? // Refused outright, as an unfit forecast is: at the line.
           1
         : result === null

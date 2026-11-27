@@ -135,6 +135,7 @@ describe("Linear adapter: assignment reads", () => {
           state: { id: "s-todo", name: "Todo", type: "unstarted" },
           assignee: { id: "u-f", name: "Factory" },
           labels: { pageInfo: { hasNextPage: false }, nodes: [] },
+          allChildren: { nodes: [] },
           children: { pageInfo: { hasNextPage: false }, nodes: [] },
         },
       ]),
