@@ -995,11 +995,11 @@ async function evaluateFresh(
   report.summaryUnaddressed = summary.unaddressed.length;
   report.summaryUnaddressedKeys = summary.unaddressed
     .map((f) => String(f.fingerprint))
-    .sort();
+    .sort((a, b) => a.localeCompare(b));
   const unaddressedKeys = new Set(report.summaryUnaddressedKeys);
   report.summaryNotBlockingKeys = summary.notBlockingBacklog
     .filter((k) => unaddressedKeys.has(k))
-    .sort();
+    .sort((a, b) => a.localeCompare(b));
 
   // Parked = decided by a human, or waiting on one. Counting them as open work
   // is what makes an autonomous loop wake, re-read the same undeferrable
