@@ -404,6 +404,51 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.318.0] - 2026-11-27
+
+### Added
+
+- Seed reflection class names inline or from a local YAML or JSON file so
+  sessions can reuse shared names before the first finding is stored.
+
+### Fixed
+
+- The dispatcher reads up to 100 closing issue references per open pull request and keeps confirmed issue links available when another pull request's references are incomplete. Claimed issues with a known carrier can still be marked as carried.
+- On Jira, listing the site's labels (`tracker.ts available-labels`, and
+  `validate-labels.ts --check-tracker` under `/jig:file-issue`) no longer
+  fails with `labels: <name> repeated across pages` when someone adds a label
+  on the site during the read. Jira counts its label pages from the live
+  list, so a label added between two pages pushes the last name of one page
+  onto the start of the next; that name is now kept once. Labels are read
+  1,000 to a page, Jira's own default, instead of 100, so a large site takes
+  a few requests where it took many. Every other Jira listing still fails a
+  read that repeats an item.
+  **Consumer action:** none.
+- `validate-labels.ts --check-tracker` reports a label set the taxonomy
+  refuses with exit 3 and its taxonomy errors, without reading the tracker's
+  labels first, so a failed label read (exit 1) no longer hides the real
+  verdict. A draft whose planned native type makes it an epic is revalidated
+  before that early verdict, so the epic's label rules can satisfy it; a
+  draft whose only gap is a facet its Jira screen does not offer is still
+  exempted. **Consumer action:** none.
+- The dispatcher uses indexes to find later pickups of an item, including batch members, when recording a dependency wait.
+- Busy worktree notices in the dashboard and `jig ask`, including the drive and follow-up answers, direct operators to the checkout holding the branch.
+- A pickup record that is not known to read as a launch record, for any reason, holds back a dependency wait until the dispatcher has checked it.
+
+## [0.317.1] - 2026-11-27
+
+### Fixed
+
+- The dispatcher's board, the merge-ready announcement and `jig ask` now
+  follow a pull request's labels, review threads, review requests and
+  latest reviews past their first page, up to three pages each under the
+  read's deadline, as they already follow check contexts. A pull request
+  with more than 100 review threads (a long drive with an AI reviewer) no
+  longer stays partial while it is open: it is placed on all of its
+  threads, and an unresolved thread on a later page keeps it out of Ready to
+  merge with the count named. Past the cap, on a moved head or past the
+  deadline the card stays partial and names the connection and the reason.
+
 ## [0.317.0] - 2026-11-27
 
 ### Fixed
@@ -11525,7 +11570,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.317.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.318.0...HEAD
+[0.318.0]: https://github.com/jig-harness/jig/compare/v0.317.1...v0.318.0
+[0.317.1]: https://github.com/jig-harness/jig/compare/v0.317.0...v0.317.1
 [0.317.0]: https://github.com/jig-harness/jig/compare/v0.316.0...v0.317.0
 [0.316.0]: https://github.com/jig-harness/jig/compare/v0.315.0...v0.316.0
 [0.315.0]: https://github.com/jig-harness/jig/compare/v0.314.3...v0.315.0

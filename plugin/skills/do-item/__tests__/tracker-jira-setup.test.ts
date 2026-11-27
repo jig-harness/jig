@@ -596,6 +596,93 @@ describe("Jira pagers", () => {
     await expect(read([{ items: [] }])).rejects.toThrow("no values list");
   });
 
+  it("asks for a page of 100 unless the call names its own page size", async () => {
+    const sizes: unknown[] = [];
+    const t: JiraTransport = async (req) => {
+      sizes.push(req.query?.maxResults);
+      return { values: [], isLast: true };
+    };
+    const opts = {
+      items: "values",
+      idOf: (v: Record<string, unknown>) => v.id,
+      where: "p",
+    };
+    await offsetPages(t, { method: "GET", path: "p" }, opts);
+    await offsetPages(
+      t,
+      { method: "GET", path: "p" },
+      { ...opts, pageSize: 1000 },
+    );
+    expect(sizes).toEqual([100, 1000]);
+  });
+
+  it("drops a name repeated across pages only when the call asks for it", async () => {
+    const pages = [
+      { values: ["a", "b"], isLast: false },
+      { values: ["b", "c"], isLast: true },
+    ];
+    const opts = {
+      items: "values",
+      idOf: () => undefined,
+      where: "labels",
+      strings: true,
+    };
+    const names = await offsetPages(
+      paged(pages),
+      { method: "GET", path: "label" },
+      { ...opts, dropRepeats: true },
+    );
+    expect(names.map((v) => v.name)).toEqual(["a", "b", "c"]);
+    await expect(
+      offsetPages(paged(pages), { method: "GET", path: "label" }, opts),
+    ).rejects.toThrow("labels: b repeated across pages");
+    const ignored: JiraTransport = async () => ({
+      values: ["a", "b"],
+      isLast: false,
+    });
+    await expect(
+      offsetPages(
+        ignored,
+        { method: "GET", path: "label" },
+        { ...opts, dropRepeats: true },
+      ),
+    ).rejects.toThrow(
+      "labels: a page before the end holds only items read before",
+    );
+    const tail = await offsetPages(
+      paged([
+        { values: ["a", "b"], isLast: false },
+        { values: ["b"], isLast: true },
+      ]),
+      { method: "GET", path: "label" },
+      { ...opts, dropRepeats: true },
+    );
+    expect(tail.map((v) => v.name)).toEqual(["a", "b"]);
+  });
+
+  it("refuses a repeated terminal page that leaves a reported total unread", async () => {
+    const ignored: JiraTransport = async () => ({
+      values: ["a", "b"],
+      total: 4,
+    });
+    await expect(
+      offsetPages(
+        ignored,
+        { method: "GET", path: "label" },
+        {
+          items: "values",
+          idOf: () => undefined,
+          where: "labels",
+          strings: true,
+          dropRepeats: true,
+          pageSize: 2,
+        },
+      ),
+    ).rejects.toThrow(
+      "labels: a terminal page leaves items in the reported total unread",
+    );
+  });
+
   it("reads search pages by token and fails a repeated key or a missing isLast", async () => {
     const issue = (key: string) => ({ key, fields: {} });
     const search = (pages: unknown[]) =>

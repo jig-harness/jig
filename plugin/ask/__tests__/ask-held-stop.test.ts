@@ -36,6 +36,8 @@ import { localWriter } from "../../shared/records/writer.ts";
 import { currentIso, currentMs, isoFromMs } from "../../shared/time.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
+import type { LineSnapshot } from "../../dispatch/lib/dashboard-contract.ts";
+import { writeLine } from "../../dispatch/lib/line-store.ts";
 import type { AskAnswer } from "../lib/answer.ts";
 import { pullDoc } from "./ask-fixtures.ts";
 
@@ -509,5 +511,55 @@ describe("a drive of any other class a launch of unknown process holds", () => {
     claimElsewhere(w, long);
 
     expect((await ask(w)).waitsOn).toBe("none");
+  });
+});
+
+describe("a drive whose checkout a busy holder keeps", () => {
+  it("waits on a person to inspect the holding worktree, from the tick's line", async () => {
+    const w = world();
+    answeredPark(w, parkedAt(currentIso()));
+    const need = {
+      cause: "busy-holder",
+      stage: "rearm",
+      repo: REPO,
+      target: "PR #12",
+      pr: 12,
+      item: null,
+      url: null,
+      title: null,
+      since: "2026-11-12T10:00:00.000Z",
+      reason: "the checkout at /work/x holds the branch and is in use",
+      decisions: [],
+      notified: null,
+      workspaces: [],
+    };
+    writeLine(
+      {
+        version: 1,
+        runId: "2026-11-12T10-00-00-000Z-1-aaaaaaaa",
+        startedAt: "2026-11-12T10:00:00.000Z",
+        finishedAt: "2026-11-12T10:01:00.000Z",
+        exitStatus: 0,
+        apply: true,
+        applyWithheld: null,
+        intervalMs: 300_000,
+        longestTickMs: 60_000,
+        plugin: "1.2.3",
+        accounts: [],
+        lastAccount: null,
+        sessions: [],
+        needs: [need],
+        queue: [],
+        ready: [],
+        repos: [],
+      } as unknown as LineSnapshot,
+      "{}",
+      w.state,
+    );
+    const answer = await ask(w);
+    expect(answer.waitsOn).toMatchObject({
+      person: "inspect the holding worktree",
+      why: need.reason,
+    });
   });
 });

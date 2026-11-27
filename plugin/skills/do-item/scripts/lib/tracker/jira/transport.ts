@@ -78,7 +78,7 @@ export const JIRA_ACCOUNT_SCOPE_HELP =
 
 export const JIRA_TIMEOUT_MS = 30_000;
 
-/** The page size every listing asks for. */
+/** The page size a listing asks for unless its call names another. */
 export const PAGE = 100;
 
 export interface JiraRequest {
@@ -716,14 +716,30 @@ export interface OffsetOptions {
   signal?: AbortSignal | undefined;
   /** The items are strings (label names), each read as `{name}`. */
   strings?: boolean;
+  /** Items per page, `PAGE` when unset. */
+  pageSize?: number;
+  /**
+   * Keep the first of an item seen again on a later page instead of failing
+   * the read. Only for a listing the server pages without a snapshot and
+   * whose items are their own identity, such as the site's label names: a
+   * name added while the read pages shifts every later offset by one, so the
+   * next page opens with the name the last one closed on.
+   */
+  dropRepeats?: boolean;
+}
+
+/** An item's id as a key, `null` for an id that tells nothing apart. */
+function idKey(id: unknown): string | null {
+  const key = typeof id === "number" ? String(id) : id;
+  return typeof key === "string" ? key : null;
 }
 
 /** Remembers the ids a read has seen, refusing one seen before. */
 function idGuard(where: string): (id: unknown) => void {
   const seen = new Set<string>();
   return (id) => {
-    const key = typeof id === "number" ? String(id) : id;
-    if (typeof key !== "string") return;
+    const key = idKey(id);
+    if (key === null) return;
     if (seen.has(key)) throw shape(where, `${key} repeated across pages`);
     seen.add(key);
   };
@@ -760,10 +776,68 @@ function lastOffsetPage(
   return false;
 }
 
+/** Whether an item belongs in the read: false for a repeat it may drop. */
+function repeatFilter(opts: OffsetOptions): (id: unknown) => boolean {
+  if (opts.dropRepeats !== true) {
+    const guard = idGuard(opts.where);
+    return (id) => {
+      guard(id);
+      return true;
+    };
+  }
+  const seen = new Set<string>();
+  return (id) => {
+    const key = idKey(id);
+    if (key === null) return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  };
+}
+
+/** Adds a page's items the read keeps to `out`; how many it added. */
+function keepItems(
+  items: Record<string, unknown>[],
+  opts: OffsetOptions,
+  keep: (id: unknown) => boolean,
+  out: Record<string, unknown>[],
+): number {
+  const before = out.length;
+  for (const item of items)
+    if (keep(opts.strings === true ? item.name : opts.idOf(item)))
+      out.push(item);
+  return out.length - before;
+}
+
+/** Refuses a page before the end that moves the read on without bringing anything. */
+function checkProgress(read: number, added: number, where: string): void {
+  if (read === 0)
+    throw shape(where, "an empty page before the end of the list");
+  if (added === 0)
+    throw shape(where, "a page before the end holds only items read before");
+}
+
+/** Refuses a repeated terminal page that leaves the reported total unread. */
+function checkTerminalProgress(
+  page: Record<string, unknown>,
+  added: number,
+  out: readonly Record<string, unknown>[],
+  where: string,
+): void {
+  if (added === 0 && typeof page.total === "number" && out.length < page.total)
+    throw shape(
+      where,
+      "a terminal page leaves items in the reported total unread",
+    );
+}
+
 /**
  * Every item of an offset-paged listing. The end is `isLast: true`, else
  * `startAt + items.length >= total`; a page with neither, an item seen on
- * an earlier page, or an empty page before the end fails the read.
+ * an earlier page (unless `dropRepeats`), or a page before the end that is
+ * empty or holds only items read before fails the read: such a page moves
+ * the read on without bringing anything, as a server that ignores `startAt`
+ * does, and could otherwise repeat until the deadline.
  */
 export async function offsetPages(
   transport: JiraTransport,
@@ -771,21 +845,25 @@ export async function offsetPages(
   opts: OffsetOptions,
 ): Promise<Record<string, unknown>[]> {
   const out: Record<string, unknown>[] = [];
-  const guard = idGuard(opts.where);
+  const keep = repeatFilter(opts);
+  const maxResults = opts.pageSize ?? PAGE;
   for (let startAt = 0; ; ) {
     admitCommentPage();
-    const query = { ...request.query, startAt, maxResults: PAGE };
+    const query = { ...request.query, startAt, maxResults };
     const page = await transport({ ...request, query }, opts.signal);
     const items = offsetItems(page, opts);
-    for (const item of items) {
-      guard(opts.strings === true ? item.name : opts.idOf(item));
-      out.push(item);
-    }
+    const added = keepItems(items, opts, keep, out);
     const next = startAt + items.length;
-    if (lastOffsetPage(page as Record<string, unknown>, next, opts.where))
+    if (lastOffsetPage(page as Record<string, unknown>, next, opts.where)) {
+      checkTerminalProgress(
+        page as Record<string, unknown>,
+        added,
+        out,
+        opts.where,
+      );
       return out;
-    if (items.length === 0)
-      throw shape(opts.where, "an empty page before the end of the list");
+    }
+    checkProgress(items.length, added, opts.where);
     startAt = next;
   }
 }

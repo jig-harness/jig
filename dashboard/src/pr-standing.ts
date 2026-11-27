@@ -49,6 +49,7 @@ const NEED_LABEL: Record<LineNeed["cause"], string> = {
   parked: "Parked: waiting on a decision",
   stalled: "Stalled: the drive stopped",
   "needs-person": "Needs a person",
+  "busy-holder": "Inspect the holding worktree",
   "stopped-unknown": "Stopped, cause unknown",
   "followup-failed": "Follow-up failed",
   "followup-stale": "Follow-up claim went stale",
