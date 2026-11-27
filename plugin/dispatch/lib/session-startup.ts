@@ -147,33 +147,52 @@ function assistantTexts(entry: Record<string, unknown>): string[] {
  * content.
  */
 function transcriptUsageNotice(record: LaunchRecord): string | undefined {
-  const session = record.sessionId;
-  if (session === null || session === undefined) return undefined;
-  try {
-    const path = claudeTranscript(record.configDir, session);
-    if (path === null) return undefined;
-    const lines = readBoundedTail(path, 65_536).trimEnd().split("\n");
-    for (const line of lines.reverse()) {
-      // A partial line, or one that is no entry, says nothing.
-      if (!line.startsWith("{")) continue;
-      const entry = attempt(
-        "invalid",
-        "Transcript entry is not JSON",
-        (): unknown => JSON.parse(line),
-      );
-      if (!entry.ok || !isMapping(entry.value)) continue;
-      if (entry.value.type === "user") return undefined;
-      if (entry.value.type !== "assistant") continue;
-      const texts = assistantTexts(entry.value);
-      const text = texts.length === 1 ? (texts[0] ?? "").trim() : "";
-      return !/[\r\n]/.test(text) && noticeClause(text) !== null
-        ? text
-        : undefined;
-    }
-  } catch (error) {
-    swallow(error, "the transcript could not be read for a usage notice");
+  const lines = transcriptTail(
+    record,
+    65_536,
+    "the transcript could not be read for a usage notice",
+  );
+  for (const line of lines.reverse()) {
+    const entry = transcriptEntry(line);
+    if (entry === undefined) continue;
+    if (entry.type === "user") return undefined;
+    if (entry.type !== "assistant") continue;
+    const texts = assistantTexts(entry);
+    const text = texts.length === 1 ? (texts[0] ?? "").trim() : "";
+    return !/[\r\n]/.test(text) && noticeClause(text) !== null
+      ? text
+      : undefined;
   }
   return undefined;
+}
+
+/** One transcript line as an entry; a partial line, or one that is no JSON mapping, is none. */
+function transcriptEntry(line: string): Record<string, unknown> | undefined {
+  if (!line.startsWith("{")) return undefined;
+  const entry = attempt(
+    "invalid",
+    "Transcript entry is not JSON",
+    (): unknown => JSON.parse(line),
+  );
+  return entry.ok && isMapping(entry.value) ? entry.value : undefined;
+}
+
+/** The lines of the last `bytes` of a Claude Code session's transcript; none when it has no session, no transcript, or the read fails (`why`). */
+function transcriptTail(
+  record: LaunchRecord,
+  bytes: number,
+  why: string,
+): string[] {
+  const session = record.sessionId;
+  if (session === null || session === undefined) return [];
+  try {
+    const path = claudeTranscript(record.configDir, session);
+    if (path === null) return [];
+    return readBoundedTail(path, bytes).trimEnd().split("\n");
+  } catch (error) {
+    swallow(error, why);
+    return [];
+  }
 }
 
 /** A standalone usage notice in the output, else the one the session's transcript ends on. */
@@ -334,18 +353,14 @@ function transcriptLineSignIn(line: string): SignInPhrase | undefined {
 }
 
 function transcriptSignIn(record: LaunchRecord): SignInPhrase | undefined {
-  const session = record.sessionId;
-  if (session === null || session === undefined) return undefined;
-  try {
-    const path = claudeTranscript(record.configDir, session);
-    if (path === null) return undefined;
-    const lines = readBoundedTail(path, 16_384).trimEnd().split("\n");
-    for (const line of lines.slice(-8).reverse()) {
-      const phrase = transcriptLineSignIn(line);
-      if (phrase !== undefined) return phrase;
-    }
-  } catch (error) {
-    swallow(error, "the startup transcript could not be read");
+  const lines = transcriptTail(
+    record,
+    16_384,
+    "the startup transcript could not be read",
+  );
+  for (const line of lines.slice(-8).reverse()) {
+    const phrase = transcriptLineSignIn(line);
+    if (phrase !== undefined) return phrase;
   }
   return undefined;
 }
