@@ -86,36 +86,73 @@ export function linkChainProblem(
   directory: string,
   uid: number | undefined,
 ): string | null {
-  let resolved = "/";
-  const queue = directory.split("/").filter((part) => part !== "");
-  let hops = 0;
-  while (queue.length > 0) {
-    const name = queue.shift() as string;
-    if (name === ".") continue;
-    if (name === "..") {
-      resolved = dirname(resolved);
-      continue;
-    }
-    const next = join(resolved, name);
-    const read = attempt("socket-unreadable", "", () => lstatSync(next));
-    if (!read.ok) return `has a path component that cannot be read (${next})`;
-    // Every component the kernel visits is checked, those a later `..` leaves
-    // behind included: its owner could swap it for a link and move the `..`.
-    if (uid !== undefined && read.value.uid !== uid && read.value.uid !== 0)
-      return `has a path component owned by user ${read.value.uid} (${next})`;
-    const holder = ancestorProblem(join(resolved, "x"), uid);
-    if (holder !== null) return holder;
-    if (!read.value.isSymbolicLink()) {
-      resolved = next;
-      continue;
-    }
-    if (++hops > 40) return "has too many symbolic links in its path";
-    const target = attempt("socket-unreadable", "", () => readlinkSync(next));
-    if (!target.ok) return `has a link that cannot be read (${next})`;
-    if (target.value.startsWith("/")) resolved = "/";
-    queue.unshift(...target.value.split("/").filter((part) => part !== ""));
+  const walk: Walk = {
+    resolved: "/",
+    queue: directory.split("/").filter((part) => part !== ""),
+    hops: 0,
+  };
+  while (walk.queue.length > 0) {
+    const problem = visit(walk, walk.queue.shift() as string, uid);
+    if (problem !== null) return problem;
   }
   return null;
+}
+
+/** Where the walk of a path stands: the resolved prefix, the names still to visit, the links followed. */
+interface Walk {
+  resolved: string;
+  queue: string[];
+  hops: number;
+}
+
+/** Visit one name of the path; the problem it holds, or `null` and the walk moved on. */
+function visit(walk: Walk, name: string, uid: number | undefined) {
+  if (name === ".") return null;
+  if (name === "..") {
+    walk.resolved = dirname(walk.resolved);
+    return null;
+  }
+  const next = join(walk.resolved, name);
+  const read = attempt("socket-unreadable", "", () => lstatSync(next));
+  if (!read.ok) return `has a path component that cannot be read (${next})`;
+  const problem = componentProblem(next, walk.resolved, read.value.uid, uid);
+  if (problem !== null) return problem;
+  if (!read.value.isSymbolicLink()) {
+    walk.resolved = next;
+    return null;
+  }
+  return follow(walk, next);
+}
+
+/** Replace the link at `next` by its target in the names still to visit. */
+function follow(walk: Walk, next: string): string | null {
+  if (++walk.hops > 40) return "has too many symbolic links in its path";
+  const link = linkTarget(next);
+  if (!link.ok) return `has a link that cannot be read (${next})`;
+  if (link.value.startsWith("/")) walk.resolved = "/";
+  walk.queue.unshift(...link.value.split("/").filter((part) => part !== ""));
+  return null;
+}
+
+/** Where the symbolic link at `path` points. */
+function linkTarget(path: string): Outcome<string, "socket-unreadable"> {
+  return attempt("socket-unreadable", "", () => readlinkSync(path));
+}
+
+/**
+ * What is wrong with one component the kernel visits (`next`, inside
+ * `resolved`): every one is checked, those a later `..` leaves behind
+ * included, since its owner could swap it for a link and move the `..`.
+ */
+function componentProblem(
+  next: string,
+  resolved: string,
+  owner: number,
+  uid: number | undefined,
+): string | null {
+  if (uid !== undefined && owner !== uid && owner !== 0)
+    return `has a path component owned by user ${owner} (${next})`;
+  return ancestorProblem(join(resolved, "x"), uid);
 }
 
 /** Whether the socket path may hold a live listener: only a refused connection (or a missing file) proves it stale; any other outcome counts as live. */

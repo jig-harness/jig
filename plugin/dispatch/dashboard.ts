@@ -337,6 +337,34 @@ export function serveDashboard(options: {
     );
   }
 
+  /** The refusal a request on the address earns before it is routed; `null` when it may go on. */
+  function turnedAway(request: Request, url: URL): Response | null {
+    // Without a token the request's own authority is the only check: a page
+    // an attacker's name rebinds to this address must not read it.
+    if (token === null)
+      return authorityAllowed(request.headers.get("host"), fronts)
+        ? null
+        : answered(
+            failed(
+              "host-refused",
+              "this dashboard answers only to its loopback names and the front hosts the machine file lists",
+            ),
+            request,
+            403,
+          );
+    if (sameToken(url.searchParams.get("token"), token)) return null;
+    return url.pathname === "/"
+      ? pageResponse(refused, request, 403)
+      : answered(
+          failed(
+            "token-refused",
+            "this dashboard needs the token its command printed",
+          ),
+          request,
+          403,
+        );
+  }
+
   /** Answer one request; `onSocket` is the private socket, whose mode is its own check. */
   async function answer(
     request: Request,
@@ -349,36 +377,8 @@ export function serveDashboard(options: {
         request,
         405,
       );
-    // Without a token the request's own authority is the only check: a page
-    // an attacker's name rebinds to this address must not read it.
-    if (
-      !onSocket &&
-      token === null &&
-      !authorityAllowed(request.headers.get("host"), fronts)
-    )
-      return answered(
-        failed(
-          "host-refused",
-          "this dashboard answers only to its loopback names and the front hosts the machine file lists",
-        ),
-        request,
-        403,
-      );
-    if (
-      !onSocket &&
-      token !== null &&
-      !sameToken(url.searchParams.get("token"), token)
-    )
-      return url.pathname === "/"
-        ? pageResponse(refused, request, 403)
-        : answered(
-            failed(
-              "token-refused",
-              "this dashboard needs the token its command printed",
-            ),
-            request,
-            403,
-          );
+    const turned = onSocket ? null : turnedAway(request, url);
+    if (turned !== null) return turned;
     try {
       return await route(request, url);
     } catch (defect) {

@@ -18,23 +18,87 @@ export interface DashboardTargets {
   socket: string | null;
 }
 
+const LOOPBACK_NAMES = ["localhost", "127.0.0.1", "::1"];
+
+/** The host (lower case) and port a `host:port` target, with or without a scheme or path, names. */
+function hostAndPort(target: string): { host: string; port: string } | null {
+  const bare = target.replace(/^[a-z+]+:\/\//i, "").replace(/\/.*$/, "");
+  const at = /^(?:\[(.+)\]|([^:]+)):(\d+)$/.exec(bare);
+  if (at === null) return null;
+  return { host: (at[1] ?? at[2] ?? "").toLowerCase(), port: at[3] as string };
+}
+
+/** Whether two host names are the same, the names for this machine counting as one. */
+function sameHost(a: string, b: string): boolean {
+  return a === b || (LOOPBACK_NAMES.includes(a) && LOOPBACK_NAMES.includes(b));
+}
+
 /** Whether a route's target (`http://127.0.0.1:8765`, `unix:/path`, `127.0.0.1:8765`) is the dashboard's. */
 function reachesDashboard(target: string, mine: DashboardTargets): boolean {
   if (target.startsWith("unix:"))
     return mine.socket !== null && target.slice(5) === mine.socket;
-  if (mine.listen === null) return false;
+  const at = hostAndPort(target);
+  if (at === null || mine.listen === null) return false;
   const port = String(mine.listen.port ?? mine.defaultPort);
-  const bare = target.replace(/^[a-z+]+:\/\//i, "").replace(/\/.*$/, "");
-  const at = /^(?:\[(.+)\]|([^:]+)):(\d+)$/.exec(bare);
-  if (at === null) return false;
-  const host = (at[1] ?? at[2] ?? "").toLowerCase();
-  const own = mine.listen.host.toLowerCase();
-  const loopbackNames = ["localhost", "127.0.0.1", "::1"];
-  return (
-    at[3] === port &&
-    (host === own ||
-      (loopbackNames.includes(host) && loopbackNames.includes(own)))
+  return at.port === port && sameHost(at.host, mine.listen.host.toLowerCase());
+}
+
+type Targets = Outcome<string[], "funnel-unreadable">;
+
+const absent = (value: unknown) => value === undefined || value === null;
+const readable = (value: unknown) => absent(value) || isRecord(value);
+
+const unreadable = (what: string): Targets =>
+  failed(
+    "funnel-unreadable",
+    `the serve status lists an enabled Funnel route whose ${what} this check cannot read`,
   );
+
+/** One web handler's proxy target: `null` when it proxies nothing, `false` when it cannot be read. */
+function handlerProxy(handler: unknown): string | null | false {
+  if (!isRecord(handler)) return false;
+  if (absent(handler.Proxy)) return null;
+  return typeof handler.Proxy === "string" ? handler.Proxy : false;
+}
+
+/** The proxy targets of a route's web handlers, or why they cannot be read. */
+function proxyTargets(entry: unknown, route: string): Targets {
+  const handlers = isRecord(entry) ? entry.Handlers : undefined;
+  if (!readable(entry)) return unreadable(`Web entry ${route}`);
+  if (!readable(handlers)) return unreadable(`handlers for ${route}`);
+  const proxies = Object.values(isRecord(handlers) ? handlers : {}).map(
+    handlerProxy,
+  );
+  if (proxies.includes(false))
+    return unreadable(`handler entries for ${route}`);
+  return ok(
+    proxies.filter(
+      (proxy): proxy is string => proxy !== null && proxy !== false,
+    ),
+  );
+}
+
+/** The raw TCP forward target of a route's port, or why it cannot be read. */
+function forwardTargets(slot: unknown, route: string): Targets {
+  if (!readable(slot)) return unreadable(`TCP entry for ${route}`);
+  const forward = isRecord(slot) ? slot.TCPForward : undefined;
+  if (absent(forward)) return ok([]);
+  return typeof forward === "string"
+    ? ok([forward])
+    : unreadable(`TCP forward for ${route}`);
+}
+
+/** The targets one enabled Funnel route publishes. */
+function routeTargets(status: Record<string, unknown>, route: string): Targets {
+  const web = isRecord(status.Web) ? status.Web : {};
+  const tcp = isRecord(status.TCP) ? status.TCP : {};
+  const proxies = proxyTargets(web[route], route);
+  const forwards = forwardTargets(
+    tcp[route.slice(route.lastIndexOf(":") + 1)],
+    route,
+  );
+  if (!proxies.ok) return proxies;
+  return forwards.ok ? ok([...proxies.value, ...forwards.value]) : forwards;
 }
 
 /**
@@ -49,58 +113,21 @@ export function funnelExposure(
   if (!isRecord(status))
     return failed("funnel-unreadable", "the serve status is not a JSON object");
   const open = status.AllowFunnel;
-  if (open === undefined || open === null) return ok([]);
+  if (absent(open)) return ok([]);
   if (!isRecord(open))
     return failed(
       "funnel-unreadable",
       "the serve status lists AllowFunnel in a form this check cannot read",
     );
-  const unreadable = (what: string) =>
-    failed(
-      "funnel-unreadable",
-      `the serve status lists an enabled Funnel route whose ${what} this check cannot read`,
-    );
-  const absent = (value: unknown) => value === undefined || value === null;
-  if (!absent(status.Web) && !isRecord(status.Web)) return unreadable("Web");
-  if (!absent(status.TCP) && !isRecord(status.TCP)) return unreadable("TCP");
-  const web = isRecord(status.Web) ? status.Web : {};
-  const tcp = isRecord(status.TCP) ? status.TCP : {};
+  if (!readable(status.Web)) return unreadable("Web");
+  if (!readable(status.TCP)) return unreadable("TCP");
   const exposed: string[] = [];
   for (const [route, on] of Object.entries(open)) {
     if (on !== true) continue;
-    const entry = web[route];
-    if (!absent(entry) && !isRecord(entry))
-      return unreadable(`Web entry ${route}`);
-    if (isRecord(entry) && !absent(entry.Handlers) && !isRecord(entry.Handlers))
-      return unreadable(`handlers for ${route}`);
-    const handlers =
-      isRecord(entry) && isRecord(entry.Handlers)
-        ? Object.values(entry.Handlers)
-        : [];
-    if (
-      handlers.some(
-        (handler) =>
-          !isRecord(handler) ||
-          (!absent(handler.Proxy) && typeof handler.Proxy !== "string"),
-      )
-    )
-      return unreadable(`handler entries for ${route}`);
-    const slot = tcp[route.slice(route.lastIndexOf(":") + 1)];
-    if (!absent(slot) && !isRecord(slot))
-      return unreadable(`TCP entry for ${route}`);
-    const proxied = handlers.some(
-      (handler) =>
-        isRecord(handler) &&
-        typeof handler.Proxy === "string" &&
-        reachesDashboard(handler.Proxy, mine),
-    );
-    const port = route.slice(route.lastIndexOf(":") + 1);
-    const forward = isRecord(tcp[port]) ? tcp[port].TCPForward : undefined;
-    if (!absent(forward) && typeof forward !== "string")
-      return unreadable(`TCP forward for ${route}`);
-    const forwarded =
-      typeof forward === "string" && reachesDashboard(forward, mine);
-    if (proxied || forwarded) exposed.push(route);
+    const targets = routeTargets(status, route);
+    if (!targets.ok) return targets;
+    if (targets.value.some((target) => reachesDashboard(target, mine)))
+      exposed.push(route);
   }
   return ok(exposed);
 }

@@ -754,6 +754,42 @@ function limits(
   });
 }
 
+/** The dashboard's address, token rule, front host names, front address and private socket. */
+function dashboardSettings(
+  value: unknown,
+): Checked<
+  Pick<
+    MachineConfig,
+    | "dashboardListen"
+    | "dashboardRequireToken"
+    | "dashboardAllowedHosts"
+    | "dashboardFront"
+    | "dashboardSocket"
+  >
+> {
+  const listen = dashboard(value);
+  if (!listen.ok) return listen;
+  const requireToken = dashboardRequireToken(value);
+  if (!requireToken.ok) return requireToken;
+  const allowedHosts = dashboardAllowedHosts(value);
+  if (!allowedHosts.ok) return allowedHosts;
+  const socket = dashboardSocket(value, listen.value);
+  if (!socket.ok) return socket;
+  const front = dashboardFront(
+    value,
+    requireToken.value,
+    socket.value !== null,
+  );
+  if (!front.ok) return front;
+  return ok({
+    dashboardListen: listen.value,
+    dashboardRequireToken: requireToken.value,
+    dashboardAllowedHosts: allowedHosts.value,
+    dashboardFront: front.value,
+    dashboardSocket: socket.value,
+  });
+}
+
 /** The dashboard, the shared records, and whether `jig send` and the change probe run here. */
 function surfaces(
   top: Record<string, unknown>,
@@ -773,20 +809,8 @@ function surfaces(
 > {
   const failureSettings = failures(top.failures);
   if (!failureSettings.ok) return failureSettings;
-  const dashboardListen = dashboard(top.dashboard);
-  if (!dashboardListen.ok) return dashboardListen;
-  const requireToken = dashboardRequireToken(top.dashboard);
-  if (!requireToken.ok) return requireToken;
-  const allowedHosts = dashboardAllowedHosts(top.dashboard);
-  if (!allowedHosts.ok) return allowedHosts;
-  const socket = dashboardSocket(top.dashboard, dashboardListen.value);
-  if (!socket.ok) return socket;
-  const front = dashboardFront(
-    top.dashboard,
-    requireToken.value,
-    socket.value !== null,
-  );
-  if (!front.ok) return front;
+  const dash = dashboardSettings(top.dashboard);
+  if (!dash.ok) return dash;
   const sharedRecords = records(top.records);
   if (!sharedRecords.ok) return sharedRecords;
   const send = flag(top.send, "send", true);
@@ -795,11 +819,7 @@ function surfaces(
   if (!changeProbe.ok) return changeProbe;
   return ok({
     failures: failureSettings.value,
-    dashboardListen: dashboardListen.value,
-    dashboardRequireToken: requireToken.value,
-    dashboardAllowedHosts: allowedHosts.value,
-    dashboardFront: front.value,
-    dashboardSocket: socket.value,
+    ...dash.value,
     sharedRecords: sharedRecords.value,
     send: send.value,
     changeProbe: changeProbe.value,
