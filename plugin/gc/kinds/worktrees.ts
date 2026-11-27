@@ -28,7 +28,7 @@ import {
   removeThroughOrca,
   removeWithGit,
 } from "../worktree-removal.ts";
-import { processHolder } from "./worktree-git.ts";
+import { holderOf } from "./worktree-git.ts";
 import {
   type Collected,
   goneClaims,
@@ -88,6 +88,7 @@ import { snapshotBaseHooks } from "./worktree-base-hooks.ts";
 import {
   managedCheckoutProof,
   ownedCheckoutProof,
+  withOrcaEvidence,
 } from "./worktree-owned-proof.ts";
 import { shellQuote } from "../../shared/cli.ts";
 
@@ -247,6 +248,10 @@ function resolvedPath(path: string): string {
 /** Whether the claim's `path` lies under `root` once its nearest existing ancestor is resolved. */
 function underRoot(path: string, root: string): boolean {
   return within(resolvedPath(path), root);
+}
+/** Whether the inventory found Orca also listing this process-owned worktree. */
+function isDualListed(resource: Resource): boolean {
+  return isMapping(resource.details) && resource.details.dualManaged === true;
 }
 function orcaId(resource: Resource): string | null {
   return isMapping(resource.details) &&
@@ -460,7 +465,11 @@ function settledClaim(
   if (isSupersededClaim(resource)) return releaseSupersededClaim(resource);
   return null;
 }
-/** A process-owned worktree is collected only while its owner is idle and Orca does not also list it. */
+/**
+ * A process-owned worktree is collected only while its owner is idle and,
+ * when Orca also lists it, while Orca's registry shows no agent or live
+ * terminal in it: neither runtime's evidence stands in for the other's.
+ */
 async function checkProcessOwner(
   resource: Resource,
   repository: string,
@@ -472,21 +481,24 @@ async function checkProcessOwner(
   if (orca === undefined) return ok(undefined);
   const managed = await orcaWorktrees(orca, repository);
   if (!managed.ok) return managed;
-  return managed.value.has(canonicalWorktree(resource.id))
-    ? failed(
-        "dual-managed",
-        "process-owned worktree is also listed by Orca; reconcile its runtime ownership before collection",
-      )
-    : ok(undefined);
+  if (!managed.value.has(canonicalWorktree(resource.id))) return ok(undefined);
+  const registry = await orcaLiveness(orca, resource.id, true);
+  if (registry === null) return ok(undefined);
+  return failed(
+    registry.state === "live" ? "live" : "orca-unreadable",
+    `kept: ${registry.reason}`,
+  );
 }
 /** Kept when a process holds the worktree, or holders could not be read. */
 async function unheld(worktree: string): Promise<Outcome<undefined, string>> {
-  if ((await processHolder(worktree)) !== false)
-    return failed(
-      "held",
-      "kept after the hook: a process holds the worktree, or holders could not be read",
-    );
-  return ok(undefined);
+  const holders = await holderOf(worktree);
+  if (holders.held === false) return ok(undefined);
+  return failed(
+    "held",
+    holders.held === null
+      ? `kept after the hook: holders could not be read: ${holders.unknown}`
+      : "kept after the hook: a process holds the worktree",
+  );
 }
 /**
  * The last admission before a worktree goes, after its hook and park: what
@@ -886,12 +898,6 @@ export function worktreesKind(
     prove: async (resource) => {
       const early = proveEarly(orca, resource, repository);
       if (early !== null) return early;
-      if (isMapping(resource.details) && resource.details.dualManaged === true)
-        return {
-          state: "unverified",
-          reason:
-            "process-owned worktree is also listed by Orca; reconcile its runtime ownership before collection",
-        };
       const resolved =
         policy === undefined ? await worktreePolicy(repository) : ok(policy);
       if (!resolved.ok)
@@ -913,9 +919,14 @@ export function worktreesKind(
             );
       if (!result.ok)
         return { state: "unverified", reason: result.failure.reason };
-      if (result.value.identity !== null)
-        proved.set(resource.id, result.value.identity);
-      return withHeldBranch(resource, result.value.proof);
+      const settled = await withOrcaEvidence(
+        resource.id,
+        orca,
+        isDualListed(resource),
+        result.value,
+      );
+      if (settled.identity !== null) proved.set(resource.id, settled.identity);
+      return withHeldBranch(resource, settled.proof);
     },
     collect: async (resource) => {
       const settled =

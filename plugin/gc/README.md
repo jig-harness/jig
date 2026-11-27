@@ -63,20 +63,36 @@ Scratch creators use `shared/gc-lock.ts` to hold shared admission while
 creating a scope and writing its owner record. Collectors take exclusive
 admission across the final proof and removal. Each admission token holds its
 creator's [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
-(`shared/liveness.ts`). An abandoned admission token blocks collection and
-needs inspection; it is never stolen on age, and the refusal names its
-creator and why that creator counts as gone.
+(`shared/liveness.ts`). A token is never stolen on age. A collector removes
+a creator's token, and says so in its log, when the token's own record names
+this host and the host proves its process gone: no process has that pid with
+that start time, or the host restarted since. The scratch kind's collector
+likewise takes over a `writer` file left by a collector that was killed, on
+the same proof; every other kind refuses it. The next collection proves every
+scope again before it removes anything. A token that may still be held always blocks
+collection: one that is alive, one with no record, one written before records
+named a host, one from another host, and one whose host's process table
+cannot be read. The refusal names the creator and why it counts as gone.
+Such a token that is known gone, or that has stood for thirty minutes with its
+holder unknown, is reported by `jig doctor gc` (the `gc:admission-tokens` check) and raises one
+host need in the dispatch dashboard naming the token; a person inspects its
+holder and removes the file only once no process of that holder can still run.
 The process worktree opener uses the same protocol. Other worktree openers
 remain report-only, except those a workspace runtime manages and those an
 agent tool makes.
 
 The process-holder check asks `lsof` which processes have files open under
 the worktree. `lsof` warns about every mount it cannot read, whatever path
-it was asked about (a desktop's document portal, a container's mounts); a
-warning about a mount that neither holds the worktree nor lies inside it is
-set aside. A warning about the worktree's own mount or one inside it,
-anything else `lsof` reports as an error, or a run that was killed leaves
-the holders unknown and the worktree `unverified`.
+it was asked about (a desktop's document portal, a container's mounts), and
+exits 1 for those warnings whether or not it also listed processes. A
+process listed by a run that completed, untruncated, is a holder, whatever
+its exit status or its warnings, and the worktree is kept as live. With no
+process listed, exit status 1 and only warnings about mounts that neither
+hold the worktree nor lie inside it read as not held; the same warnings
+under another exit status leave the holders unknown. A warning about the worktree's own mount or one inside
+it, anything else `lsof` reports as an error, a run that was killed, timed
+out or cut off, or an exit status that is no listing leaves the holders
+unknown and the worktree `unverified`; the reason names which.
 
 ### Ignored content
 
@@ -280,9 +296,14 @@ The collector includes the runs root even when the host uses another runtime.
 A process owner is collectible only when every launch it names, and every
 other launch naming the checkout, has a readable recorded exit and every
 recorded wrapper, supervisor and child identity is dead. Missing or malformed
-records keep the checkout. A process-owned checkout also listed by Orca is kept
-as unverified until its runtime ownership is reconciled, so neither runtime's
-session evidence can be skipped. Git, pull request, ignored-content, process-holder
+records keep the checkout. Orca lists every Git worktree of a repository whose
+external worktrees it shows, so a process-owned checkout is often listed by
+Orca too. It is then collectible only when both runtimes' evidence says it is
+finished: the process owner's (above) and Orca's registry, which must show no
+agent at work and no live terminal in it. Neither runtime's evidence stands
+in for the other's. A registry that cannot be read, or that counts a terminal
+whose agents it cannot report, keeps the checkout as unverified and the reason
+names Orca. Git, pull request, ignored-content, process-holder
 and idleness checks still apply. A checkout without a pull request may be
 collected only when its commits are already on the base branch.
 

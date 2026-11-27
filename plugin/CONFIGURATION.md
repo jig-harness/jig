@@ -1761,12 +1761,13 @@ recorded, so after changing the limit run `jig install gc --yes` and
 writer on that host must
 use the admission check for the limit to apply across test runs.
 
-`jig doctor gc` reports the registry count and the free inode share of the
-filesystem containing Jig's state directory. An
+`jig doctor gc` reports the registry count, the free inode share of the
+filesystem containing Jig's state directory and any admission token that
+blocks collection and that gc cannot prove its holder gone. An
 [inode](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is a
-filesystem record needed for each file or directory. An over-limit registry or
-less than 10% free inodes fails the check and raises a host need in the dispatch
-dashboard. The inode check is skipped when the filesystem does not report an
+filesystem record needed for each file or directory. An over-limit registry,
+less than 10% free inodes or an unprovable admission token fails its check and
+raises a host need in the dispatch dashboard. The inode check is skipped when the filesystem does not report an
 inode count. A scheduled collector that can only report an over-limit registry
 exits with a failure receipt.
 
@@ -2979,6 +2980,12 @@ estimated costs marked separately, and each window's spending (`by window`),
 estimates and an unknown window shown as such. The ledger contains no request payloads
 or raw credentials. A caller identifies one tick, one pass and its stage,
 or a skill a person ran.
+
+A `calls-failing` need appears once per caller and system when a caller
+outside the tick and its passes has at least 20 calls to the system, in the
+ledger's last hours, that were all refused as `unauthorized` or `invalid`
+under credentials that never succeeded;
+it is withdrawn once the ledger holds no such calls.
 
 A `low-quota` need appears once per quota when the prior hour's spending would
 empty the balance before refill and is withdrawn when that projection clears.

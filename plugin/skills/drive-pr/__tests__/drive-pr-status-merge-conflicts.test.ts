@@ -499,6 +499,7 @@ describe("drive-status.ts reports counts it never measured as null", () => {
       summaryUnaddressedKeys: null,
       summaryHeldUndispatchedKeys: null,
       summaryIgnoredBacklogKeys: null,
+      summaryNotBlockingKeys: null,
       parkedKeys: null,
       actionableParkKeys: null,
       churnParkKeys: null,

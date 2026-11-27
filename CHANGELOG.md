@@ -404,6 +404,144 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.313.4] - 2026-11-27
+
+### Fixed
+
+- A scratch admission token left by a process that died no longer blocks
+  every scratch collection until a person removes it. When a token's record
+  names this host and the host proves its process gone (no process has that
+  pid with that start time, or the host restarted since), the collector
+  removes the token and logs it; the scratch collector likewise takes over
+  the `writer` file of a collector that was killed. A token that may still be
+  held, or that gc cannot prove gone (no record, a record written before
+  records named a host, another host, an unreadable process table), still
+  blocks and is kept, and `jig doctor gc` and the dispatch dashboard now
+  raise one host need naming it, with the check a person makes.
+
+## [0.313.3] - 2026-11-27
+
+### Fixed
+
+- drive-pr's divergence stop parked drives that were converging. A round now
+  diverges only when it raises more review findings than it fixes, so a round
+  that raises as many as it fixes no longer counts. Backlog findings the
+  reviewer renders in its not-blocking *Beyond this PR* section are no longer
+  counted, even when that section abbreviates them. Convergence still asks for
+  an answer to such an entry. The status JSON lists these entries under
+  `work.summaryNotBlockingKeys`. The round ceiling and the two diverging rounds
+  that park are unchanged.
+  A drive that was counting under the earlier rule starts its count again at
+  its next round.
+
+## [0.313.2] - 2026-11-27
+
+The drive doctor asks its forge client who it is once per run, and the dispatcher's line now shows a caller whose credentials never succeed.
+
+### Fixed
+
+- `jig gc` kept a worktree as `unverified` ("process holders could not be
+  enumerated") when `lsof` listed a process in it but also warned about a
+  mount it cannot read, a desktop's document portal or a container's mounts,
+  because `lsof` then exits 1 and only an exit 0 counted as a holder. A
+  listed process now reads as held, so the worktree is reported as in use, and
+  one with no process listed over such warnings reads as not held. A warning
+  about the worktree's own mount, a run that was killed or timed out, and an
+  exit status that is no listing still leave the holders unknown, and the
+  reason now names which.
+- `drives.ts --doctor` still sent a `GET /user` and an issue-comment read for every drive whose state carried an unreleased CI hold, on every run, all failing when its forge client had no login. The diagnosis of every CI hold and the recovery of every leftover record now share one question per run, whatever the run was asked to do. A client that names no login makes that one failing call, prints one line on standard error and nothing on standard output, and exits `4`, leaving the records for a later run; a run that needs no forge read asks nothing. `drives-read-only.ts` and `jig ask`, which read the doctor, report the same reason. **Consumer action:** advised at machine, instructions. A job that reads `--doctor`'s exit code treats `4` as the client naming no login, not as a finding. To confirm after upgrading, `jig budget --hours 3 --json` shows the failing `GET /user` and issue-comment reads of `skill:drives.ts` falling to about one per run on a host whose client has no login; before the change they were about 58 of each per run.
+- The `calls-failing` host need never appeared for a caller that had one working credential beside its failing ones, because the working one hid the rest. Each credential is now judged by its own calls: a caller with credentials whose every call was refused as `unauthorized` or `invalid`, at least 20 calls in all, shows on the line.
+
+## [0.313.1] - 2026-11-27
+
+### Fixed
+
+- `jig gc` collects a process-runtime worktree that Orca also lists. Orca lists every Git worktree of a repository whose external worktrees it shows, so on a host with both runtimes such worktrees were always kept as unverified ("also listed by Orca") and piled up with every dispatched run. A process-owned worktree is now collectible when the process owner's evidence and Orca's registry both say it is finished: every launch that names it has ended with its recorded processes dead, and Orca shows no agent at work and no live terminal in it. A registry that cannot be read, or a terminal whose agents Orca cannot report, keeps the worktree as unverified and the reason names Orca. Git state, pull request, ignored content, process holders and idleness are checked as before, so a worktree with uncommitted work or unpushed commits is still kept. See [gc's process runtime section](plugin/gc/README.md).
+- On the process runtime, a pickup whose worktree create hook left a daemon
+  running in the new worktree (a build tool's, started by a dependency
+  install) was held in the tick that prepared it, as a workspace with a
+  terminal whose agent the runtime cannot report, and launched only a tick
+  later. A worktree hook now runs with `JIG_HOOK_WORKTREE` naming its
+  worktree, and the runtime leaves out of the count a process that has no
+  controlling terminal and whose environment names that worktree so, so the
+  pickup launches in the same tick. Any other process working in the
+  worktree, a person's shell or an agent started by hand, still holds the
+  pickup; on a host without `/proc` the count is unchanged, and
+  `process.env_keep` refuses the variable. Why this way and not another is in
+  [the process runtime's design](design/dispatched-sessions.md#a-worktree-hooks-leftovers).
+
+## [0.313.0] - 2026-11-27
+
+A drive doctor with a forge client that has no login no longer repeats failing
+calls on every run, and a caller whose calls all fail now shows on the
+dispatcher's line.
+
+### Added
+
+- The dispatcher's line raises one `calls-failing` host need for a caller
+  outside the tick and its passes whose calls to a system were all refused as
+  `unauthorized` or `invalid` under credentials that never succeeded (at least
+  20 in all), naming the caller, the classes and the number of credentials. The need clears once the
+  ledger holds no such calls. To confirm after upgrading,
+  `jig budget --hours 1 --json` shows no `invalid` results for
+  `skill:drives.ts`, and no new unverified owner record every five minutes.
+
+### Fixed
+
+- `drives.ts --doctor` sent a `GET /user` and a comment read for every
+  leftover driver record on every run, and all of them failed when its forge
+  client had no login. The recovery now asks who the client is once for all its
+  records, reads no comment when it cannot say, and leaves the records for a
+  later run. A census that wants no forge access runs
+  `drives-read-only.ts --doctor`, which skips the recovery.
+- A forge client's refusal to run for want of a token for the account a call
+  addresses is classed `unauthorized`, not `invalid`.
+
+## [0.312.3] - 2026-11-27
+
+A pickup reuses a Scout Findings comment only when its author is trusted.
+
+### Changed
+
+- A pickup fetches an issue's comments with `list_comments.ts` for its scout
+  check even when a launcher cached them, since the cache names no author
+  association; a findings comment from the native Linear tool, which names
+  none either, is ignored and the scouts run again.
+
+### Security
+
+- `list_comments.ts` now reports each comment's author login and the
+  tracker's association for them (`authorAssociation`: GitHub's own value, a
+  workspace member as `MEMBER` on Linear and Jira, `UNKNOWN` when the tracker
+  cannot say), and `select_scout_finding.ts` selects a findings comment only
+  from an author `shared/trusted-authors.ts` trusts. Any other findings
+  comment is listed under `untrusted` in the decision and ignored, so on a
+  public repository a comment from anyone else is no longer taken as a
+  pickup's plan. `/jig:do-item` reads such comments as data, marked as
+  untrusted, and `plugin/MECHANISMS.md` describes the boundary.
+
+## [0.312.2] - 2026-11-27
+
+### Fixed
+
+- drive-pr: a drive under a CI hold no longer waits on `CI_HOLD_WAIT` until it
+  stops as stalled when a label event's skipped run is a required check's
+  newest run on the head. This happens on a repository whose workflows skip
+  the required job on label events, and the drive's own state-label writes
+  start such runs. Until the hold is first added, the drive judges the newest
+  run of that check that is not a skip, so it adds the hold and pushes. A
+  queued or running run is still waited for. A cancelled run is still left to
+  the cancelled-run recovery. A skip is never read as a complete run or a
+  passing one. After a release, and for the final CI check, the drive still
+  judges the newest run. The workflow-convention lint still reports the
+  workflow shape, which M13 forbids.
+
+## [0.312.1] - 2026-11-27
+
+### Fixed
+
+- With `runtime: process`, a dispatch tick no longer scans the host's processes once per worktree, each scan a blocking spawn on the event loop every repository's observe shares. Listing a repository's sessions scans once, without blocking, and every worktree is judged on that one answer, so a small repository's runtime phase no longer waits behind other repositories' scans. The holders found and the handling of an incomplete scan are unchanged. To see the effect, read the `runtime` figure of each repository's `took` line in `jig receipts dispatch <date>` before and after the upgrade. **Consumer action:** none.
+
 ## [0.312.0] - 2026-11-27
 
 ### Added
@@ -11224,7 +11362,15 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.312.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.313.4...HEAD
+[0.313.4]: https://github.com/jig-harness/jig/compare/v0.313.3...v0.313.4
+[0.313.3]: https://github.com/jig-harness/jig/compare/v0.313.2...v0.313.3
+[0.313.2]: https://github.com/jig-harness/jig/compare/v0.313.1...v0.313.2
+[0.313.1]: https://github.com/jig-harness/jig/compare/v0.313.0...v0.313.1
+[0.313.0]: https://github.com/jig-harness/jig/compare/v0.312.3...v0.313.0
+[0.312.3]: https://github.com/jig-harness/jig/compare/v0.312.2...v0.312.3
+[0.312.2]: https://github.com/jig-harness/jig/compare/v0.312.1...v0.312.2
+[0.312.1]: https://github.com/jig-harness/jig/compare/v0.312.0...v0.312.1
 [0.312.0]: https://github.com/jig-harness/jig/compare/v0.311.3...v0.312.0
 [0.311.3]: https://github.com/jig-harness/jig/compare/v0.311.2...v0.311.3
 [0.311.2]: https://github.com/jig-harness/jig/compare/v0.311.1...v0.311.2

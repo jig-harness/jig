@@ -31,6 +31,7 @@ import { cancellableRequest } from "./cancellation.ts";
 import {
   COMMENTS_QUERY,
   commentFacts,
+  listedComment,
   trustedUser,
 } from "./linear-comments.ts";
 import { batch } from "../../../../../shared/outbound/batch.ts";
@@ -833,15 +834,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
         `comments of ${key}`,
         signal,
       );
-      const out: IssueComment[] = nodes.map((c, i) => {
-        const n = record(c, `comments of ${key}[${i}]`);
-        return {
-          body: str(n.body, `comments of ${key}[${i}].body`),
-          ...(typeof n.createdAt === "string"
-            ? { createdAt: n.createdAt }
-            : {}),
-        };
-      });
+      const out: IssueComment[] = nodes.map((c, i) => listedComment(c, key, i));
       return out.sort((a, b) =>
         (a.createdAt ?? "").localeCompare(b.createdAt ?? ""),
       );

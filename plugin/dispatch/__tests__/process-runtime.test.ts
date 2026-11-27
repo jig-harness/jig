@@ -66,6 +66,7 @@ it("binds only the chosen account and refuses credentials and loader controls in
     "LD_PRELOAD",
     "BUN_OPTIONS",
     "JIG_LAUNCH",
+    "JIG_HOOK_WORKTREE",
   ])
     expect(processSettings({ env_keep: [name] })).toMatchObject({
       ok: false,

@@ -517,6 +517,25 @@ with neither a reported cost nor a price is recorded with an unknown cost and
 the account's day counts it at the reservation; the dispatcher shows the
 account as `cost unknown` so a person adds the price.
 
+**A caller whose calls all fail.** The ledger records every caller, but the
+tick's receipt and the failure ledger speak only of the tick's own calls and
+its passes'. A caller outside them (a skill a timer or a person runs) that
+sends calls which never succeed, such as one started with a configuration
+directory holding no login, would otherwise repeat them unseen: each run is
+a new credential, so no single key shows a count. The tick reads the ledger
+it already reads for the quota forecast and raises one `calls-failing` host
+need per caller and system with credentials whose every call to it was
+refused, as `unauthorized` or `invalid` (at least 20 calls in all), naming the
+caller, the classes and the number of credentials. A credential is judged by
+its own calls, so another credential of the same caller that works does not
+hide it: a skill is the caller of every run that uses it. The cure is the caller's: a login, or not running.
+A caller of the forge asks once who the client is and, when it cannot say,
+sends nothing more (ADR-0021: reuse an answer before sending). The drive
+doctor asks once per run, whatever it was asked to do: the recovery of every
+leftover record and the diagnosis of every CI hold share the answer, and a
+run whose client names no login ends with that one failing call, one line on
+standard error and exit `4`.
+
 **What is reported.** `jig budget` and the tick report add a line per
 provider account: the day's spend against the cap, the passes it paid for and
 the costliest stages. A cap the last hours' spending would pass before the

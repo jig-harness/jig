@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 import { MARKER_SAFE_FINGERPRINT } from "./lib/summary-answer.ts";
 export { MARKER_SAFE_FINGERPRINT } from "./lib/summary-answer.ts";
-import { withoutFencedExamples } from "./lib/markdown-examples.ts";
 import { summaryAnswerBlocks } from "../../../shared/summary-answer-blocks.ts";
 import { definedFields } from "../../../shared/defined-fields.ts";
 import { swallow } from "../../../shared/errors.ts";
@@ -73,6 +72,13 @@ import {
 } from "./lib/overlay.ts";
 import { ghCall } from "./lib/proc.ts";
 import { type PagedRead, slurpPages } from "./lib/paged-read.ts";
+import {
+  type BacklogEntry,
+  type BodyFinding,
+  decodeBacklog,
+  parseBodyFindings,
+  partitionBacklog,
+} from "./lib/backlog.ts";
 import { reviewBodyReport } from "./lib/review-body.ts";
 import {
   type ReviewerPosition,
@@ -103,23 +109,14 @@ import {
 
 export { fingerprintOf, type ReviewerPosition, reviewerPosition, severityOf };
 
-// ── Pure parsing (unit-tested directly; no network) ─────────────────────────
+export {
+  type BacklogEntry,
+  type BodyFinding,
+  decodeBacklog,
+  parseBodyFindings,
+};
 
-export interface BacklogEntry {
-  fingerprint: string;
-  path: string;
-  line: number | null;
-  severity: string;
-  dimension: string;
-  /** A `categories` token from `.config/review-triage.yaml`, or `unknown` — see `categoryOf`. */
-  category: string;
-  confidence?: string;
-  scope?: string;
-  comment: string;
-  firstRound?: number;
-  reason?: string;
-  blocking?: boolean;
-}
+// ── Pure parsing (unit-tested directly; no network) ─────────────────────────
 
 export interface SummaryFinding {
   fingerprint: string;
@@ -141,6 +138,13 @@ export interface SummaryReport {
   findings: SummaryFinding[];
   unaddressed: SummaryFinding[];
   ignoredBacklog: BacklogEntry[];
+  /**
+   * Fingerprints of the backlog entries still counted as open work that the
+   * reviewer renders in its not-blocking section (`renderedNotBlocking` in `lib/backlog.ts`). The
+   * divergence stop leaves them out of its count; convergence still counts
+   * them.
+   */
+  notBlockingBacklog: string[];
 }
 
 /**
@@ -284,98 +288,6 @@ export function parseMarkerPayload(raw: string): MarkerPayload {
  */
 
 /**
- * A PRESENT marker must decode to a well-formed array of well-formed entries or
- * this throws. There is no partial-credit path: an absent marker is a real zero,
- * but a marker we cannot fully understand means the reviewer's format moved
- * under us, and the only safe reading of "I no longer understand the held
- * findings" is INDETERMINATE. Returning `[]` for a non-array payload, or
- * silently dropping entries that merely lack a `fingerprint`, would turn a
- * reviewer-side format change into a clean convergence with live findings held
- * behind it.
- */
-export function decodeBacklog(body: string): BacklogEntry[] {
-  const markers = [
-    ...body.matchAll(/<!--\s*ai-review-backlog:\s*([A-Za-z0-9+/=]+)\s*-->/g),
-  ];
-  const m = markers[0];
-  const fail = (why: string): never => {
-    throw new Error(`ai-review-backlog present but ${why}`);
-  };
-  // An opener that is not a complete, valid marker is malformed protocol
-  // evidence, not an absent backlog. Treating it as empty can erase a prior
-  // summary when a newer round marker selects this comment.
-  const declared = [...body.matchAll(/<!--\s*ai-review-backlog\s*:/g)];
-  if (!m) {
-    if (declared.length > 0) return fail("is not a complete base64 marker");
-    return [];
-  }
-  if (markers.length !== 1 || declared.length !== 1)
-    return fail("appears more than once or is malformed");
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(Buffer.from(m[1] ?? "", "base64").toString("utf8"));
-  } catch {
-    return fail("not decodable");
-  }
-  if (!Array.isArray(parsed)) return fail("not a JSON array");
-  // A fingerprint is the backlog's identity for a finding, and downstream it is
-  // the key everything else is decided on: `push()` drops a repeat, and one
-  // answer marker clears whatever the key names. Two entries sharing one — a
-  // reviewer-side collision or a truncating hash on its side — therefore silently
-  // becomes one finding, and answering it retires a second one nobody ever read.
-  // Malformed, like every other shape violation here, rather than deduplicated:
-  // the entries are distinct by construction, so a repeat means the identity we
-  // are keying on is not an identity.
-  const seen = new Set<string>();
-  return parsed.map((e, i): BacklogEntry => {
-    if (typeof e !== "object" || e === null) {
-      return fail(`entry ${i} is not an object`);
-    }
-    const entry = e as Record<string, unknown>;
-    for (const key of ["fingerprint", "path", "comment"] as const) {
-      if (typeof entry[key] !== "string" || entry[key] === "") {
-        return fail(`entry ${i} has no usable \`${key}\``);
-      }
-    }
-    if (entry.line != null && typeof entry.line !== "number") {
-      return fail(`entry ${i} has a non-numeric \`line\``);
-    }
-    if (!MARKER_SAFE_FINGERPRINT.test(entry.fingerprint as string)) {
-      return fail(
-        `entry ${i} has a fingerprint \`${entry.fingerprint}\` that cannot round-trip through a ${ADDRESSED_MARKER} marker — it could never be answered`,
-      );
-    }
-    if (seen.has(entry.fingerprint as string)) {
-      return fail(
-        `entry ${i} repeats fingerprint \`${entry.fingerprint}\` — two findings under one key would silently become one`,
-      );
-    }
-    seen.add(entry.fingerprint as string);
-    return {
-      fingerprint: entry.fingerprint as string,
-      path: entry.path as string,
-      line: (entry.line as number | null) ?? null,
-      severity: typeof entry.severity === "string" ? entry.severity : "unknown",
-      dimension:
-        typeof entry.dimension === "string" ? entry.dimension : "unknown",
-      // Same wrong-type-degrades-to-absent contract as `severity`/`dimension`
-      // above: a malformed `category` costs the one field, never the blob.
-      category: typeof entry.category === "string" ? entry.category : "unknown",
-      comment: entry.comment as string,
-      // Keep the reviewer's provenance and disposition. The reason and
-      // blocking flag count only when their types match the reviewer format.
-      ...(typeof entry.firstRound === "number"
-        ? { firstRound: entry.firstRound }
-        : {}),
-      ...(typeof entry.reason === "string" ? { reason: entry.reason } : {}),
-      ...(typeof entry.blocking === "boolean"
-        ? { blocking: entry.blocking }
-        : {}),
-    };
-  });
-}
-
-/**
  * Every fingerprint the sticky's own BODY bullets carry — the findings the
  * reviewer judged freshly on this head, as opposed to carrying forward.
  *
@@ -444,43 +356,6 @@ export function winddownFingerprintsOf(stickyBody: string): Set<string> {
       .map((e) => e.fingerprint)
       .filter((fp) => !body.has(fp)),
   );
-}
-
-export interface BodyFinding {
-  path: string;
-  line: number | null;
-  text: string;
-}
-
-/**
- * Finding bullets from the summary body, EXCLUDING the `<details>` block — that
- * block renders the backlog, which is already parsed from its own blob and
- * would otherwise be counted twice.
- */
-export function parseBodyFindings(body: string): BodyFinding[] {
-  // A reviewer can use other collapsed sections before or after its backlog.
-  // Exclude only the named backlog itself; summary bullets elsewhere still
-  // describe fresh work.
-  const head = withoutFencedExamples(body)
-    // Examples in a diagnostic or another collapsed section are prose, not
-    // findings.  Only actual Markdown bullets participate in the summary.
-    .replace(
-      /<details><summary>🗂️ <b>Beyond this PR<\/b>[\s\S]*?<\/details>/g,
-      "",
-    );
-  const out: BodyFinding[] = [];
-  for (const line of head.split("\n")) {
-    const m = line.match(/^[-*]\s+`([^`]+)`\s+[—–-]\s+(.*)$/);
-    if (!m) continue;
-    const loc = m[1] ?? "";
-    const lineMatch = loc.match(/^(.*):(\d+)$/);
-    out.push({
-      path: lineMatch ? (lineMatch[1] ?? "") : loc,
-      line: lineMatch ? Number.parseInt(lineMatch[2] ?? "", 10) : null,
-      text: (m[2] ?? "").trim(),
-    });
-  }
-  return out;
 }
 
 /**
@@ -650,66 +525,6 @@ export function anchorKey(path: string, line: number | null): string {
   return line == null ? path : `${path}:${line}`;
 }
 
-function partitionBacklog(
-  stickyBody: string,
-  bullets: readonly BodyFinding[],
-): {
-  blockingBacklog: BacklogEntry[];
-  ignoredBacklog: BacklogEntry[];
-} {
-  const backlog = decodeBacklog(stickyBody);
-  // The declared disposition applies only to the entries rendered in this
-  // section. A count alone cannot establish that: a different blocking entry
-  // can leave the count unchanged. Match the rendered finding identities to
-  // the blob before treating its otherwise-unflagged entries as informational.
-  const section = withoutFencedExamples(stickyBody).match(
-    /<details><summary>🗂️ <b>Beyond this PR<\/b> — (\d+) finding\(s\) for triage \(not posted inline\)<\/summary>\r?\n[ \t\r\n]*Held out of the inline threads so this PR can converge — \*\*not blocking\*\*\.([\s\S]*?)<\/details>/,
-  );
-  const rendered = section ? parseBodyFindings(section[2] ?? "") : [];
-  // A fingerprint is authoritative whenever the renderer preserves the full
-  // text. An abbreviated renderer cannot establish the identity of a backlog
-  // entry, even when its location and prefix match exactly one current entry:
-  // another entry can later share those rendered fields. It therefore remains
-  // blocking until the renderer supplies the complete fingerprint.
-  const renderedFingerprints = new Map<string, number>();
-  for (const finding of rendered) {
-    const fingerprint = fingerprintOf(finding.path, finding.line, finding.text);
-    renderedFingerprints.set(
-      fingerprint,
-      (renderedFingerprints.get(fingerprint) ?? 0) + 1,
-    );
-  }
-  const backlogFingerprints = new Map<string, number>();
-  for (const entry of backlog) {
-    backlogFingerprints.set(
-      entry.fingerprint,
-      (backlogFingerprints.get(entry.fingerprint) ?? 0) + 1,
-    );
-  }
-  const freshFingerprints = new Set(
-    bullets.map((f) => fingerprintOf(f.path, f.line, f.text)),
-  );
-  const blockingBacklog: BacklogEntry[] = [];
-  const ignoredBacklog: BacklogEntry[] = [];
-  for (const entry of backlog) {
-    const informational =
-      entry.blocking !== true &&
-      (entry.blocking === false ||
-        entry.reason === "winddown-deferred" ||
-        (section !== null &&
-          renderedFingerprints.get(entry.fingerprint) === 1 &&
-          backlogFingerprints.get(entry.fingerprint) === 1));
-    if (!informational) blockingBacklog.push(entry);
-    // A fresh body bullet takes precedence over a carry-forward disposition.
-    else if (!freshFingerprints.has(entry.fingerprint))
-      ignoredBacklog.push(entry);
-  }
-  return {
-    blockingBacklog,
-    ignoredBacklog,
-  };
-}
-
 export function classify(input: ClassifyInput): SummaryReport {
   const { stickyBody, anchoredKeys, addressedFingerprints } = input;
   const findings: SummaryFinding[] = [];
@@ -725,10 +540,8 @@ export function classify(input: ClassifyInput): SummaryReport {
   };
 
   const bullets = parseBodyFindings(stickyBody);
-  const { blockingBacklog, ignoredBacklog } = partitionBacklog(
-    stickyBody,
-    bullets,
-  );
+  const { blockingBacklog, ignoredBacklog, notBlockingBacklog } =
+    partitionBacklog(stickyBody, bullets);
   for (const e of blockingBacklog) {
     push({
       fingerprint: e.fingerprint,
@@ -894,6 +707,7 @@ export function classify(input: ClassifyInput): SummaryReport {
     findings,
     unaddressed: findings.filter((f) => !f.addressed),
     ignoredBacklog,
+    notBlockingBacklog,
   };
 }
 
@@ -1352,6 +1166,7 @@ function emptyReport(pr: number): SummaryReport {
     findings: [],
     unaddressed: [],
     ignoredBacklog: [],
+    notBlockingBacklog: [],
   };
 }
 

@@ -15,6 +15,7 @@ test("selectors consume files with spaces without shell evaluation", () => {
         {
           body: "## Scout Findings (abc1234)\n`code` $(echo lost) $HOME",
           createdAt: "2000-01-01",
+          authorAssociation: "MEMBER",
         },
       ]),
     );

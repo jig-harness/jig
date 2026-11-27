@@ -3,6 +3,7 @@ import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { processWorktreeIdle } from "../process-worktrees.ts";
 import type { Proof } from "../types.ts";
 import {
+  orcaLiveness,
   runtimeWorktreeProof,
   unchangedSinceProof,
   worktreeIdentity,
@@ -61,4 +62,31 @@ export async function managedCheckoutProof(
     return ok({ proof: proof.value, identity: null });
   const same = await unchangedSinceProof(path, seen.value);
   return same.ok ? ok({ proof: proof.value, identity: seen.value }) : same;
+}
+
+/**
+ * The proof of a process-owned checkout Orca also lists (`dualListed`), once the process
+ * owner's evidence and Git have judged it dead: Orca's registry must agree,
+ * with no agent at work and no live terminal in it. Neither runtime's evidence
+ * stands in for the other's, so a registry that cannot be read keeps the
+ * checkout as unverified, naming Orca, and a proof that was not dead is left
+ * as it is.
+ */
+export async function withOrcaEvidence(
+  path: string,
+  orca: string | undefined,
+  dualListed: boolean,
+  proved: { proof: Proof; identity: WorktreeIdentity | null },
+): Promise<{ proof: Proof; identity: WorktreeIdentity | null }> {
+  if (orca === undefined || !dualListed || proved.proof.state !== "dead")
+    return proved;
+  const registry = await orcaLiveness(orca, path, true);
+  if (registry !== null) return { proof: registry, identity: null };
+  return {
+    proof: {
+      ...proved.proof,
+      reason: `${proved.proof.reason}; Orca also lists it, and its registry shows no agent or live terminal in it`,
+    },
+    identity: proved.identity,
+  };
 }

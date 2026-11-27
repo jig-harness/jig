@@ -3,9 +3,13 @@ import type {
   BudgetRecord,
   BudgetWindow,
 } from "../../shared/outbound/budget.ts";
-import type { LedgerReport, LedgerRow } from "../../shared/outbound/ledger.ts";
+import {
+  ledgerReport,
+  type LedgerReport,
+  type LedgerRow,
+} from "../../shared/outbound/ledger.ts";
 import { GITHUB_WINDOW_NAMES } from "../../shared/outbound/github-budget.ts";
-import { isoFromMs } from "../../shared/time.ts";
+import { currentMs, isoFromMs } from "../../shared/time.ts";
 import type { LineNeed } from "./dashboard-contract.ts";
 
 const HOUR = 3_600_000;
@@ -322,6 +326,187 @@ export function quotaRisks(report: LedgerReport, now: number): QuotaRisk[] {
       return risk === null ? [] : [risk];
     });
   });
+}
+
+/** The fewest calls, across the credentials that never succeeded, that make a caller's failures worth a person's look. */
+const FAILING_CALLER_MIN_REQUESTS = 20;
+
+/** A caller outside the tick and its passes with credentials whose every call to one system was refused as unauthorized or invalid. */
+export interface FailingCaller {
+  caller: string;
+  system: string;
+  /** Requests it sent, across the credentials that never succeeded. */
+  requests: number;
+  /** How many credentials it sent them under. */
+  credentials: number;
+  /** The failure classes it met, in name order. */
+  classes: string[];
+}
+
+/**
+ * The failure classes that say a caller cannot use its credential or asks
+ * what it should not: a refused credential and a refused request. A wait
+ * (`rate-limited`), an absence (`not-found`) and a fault of the system's own
+ * say nothing of the caller.
+ */
+const CALLER_FAULTS = ["unauthorized", "invalid"] as const;
+
+/** The calls a ledger row counts as the caller's own fault. */
+const failedOf = (r: LedgerRow): number =>
+  CALLER_FAULTS.reduce((sum, name) => sum + (r.failures[name] ?? 0), 0);
+
+/** What one caller sent to one system under one credential. */
+interface CredentialCalls {
+  caller: string;
+  system: string;
+  requests: number;
+  failed: number;
+  classes: Set<string>;
+}
+
+/** The calls of every caller outside the tick and its passes, by the credential they went out under. */
+function outsideCalls(report: LedgerReport): CredentialCalls[] {
+  const byKey = new Map<string, CredentialCalls>();
+  for (const r of report.rows) {
+    if (r.caller.startsWith("tick:") || r.caller.startsWith("pass:")) continue;
+    const key = `${r.caller}\0${r.system}\0${r.credential}`;
+    const at = byKey.get(key) ?? {
+      caller: r.caller,
+      system: r.system,
+      requests: 0,
+      failed: 0,
+      classes: new Set<string>(),
+    };
+    at.requests += r.requests;
+    at.failed += failedOf(r);
+    for (const name of CALLER_FAULTS)
+      if ((r.failures[name] ?? 0) > 0) at.classes.add(name);
+    byKey.set(key, at);
+  }
+  return [...byKey.values()];
+}
+
+/** Whether every call under a credential failed as the caller's own fault. */
+const neverSucceeded = (at: CredentialCalls): boolean =>
+  at.requests > 0 && at.failed >= at.requests;
+
+/**
+ * The callers outside the tick and its passes (a skill a timer or a person
+ * runs) with credentials that never succeeded in the report's window: every
+ * call under them failed, at least `FAILING_CALLER_MIN_REQUESTS` calls in
+ * all. The tick's own and a pass's failures are already on the receipt and
+ * the failure ledger; a caller the dispatcher does not run is otherwise seen
+ * by nobody. A credential that fails on every call is one a caller cannot
+ * use, whatever it is asking, and a caller that starts each run with a fresh
+ * credential shows as many. Each such credential is judged by its own calls:
+ * a skill is the caller of every run that uses it, so another credential of
+ * the same caller that works says nothing of the ones that do not.
+ */
+export function failingCallers(report: LedgerReport): FailingCaller[] {
+  const byCaller = new Map<string, CredentialCalls[]>();
+  for (const at of outsideCalls(report)) {
+    if (!neverSucceeded(at)) continue;
+    const key = `${at.caller}\0${at.system}`;
+    byCaller.set(key, [...(byCaller.get(key) ?? []), at]);
+  }
+  const callers: FailingCaller[] = [];
+  for (const groups of byCaller.values()) {
+    const [first] = groups;
+    if (first === undefined) continue;
+    callers.push({
+      caller: first.caller,
+      system: first.system,
+      requests: groups.reduce((sum, at) => sum + at.requests, 0),
+      credentials: groups.length,
+      classes: [...new Set(groups.flatMap((at) => [...at.classes]))].sort(
+        (a, z) => a.localeCompare(z),
+      ),
+    });
+  }
+  return callers
+    .filter((c) => c.requests >= FAILING_CALLER_MIN_REQUESTS)
+    .sort((a, z) =>
+      `${a.system} ${a.caller}`.localeCompare(`${z.system} ${z.caller}`),
+    );
+}
+
+/** One continuing host need per failing caller and system; an absent one withdraws its need on the next tick. */
+export function failingCallerNeeds(
+  callers: readonly FailingCaller[],
+  previous: readonly LineNeed[],
+  nowIso: string,
+): LineNeed[] {
+  return callers.map((c): LineNeed => {
+    const target = `${c.system} ${c.caller}`;
+    const known = previous.find(
+      (n) =>
+        n.repo === "host" && n.cause === "calls-failing" && n.target === target,
+    );
+    return {
+      cause: "calls-failing",
+      act: "Investigate",
+      stage: "rearm",
+      repo: "host",
+      target,
+      pr: null,
+      item: null,
+      url: null,
+      title: "A caller's calls all fail",
+      workspace: null,
+      since: known?.since ?? nowIso,
+      reason: `${c.caller} sent ${c.requests} request(s) to ${c.system} in the last hours under ${c.credentials} credential(s) that never succeeded, and every one was refused (${c.classes.join(", ")}): the client it runs with probably has no credential that can answer. Inspect jig budget --hours 3 --json for the caller, and give it a login or stop it.`,
+      question: null,
+      decisions: [],
+      notified: known?.notified ?? null,
+      workspaces: [],
+    };
+  });
+}
+
+/** How far back the ledger is read for the callers whose calls all fail. */
+const FAILING_CALLER_WINDOW_MS = 3 * 3_600_000;
+
+/**
+ * What a tick reads of the ledger beside its spending: the quotas it empties
+ * and the callers whose calls all failed. The ledger's rows are hourly and a
+ * read starts at the hour it falls in, so the callers are read over three
+ * hours, which hold at least two whole ones: a caller running every five
+ * minutes shows its calls on both sides of an hour. A window the ledger does
+ * not give leaves that finding out, which keeps the needs of the tick before.
+ */
+export function ledgerFindings(
+  report: LedgerReport,
+  startedMs: number,
+): { quotaRisks: QuotaRisk[]; failingCallers?: FailingCaller[] } {
+  const wide = ledgerReport({ since: startedMs - FAILING_CALLER_WINDOW_MS });
+  return {
+    quotaRisks: quotaRisks(report, currentMs()),
+    ...(wide.unavailable === true
+      ? {}
+      : { failingCallers: failingCallers(wide) }),
+  };
+}
+
+/**
+ * The line's host needs from the ledger: one per quota and one per failing
+ * caller. A finding the ledger did not give (it did not read) keeps the
+ * needs of the tick before.
+ */
+export function outboundNeeds(
+  found: { quotaRisks?: QuotaRisk[]; failingCallers?: FailingCaller[] },
+  previous: readonly LineNeed[],
+  nowIso: string,
+): LineNeed[] {
+  const kept = (cause: LineNeed["cause"]) =>
+    previous.filter((n) => n.repo === "host" && n.cause === cause);
+  return [
+    ...(found.quotaRisks === undefined
+      ? kept("low-quota")
+      : lowQuotaNeeds(found.quotaRisks, previous, nowIso)),
+    ...(found.failingCallers === undefined
+      ? kept("calls-failing")
+      : failingCallerNeeds(found.failingCallers, previous, nowIso)),
+  ];
 }
 
 /** One continuing host need per quota; an absent risk withdraws its need on the next tick. */

@@ -15,6 +15,7 @@ import { drives } from "../../../skills/drive-pr/scripts/lib/driver/paths.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
 import { run, tsArgv } from "../../../shared/proc.ts";
+import { callerForChild } from "../../../shared/outbound/ledger.ts";
 import { failureText } from "../text.ts";
 import type { DrivenPr, HolderReading } from "../types.ts";
 
@@ -64,6 +65,9 @@ export async function readHolders(
   try {
     const r = await run(tsArgv(script, ["--json"]), {
       cwd: repoPath,
+      // AsyncLocalStorage does not cross the process boundary: keep the
+      // tick's attribution so the child's calls are not read as a timer's.
+      env: { ...process.env, JIG_OUTBOUND_CALLER: callerForChild() },
       stderr: "pipe",
       timeoutSec,
     });

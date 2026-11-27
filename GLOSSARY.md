@@ -1466,9 +1466,10 @@ make, use the entry's term instead.
   explicit override raises it, by one round budget
   ([drive-pr](plugin/skills/drive-pr/README.md#the-round-ceiling-and-the-divergence-stop)).
 - **Divergence stop** — the *PR drive loop* parking for a person once two
-  rounds in a row each raised at least as many new review findings as they
-  fixed, with findings still open: a sign the fixes create work as fast as
-  they settle it, which more rounds do not cure
+  rounds in a row each raised more new review findings than they fixed, with
+  findings still open, not counting the findings the reviewer marks not
+  blocking: a sign the fixes create work faster than they settle it, which
+  more rounds do not cure
   ([drive-pr](plugin/skills/drive-pr/README.md#the-round-ceiling-and-the-divergence-stop)).
 - **Re-drive** — the *dispatcher* starting a *PR drive loop* again on a pull
   request whose drive converged, once that pull request has gone stale: the
@@ -2480,7 +2481,8 @@ make, use the entry's term instead.
   repository's part of it. It answers "what spent this quota" without
   probing the system. Hourly totals stay 7 days
   in the budget database; `jig budget` and each tick report read them, and
-  a low-quota need names the operations projected to empty a quota.
+  a low-quota need names the operations projected to empty a quota, and a
+  calls-failing need names a caller outside the tick whose calls were all refused.
   [Plugin README](plugin/README.md#the-dispatcher).
 - **Failure class** — one of the closed set of ways a call to an outside
   system fails: rate limited (with the time it clears), unreachable, too

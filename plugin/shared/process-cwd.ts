@@ -10,6 +10,7 @@
  * reason included, means a process in the tree could have been missed.
  */
 import type { RunResult } from "./orca-workspace/runner.ts";
+import { currentMs } from "./time.ts";
 
 /** Runs one probe command on the host the tree is on; `cwd` is where it runs. */
 export type ProbeRun = (argv: string[], cwd?: string) => RunResult;
@@ -22,6 +23,21 @@ export type ProbeRun = (argv: string[], cwd?: string) => RunResult;
 const CWD_PROBE = `if [ -e /proc/self/cwd ]; then exec find /proc -mindepth 2 -maxdepth 2 -name cwd -uid "$(id -u)" -printf '%h\\t%l\\n'; else exec lsof -a -d cwd -Fpn; fi`;
 
 export type CwdAnswer = { pids: string[] } | { unknown: string };
+
+/** `ProbeRun` that does not block the caller while the probe runs. */
+export type AsyncProbeRun = (
+  argv: string[],
+  cwd?: string,
+  /** The seconds this one read may take; the probe's own bound when absent. */
+  timeoutSec?: number,
+) => Promise<RunResult>;
+
+/** What stops a scan: a signal that ends it and the one deadline all its reads share. */
+export type ScanBounds = {
+  signal?: AbortSignal | undefined;
+  /** The whole scan's allowance in milliseconds, shared by the listing and every status read. */
+  deadlineMs?: number | undefined;
+};
 
 /** Whether `cwd` is `top` or under it. */
 function inside(cwd: string, top: string): boolean {
@@ -74,15 +90,6 @@ function unescapeLsof(name: string, caret: boolean): string {
   return new TextDecoder().decode(new Uint8Array(bytes));
 }
 
-/** Whether any reading of lsof's name field is `top` or under it. */
-function insideLsof(name: string, top: string): boolean {
-  return (
-    inside(name, top) ||
-    inside(unescapeLsof(name, false), top) ||
-    inside(unescapeLsof(name, true), top)
-  );
-}
-
 /**
  * Whether lsof gave only part of a name: it prints a filesystem name, ` -- `
  * and the components it could recover, which no path comparison can place.
@@ -91,31 +98,71 @@ function incompleteLsof(name: string): boolean {
   return name.includes(" -- ");
 }
 
-/** The listing's pids working in `top`, the pids whose directory it could not read and the names lsof gave only in part. */
-export function parseCwdListing(
-  listing: string,
-  top: string,
-): { pids: string[]; unread: string[]; partial: string[] } {
-  const pids: string[] = [];
-  const unread: string[] = [];
-  const partial: string[] = [];
+/**
+ * One process's working directory as a listing gave it: the names it may be
+ * read as (`/proc` gives one, lsof's escaped field up to three), `unread`
+ * when the kernel gave none, and `partial` for a name lsof gave only in part.
+ */
+interface CwdEntry {
+  pid: string;
+  names: string[];
+  unread: boolean;
+  partial: boolean;
+}
+
+/** The listing's entries, each name read once however many trees it is later asked about. */
+function parseEntries(listing: string): CwdEntry[] {
+  const entries: CwdEntry[] = [];
   let pid: string | null = null;
   for (const line of listing.split("\n")) {
     const proc = /^\/proc\/(\d+)\t(.*)$/.exec(line);
     if (proc !== null) {
       const [, id, cwd] = proc as unknown as [string, string, string];
-      if (cwd === "") unread.push(id);
-      else if (inside(cwd, top)) pids.push(id);
+      entries.push({
+        pid: id,
+        names: cwd === "" ? [] : [cwd],
+        unread: cwd === "",
+        partial: false,
+      });
       continue;
     }
     if (line.startsWith("p")) pid = line.slice(1);
     else if (line.startsWith("n") && pid !== null) {
       const name = line.slice(1);
-      if (insideLsof(name, top)) pids.push(pid);
-      else if (incompleteLsof(name)) partial.push(name);
+      entries.push({
+        pid,
+        names: [name, unescapeLsof(name, false), unescapeLsof(name, true)],
+        unread: false,
+        partial: incompleteLsof(name),
+      });
     }
   }
+  return entries;
+}
+
+/** The entries' pids working in `top`, the pids whose directory it could not read and the names lsof gave only in part. */
+function readEntries(
+  entries: CwdEntry[],
+  top: string,
+): { pids: string[]; unread: string[]; partial: string[] } {
+  const pids: string[] = [];
+  const unread: string[] = [];
+  const partial: string[] = [];
+  for (const entry of entries) {
+    if (entry.unread) unread.push(entry.pid);
+    else if (entry.names.some((name) => inside(name, top)))
+      pids.push(entry.pid);
+    else if (entry.partial) partial.push(entry.names[0] as string);
+  }
   return { pids: [...new Set(pids)], unread, partial };
+}
+
+/** The listing's pids working in `top`, the pids whose directory it could not read and the names lsof gave only in part. */
+export function parseCwdListing(
+  listing: string,
+  top: string,
+): { pids: string[]; unread: string[]; partial: string[] } {
+  return readEntries(parseEntries(listing), top);
 }
 
 /**
@@ -141,9 +188,8 @@ function sortCwdErrors(
   return { denied };
 }
 
-/** Why the process `pid`, whose working directory its owner cannot read, may still be in the tree; `null` when it ended or holds privileges its owner lacks. */
-function deniedWhy(run: ProbeRun, pid: string): string | null {
-  const status = run(["cat", `/proc/${pid}/status`]);
+/** Why the process whose `/proc/<pid>/status` read gave `status` may still be in the tree; `null` when it ended or holds privileges its owner lacks. */
+function deniedReason(pid: string, status: RunResult): string | null {
   if (status.status !== 0)
     return /No such (?:file or directory|process)/.test(status.stderr)
       ? null
@@ -154,9 +200,10 @@ function deniedWhy(run: ProbeRun, pid: string): string | null {
     : `process ${pid}'s working directory cannot be read`;
 }
 
-/** The pids of this user's processes working in `top`, or why that cannot be told. */
-export function cwdHolders(run: ProbeRun, top: string): CwdAnswer {
-  const listed = run(["sh", "-c", CWD_PROBE], "/");
+/** The probe's listing, or why it is no answer, with the pids its errors say it could not read. */
+function readProbe(
+  listed: RunResult,
+): { unknown: string } | { listing: string; denied: string[] } {
   // An empty listing is no answer: it always holds the probe's own process.
   if ((listed.status !== 0 && listed.status !== 1) || listed.stdout === "")
     return {
@@ -164,14 +211,165 @@ export function cwdHolders(run: ProbeRun, top: string): CwdAnswer {
     };
   const errors = sortCwdErrors(listed.stderr);
   if ("unknown" in errors) return { unknown: errors.unknown };
-  const { pids, unread, partial } = parseCwdListing(listed.stdout, top);
-  if (partial.length > 0)
-    return {
-      unknown: `lsof gave only part of a working directory's name (${partial[0]})`,
-    };
-  for (const pid of new Set([...errors.denied, ...unread])) {
-    const why = deniedWhy(run, pid);
+  return { listing: listed.stdout, denied: errors.denied };
+}
+
+const partialAnswer = (name: string): CwdAnswer => ({
+  unknown: `lsof gave only part of a working directory's name (${name})`,
+});
+
+/** The pids of this user's processes working in `top`, or why that cannot be told. */
+export function cwdHolders(run: ProbeRun, top: string): CwdAnswer {
+  const probed = readProbe(run(["sh", "-c", CWD_PROBE], "/"));
+  if ("unknown" in probed) return probed;
+  const { pids, unread, partial } = parseCwdListing(probed.listing, top);
+  if (partial.length > 0) return partialAnswer(partial[0] as string);
+  for (const pid of new Set([...probed.denied, ...unread])) {
+    const why = deniedReason(pid, run(["cat", `/proc/${pid}/status`]));
     if (why !== null) return { unknown: why };
   }
+  return { pids };
+}
+
+/**
+ * Prints each pid among its arguments, after the first two, whose environment
+ * holds the first argument as a whole entry, whose controlling terminal
+ * (field 7 of `/proc/<pid>/stat`) is none and which started no later than the
+ * second argument (seconds since the epoch, from its start time in field 22
+ * and the boot time in `/proc/stat`); prints nothing on a host without
+ * `/proc`. Run as `sh -c <probe> sh <entry> <latest-start> <pid>...`.
+ */
+const DETACHED_CARRIER_PROBE = `[ -e /proc/self/environ ] || exit 0
+entry=$1
+latest=$2
+shift 2
+hz=$(getconf CLK_TCK 2>/dev/null || echo 100)
+boot=$(awk '$1 == "btime" { print $2 }' /proc/stat 2>/dev/null)
+[ -n "$boot" ] || exit 0
+for p do
+  tr '\\0' '\\n' < "/proc/$p/environ" 2>/dev/null | grep -qxF -e "$entry" || continue
+  fields=$(awk '{ s = $0; sub(/.*\\) /, "", s); split(s, f, " "); print f[5], f[20] }' "/proc/$p/stat" 2>/dev/null)
+  tty=\${fields%% *}
+  started=\${fields##* }
+  [ "$tty" = 0 ] || continue
+  [ -n "$started" ] || continue
+  [ $((boot + started / hz)) -le "$latest" ] && printf '%s\\n' "$p"
+done
+exit 0`;
+
+/**
+ * The pids among `pids` that were started with the environment entry
+ * `entry` (`NAME=value`), have no controlling terminal and started no later
+ * than `latestStartSec` (seconds since the epoch), read from `/proc` in one
+ * probe: a daemon keeps the environment it started with when it leaves its
+ * process group or session, while a shell a person types into has a
+ * terminal. The start bound keeps work a person started later, which
+ * inherited the entry from such a daemon, out of the answer. A process whose
+ * environment or status cannot be read (a host without `/proc`, a process
+ * that ended or one its owner may not inspect) is not among them, and
+ * neither is any when the probe fails.
+ */
+export async function detachedCarriers(
+  run: AsyncProbeRun,
+  pids: string[],
+  entry: string,
+  latestStartSec: number,
+): Promise<Set<string>> {
+  const numeric = pids.filter((pid) => /^\d+$/.test(pid));
+  if (numeric.length === 0) return new Set();
+  const read = await run(
+    [
+      "sh",
+      "-c",
+      DETACHED_CARRIER_PROBE,
+      "sh",
+      entry,
+      String(Math.floor(latestStartSec)),
+      ...numeric,
+    ],
+    "/",
+  );
+  if (read.status !== 0) return new Set();
+  return new Set(
+    read.stdout.split("\n").filter((pid) => numeric.includes(pid)),
+  );
+}
+
+/**
+ * One scan of this user's processes' working directories, read once and
+ * asked about any number of trees with `holdersIn`: the parsed listing and
+ * the first reason a process whose directory could not be read may still be
+ * in a tree, or why the scan is no answer.
+ */
+export type CwdScan =
+  | { entries: CwdEntry[]; blocked: string | null }
+  | { unknown: string };
+
+/** Scan once, without blocking the caller; every error is judged as `cwdHolders` judges it, each denied process's status read once, all reads within one deadline and none started after `bounds.signal` fires. */
+export async function scanCwds(
+  run: AsyncProbeRun,
+  bounds: ScanBounds = {},
+): Promise<CwdScan> {
+  const { signal, deadlineMs } = bounds;
+  const end = deadlineMs === undefined ? null : currentMs() + deadlineMs;
+  const stopped = (): string | null => {
+    if (signal?.aborted) return "the process scan was stopped";
+    return end !== null && currentMs() >= end
+      ? "the process scan ran past its deadline"
+      : null;
+  };
+  /** The seconds left for the next read, rounded up so a read is never given none. */
+  const left = (): number | undefined =>
+    end === null
+      ? undefined
+      : Math.max(1, Math.ceil((end - currentMs()) / 1000));
+  /** One read, given up on the moment `signal` fires: the caller stops waiting for it. */
+  const read = async (
+    argv: string[],
+    cwd: string | undefined,
+  ): Promise<RunResult | null> => {
+    const reading = run(argv, cwd, left());
+    if (signal === undefined) return reading;
+    let onAbort: () => void = () => undefined;
+    const aborted = new Promise<null>((done) => {
+      onAbort = () => done(null);
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    });
+    try {
+      return await Promise.race([reading, aborted]);
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+    }
+  };
+  const first = stopped();
+  if (first !== null) return { unknown: first };
+  const listing = await read(["sh", "-c", CWD_PROBE], "/");
+  if (listing === null) return { unknown: "the process scan was stopped" };
+  const probed = readProbe(listing);
+  if ("unknown" in probed) return probed;
+  const entries = parseEntries(probed.listing);
+  const unread = entries.filter((e) => e.unread).map((e) => e.pid);
+  let blocked: string | null = null;
+  for (const pid of new Set([...probed.denied, ...unread])) {
+    const why = stopped();
+    if (why !== null) return { unknown: why };
+    const status = await read(["cat", `/proc/${pid}/status`], undefined);
+    if (status === null) return { unknown: "the process scan was stopped" };
+    blocked = deniedReason(pid, status);
+    if (blocked !== null) break;
+  }
+  // A read that finished past the allowance is no answer inside it.
+  const last = stopped();
+  if (last !== null) return { unknown: last };
+  return { entries, blocked };
+}
+
+/** What `cwdHolders` answers for `top`, from a scan made once. */
+export function holdersIn(scan: CwdScan, top: string): CwdAnswer {
+  if ("unknown" in scan) return scan;
+  const { pids, partial } = readEntries(scan.entries, top);
+  if (partial.length > 0) return partialAnswer(partial[0] as string);
+  if (scan.blocked !== null) return { unknown: scan.blocked };
   return { pids };
 }
