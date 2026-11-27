@@ -89,7 +89,7 @@ import {
   setDispatcherShare,
 } from "../shared/outbound/budget.ts";
 import { ledgerReport, withCaller } from "../shared/outbound/ledger.ts";
-import { quotaRisks, systemSpending } from "./lib/outbound-report.ts";
+import { ledgerFindings, systemSpending } from "./lib/outbound-report.ts";
 import { accountsReport } from "./lib/account-report.ts";
 import { hostCodexOptIn } from "./lib/accounts.ts";
 import { defectOf, logDefect } from "./lib/defect.ts";
@@ -698,7 +698,7 @@ async function closeTick(
     currentMs(),
   );
   if (costs.unavailable === true) receipt.outboundUnavailable = true;
-  else receipt.quotaRisks = quotaRisks(costs, currentMs());
+  else Object.assign(receipt, ledgerFindings(costs, currentMs()));
   // The dashboard's copy is written here, so it carries the phases timed so far; the receipt file adds `close`.
   receipt.phasesMs = { ...timer.ms };
   writeTickLine(receipt, {

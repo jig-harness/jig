@@ -250,6 +250,31 @@ export function readDriverRecord(
 export type Settlement = "settled" | "unsettled";
 
 /**
+ * How a recovery asks who the forge client is. A single recovery (a person's
+ * `--stop`) asks the client and goes on without a login when it cannot say.
+ * A sweep over many records asks once for all of them, and a client that
+ * cannot say is one it does not read the comments through either: the
+ * records wait for a later run, which asks again, instead of each one
+ * sending the same failing calls.
+ */
+export interface LoginAsk {
+  login: () => Promise<string | null>;
+  /** Whether a recovery that gets no login stops before it reads. */
+  required: boolean;
+}
+
+const SINGLE_RECOVERY_ASK: LoginAsk = {
+  login: resolveLogin,
+  required: false,
+};
+
+/** A sweep's ask: one answer, a failed one included, for every record. */
+function askedOnce(): LoginAsk {
+  let asked: Promise<string | null> | undefined;
+  return { login: () => (asked ??= resolveLogin()), required: true };
+}
+
+/**
  * The recovery from a driver record: when its pass tree was witnessed gone
  * and its driver is gone, mark its ledger stopped, guarded, and drop the
  * record once nothing is left to do. A lock the driver left behind is no
@@ -260,6 +285,7 @@ export async function recoverFromDriverRecord(
   pr: string,
   lock: { diag: { started: string } | null },
   acquired?: string,
+  ask: LoginAsk = SINGLE_RECOVERY_ASK,
 ): Promise<Settlement> {
   const record = readDriverRecord(stateDir, pr);
   if (record === null) return "settled";
@@ -270,7 +296,9 @@ export async function recoverFromDriverRecord(
     if (
       await recoverObservedDriver(stateDir, pr, record, async () => {
         markDriverRecordReleased(stateDir, pr, record.started);
-        if ((await markLedgerStopped(stateDir, pr, record, null)) === "done") {
+        if (
+          (await markLedgerStopped(stateDir, pr, record, null, ask)) === "done"
+        ) {
           outcome = removeSettledRecord(stateDir, pr, record);
         }
       })
@@ -285,7 +313,7 @@ export async function recoverFromDriverRecord(
   if (pidAlive(record.pid, record.host)) return "unsettled";
   let outcome: Settlement = "unsettled";
   await reserveDeadDriver(stateDir, pr, record, async () => {
-    if ((await markLedgerStopped(stateDir, pr, record, null)) === "done") {
+    if ((await markLedgerStopped(stateDir, pr, record, null, ask)) === "done") {
       outcome = removeSettledRecord(stateDir, pr, record);
     }
   });
@@ -303,10 +331,19 @@ async function recoverDriverRecords(
       .query("SELECT pr FROM driver_records WHERE clone = ? ORDER BY pr")
       .all(drive.clone) as { pr: string }[]
   ).map((r) => r.pr);
+  // One question for the whole sweep: with a client that cannot answer it,
+  // every record would otherwise send it again and read its comments.
+  const ask = askedOnce();
   for (const pr of prs) {
     if (skip(pr)) continue;
     const claim = inspectLock(stateDir, prLockName(pr));
-    await recoverFromDriverRecord(stateDir, pr, { diag: claim?.diag ?? null });
+    await recoverFromDriverRecord(
+      stateDir,
+      pr,
+      { diag: claim?.diag ?? null },
+      undefined,
+      ask,
+    );
   }
 }
 
@@ -534,6 +571,7 @@ export async function markLedgerStopped(
   pr: string,
   diag: StoppedDiag | null,
   exit: number | null,
+  ask: LoginAsk = SINGLE_RECOVERY_ASK,
 ): Promise<"done" | "retry"> {
   if ((process.env.DRIVE_PR_LEDGER ?? "") === "off" || diag === null)
     return "done";
@@ -553,6 +591,7 @@ export async function markLedgerStopped(
       diag,
       exit ?? pending,
       pending !== null,
+      ask,
     );
   } catch (err) {
     console.error(
@@ -568,13 +607,20 @@ async function markGuarded(
   diag: StoppedDiag,
   exit: number | null,
   pending: boolean,
+  ask: LoginAsk,
 ): Promise<"done" | "retry"> {
   const who = {
     actor: `wt-${worktreePathKey(diag.worktree)}`,
     clone: cloneId(stateDir),
     started: diag.started,
   };
-  const login = await resolveLogin();
+  const login = await ask.login();
+  if (login === null && ask.required) {
+    console.error(
+      `ledger: PR #${pr}'s ledger was not marked stopped: the forge client names no login (no credential, or it cannot answer), so no comment was read.`,
+    );
+    return "retry";
+  }
   const snapshot = await stoppedLedgerSnapshot(pr, login);
   if (snapshot === null) return "retry";
   const byPerson =
