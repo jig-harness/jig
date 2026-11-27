@@ -404,6 +404,24 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.313.1] - 2026-11-27
+
+### Fixed
+
+- `jig gc` collects a process-runtime worktree that Orca also lists. Orca lists every Git worktree of a repository whose external worktrees it shows, so on a host with both runtimes such worktrees were always kept as unverified ("also listed by Orca") and piled up with every dispatched run. A process-owned worktree is now collectible when the process owner's evidence and Orca's registry both say it is finished: every launch that names it has ended with its recorded processes dead, and Orca shows no agent at work and no live terminal in it. A registry that cannot be read, or a terminal whose agents Orca cannot report, keeps the worktree as unverified and the reason names Orca. Git state, pull request, ignored content, process holders and idleness are checked as before, so a worktree with uncommitted work or unpushed commits is still kept. See [gc's process runtime section](plugin/gc/README.md).
+- On the process runtime, a pickup whose worktree create hook left a daemon
+  running in the new worktree (a build tool's, started by a dependency
+  install) was held in the tick that prepared it, as a workspace with a
+  terminal whose agent the runtime cannot report, and launched only a tick
+  later. A worktree hook now runs with `JIG_HOOK_WORKTREE` naming its
+  worktree, and the runtime leaves out of the count a process that has no
+  controlling terminal and whose environment names that worktree so, so the
+  pickup launches in the same tick. Any other process working in the
+  worktree, a person's shell or an agent started by hand, still holds the
+  pickup; on a host without `/proc` the count is unchanged, and
+  `process.env_keep` refuses the variable. Why this way and not another is in
+  [the process runtime's design](design/dispatched-sessions.md#a-worktree-hooks-leftovers).
+
 ## [0.313.0] - 2026-11-27
 
 A drive doctor with a forge client that has no login no longer repeats failing
@@ -11296,7 +11314,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.313.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.313.1...HEAD
+[0.313.1]: https://github.com/jig-harness/jig/compare/v0.313.0...v0.313.1
 [0.313.0]: https://github.com/jig-harness/jig/compare/v0.312.3...v0.313.0
 [0.312.3]: https://github.com/jig-harness/jig/compare/v0.312.2...v0.312.3
 [0.312.2]: https://github.com/jig-harness/jig/compare/v0.312.1...v0.312.2
