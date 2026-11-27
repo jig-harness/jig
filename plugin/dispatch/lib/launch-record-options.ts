@@ -64,6 +64,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       (v) => v === undefined || v === null || typeof v === "number",
     ) &&
     batchShape(value.batchItems) &&
+    [undefined, "hold", "start"].includes(value.missingPriority as string) &&
     (value.stewardDecision === undefined ||
       Number.isSafeInteger(value.stewardDecision)) &&
     [

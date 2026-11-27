@@ -10,7 +10,7 @@
  * person asked.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { readRecord } from "../lib/launches.ts";
@@ -52,12 +52,18 @@ function git(w: World, ...args: string[]): string {
 }
 
 /** PR #7 re-armable, its head branch pushed and checked out by a plain-git worktree Orca does not list. */
-function heldRearm(): { w: World; holder: string } {
+function heldRearm(holders: Record<string, boolean> = {}): {
+  w: World;
+  holder: string;
+} {
   const w = world();
   current = w;
   w.setConfig(CONFIG);
   withOrigin(w);
-  machineFile(w, [account(w, "a", "a@example.com")], {}, ["rearm", "notify"]);
+  machineFile(w, [account(w, "a", "a@example.com")], holders, [
+    "rearm",
+    "notify",
+  ]);
   w.setPrs("open", [openPr(7, BRANCH)]);
   w.setComments(7, [ledgerComment(701, stoppedLedger(7, 16))]);
   w.setWorkspaces([]);
@@ -144,6 +150,198 @@ describe("jig dispatch with a checkout Orca does not list holding the head branc
     expectSpawnExit(detached, 1, "the holder's HEAD is detached");
     expect(rearmCreates(w)).toHaveLength(1);
   }, 90_000);
+});
+
+/** Whether `path`'s HEAD is detached. */
+function isDetached(w: World, path: string): boolean {
+  const r = Bun.spawnSync(["git", "-C", path, "symbolic-ref", "-q", "HEAD"], {
+    env: w.env,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  return r.exitCode === 1;
+}
+
+/** The local rescue branches of the clone. */
+const rescueBranches = (w: World): string[] =>
+  git(
+    w,
+    "-C",
+    w.repo,
+    "branch",
+    "--list",
+    "--format=%(refname:short)",
+    "jig-rescue/*",
+  )
+    .split("\n")
+    .filter(Boolean);
+
+/** The `gh` calls the ticks made that post a comment on PR #7. */
+const prComments = (w: World): string[] => {
+  const path = join(w.dir, "gh-calls.log");
+  return existsSync(path)
+    ? readFileSync(path, "utf8")
+        .split("\n")
+        .filter((l) => l.includes("issues/7/comments") && l.includes("POST"))
+    : [];
+};
+
+describe("jig dispatch with detach_idle_holders", () => {
+  it("detaches an unused holder whose every commit is pushed, its change left in its tree, and launches; off it is framed", async () => {
+    const off = heldRearm();
+    writeFileSync(join(off.holder, "notes.txt"), "work in progress\n");
+    const refusedTick = await tick(off.w);
+    expect(launches(refusedTick)).toMatchObject([
+      { target: "PR #7", outcome: "refused", holder: { path: off.holder } },
+    ]);
+    expect(notifications(refusedTick)).toMatchObject([
+      { target: "PR #7", cause: "needs-person" },
+    ]);
+    expect(isDetached(off.w, off.holder)).toBe(false);
+    writeFileSync(join(off.w.dir, "claude-exit"), "");
+    off.w.close();
+
+    const { w, holder } = heldRearm({ detach_idle_holders: true });
+    writeFileSync(join(holder, "notes.txt"), "work in progress\n");
+    const head = git(w, "-C", holder, "rev-parse", "HEAD");
+    const receipt = await tick(w);
+    const [launched] = launches(receipt);
+    expect(launched).toMatchObject({
+      target: "PR #7",
+      outcome: "launched",
+      detached: { path: holder, branch: BRANCH, head },
+    });
+    expect(launched?.holder).toBeUndefined();
+    expect(
+      notifications(receipt).filter((n) => n.cause === "needs-person"),
+    ).toEqual([]);
+    expect(isDetached(w, holder)).toBe(true);
+    expect(git(w, "-C", holder, "status", "--porcelain")).toBe("?? notes.txt");
+    expect(rescueBranches(w)).toEqual([]);
+    expect(rearmCreates(w)).toHaveLength(1);
+  }, 120_000);
+
+  it("with rescue_unpushed keeps an unpushed commit on a rescue branch before the detach, pushes nothing, and names it on the pull request", async () => {
+    const { w, holder } = heldRearm({
+      detach_idle_holders: true,
+      rescue_unpushed: true,
+    });
+    writeFileSync(join(w.dir, "pr-head-from-origin"), "");
+    const pushed = git(w, "-C", holder, "rev-parse", "HEAD");
+    writeFileSync(join(holder, "local.txt"), "not pushed\n");
+    git(w, "-C", holder, "add", "local.txt");
+    git(w, "-C", holder, ...AUTHOR, "commit", "-q", "-m", "local work");
+    const head = git(w, "-C", holder, "rev-parse", "HEAD");
+
+    const receipt = await tick(w);
+    const [launched] = launches(receipt);
+    const [rescue] = rescueBranches(w);
+    expect(rescue).toStartWith("jig-rescue/agent-tree-");
+    expect(launched).toMatchObject({
+      target: "PR #7",
+      outcome: "launched",
+      detached: {
+        path: holder,
+        branch: BRANCH,
+        head,
+        rescue: { branch: rescue, clone: w.repo },
+      },
+    });
+    expect(launched?.detail).toContain(
+      `its unpushed commits kept on the rescue branch ${rescue} in ${w.repo}`,
+    );
+    expect(git(w, "-C", w.repo, "rev-parse", `refs/heads/${rescue}`)).toBe(
+      head,
+    );
+    expect(isDetached(w, holder)).toBe(true);
+    expect(git(w, "-C", holder, "rev-parse", "HEAD")).toBe(head);
+    expect(
+      git(w, "-C", w.repo, "ls-remote", "origin", `refs/heads/${BRANCH}`),
+    ).toStartWith(pushed);
+    expect(
+      git(w, "-C", w.repo, "ls-remote", "origin", "refs/heads/jig-rescue/*"),
+    ).toBe("");
+    const [comment] = prComments(w);
+    expect(comment).toContain(rescue);
+    expect(comment).toContain(w.repo);
+  }, 120_000);
+
+  it("with rescue_unpushed leaves the tree as it is and frames the holder when the rescue fails", async () => {
+    const { w, holder } = heldRearm({
+      detach_idle_holders: true,
+      rescue_unpushed: true,
+    });
+    writeFileSync(join(w.dir, "pr-head-from-origin"), "");
+    git(
+      w,
+      "-C",
+      holder,
+      ...AUTHOR,
+      "commit",
+      "-q",
+      "--allow-empty",
+      "-m",
+      "local work",
+    );
+    const head = git(w, "-C", holder, "rev-parse", "HEAD");
+    // A branch named jig-rescue leaves no room for any jig-rescue/<name> beside it.
+    git(w, "-C", w.repo, "branch", "jig-rescue", "main");
+
+    const receipt = await tick(w);
+    const [refused] = launches(receipt);
+    expect(refused).toMatchObject({
+      target: "PR #7",
+      outcome: "refused",
+      holder: { path: holder, branch: BRANCH },
+    });
+    expect(refused?.holder?.reasons.at(-1)).toContain(
+      "its unpushed commits could not be kept on a rescue branch, so it was left as it is",
+    );
+    expect(notifications(receipt)).toMatchObject([
+      { target: "PR #7", cause: "needs-person" },
+    ]);
+    expect(isDetached(w, holder)).toBe(false);
+    expect(git(w, "-C", holder, "rev-parse", "HEAD")).toBe(head);
+    expect(git(w, "-C", w.repo, "rev-parse", `refs/heads/${BRANCH}`)).toBe(
+      head,
+    );
+    expect(rescueBranches(w)).toEqual([]);
+    expect(prComments(w)).toEqual([]);
+  }, 120_000);
+
+  it("with rescue_unpushed leaves a holder a process works in as it is, and frames it", async () => {
+    const { w, holder } = heldRearm({
+      detach_idle_holders: true,
+      rescue_unpushed: true,
+    });
+    writeFileSync(join(w.dir, "pr-head-from-origin"), "");
+    git(
+      w,
+      "-C",
+      holder,
+      ...AUTHOR,
+      "commit",
+      "-q",
+      "--allow-empty",
+      "-m",
+      "local work",
+    );
+    const head = git(w, "-C", holder, "rev-parse", "HEAD");
+    const sleeper = Bun.spawn(["sleep", "120"], { cwd: holder });
+    try {
+      const receipt = await tick(w);
+      expect(launches(receipt)).toMatchObject([
+        { target: "PR #7", outcome: "refused", holder: { path: holder } },
+      ]);
+      expect(isDetached(w, holder)).toBe(false);
+      expect(git(w, "-C", holder, "rev-parse", "HEAD")).toBe(head);
+      expect(rescueBranches(w)).toEqual([]);
+      expect(prComments(w)).toEqual([]);
+    } finally {
+      sleeper.kill();
+      await sleeper.exited;
+    }
+  }, 120_000);
 });
 
 const MERGED = "feature/10-merged";

@@ -125,7 +125,7 @@ export const STEWARD_RECORD_KINDS = {
   },
   order: {
     meaning:
-      "Order issues of the queue its own rules leave tied (priority, unblocking, epic order, size and age). The tick exchanges only the places of the members that are still tied, and never moves an issue past one the rules rank apart.",
+      "Order issues of the queue its own rules leave tied: equal on priority, unblocking, epic order, size and the exact creation time. The tick takes the record when every target is wanted and tied, exchanges their places while they stay so, and never moves an issue past one the rules rank apart; otherwise it refuses the record for good with its reason, and the next digest lists the refusal while the targets read as they did.",
     fields: {
       targets: {
         type: "string[]",

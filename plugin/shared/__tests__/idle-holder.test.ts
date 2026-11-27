@@ -367,6 +367,8 @@ describe("holderVerdict", () => {
     expect(v).toEqual({
       idle: false,
       reasons: ["it is the clone's main checkout, which is never detached"],
+      kinds: ["other"],
+      head: git(clone, "rev-parse", "HEAD"),
       timedOut: false,
     });
   });
