@@ -5,7 +5,7 @@ release: minor
 ### Added
 
 - `dispatch.followup_routine` chooses which routine question classes
-  (`local-leftover`, `person-owed`, `drafted-items`; all three by default) a
+  (`local-leftover`, `person-owed`, `drafted-items`; every class by default) a
   follow-up settles unattended. A class left out is not offered to the pass,
   and a question of that class goes to a person like any other, so a
   repository that files into a shared tracker can turn `drafted-items` off.
