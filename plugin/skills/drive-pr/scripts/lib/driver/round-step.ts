@@ -256,7 +256,7 @@ export async function runRoundIteration(
     if (stage !== null) return stage;
   }
   {
-    // Rounds whose fixes raise as many findings as they resolve park for a
+    // Rounds whose fixes raise more findings than they resolve park for a
     // person (`circuit-breaker.ts`); no progress at all is the stall stop's.
     const stage = await checkDivergence(context.pr, status, context.dryRun);
     if (stage !== null) return stage;

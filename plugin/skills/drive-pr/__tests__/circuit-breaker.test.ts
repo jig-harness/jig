@@ -20,6 +20,7 @@ import {
 } from "../scripts/lib/driver/circuit-park.ts";
 import {
   atRoundCeiling,
+  diverges,
   divergenceStops,
   findingMovement,
   hoursDriven,
@@ -131,6 +132,36 @@ describe("the divergence stop", () => {
     expect(openFindingKeys({ work: { unresolvedThreadKeys: [] } })).toBeNull();
   });
 
+  it("leaves out the summary findings the reviewer holds as not blocking", () => {
+    expect(
+      openFindingKeys({
+        work: {
+          unresolvedThreadKeys: ["PRRT_a"],
+          summaryUnaddressedKeys: ["f1", "held1", "held2"],
+          summaryNotBlockingKeys: ["held2", "held1"],
+        },
+      }),
+    ).toEqual(["PRRT_a", "f1"]);
+    expect(
+      openFindingKeys({
+        work: {
+          unresolvedThreadKeys: [],
+          summaryUnaddressedKeys: ["held1"],
+          summaryNotBlockingKeys: ["held1"],
+        },
+      }),
+    ).toEqual([]);
+    expect(
+      openFindingKeys({
+        work: {
+          unresolvedThreadKeys: [],
+          summaryUnaddressedKeys: ["f1"],
+          summaryNotBlockingKeys: "f1",
+        },
+      }),
+    ).toBeNull();
+  });
+
   it("counts what is newly open and what is no longer open, and nothing for a gate that did not move", () => {
     expect(findingMovement(["a", "b"], ["b", "c", "d"])).toEqual({
       newFindings: 2,
@@ -143,9 +174,16 @@ describe("the divergence stop", () => {
     expect(findingMovement(undefined, ["a"])).toBeNull();
   });
 
-  it("parks after two rounds in a row that each raised at least as many findings as they fixed", () => {
-    expect(divergenceStops([round(1, 3, 3), round(2, 2, 1)])).toBe(true);
+  it("parks after two rounds in a row that each raised more findings than they fixed", () => {
+    expect(divergenceStops([round(1, 4, 3), round(2, 2, 1)])).toBe(true);
     expect(divergenceStops([round(1, 1, 0)])).toBe(false);
+  });
+
+  it("does not count a round that raised as many findings as it fixed", () => {
+    expect(diverges(round(1, 8, 8))).toBe(false);
+    expect(diverges(round(1, 9, 8))).toBe(true);
+    expect(divergenceStops([round(1, 3, 3), round(2, 2, 2)])).toBe(false);
+    expect(divergenceStops([round(1, 3, 2), round(2, 6, 6)])).toBe(false);
   });
 
   it("does not park when findings strictly decrease", () => {
@@ -156,13 +194,13 @@ describe("the divergence stop", () => {
 
   it("does not park when a diverging round is followed by a converging one", () => {
     expect(
-      divergenceStops([round(1, 2, 2), round(2, 0, 1), round(3, 2, 1)]),
+      divergenceStops([round(1, 3, 2), round(2, 0, 1), round(3, 2, 1)]),
     ).toBe(false);
   });
 
   it("does not count a round that raised nothing, and needs a finding still open", () => {
     expect(divergenceStops([round(1, 0, 0), round(2, 0, 0)])).toBe(false);
-    expect(divergenceStops([round(1, 2, 2), round(2, 2, 2, 0)])).toBe(false);
+    expect(divergenceStops([round(1, 3, 2), round(2, 3, 2, 0)])).toBe(false);
   });
 
   it("keeps the last rounds only", () => {

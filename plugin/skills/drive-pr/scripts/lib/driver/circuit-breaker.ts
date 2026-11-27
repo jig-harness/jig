@@ -9,7 +9,8 @@
  *   - the wall-clock cap, `drive.max_wall_clock_hours` from the first launch,
  *     which parks the same way;
  *   - the divergence stop, checked at every round gate: rounds that each
- *     raise as many review findings as they fix park `divergence-stop`.
+ *     raise more blocking review findings than they fix park
+ *     `divergence-stop`.
  *
  * Only a person raises a spent ceiling: `--past-ceiling` on the launch, or an
  * answer to the `round-ceiling` park that chooses the override.
@@ -389,7 +390,7 @@ export async function checkDivergence(
   });
   if (!divergenceStops(history, DIVERGENCE_ROUNDS)) return null;
   console.error(
-    `divergence stop on PR #${pr}: the last ${DIVERGENCE_ROUNDS} rounds each raised as many review findings as they fixed; parking ${DIVERGENCE_PARK} for a person.`,
+    `divergence stop on PR #${pr}: the last ${DIVERGENCE_ROUNDS} rounds each raised more review findings than they fixed; parking ${DIVERGENCE_PARK} for a person.`,
   );
   return await parked(
     pr,

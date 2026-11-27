@@ -15,11 +15,12 @@
  * moves it on by one more cap.
  *
  * The divergence stop compares each round gate's open review findings (the
- * unresolved threads and unaddressed summary findings the gate reports)
- * with the previous gate's: `newFindings` were not open before, and
- * `fixedFindings` are no longer open. A round diverges when it raised at
- * least one finding and no fewer than it fixed. A gate whose open set did
- * not move records nothing: no progress is the stall stop's to judge.
+ * unresolved threads and unaddressed summary findings the gate reports,
+ * less the summary findings the reviewer renders as not blocking) with the
+ * previous gate's: `newFindings` were not open before, and `fixedFindings`
+ * are no longer open. A round diverges when it raised more findings than it
+ * fixed; a tie does not. A gate whose open set did not move records nothing:
+ * no progress is the stall stop's to judge.
  *
  * Every field is optional in a stored state: a file written before it
  * existed reads as no raise, no first launch and no history.
@@ -258,7 +259,12 @@ export function raisedWallClock(
   return Math.max(raisedHours, driven);
 }
 
-/** The open findings a round gate reports, by key; `null` when it published no keys. */
+/**
+ * The open findings a round gate reports, by key, less the summary findings
+ * the reviewer renders as not blocking (`summaryNotBlockingKeys`, absent from
+ * a status written before it existed); `null` when it published no keys or a
+ * malformed list.
+ */
 export function openFindingKeys(
   status: Record<string, unknown>,
 ): string[] | null {
@@ -266,10 +272,20 @@ export function openFindingKeys(
   if (!isRecord(work)) return null;
   const threads = work.unresolvedThreadKeys;
   const summary = work.summaryUnaddressedKeys;
-  if (!Array.isArray(threads) || !Array.isArray(summary)) return null;
+  const notBlocking = work.summaryNotBlockingKeys ?? [];
+  if (
+    !Array.isArray(threads) ||
+    !Array.isArray(summary) ||
+    !Array.isArray(notBlocking)
+  )
+    return null;
   const keys = [...threads, ...summary];
-  if (!keys.every((k) => typeof k === "string")) return null;
-  return [...new Set(keys as string[])].sort(byCodeUnit);
+  if (![...keys, ...notBlocking].every((k) => typeof k === "string"))
+    return null;
+  const held = new Set(notBlocking as string[]);
+  return [...new Set(keys as string[])]
+    .filter((k) => !held.has(k))
+    .sort(byCodeUnit);
 }
 
 /**
@@ -289,9 +305,9 @@ export function findingMovement(
   return { newFindings, fixedFindings };
 }
 
-/** Whether a round raised at least one finding and no fewer than it fixed. */
+/** Whether a round raised more findings than it fixed. */
 export function diverges(r: RoundFindings): boolean {
-  return r.newFindings >= 1 && r.newFindings >= r.fixedFindings;
+  return r.newFindings > r.fixedFindings;
 }
 
 /** The diverging rounds at the end of the history. */

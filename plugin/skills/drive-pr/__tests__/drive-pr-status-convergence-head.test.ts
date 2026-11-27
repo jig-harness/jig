@@ -393,6 +393,20 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
     });
   });
 
+  it("names a held entry the not-blocking section renders, which still counts as work", async () => {
+    const r = await probe({
+      threads: [],
+      backlog: "held-not-blocking",
+      anchored: [".claude/agents/review-arbiter.md:31"],
+    });
+    expect(r.state).toBe("ROUND_READY");
+    expect(r.json.work).toMatchObject({
+      summaryUnaddressed: 1,
+      summaryUnaddressedKeys: ["c773d9fdb7974e6d"],
+      summaryNotBlockingKeys: ["c773d9fdb7974e6d"],
+    });
+  });
+
   it("counts a declared shortfall even when wind-down backlog explains no blocking findings", async () => {
     const r = await probe({
       threads: [],

@@ -633,14 +633,20 @@ decision; if the park cannot be recorded the drive stops with `MAX_ROUNDS`
 instead. Only a person's override (`--past-ceiling`, or the park's
 **Allow one more budget** answer) raises it, by one `--max-rounds` block.
 
-**The divergence stop parks rounds that create work as fast as they settle
+**The divergence stop parks rounds that create work faster than they settle
 it.** At each ROUND_READY gate the driver compares the open thread and
 summary-finding keys with the previous gate's (`openFindings` in the drive
 state): keys newly open are the round's `newFindings`, keys no longer open its
-`fixedFindings`, kept for the last four rounds in `roundFindings`. A gate
-whose keys did not move records nothing. Two diverging rounds in a row
-(`newFindings ≥ fixedFindings` and `newFindings ≥ 1`) with a finding still
-open park `divergence-stop` ([`HITL_PARKED`](../../../protocol/drive-exits.md)).
+`fixedFindings`, kept for the last four rounds in `roundFindings`. The keys in
+`work.summaryNotBlockingKeys` are left out first: unaddressed backlog entries
+the reviewer renders in its not-blocking *Beyond this PR* section, matched by
+path, line and the comment its backlog blob records (an abbreviated rendering
+included), never one flagged `blocking: true`, one a fresh body bullet raises
+again, or one the section renders ambiguously. Convergence still counts those
+entries. A gate whose keys did not move records nothing. Two diverging rounds
+in a row (`newFindings > fixedFindings`; a tie does not diverge) with a
+finding still open park `divergence-stop`
+([`HITL_PARKED`](../../../protocol/drive-exits.md)).
 Only a **Continue driving** answer clears the count. Any other answer to
 either circuit park is recorded as `circuitStop`: every later launch stops
 with `INDETERMINATE` without asking again, until a person's `--past-ceiling`.
