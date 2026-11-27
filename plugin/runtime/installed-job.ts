@@ -132,15 +132,29 @@ function launchdJob(plist: string): InstalledJob | null {
   const command = [...program.matchAll(/<string>(.*?)<\/string>/gs)].map(
     (match) => unxml(match[1] as string),
   );
+  return {
+    command,
+    env: launchdEnvironment(plist),
+    schedule: installedSchedule("launchd", plist),
+  };
+}
+
+/**
+ * A launchd job's `EnvironmentVariables`: the form `jobFiles` writes, or the
+ * same keys laid out on lines of their own, as a person's edit with a plist
+ * tool leaves them.
+ */
+export function launchdEnvironment(plist: string): Record<string, string> {
   const variables =
-    /<key>EnvironmentVariables<\/key><dict>(.*?)<\/dict>/s.exec(plist)?.[1] ??
-    "";
+    /<key>EnvironmentVariables<\/key>\s*<dict>(.*?)<\/dict>/s.exec(
+      plist,
+    )?.[1] ?? "";
   const env: Record<string, string> = {};
   for (const match of variables.matchAll(
-    /<key>(.*?)<\/key><string>(.*?)<\/string>/gs,
+    /<key>(.*?)<\/key>\s*<string>(.*?)<\/string>/gs,
   ))
     env[unxml(match[1] as string)] = unxml(match[2] as string);
-  return { command, env, schedule: installedSchedule("launchd", plist) };
+  return env;
 }
 
 /** The crontab line marked `# <name>`: `<schedule> 'env' 'K=V'… <command>`. */

@@ -137,6 +137,11 @@ export function verbCommands(names: readonly string[]) {
         noUpgrade: option("--no-upgrade", {
           description: message`Opt this machine out of the timers' upgrades: writes upgrade.enabled: false to the user file (~/.jig/jig.yaml).`,
         }),
+        env: multiple(
+          option("--env", string({ metavar: "NAME" }), {
+            description: message`With dispatch named alone, on macOS: write this variable's value from this shell into the dispatcher's launchd jobs; a name only, never NAME=VALUE. Repeat for more. The preview names it and never shows its value.`,
+          }),
+        ),
         confirm,
       }),
       {
@@ -370,6 +375,20 @@ async function installVerb(
   context: VerbContext,
 ): Promise<number> {
   const { components, script } = context;
+  // The variables are credentials the dispatcher's runs need: no other job gets them.
+  if (
+    args.env.length > 0 &&
+    args.components.some((name) => name !== "dispatch")
+  )
+    throw new ExitError(
+      USAGE_EXIT,
+      "--env captures a variable for the dispatcher's jobs only: name it alone, jig install dispatch --env NAME",
+    );
+  if (args.env.length > 0 && args.components.length === 0)
+    throw new ExitError(
+      USAGE_EXIT,
+      "--env captures a variable for the dispatcher's jobs only: name it, jig install dispatch --env NAME",
+    );
   const free = checkCommandPath();
   if (!free.ok) return failureExit(free.failure);
   const jobless = withoutJobs(args, context);
@@ -391,6 +410,7 @@ async function installVerb(
             repository: args.repository,
             confirm: args.confirm,
             script,
+            ...(args.env.length === 0 ? {} : { env: args.env }),
           });
         },
         console.log,
