@@ -6,6 +6,7 @@
  * builds it from one local context.
  */
 import type { TreeDrivers } from "../idle-holder.ts";
+import type { HolderPolicy } from "./holder.ts";
 import { failed, ok, type Outcome } from "../outcome.ts";
 import {
   type OrcaEnvelope,
@@ -49,6 +50,8 @@ export interface OpenPort {
    * refuses such a checkout.
    */
   drivers?: TreeDrivers;
+  /** What the host lets an open detach beyond an idle holder (`holder.ts`); only an idle one when absent. */
+  holders?: HolderPolicy;
 }
 
 /**

@@ -1,3 +1,9 @@
+import { readConfig } from "../../../../../shared/consumer.ts";
+import { currentMs } from "../../../../../shared/time.ts";
+import {
+  optionalPollPacing,
+  readStatusPolling,
+} from "../status/poll-pacing.ts";
 import { newerClaim } from "../state/ledger.ts";
 import {
   readCompleteLedgerSnapshot,
@@ -11,14 +17,20 @@ import { TAKEN_OVER_EXIT } from "./settings.ts";
 
 const TAKEOVER_POLL_MS = 60_000;
 
+/** A listing the check could not use, and why. */
+type Unread = { unread: string; expected?: boolean };
+
 async function checkForNewerClaim(
   pr: string,
   readSnapshot = readLedgerSnapshot,
-): Promise<number | null | "unread"> {
+): Promise<number | null | Unread> {
   const driver = ledgerDriverFromEnv();
-  if (driver === null || driver.floor === null) return "unread";
+  if (driver === null)
+    return { unread: "this driver writes no ledger", expected: true };
+  if (driver.floor === null)
+    return { unread: "this driver has no ledger floor", expected: true };
   const snapshot = await readSnapshot(pr, driver.login);
-  if (typeof snapshot === "string") return "unread";
+  if (typeof snapshot === "string") return { unread: snapshot };
   const claim = newerClaim(
     snapshot.claims,
     driver.floor,
@@ -39,22 +51,48 @@ export async function standDownOnNewerClaim(
   pr: string,
 ): Promise<number | null> {
   const result = await checkForNewerClaim(pr);
-  return result === "unread" ? null : result;
+  return typeof result === "object" && result !== null ? null : result;
 }
 
-/** Pace successful round-boundary reads for this drive only. */
+/**
+ * Pace successful round-boundary reads for this drive only. A rejected read
+ * is retried at the next checkpoint, and its reason is logged once per run
+ * of rejections for that reason, so a drive that keeps retrying shows why.
+ */
 export function roundBoundaryTakeoverCheck(
   pr: string,
   now = () => performance.now(),
+  deferPoll = optionalPollPacing(
+    readStatusPolling(readConfig()),
+    "drive takeover",
+  ),
 ): () => Promise<number | null> {
   let dueAt = Number.NEGATIVE_INFINITY;
+  let rejected: string | null = null;
+  let lastReadAt: number | undefined;
   return async () => {
     const startedAt = now();
     if (startedAt < dueAt) return null;
+    if (lastReadAt !== undefined && deferPoll(lastReadAt, TAKEOVER_POLL_MS))
+      return null;
+    const wallStartedAt = currentMs();
     const result = await checkForNewerClaim(pr, readCompleteLedgerSnapshot);
-    // A lapse must be retried at the next boundary. Before a pass or ledger
-    // write, the separate fresh guards still apply.
-    if (result === null) dueAt = startedAt + TAKEOVER_POLL_MS;
-    return result === "unread" ? null : result;
+    if (typeof result === "object" && result !== null) {
+      // A lapse must be retried at the next boundary. Before a pass or
+      // ledger write, the separate fresh guards still apply.
+      if (result.unread !== rejected && !result.expected)
+        console.error(
+          `drive.ts: the round-boundary takeover check rejected PR #${pr}'s ledger listing: ${result.unread}; it reads the listing again at each round checkpoint until one reads.`,
+        );
+      rejected = result.unread;
+      lastReadAt = undefined;
+      dueAt = Number.NEGATIVE_INFINITY;
+      return null;
+    }
+    rejected = null;
+    lastReadAt = result === null ? wallStartedAt : undefined;
+    dueAt =
+      result === null ? startedAt + TAKEOVER_POLL_MS : Number.NEGATIVE_INFINITY;
+    return result;
   };
 }

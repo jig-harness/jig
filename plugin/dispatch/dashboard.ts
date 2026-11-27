@@ -3,7 +3,9 @@
  * recorded, served while the command runs. The page (`dashboard-page/`, built
  * from `dashboard/`) reads the line
  * the newest tick wrote (`GET /state`, `lib/line-store.ts`) and the outcome log
- * (`GET /rows`, `lib/dashboard-log.ts`). Current PR state is read separately
+ * (`GET /rows`, `lib/dashboard-log.ts`), a scoreboard by release over that
+ * log (`GET /scoreboard`, `lib/scoreboard.ts`) and the live checks
+ * (`GET /checks`). Current PR state is read separately
  * through `GET /pr`, cached for a minute with bounded forge concurrency.
  * Each snapshot or log read answers with its value or a
  * coded failure; the one catch around them is the defect boundary, so a bug
@@ -43,6 +45,7 @@ import { attempt, failed, type Outcome } from "../shared/outcome.ts";
 import type { Answer, RowsAnswer } from "./lib/dashboard-contract.ts";
 import { prReader } from "./lib/dashboard-pr.ts";
 import { queryLog } from "./lib/dashboard-log.ts";
+import { type ScoreboardAnswer, readScoreboard } from "./lib/scoreboard.ts";
 import { hostTimeZone } from "./lib/host-time.ts";
 import { currentMs } from "../shared/time.ts";
 import { readLine, readLineReceipt, stateAnswer } from "./lib/line-store.ts";
@@ -81,6 +84,43 @@ const APP_FILES: Record<string, { file: string; type: string }> = {
 function shownTimeZone(root: string): string {
   const line = readLine(root);
   return (line.ok ? line.value?.timeZone : undefined) ?? hostTimeZone();
+}
+
+/** `GET /scoreboard`: six numbers per release over the log, and the causes new under a release. */
+function scoreboardData(
+  params: URLSearchParams,
+  nowMs: number,
+  root = stateRoot(),
+): Outcome<ScoreboardAnswer, "log-unreadable"> {
+  // A line that does not read leaves the slots unknown, not the scoreboard unread.
+  const line = readLine(root);
+  return attempt("log-unreadable", "the outcome log cannot be read", () =>
+    readScoreboard(params, nowMs, root, line.ok ? line.value : null),
+  );
+}
+
+/** What `GET /checks` answers with: the live-check report, as the Records lane's reader returns it. */
+export type ChecksReader = () => Outcome<unknown, string>;
+
+/** The reader until the live-check report is on the main branch. */
+const NO_CHECKS: ChecksReader = () =>
+  failed(
+    "checks-unavailable",
+    "this release has no live-check report to serve",
+  );
+
+/** The reads that take no more than the request's query, by path. */
+function readsOf(
+  root: string,
+  now: () => number,
+  readChecks: ChecksReader = NO_CHECKS,
+): Record<string, (url: URL) => Outcome<unknown, string>> {
+  return {
+    "/state": () => stateAnswer(now(), root),
+    "/rows": (url) => dashboardData(url.searchParams, now(), root),
+    "/scoreboard": (url) => scoreboardData(url.searchParams, now(), root),
+    "/checks": () => readChecks(),
+  };
 }
 
 /** The answer to one query over the log: `GET /rows`. A database a newer plugin wrote is a failure, as any other read's is. */
@@ -290,6 +330,8 @@ export function serveDashboard(options: {
   now?: () => number;
   /** A forge reader; fixtures provide their own instead of reaching a live account. */
   readPr?: ReturnType<typeof prReader>;
+  /** The live-check report; until one is supplied `GET /checks` answers `checks-unavailable`. */
+  readChecks?: ChecksReader;
 }): Dashboard {
   const token =
     options.token === undefined
@@ -308,6 +350,7 @@ export function serveDashboard(options: {
   const appFiles = readAppFiles();
 
   const readPr = options.readPr ?? prReader(root);
+  const reads = readsOf(root, now, options.readChecks);
 
   async function route(request: Request, url: URL): Promise<Response> {
     if (url.pathname === "/pr")
@@ -322,10 +365,8 @@ export function serveDashboard(options: {
         200,
       );
     if (url.pathname === "/") return pageResponse(page, request);
-    if (url.pathname === "/state")
-      return readAnswer(stateAnswer(now(), root), request);
-    if (url.pathname === "/rows")
-      return readAnswer(dashboardData(url.searchParams, now(), root), request);
+    const read = reads[url.pathname];
+    if (read !== undefined) return readAnswer(read(url), request);
     if (url.pathname === "/receipt") return receiptAnswer(url, request, root);
     const appFile = appFiles.get(url.pathname);
     if (appFile !== undefined)

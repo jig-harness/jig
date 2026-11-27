@@ -18,6 +18,7 @@
  * against the work in flight (`overlap-plan.ts`), to order their launch attempts.
  */
 import { slotTable } from "./accounts.ts";
+import { inPrOpen } from "./stalled-pr.ts";
 import { driversOf } from "./host-drivers.ts";
 import { planSteers, readNudges, settlePending } from "./actions/steer.ts";
 import {
@@ -34,13 +35,8 @@ import { holdBack, type PlanInput, planTick } from "./plan.ts";
 import type { SessionsReport } from "./runtime/port.ts";
 import { deadlineOf, type TickContext } from "./tick-context.ts";
 import type { RepoObservation } from "./tick-observe.ts";
-import type { RepoReport } from "./types.ts";
-import {
-  readStewardDigest,
-  recordBelongsToDigest,
-  stewardRecords,
-} from "./steward.ts";
-import { applyStewardOrder } from "./steward-queue.ts";
+import type { ClaimedItem, RepoReport } from "./types.ts";
+import { judgesOrders, orderByStewardRecords } from "./steward-orders.ts";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { bodyLinker } from "../../skills/do-item/scripts/lib/linked-pr.ts";
 import type { StalledPrInput } from "./stalled-pr.ts";
@@ -63,14 +59,11 @@ function orderTracked(
     opened.stages.has("steward") &&
     context.options.machine?.steward?.enabled === true
   ) {
-    const orders = stewardRecords(repo.slug).flatMap((record) => {
-      if (record.value.kind !== "order") return [];
-      const digest = readStewardDigest(record.run);
-      return digest.ok && recordBelongsToDigest(record.value, digest.value)
-        ? [record.value]
-        : [];
-    });
-    tracked.pickups = applyStewardOrder(tracked.pickups, orders);
+    tracked.pickups = orderByStewardRecords(
+      repo.slug,
+      tracked.pickups,
+      judgesOrders(context.options.apply === true, tracked),
+    );
   }
 }
 
@@ -431,7 +424,30 @@ function planRepo(
     undefined,
     new Set(input.claimed.filter((c) => c.served === true).map((c) => c.key)),
     input.partial === true,
+    carriedAnchors(plan.quiet, input.claimed, input.prOpen),
   );
+}
+
+/**
+ * The claimed items whose work an open pull request carries: the quiet rows
+ * the plan reported for one, and each item resting in the repository's
+ * `pr_open` state, whether or not a pull request was matched to it.
+ */
+export function carriedAnchors(
+  quiet: readonly { class: string; target: string }[],
+  claimed: readonly ClaimedItem[],
+  prOpen: StalledPrInput | undefined,
+): Set<string> {
+  const carried = new Set(
+    quiet
+      .filter(
+        (q) => q.class === "claimed-carried" || q.class === "claimed-pr-open",
+      )
+      .map((q) => q.target),
+  );
+  if (prOpen === undefined) return carried;
+  for (const c of claimed) if (inPrOpen(c, prOpen)) carried.add(c.key);
+  return carried;
 }
 
 /**

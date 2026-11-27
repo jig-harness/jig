@@ -252,6 +252,36 @@ describe("classifyLedger", () => {
     );
   });
 
+  it("names how a stall's passes finished in the why the steward reads", () => {
+    const ledger = stoppedLedger(7, 14);
+    const forge = { head: "c".repeat(40), mergeable: "MERGEABLE" };
+    ledger.events = [
+      {
+        at: new Date(NOW).toISOString(),
+        round: 3,
+        kind: "stop",
+        cause: "14",
+        reasons: {
+          last: [
+            { round: 3, state: "CI_HOLD_WAIT", reason: "ask @someone first" },
+          ],
+          missing: 2,
+          passes: 3,
+        },
+      },
+    ];
+    const placed = classifyLedger(ledger, NOW, WINDOW, undefined, forge);
+    expect(placed.class).toBe("stale");
+    expect(placed.why).toContain(
+      "how its passes finished: round 3 CI_HOLD_WAIT: ask @\u200Bsomeone first; 2 of 3 passes recorded no reason",
+    );
+    // A tally that does not read as one names nothing.
+    (ledger.events[0] as { reasons: unknown }).reasons = { last: "x" };
+    expect(
+      classifyLedger(ledger, NOW, WINDOW, undefined, forge).why,
+    ).not.toContain("how its passes finished");
+  });
+
   it("binds a stall whose stop never measured its tree, and frees one measured clean", () => {
     const ledger = stoppedLedger(7, 14);
     const forge = { head: "c".repeat(40), mergeable: "MERGEABLE" };

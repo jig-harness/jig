@@ -75,6 +75,23 @@ function fixture() {
       console.log(JSON.stringify(await recoverBeforePass({ pr: "5", dryRun: false }, 0, { head: { api: head } }, async () => recovery)));
       process.exit(0);
     }
+    if (mode === "only-cancelled") {
+      // The final CI's recovery of a failure only cancelled runs carry
+      // (an aggregator's), with the failing commit statuses PROBE_STATUSES names.
+      const { cancelledRunRecovery } = await import(${JSON.stringify(join(root, "driver/ci-recovery.ts"))});
+      const { driveDbInstance } = await import(${JSON.stringify(join(root, "state/db.ts"))});
+      // As drive.ts exports it beside the state directory it resolved.
+      process.env.DRIVE_PR_STATE_DIR_IDENTITY = driveDbInstance(await resolveStateDir());
+      const failing = {
+        checkRunNames: ["gate"],
+        statusNames: JSON.parse(process.env.PROBE_STATUSES ?? "[]"),
+        runs: [{ id: 1, conclusion: "cancelled", jobNames: ["gate"], createdAt: "2026-01-01T00:00:00Z" }],
+      };
+      const answer = await cancelledRunRecovery("failing: gate", false, { pr: "5", dryRun: false }, head, failing,
+        async () => { console.error("PROBE_REPAIRED"); return 1; });
+      console.log(JSON.stringify(answer));
+      process.exit(0);
+    }
     if (mode === "past-grace") {
       await observeCancellation("5", head);
       const drive = driveDb(await resolveStateDir());
@@ -593,6 +610,43 @@ describe("a cancelled job the runner stopped at its time limit", () => {
       "timed out: job `gate` ran 1m 1s and stopped at its 1-minute limit (timeout-minutes)",
     );
   });
+});
+
+describe("the final CI's recovery of a failure only cancelled runs carry", () => {
+  test(
+    "an aggregator failing only in a cancelled run gets the head's first re-run request, not a repair",
+    withFixture(async (f) => {
+      writeFileSync(join(f.dir, "phase"), "orphaned");
+      await f.run("past-grace");
+      expect(f.reruns()).toEqual([]);
+      expect(
+        await f.run("only-cancelled", HEAD, {
+          DRIVE_PR_FINAL_CI_POLL_MS: "10",
+        }),
+      ).toBe("continue");
+      expect(f.reruns()).toEqual(["1"]);
+      expect(f.stderr()).toContain(
+        "so it is recovered as a cancellation, not repaired",
+      );
+      expect(f.stderr()).not.toContain("PROBE_REPAIRED");
+    }),
+  );
+
+  test(
+    "a failing commit status beside failures only cancelled runs carry keeps the CI-repair path",
+    withFixture(async (f) => {
+      writeFileSync(join(f.dir, "phase"), "orphaned");
+      await f.run("past-grace");
+      expect(
+        await f.run("only-cancelled", HEAD, {
+          DRIVE_PR_FINAL_CI_POLL_MS: "10",
+          PROBE_STATUSES: JSON.stringify(["ci/legacy"]),
+        }),
+      ).toBeNull();
+      expect(f.reruns()).toEqual([]);
+      expect(f.stderr()).not.toContain("recovered as a cancellation");
+    }),
+  );
 });
 
 test("doctor names cancelled-run recovery instead of stopping a wedged driver", () => {

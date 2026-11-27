@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   budgetGovernor,
   type BudgetWindow,
@@ -10,6 +13,8 @@ import {
 } from "../../../shared/outbound/graph-poll-budget.ts";
 import {
   type CallRecord,
+  ledgerReport,
+  withLedgerPath,
   withLedgerWriter,
 } from "../../../shared/outbound/ledger.ts";
 import { emptyReport } from "../scripts/lib/status/evaluate.ts";
@@ -46,8 +51,8 @@ function fixture(
     balance: () => {
       const observed = balance(now);
       return observed === undefined
-        ? { windows: [] }
-        : { windows: [observed], credential: "test-account" };
+        ? { windows: {} }
+        : { windows: { complexity: [observed] }, credential: "test-account" };
     },
   });
   return {
@@ -122,7 +127,7 @@ describe("waiting status poll pacing", () => {
       async sleep(ms) {
         now += ms + 100;
       },
-      balance: () => ({ windows: [] }),
+      balance: () => ({ windows: {} }),
       record: () => undefined,
     });
 
@@ -189,6 +194,67 @@ describe("waiting status poll pacing", () => {
     ).toBe(true);
   });
 
+  test("low REST core defers the next poll through the wall-clock deadline", async () => {
+    const probe = fixture(() => undefined);
+    const ledger: CallRecord[] = [];
+    const pacing = new StatusPollPacing(
+      base,
+      defaultPolicy,
+      pollDependencies(probe.clock, () => ({
+        credential: "test-account",
+        core: window(100, 200),
+        graphql: window(4500, 200),
+        observedAt: 0,
+      })),
+    );
+    let polls = 0;
+    await withLedgerWriter(
+      (entry) => ledger.push(entry),
+      async () => {
+        while (await pacing.wait("unchanged", 100 * second)) polls += 1;
+      },
+    );
+    expect(polls).toBe(0);
+    expect(probe.clock.now()).toBe(100 * second);
+    expect(ledger.map(({ window, requests }) => [window, requests])).toEqual([
+      ["requests", 0],
+      ["requests", 0],
+    ]);
+  });
+
+  test("a later cadence wait preserves the persisted REST core wait rows", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "jig-drive-poll-ledger-"));
+    try {
+      const probe = fixture(() => undefined);
+      const path = join(dir, "outbound.sqlite");
+      const pacing = new StatusPollPacing(
+        base,
+        defaultPolicy,
+        pollDependencies(probe.clock, () => ({
+          credential: "test-account",
+          core: window(probe.clock.now() < 200 * second ? 100 : 4500, 200),
+          graphql: window(4500, 800),
+          observedAt: probe.clock.now(),
+        })),
+      );
+      await withLedgerPath(path, async () => {
+        expect(await pacing.wait("first", 100 * second)).toBe(false);
+        await probe.clock.sleep(100 * second);
+        expect(await pacing.wait("changed", 300 * second)).toBe(true);
+      });
+      const rows = ledgerReport({ path }).rows;
+      expect(rows.map(({ window, requests }) => [window, requests])).toEqual(
+        expect.arrayContaining([
+          ["requests", 0],
+          ["none", 0],
+        ]),
+      );
+      expect(rows).toHaveLength(3);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("a low balance discovered after sleeping defers the next poll", async () => {
     const probe = fixture((now) =>
       now === 0 ? window(4500, 600) : window(500, 600),
@@ -209,11 +275,15 @@ describe("waiting status poll pacing", () => {
       })),
     ).toEqual([
       {
-        operation: "drive-status poll wait",
+        operation: "drive-status poll wait (GraphQL)",
         cost: 1,
         durationMs: 100 * second,
       },
-      { operation: "drive-status poll skipped", cost: 3, durationMs: 0 },
+      {
+        operation: "drive-status poll skipped (GraphQL)",
+        cost: 3,
+        durationMs: 0,
+      },
     ]);
 
     const resumed = fixture((now) =>
@@ -233,7 +303,7 @@ describe("waiting status poll pacing", () => {
         now += 95 * second;
         controller.abort();
       },
-      balance: () => ({ windows: [window(4500, 600)] }),
+      balance: () => ({ windows: { complexity: [window(4500, 600)] } }),
       record(credential, durationMs, skipped) {
         const entry = {
           system: "github" as const,
@@ -292,7 +362,12 @@ describe("waiting status poll pacing", () => {
       },
       balance: () => ({
         credential: "test-account",
-        windows: [window(400, 500), { ...window(500, 200), limit: 15_000 }],
+        windows: {
+          complexity: [
+            window(400, 500),
+            { ...window(500, 200), limit: 15_000 },
+          ],
+        },
       }),
       record() {
         // This fixture only measures the selected wake time.
@@ -336,7 +411,9 @@ describe("waiting status poll pacing", () => {
       },
       balance: () => ({
         credential: owner,
-        windows: graphqlPollFloors(store.read(owner)?.windows, now),
+        windows: {
+          complexity: graphqlPollFloors(store.read(owner)?.windows, now),
+        },
       }),
       record() {
         // This fixture only measures the selected wake time.

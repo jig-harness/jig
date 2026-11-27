@@ -48,6 +48,26 @@ function memoryCache(): PickupReads {
   };
 }
 
+describe("FakeLinear issue reads", () => {
+  it("keeps all direct children, including completed ones", async () => {
+    const fake = new FakeLinear();
+    fake.add({ identifier: "ENG-1" });
+    fake.add({ identifier: "ENG-2", parent: "ENG-1" });
+    fake.add({
+      identifier: "ENG-3",
+      parent: "ENG-1",
+      state: { name: "Done", type: "completed" },
+    });
+
+    const issue = await fake.tracker().getIssue("ENG-1");
+
+    expect(issue?.children.map((child) => child.identifier)).toEqual([
+      "ENG-2",
+      "ENG-3",
+    ]);
+  });
+});
+
 /** A parent's plan: a finished sibling step, then the assigned child. */
 function plan(parent: string, sibling: string, child: string): string {
   return `## Execution Plan\n${renderExecutionPlan({
@@ -742,8 +762,9 @@ describe("an epic's children read together with their relations", () => {
     await tick(small.tracker(), memoryCache(), 0);
     const large = epic(100);
     await tick(large.tracker(), memoryCache(), 0);
-    // 100 children are four pages of the by-key read; the rest of the cold tick is the same.
-    expect(large.count() - small.count()).toBeLessThanOrEqual(4);
+    // The direct child connection and the by-key read each add pages, not
+    // per-child requests.
+    expect(large.count() - small.count()).toBeLessThanOrEqual(7);
   });
 });
 
