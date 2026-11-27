@@ -2,7 +2,9 @@
  * A converged head's CI wait polls every few seconds; its line is printed
  * when the wait starts and when what it waits for changes, not on every poll,
  * so a long grace period leaves one line in the driver log, not hundreds.
- * A poll that does not wait ends the wait: the next one that does prints again.
+ * Each gated round is a poll (`round-step.ts` starts it): a round that does
+ * not wait, a review round included, ends the wait, and the next one that
+ * does prints again.
  */
 
 /** The wait line printed by the previous poll, and the one this poll is on. */
