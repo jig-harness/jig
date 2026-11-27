@@ -46,9 +46,9 @@ criteria:
       comment-only until it clears a pre-committed precision bar for flipping
       it (or a lens) to blocking, and that bar is written down.
     observe:
-      - "an automated reviewer's configuration or workflow wiring is present and it reviewed recent pull requests (a badge or sponsor mention is not a reviewer; with none, this is absent)"
-      - "the review config sets a comment-only posture for new reviewers/lenses"
-      - "a precision bar (and who measures it) is recorded, not implied"
+      - "an automated reviewer is active: its configuration or workflow wiring is present, or host-side evidence (check runs, reviews or comments by a named app) shows it reviewed recent pull requests (a badge or sponsor mention is not a reviewer; with none, this is absent)"
+      - "for every active reviewer or lens, the review config sets a comment-only starting posture; one already promoted shows the bar it cleared"
+      - "a precision bar (and who measures it) is recorded, not implied, and applies to every active reviewer or lens"
 
   - id: automated-review-source-independent
     level: standard
@@ -60,7 +60,7 @@ criteria:
       target base branch — never the PR head it reviews.
     observe:
       - "an automated reviewer is wired (with none, there is no reviewer whose source is independent: absent)"
-      - "review wiring identifies a trusted runtime and policy source outside the PR head"
+      - "for every secret-bearing or merge-relevant reviewer, review wiring identifies a trusted runtime, prompt source and active policy source outside the PR head"
       - "proposed reviewer changes can only affect a separate unprivileged shadow run, not their own authoritative review"
 
   - id: comment-resolution-loop-gated
@@ -224,6 +224,7 @@ criteria:
     observe:
       - "an automated reviewer is wired (with none, there is no promotion to gate: absent)"
       - "a lens flipped to blocking carries a recorded precision measurement clearing the bar"
+      - "the promotion path rejects a missing or below-bar measurement for both reviewers and lenses (observable before the first promotion)"
       - "the measurement source (M8 parity report) is wired, not aspirational"
 
   - id: review-gates-self-tested
