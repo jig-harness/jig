@@ -84,6 +84,21 @@ describe("a fixed served batch's prompt", () => {
     expect(prompt).toContain("Ask no question about a member's size");
   });
 
+  it("passes the default branch's missing-priority policy the tick read, hold when the record has none", () => {
+    expect(prompt).toContain("--fixed '#1,#2' --missing-priority hold:");
+    expect(prompt).toContain("never the workspace's own configuration");
+    const started =
+      pickupPassArgv(
+        {
+          ...record,
+          batchItems: [{ key: "#1", person: "someone" }],
+          missingPriority: "start",
+        },
+        [],
+      ).at(-1) ?? "";
+    expect(started).toContain("--fixed '#1' --missing-priority start:");
+  });
+
   it("lets the first member left out be claimed when none stays", () => {
     expect(prompt).toContain(
       "(the first member left out whose priority is set when none stays)",

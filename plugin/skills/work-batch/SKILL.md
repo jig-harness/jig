@@ -85,8 +85,11 @@ Work the issue alone with [`/jig:do-item`](../do-item/SKILL.md) when:
 items, their served tracker identity and each inherited item's ancestor
 epic. That set is the maximum scope; do not add siblings. Use the first named key as the anchor. Run the proposal
 and its revalidation with every fixed key, in the launch's order, in
-`--fixed`: the script reads only those items, and their existing served
-assignment does not exclude them. Keep only named items the other
+`--fixed`, and with the launch's `--missing-priority` value: the script
+reads only those items, and their existing served assignment does not
+exclude them. That value is the `dispatch.missing_priority` the dispatcher
+read from the default branch; never read the setting from this workspace's
+configuration, which nobody reviewed. Keep only named items the other
 eligibility checks permit. This flag does not claim an item: the live claim
 below still checks its state, assignment, holds and assignment provenance.
 Read the full issues and assess their independence as for any batch.
@@ -107,14 +110,15 @@ JSON form), and no verdict prompt appears:
   others on their own.
 - With two or more members kept, go on with them as the batch.
 - With fewer than two kept, the pass still has to claim one, or its launch
-  record keeps holding every member. Run `/jig:do-item` for the member kept,
-  or, when none is, for the first member left out whose priority is set,
-  passing that item's `--for` and `--ancestor` to its claim. Every other
-  member stays unclaimed for its own pickup. Where `dispatch.missing_priority`
-  is `start`, a member with no priority is an ordinary left-out member: it
-  counts as one whose priority is set here, and is never refused for it.
-  Where it is `hold` and no member is kept and
-  every one left out lost its priority, claim none and start no item: end
+  record keeps holding every member. The proposal names it (`alone.claim` in
+  the JSON form, "work <key> alone" in the table): the member kept, or, when
+  none is, the first member left out whose priority is set, or, under
+  `--missing-priority start`, the first member left out. Run `/jig:do-item`
+  for it, passing that item's `--for` and `--ancestor` to its claim. Every
+  other member stays unclaimed for its own pickup. When the proposal names
+  none (`alone.claim` is `null`, "none may start" in the table) and lists
+  the members held for their missing priority (`alone.heldForPriority`),
+  claim none and start no item: end
   the pass with the launch's result command as `failed`, naming each member
   and that its priority is missing, and pass `--refused <that member's
   updatedAt> --key <that member>` once for each, with one `--reason "priority
@@ -135,7 +139,7 @@ member keys out so the dispatcher shows one question for the batch.
 Never choose for them.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" "<anchor>" [--budget N] [--limit N] [--claimed "KEY,KEY"] [--fixed "KEY,KEY"] [--format json]
+bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" "<anchor>" [--budget N] [--limit N] [--claimed "KEY,KEY"] [--fixed "KEY,KEY" [--missing-priority hold|start]] [--format json]
 ```
 
 `<anchor>` is one of:

@@ -1000,7 +1000,11 @@ context labels from `review`, the labels that name an area from
 `solo_flags` to form fixed batches of served items. An urgent item, and one
 with no priority, which the proposal holds back as a labelling gap, never
 joins a fixed batch; a member whose priority is cleared after the batch is
-formed is left for its own pickup by the batch's pass. The most expensive
+formed is left for its own pickup by the batch's pass. When fewer than two
+members remain, whether such a member may be the one the pass starts is
+`dispatch.missing_priority` as the dispatcher read it from the default
+branch: the batch's launch record carries that value, and the pass hands it
+to its proposal rather than reading the workspace's configuration. The most expensive
 batchable size (`medium` by default; none when every size costs the same) needs
 a person's verdict to stay in a batch, so it never joins a fixed batch: such an
 item is picked up on its own, with no question, and the other items go on as

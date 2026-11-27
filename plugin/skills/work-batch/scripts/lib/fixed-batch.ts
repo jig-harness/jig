@@ -5,6 +5,12 @@
  * batch (too large, cleared, or two at once), is left for its own pickup.
  * So is a member whose priority was cleared, which the dispatcher holds
  * until it has one, rather than a question about the priority.
+ *
+ * With fewer than two members kept, the pass works one alone (`aloneChoice`).
+ * Whether a member with no priority may be that one is the dispatcher's
+ * `dispatch.missing_priority`, as the launch carried it from the default
+ * branch (`--missing-priority`): the workspace's own configuration, which
+ * nobody reviewed, never decides it.
  */
 import type {
   PoolIssue,
@@ -17,6 +23,7 @@ import {
   type ExclusionReason,
   sanitizeForDisplay,
 } from "./eligibility.ts";
+import { Refusal } from "./errors.ts";
 import { type BatchPolicy, verdictSizes } from "./policy.ts";
 
 export interface LeftOut {
@@ -26,6 +33,37 @@ export interface LeftOut {
   size: string | null;
   /** Why its size or missing priority keeps it out of the batch, as a person reads it. */
   why: string;
+  /** Whether its missing priority, not its size, keeps it out. */
+  noPriority: boolean;
+}
+
+/** `dispatch.missing_priority`'s values, as a fixed batch's launch carries them. */
+export type MissingPriority = "hold" | "start";
+
+/**
+ * `--missing-priority`: the value the launch carried, `hold` when it named
+ * none. Only a fixed batch takes it; it never falls back to the workspace's
+ * own `dispatch.missing_priority`.
+ */
+export function missingPriorityFlag(
+  raw: string | undefined,
+  fixed: ReadonlySet<string> | undefined,
+): MissingPriority {
+  if (raw !== undefined && fixed === undefined)
+    throw new Refusal("--missing-priority needs --fixed");
+  if (raw === undefined || raw === "hold" || raw === "start")
+    return raw ?? "hold";
+  throw new Refusal(`--missing-priority must be hold or start, got "${raw}"`);
+}
+
+/** With fewer than two members kept: the one member to claim alone, or none, with the members held for their missing priority. */
+export interface AloneChoice {
+  /** The launch's `dispatch.missing_priority`, `hold` when it named none. */
+  missingPriority: MissingPriority;
+  /** The member to claim and work alone; `null` when none may start. */
+  claim: string | null;
+  /** When none may start: the members left out for their missing priority, each held by the dispatcher until it has one. */
+  heldForPriority: string[];
 }
 
 interface Parts {
@@ -80,6 +118,7 @@ export function splitFixed(
       title: i.title,
       size,
       why: `${size} is the most expensive batchable size, which a fixed batch leaves to its own pull request`,
+      noPriority: false,
     });
     return false;
   });
@@ -91,6 +130,7 @@ export function splitFixed(
       title: e.title,
       size: e.reason.kind === "not-batchable-size" ? e.reason.size : null,
       why: describeReason(e.reason, policy),
+      noPriority: e.reason.kind === "no-priority",
     });
     return false;
   });
@@ -101,8 +141,53 @@ export function splitFixed(
   return { eligible, excluded, leftOut };
 }
 
-export function leftOutLines(leftOut: readonly LeftOut[]): string[] {
-  if (leftOut.length === 0) return [];
+/**
+ * The member a fixed batch with fewer than two kept works alone: the one
+ * kept, else the first left out whose priority is set, else, under `start`,
+ * the first left out. `null` for a proposal that is no fixed batch, or a
+ * batch that keeps two or more.
+ */
+export function aloneChoice(
+  kept: readonly { identifier: string }[],
+  leftOut: readonly LeftOut[],
+  opts: { fixed?: ReadonlySet<string>; missingPriority?: MissingPriority },
+): AloneChoice | null {
+  if (opts.fixed === undefined || kept.length >= 2) return null;
+  const missingPriority = opts.missingPriority ?? "hold";
+  const startable = leftOut.filter(
+    (l) => missingPriority === "start" || !l.noPriority,
+  );
+  const claim = kept[0]?.identifier ?? startable[0]?.identifier ?? null;
+  return {
+    missingPriority,
+    claim,
+    heldForPriority:
+      claim === null
+        ? leftOut.filter((l) => l.noPriority).map((l) => l.identifier)
+        : [],
+  };
+}
+
+/** The table's line for the member worked alone, or for the members none of whom may start. */
+function aloneLines(choice: AloneChoice | null | undefined): string[] {
+  if (choice === null || choice === undefined) return [];
+  if (choice.claim !== null)
+    return [
+      "",
+      `Fewer than two kept: work ${sanitizeForDisplay(choice.claim)} alone.`,
+    ];
+  const held = choice.heldForPriority.map(sanitizeForDisplay).join(", ");
+  return [
+    "",
+    `Fewer than two kept, and none may start (dispatch.missing_priority: ${choice.missingPriority})${held === "" ? "" : `: ${held} lost ${choice.heldForPriority.length === 1 ? "its" : "their"} priority`}.`,
+  ];
+}
+
+export function leftOutLines(
+  leftOut: readonly LeftOut[],
+  alone?: AloneChoice,
+): string[] {
+  if (leftOut.length === 0) return aloneLines(alone);
   return [
     "",
     "Left for their own pickups:",
@@ -110,5 +195,6 @@ export function leftOutLines(leftOut: readonly LeftOut[]): string[] {
       (l) =>
         `  ${sanitizeForDisplay(l.identifier)}  ${sanitizeForDisplay(l.why)}`,
     ),
+    ...aloneLines(alone),
   ];
 }

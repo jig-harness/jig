@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { batchPickups } from "../lib/queue-batch.ts";
+import { batchPickups, batchRecordFields } from "../lib/queue-batch.ts";
 import type { Action, WantedItem } from "../lib/types.ts";
 const dirs: string[] = [];
 afterAll(() => {
@@ -185,4 +185,25 @@ it("reads a size store named in the configuration against the checkout's taxonom
     },
   };
   expect(batchPickups([], [], values, root)).toEqual([]);
+});
+
+describe("a batch launch record's own fields", () => {
+  const members = [{ key: "#1", person: "alex" }];
+
+  it("carries the default branch's missing-priority policy the tick read, hold when it read none", () => {
+    expect(batchRecordFields(members, { missingPriority: "start" })).toEqual({
+      batchItems: members,
+      missingPriority: "start",
+    });
+    expect(batchRecordFields(members, {})).toEqual({
+      batchItems: members,
+      missingPriority: "hold",
+    });
+  });
+
+  it("adds nothing to a single pickup", () => {
+    expect(batchRecordFields(undefined, { missingPriority: "start" })).toEqual(
+      {},
+    );
+  });
 });
