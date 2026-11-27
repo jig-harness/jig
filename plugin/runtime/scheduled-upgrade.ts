@@ -362,7 +362,13 @@ export async function scheduledUpgradeVerb(
     };
   }
   upgrade = bounded(upgrade);
-  appendUpgradeHistory(upgradeStateRoot(), upgrade);
+  if (
+    ["updated", "failed"].includes(upgrade.outcome) &&
+    !appendUpgradeHistory(upgradeStateRoot(), upgrade)
+  )
+    console.error(
+      "upgrade: the history line could not be written; this transition is missing from the upgrade history",
+    );
   console.error(`upgrade: ${upgradeLine(upgrade)}`);
   console.log(JSON.stringify(upgrade));
   return upgrade.outcome === "failed" ? 1 : 0;

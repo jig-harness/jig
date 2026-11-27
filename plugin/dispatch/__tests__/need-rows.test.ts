@@ -173,7 +173,46 @@ function record(over: Partial<LaunchRecord> = {}): LaunchRecord {
   };
 }
 
+describe("need rows: covers and close reasons", () => {
+  it("refreshes the stored covers when the target stays", () => {
+    const group = (covers: string[], target = "v1") =>
+      need({ cause: "release-owed", target, covers });
+    line([group(["ENG-1", "ENG-2"])], 1);
+    line([group(["ENG-1", "ENG-3"])], 2);
+    line([group(["ENG-3"], "v2")], 3);
+    expect(rows().map((r) => r.event)).toEqual(["need-opened"]);
+  });
+
+  it("binds the close reason to the current absence, not an earlier one", () => {
+    line([need()], 1);
+    stateDb(root)
+      .query(
+        "INSERT INTO need_leaves (repo, target, cause, at_ms, value) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run(
+        REPO,
+        "ENG-4",
+        "stalled",
+        Date.parse(T(2)),
+        JSON.stringify({ by: "person", how: "earlier blip" }),
+      );
+    line([], 2);
+    line([need()], 3);
+    line([], 4);
+    line([], 5);
+    expect(rows()[1]).toMatchObject({ reason: "the line no longer holds it" });
+  });
+});
+
 describe("the release on a record", () => {
+  it("is kept when a rewrite carries none", () => {
+    writeRecord(record(), root);
+    const first = readRecord(ID, root)?.release;
+    const { release: _release, ...bare } = record();
+    writeRecord({ ...bare, account: "b" }, root);
+    expect(readRecord(ID, root)?.release).toBe(first);
+  });
+
   it("is the plugin's version, and names one", () => {
     expect(releaseOf()).toMatch(/^\d+\.\d+\.\d+/);
   });

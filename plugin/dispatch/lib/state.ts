@@ -655,6 +655,11 @@ export const MIGRATIONS: readonly Migration[] = [
   CREATE INDEX log_release ON log (release) WHERE release IS NOT NULL;
   `,
   },
+  {
+    // A closed need's leave is found by its identity and time (`need-rows.ts`): each close reads it by index, not by scanning the retained range.
+    additive: true,
+    sql: "CREATE INDEX need_leaves_identity ON need_leaves (repo, target, cause, at_ms);",
+  },
 ];
 
 /** The schema version this plugin writes. */

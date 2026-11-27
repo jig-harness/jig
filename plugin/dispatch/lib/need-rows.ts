@@ -73,11 +73,13 @@ function coversOf(text: string): string[] {
 
 /** How the need left, from the leave row the tick wrote for it, else that the line no longer holds it. */
 function howClosed(db: Database, need: OpenNeed): string {
+  // The leave of the current absence sequence: the first one at or after the tick that first found the need absent, never one from an earlier absence the debounce kept open.
+  const since = parseMs(need.absentAt ?? need.openedAt);
   const row = db
     .query(
-      "SELECT value FROM need_leaves WHERE repo = ? AND target = ? AND cause = ? AND at_ms >= ? ORDER BY at_ms DESC, id DESC LIMIT 1",
+      "SELECT value FROM need_leaves WHERE repo = ? AND target = ? AND cause = ? AND at_ms >= ? ORDER BY at_ms ASC, id ASC LIMIT 1",
     )
-    .get(need.repo, need.target, need.cause, parseMs(need.openedAt)) as {
+    .get(need.repo, need.target, need.cause, since) as {
     value: string;
   } | null;
   if (row === null) return NO_LEAVE;
@@ -127,13 +129,19 @@ const dropOpen = (db: Database, need: NeedIdentity): void => {
 
 /** A held need the line still holds: back in, or moved on to another target within a group, it is open and not absent. */
 function keepOpen(db: Database, open: OpenNeed, present: LineNeed): void {
-  if (open.absentAt === null && present.target === open.target) return;
+  const covers = JSON.stringify(present.covers ?? []);
+  if (
+    open.absentAt === null &&
+    present.target === open.target &&
+    covers === JSON.stringify(open.covers ?? [])
+  )
+    return;
   dropOpen(db, open);
   db.query(INSERT_OPEN).run(
     present.repo,
     present.target,
     present.cause,
-    JSON.stringify(present.covers ?? []),
+    covers,
     open.openedKey,
     open.openedAt,
   );

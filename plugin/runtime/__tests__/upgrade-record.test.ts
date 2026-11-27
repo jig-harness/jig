@@ -147,7 +147,10 @@ test("the upgrade history only grows: each update or failure adds a line, the fi
   expect(appendUpgradeHistory(root, second)).toBe(true);
   const lines = readFileSync(historyPath(root), "utf8").trimEnd().split("\n");
   expect(`${lines[0]}\n`).toBe(afterFirst);
-  expect(lines.map((l) => JSON.parse(l))).toEqual([first, second]);
+  expect(lines.map((l) => JSON.parse(l))).toEqual([
+    { version: 1, ...first },
+    { version: 1, ...second },
+  ]);
 });
 
 test("an attempt that moved nothing is not a line of the upgrade history", () => {

@@ -222,9 +222,7 @@ function driversPart(
   records: ReadRecord[],
   drivers: HostDrivers | undefined,
 ):
-  | { drivers: LineDriver[] }
-  | { driversUnread: string }
-  | Record<never, never> {
+  { drivers: LineDriver[] } | { driversUnread: string } | Record<never, never> {
   if (drivers === undefined) return {};
   if (!drivers.ok) return { driversUnread: drivers.failure.reason };
   return {
@@ -260,23 +258,25 @@ function writeWithParks(
   receipt: string,
   before: readonly LineNeed[] | null,
   evidence: Omit<LeaveEvidence, "answers">,
+  at: string,
 ): void {
   const db = stateDb();
   inTransaction(db, () => {
     for (const row of parked.rows) insertRow(db, row);
-    const nowMs = parseMs(line.finishedAt);
+    // The writing tick's own time: a tick that read only some repositories keeps the earlier snapshot's `finishedAt` on the line.
+    const nowMs = parseMs(at);
     // Every need the line no longer holds leaves one row, whatever the notify stage did.
     if (before !== null) {
       const ev = { ...evidence, answers: answersFrom(db) };
       insertLeaves(
         db,
         leftNeeds(before, line.needs).map((need) =>
-          leaveOf(need, line.needs, ev, line.finishedAt),
+          leaveOf(need, line.needs, ev, at),
         ),
       );
     }
     pruneLeaves(db, nowMs);
-    recordNeedRows(db, line.needs, line.finishedAt);
+    recordNeedRows(db, line.needs, at);
     writeLine(
       {
         ...line,
@@ -602,6 +602,7 @@ function writeKept(
         receiptText ?? receiptJson(receipt),
         before?.needs ?? null,
         leaveEvidence(reports, tick.inputs, parked, receipt.apply),
+        receipt.finishedAt,
       );
     },
   );

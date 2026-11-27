@@ -112,11 +112,7 @@ import { isoOf, parseMs } from "../../shared/time.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
 export type LaunchAction =
-  | "rearm"
-  | "takeover"
-  | "pickup"
-  | "followup"
-  | "steward";
+  "rearm" | "takeover" | "pickup" | "followup" | "steward";
 
 export { isDrive, isInteractive } from "./launch-kind.ts";
 
@@ -373,6 +369,19 @@ export function newToken(): string {
   return crypto.randomUUID().replace(/-/g, "");
 }
 
+/** The release a stored record names, if it reads and names one. */
+function storedRelease(text: string): string | undefined {
+  try {
+    const found: unknown = JSON.parse(text);
+    return isMapping(found) && typeof found.release === "string"
+      ? found.release
+      : undefined;
+  } catch (error) {
+    swallow(error, "a stored launch record does not read; it names no release");
+    return undefined;
+  }
+}
+
 /**
  * Write (or rewrite) the tick's part of a record. The samples and episodes
  * live in their own tables, written where they are observed.
@@ -381,10 +390,12 @@ export function writeRecord(record: LaunchRecord, root = stateRoot()): void {
   const { samples: _samples, episodes: _episodes, ...tick } = record;
   const db = stateDb(root);
   // The release in effect at launch is the one that first writes the record; a rewrite by another release keeps it.
-  const first =
-    db.query("SELECT 1 FROM launches WHERE id = ?").get(record.id) === null;
-  if (first && tick.release === undefined) {
-    const release = releaseOf();
+  const stored = db
+    .query("SELECT record FROM launches WHERE id = ?")
+    .get(record.id) as { record: string } | null;
+  if (tick.release === undefined) {
+    const kept = stored === null ? undefined : storedRelease(stored.record);
+    const release = kept ?? (stored === null ? releaseOf() : undefined);
     if (release !== undefined) tick.release = release;
   }
   db.query(

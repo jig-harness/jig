@@ -175,9 +175,13 @@ export function appendUpgradeHistory(
   if (!HISTORY_OUTCOMES.includes(upgrade.outcome)) return false;
   try {
     mkdirSync(root, { recursive: true, mode: 0o700 });
-    appendFileSync(historyPath(root), `${JSON.stringify(bounded(upgrade))}\n`, {
-      mode: 0o600,
-    });
+    appendFileSync(
+      historyPath(root),
+      `${JSON.stringify({ version: 1, ...bounded(upgrade) })}\n`,
+      {
+        mode: 0o600,
+      },
+    );
     return true;
   } catch (error) {
     swallow(error, "the upgrade's history line is left unwritten");
