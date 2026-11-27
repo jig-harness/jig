@@ -38,9 +38,10 @@ home and its own way to read a weekly schedule:
   planned an individual `priorities` record under the same entry.
 - The individual routine ([#1403](https://github.com/jig-harness/jig/issues/1403)) plans a host-local file with `focus`,
   `loose` and `away` modes and a timed override.
-- The chat design plans host-wide `chat.timezone`, `chat.quiet`,
-  `chat.direct` and `chat.digest_at`, with `chat.quiet` written as a bare
-  `HH:MM-HH:MM` range.
+- Before this decision, the chat design planned host-wide `chat.timezone`,
+  `chat.quiet`, `chat.direct` and `chat.digest_at`, with `chat.quiet` written
+  as a bare `HH:MM-HH:MM` range; decision 2 below replaces that range with
+  the weekly-window grammar.
 - `autonomy.off_hours.{level, schedule}` is built
   (`plugin/shared/off-hours.ts`): a list of weekly windows,
   `<days> [HH:MM-HH:MM]`, read in the machine's local time zone through
@@ -99,7 +100,7 @@ schema only in the change that ships the feature that reads it.
 | Machine | Profile | Individual priorities |
 | --- | --- | --- |
 | Solo or non-dispatch machine, and the interactive skills a person runs at their own keyboard (`operator`, `orchestrate`) | `$JIG_HOME/person.yaml` | `$JIG_HOME/priorities.local.yaml` |
-| Dispatch host serving more than one person | The path `serve[].profile` names, per served person | A per-person sibling file or folder beside that profile |
+| Dispatch host serving more than one person | The path `serve[].profile` names, per served person | A per-person sibling file or folder beside that profile; a served person with no `serve[].profile` has no individual priorities record, and the host's own priorities apply |
 
 `serve[].profile: <path>` will be an optional, additive key, so no existing
 machine file breaks and `serve[].name` gains no new restriction on its
@@ -110,9 +111,12 @@ the weights file, so a typo in a day's routine override never blocks
 allocation or breaks the machine file.
 
 **One shared reader will read every person profile, failing closed:** it
-checks the path with `lstat`, so a dangling symbolic link fails rather than
-reading as absent; it refuses unknown keys; and it refuses a path Git tracks
-inside a working tree, so a committed profile is never read.
+resolves the path to its real target (following symbolic links) and fails
+when resolution fails, so a dangling link fails rather than reading as
+absent; it refuses unknown keys; and it refuses a resolved target that Git
+tracks inside a working tree, so a committed profile is never read. It opens
+the resolved target once and reads from that open file, so a link swapped
+after the check cannot change what is read.
 
 ### 2. One schedule and time-zone primitive (ruling 2A-i)
 
@@ -165,7 +169,7 @@ whose profile leaves the field unset.
 - **The hub never receives a person's local declarations.** ADR-0016, the
   control-plane design and the priorities design bar it. The hub's one
   identity mapping stays the `chat-link` a person makes with `/jig link`,
-  verified by the chat tool's sign-in (ADR-0022). A routine shared across
+  verified by the forge sign-in that `/jig link` runs through the app (ADR-0022). A routine shared across
   hosts through the hub would need an amendment of this record, reviewed
   for its personal-data consequences.
 
