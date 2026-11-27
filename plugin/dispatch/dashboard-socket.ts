@@ -57,10 +57,16 @@ export function ancestorProblem(
     const read = attempt("socket-unreadable", "", () => lstatSync(parent));
     if (!read.ok) return `has an ancestor that cannot be read (${parent})`;
     const facts = read.value;
-    if (!facts.isDirectory())
-      return `has an ancestor that is not a directory (${parent})`;
     if (uid !== undefined && facts.uid !== uid && facts.uid !== 0)
       return `has an ancestor owned by user ${facts.uid} (${parent})`;
+    // A link the reader or root made is as safe as the directory holding it,
+    // which the next step of the walk checks.
+    if (facts.isSymbolicLink()) {
+      current = parent;
+      continue;
+    }
+    if (!facts.isDirectory())
+      return `has an ancestor that is not a directory (${parent})`;
     const sticky = (facts.mode & 0o1000) !== 0;
     if ((facts.mode & 0o022) !== 0 && !sticky)
       return `has an ancestor directory that others can write to (${parent})`;
@@ -117,7 +123,11 @@ export function bindSocket(
   );
   if (!resolved.ok)
     return unusable("cannot be prepared", resolved.failure.cause);
-  const chain = ancestorProblem(resolved.value, process.getuid?.());
+  // The path as configured is what a front reaches, so its own links are
+  // checked as well as the resolved directory's chain.
+  const chain =
+    ancestorProblem(dirname(path), process.getuid?.()) ??
+    ancestorProblem(resolved.value, process.getuid?.());
   if (chain !== null) return unusable(chain);
   const found = readSocketFacts(path);
   if (!found.ok) return unusable("cannot be prepared", found.failure.cause);
@@ -142,7 +152,9 @@ export function bindSocket(
   const stop = () => {
     // Bun unlinks the path when a server stops, whatever is there now, so a
     // socket another reader put in this one's place is moved aside meanwhile.
-    const replaced = inode !== null && lstatIno(path) !== inode;
+    const now = lstatIno(path);
+    // A pathname that is simply gone holds no one else's socket to protect.
+    const replaced = inode !== null && now !== null && now !== inode;
     const asidePath = replaced ? parkReplacement(path) : null;
     const parked = asidePath !== null;
     // When the replacement cannot be moved aside, the listener is left to die
@@ -166,6 +178,8 @@ export function bindSocket(
 function parkReplacement(path: string): string | null {
   for (const n of [0, 1, 2]) {
     const aside = `${path}.${process.pid}.${n}.aside`;
+    // renameSync would silently replace an earlier parked file.
+    if (lstatIno(aside) !== null) continue;
     if (attempt("socket-unusable", "", () => renameSync(path, aside)).ok)
       return aside;
   }

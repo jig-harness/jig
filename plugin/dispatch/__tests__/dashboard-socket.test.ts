@@ -13,6 +13,7 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -176,6 +177,20 @@ describe("the private socket", () => {
     expect(ancestorProblem(inner, uid)).toContain("others can write");
     chmodSync(outer, 0o1777);
     expect(ancestorProblem(inner, uid)).toBeNull();
+  });
+
+  it("walks through a link the reader made, and refuses one under a directory others can write to", () => {
+    const real = scratch();
+    const target = join(real, "target");
+    mkdirSync(target, { mode: 0o700 });
+    const link = join(real, "link");
+    symlinkSync(target, link);
+    const uid = process.getuid?.();
+    expect(ancestorProblem(join(link, "inner"), uid)).toBeNull();
+    chmodSync(real, 0o777);
+    expect(ancestorProblem(join(link, "inner"), uid)).toContain(
+      "others can write",
+    );
   });
 
   it("is created under a tight umask, so no mode is wider than 0600 to begin with", () => {
