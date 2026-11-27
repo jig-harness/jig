@@ -24,7 +24,8 @@
  * A **regression** is an end cause (a closing report's `cause`) that no run
  * had in the 14 days before its first run under a release and that has at
  * least three runs under that release: it names the release. Runs that name
- * no release name none.
+ * no release name none. The claim reaches only as far back as the rows read:
+ * a release's first run is its first within the window and the days before it.
  */
 import { median } from "../../skills/drive-pr/scripts/lib/fractal.ts";
 import { isoFromMs, parseMs } from "../../shared/time.ts";
@@ -186,15 +187,20 @@ function groupsOf(
   toMs: number,
 ): Group[] {
   const byRelease = new Map<string | null, LogRow[]>();
-  for (const row of rows) {
+  const inWindow = rows.filter((row) => {
     const at = parseMs(row.at);
-    if (at < fromMs || at > toMs || !(isEnded(row) || isAnswered(row)))
-      continue;
+    return at >= fromMs && at <= toMs;
+  });
+  // The groups and their spans come from runs; an answer joins the group of
+  // its release only when that release ran something in the window.
+  for (const row of inWindow.filter(isEnded)) {
     const release = releaseOf(row);
     const group = byRelease.get(release);
     if (group === undefined) byRelease.set(release, [row]);
     else group.push(row);
   }
+  for (const row of inWindow.filter(isAnswered))
+    byRelease.get(releaseOf(row))?.push(row);
   const startsAt = (group: LogRow[]): number =>
     group.reduce(
       (least, r) => Math.min(least, isEnded(r) ? startOf(r) : parseMs(r.at)),
@@ -214,6 +220,9 @@ function rowOf(
   { release, group, from }: Group,
   spanTo: number,
   slots: number | null,
+  allRuns: readonly EndedRow[],
+  windowFrom: number,
+  windowTo: number,
 ): ScoreboardRow {
   const runs = group.filter(isEnded);
   const merged = new Set(
@@ -227,8 +236,14 @@ function rowOf(
   );
   const notConvergedMs = runs
     .filter((r) => r.class !== "converged" && r.class !== "merged")
-    .reduce((sum, r) => sum + (r.durationMs ?? 0), 0);
-  const heldMs = runs.reduce(
+    .reduce(
+      (sum, r) =>
+        sum + overlap(startOf(r), parseMs(r.at), windowFrom, windowTo),
+      0,
+    );
+  // Every run's slot occupancy over the span counts, whichever release ran
+  // it; a launch still running has no row yet, so the figure is an estimate.
+  const heldMs = allRuns.reduce(
     (sum, r) => sum + overlap(startOf(r), parseMs(r.at), from, spanTo),
     0,
   );
@@ -264,13 +279,16 @@ export function scoreboardOf(
   slots: number | null,
 ): ScoreboardAnswer {
   const groups = groupsOf(rows, fromMs, toMs);
+  const allRuns = rows.filter(isEnded);
   return {
     window,
     from: isoFromMs(fromMs),
     to: isoFromMs(toMs),
     slots,
     rows: groups
-      .map((g, i) => rowOf(g, groups[i + 1]?.from ?? toMs, slots))
+      .map((g, i) =>
+        rowOf(g, groups[i + 1]?.from ?? toMs, slots, allRuns, fromMs, toMs),
+      )
       .reverse(),
     regressions: regressionsOf(rows, toMs, fromMs),
   };
@@ -289,18 +307,23 @@ function slotsOf(line: LineSnapshot | null): number | null {
     : line.accounts.reduce((sum, a) => sum + a.cap, 0);
 }
 
+/** The most rows one request reads, newest first; an older tail is dropped, so the figures are an estimate on a log this busy. */
+const MAX_ROWS = 50_000;
+
 /** The rows a scoreboard reads: every ended row, and the rows of answered parks, from `fromMs` to `toMs`. */
 function scoreboardRows(fromMs: number, toMs: number, root: string): LogRow[] {
   const db = existingStateDb(root);
   if (db === null) return [];
   return rowsOf(
-    db
-      .query(
-        `SELECT row FROM log
-         WHERE at_ms >= ? AND at_ms <= ? AND (kind = 'ended' OR bucket = 'event: park-answered')
-         ORDER BY seq`,
-      )
-      .all(fromMs, toMs) as Array<{ row: string }>,
+    (
+      db
+        .query(
+          `SELECT row FROM log
+           WHERE at_ms >= ? AND at_ms <= ? AND (kind = 'ended' OR bucket = 'event: park-answered')
+           ORDER BY seq DESC LIMIT ?`,
+        )
+        .all(fromMs, toMs, MAX_ROWS) as Array<{ row: string }>
+    ).reverse(),
   );
 }
 
