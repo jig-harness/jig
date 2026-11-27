@@ -20,6 +20,11 @@ import { forgeShared } from "../../shared/records/shared-forge.ts";
 import { settleNoCauseStops } from "./no-cause-stops.ts";
 import { settleFailedRearms, withRearmHeads } from "./failed-rearms.ts";
 import {
+  NOT_SETTLED_DEFAULTS,
+  type NotSettledSettings,
+} from "./not-settled-config.ts";
+import { withHeadReviews } from "./not-settled-reviews.ts";
+import {
   settleFailedTakeovers,
   settleRepeatedNotSettled,
 } from "./repeated-ends.ts";
@@ -230,8 +235,10 @@ export interface ClaimsRead {
 }
 
 /**
- * Read the launch claims of every drive the forge gave, and the heads of
- * each whose latest re-arm failed (`failed-rearms.ts`), and settle each
+ * Read the launch claims of every drive the forge gave, the heads of
+ * each whose latest re-arm failed (`failed-rearms.ts`) and the reviews of
+ * the head of each whose `NOT_SETTLED` re-arms are backing off
+ * (`not-settled-reviews.ts`), and settle each
  * drive's stop on a conflict by this host's records and then by another
  * host's claims, into a list of its own: nothing of what this host did is
  * written into `forge`. The claims are read through `reader`, the tick's
@@ -247,6 +254,7 @@ export async function readDriveClaims(
   reader: SharedRecords = ctx.records,
   nowMs: number,
   reads: TickReads,
+  notSettled: NotSettledSettings = NOT_SETTLED_DEFAULTS,
 ): Promise<ClaimsRead> {
   const reading = { ...ctx, records: reader };
   const claims: DriveClaims = forge.ok
@@ -254,13 +262,17 @@ export async function readDriveClaims(
     : new Map();
   if (forge.ok)
     await addEndedLaunches(reading, forge, records, claims, nowMs, reads);
-  const weighed = await withRearmHeads(
+  const weighed = await withHeadReviews(
     ctx.slug,
-    forge.drives,
-    forge.open,
+    await withRearmHeads(ctx.slug, forge.drives, forge.open, records),
     records,
+    notSettled,
+    nowMs,
   );
-  return { claims, drives: settleDrives(ctx, weighed, records, claims) };
+  return {
+    claims,
+    drives: settleDrives(ctx, weighed, records, claims, notSettled),
+  };
 }
 
 /**
@@ -280,12 +292,14 @@ export function settleDrives(
   drives: readonly DrivenPr[],
   records: readonly ReadRecord[],
   claims: DriveClaims,
+  notSettled: NotSettledSettings = NOT_SETTLED_DEFAULTS,
 ): DrivenPr[] {
   return settleOwnDrives(
     drives,
     records.filter((r) => r.record.repo === ctx.slug),
     claims,
     ctx.host,
+    notSettled,
   );
 }
 
@@ -295,6 +309,7 @@ export function settleOwnDrives(
   own: ReadRecord[],
   claims: DriveClaims,
   host: string,
+  notSettled: NotSettledSettings = NOT_SETTLED_DEFAULTS,
 ): DrivenPr[] {
   const placed = markUnlaunched(
     settleUnownedTakeovers(drives, own, claims, host),
@@ -310,7 +325,10 @@ export function settleOwnDrives(
     own,
   );
   return settleNoCauseStops(
-    settleFailedTakeovers(settleRepeatedNotSettled(failed, own), own),
+    settleFailedTakeovers(
+      settleRepeatedNotSettled(failed, own, notSettled),
+      own,
+    ),
     own,
     claims,
     currentMs(),

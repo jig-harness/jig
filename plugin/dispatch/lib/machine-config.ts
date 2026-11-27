@@ -36,6 +36,7 @@
  *   notify_after: 3
  *   rerun_died: 1      # 0 runs no follow-up again after a death or an unwritten result
  *   group: cause            # or scope: one notice per failing scope
+ * not_settled: { backoff: 15m, notify_after: 3 } # exit-4 re-arms on one head: not-settled-config.ts
  * dashboard:
  *   listen: 100.64.0.7:8765
  *   require_token: true     # false only with a loopback listen: a front authenticates
@@ -80,6 +81,8 @@ import {
   notifyChannels,
   notifyStageFault,
 } from "./notify-config.ts";
+import type { NotSettledSettings } from "./not-settled-config.ts";
+import { notSettledSettings } from "./not-settled-config.ts";
 import { type PreflightProbe, preflightSetting } from "./preflight-config.ts";
 import { type ServedPerson, servedPeople } from "./serve-config.ts";
 import { isoFromMs, parseMs } from "../../shared/time.ts";
@@ -205,6 +208,8 @@ export interface MachineConfig {
   preflight?: PreflightProbe[];
   /** The notification channels the tick sends through beside the Orca card (`notify.channels`); none when absent. */
   notifyChannels?: NotifyChannelConfig[];
+  /** How re-arms that keep stopping `NOT_SETTLED` on one head back off and when they are a person's (`not_settled`). */
+  notSettled?: NotSettledSettings;
 }
 
 const DEFAULTS = {
@@ -248,6 +253,7 @@ const TOP_KEYS = [
   "tracker_share",
   "preflight",
   "notify",
+  "not_settled",
 ];
 const DASHBOARD_KEYS = ["listen", "require_token", "allowed_hosts", "front"];
 const FAILURES_KEYS = [
@@ -606,8 +612,11 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   if (!priorities.ok) return priorities;
   const tracker = trackerSettings(top);
   if (!tracker.ok) return tracker;
+  const notSettled = notSettledSettings(top.not_settled);
+  if (!notSettled.ok) return notSettled;
   return ok({
     ...tracker.value,
+    notSettled: notSettled.value,
     ...repos.value,
     path: where,
     serve: serve.value,

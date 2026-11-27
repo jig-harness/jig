@@ -509,6 +509,7 @@ export async function observeRepo(
         shared.records(forge.login),
         nowMs,
         reads,
+        context.options.machine?.notSettled,
       ),
     ),
     timer.time("runtime", async () => {

@@ -78,6 +78,7 @@ export async function recoverLedgers(
         [fresh],
         allRecords(context),
         observation.claims,
+        context.options.machine?.notSettled,
       )[0] as typeof fresh;
   }
 }

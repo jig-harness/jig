@@ -1042,9 +1042,17 @@ Launches of one drive that keep ending the same way are backed off and
 capped from this host's launch records (`repeated-ends.ts`), whether or not
 they moved the ledger. A re-arm of a ledger stopped `4` (not judgeable yet)
 whose own run stopped `4` again at the pull request head the ledger shows now
-counts once: the next re-arm on that head waits 15 minutes after the first,
-doubling with each, and after 3 in a row the drive needs a person, notified
-once for that head and ledger. A takeover of a silent driver a launch of this
+counts once: the next re-arm on that head waits `not_settled.backoff` (15
+minutes) after the first, doubling with each, and after
+`not_settled.notify_after` (3) in a row the drive needs a person, notified
+once for that head and ledger with the states the stops reported
+(`AWAITING_REVIEWER`, `HEAD_LAG` and the rest of exit `4`'s family). The wait
+ends early on what the tick observes the stop waited for: a review of that
+head submitted after the last stop, read only for a drive that waits, or
+mergeability the forge has settled after a stop on `MERGEABILITY_UNKNOWN`;
+the count runs on, so the cap still bounds a head that never settles. While
+it waits, the tick's report says until when and what would end the wait. A
+takeover of a silent driver a launch of this
 host started that ended on a non-zero exit no other rule answers (not a
 second driver's refusal, the usage error or a wall), on the ledger facts the
 ledger still shows, counts the same way: 10 minutes after the first, doubling,
