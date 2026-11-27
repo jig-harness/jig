@@ -457,7 +457,12 @@ The remaining `DRIVE_PR_*` variables (lock and lease timing, and the ones
 
 While waiting for a reviewer on the same pull request head, the drive doubles
 the poll interval up to `review.reviewer_poll_max_seconds` (300 seconds by
-default). A completed neutral check titled `Review did not complete` stops
+default). The waiting status probe and optional final-CI and takeover polls
+also slow down when either GitHub REST core or GraphQL runs low. Near
+exhaustion, those polls can wait for a reset within their existing deadlines.
+GitHub quota pacing leaves local controls and the fresh checks required for a
+verdict or a pass active. See [`drive.status_poll`](../../CONFIGURATION.md#drive).
+A completed neutral check titled `Review did not complete` stops
 the drive with [`REVIEWER_FAILED`](../../protocol/drive-exits.md) if the
 reviewer has no review of that head.
 

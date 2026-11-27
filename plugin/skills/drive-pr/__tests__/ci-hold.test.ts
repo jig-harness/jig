@@ -47,7 +47,7 @@ case "$1 $2" in
     [[ "$5" == ci:hold ]] || { echo "gh: unexpected hold label: $5" >&2; exit 2; }
     ;;
   'api user')
-    [[ "$#" -eq 4 && "$3" == -q && "$4" == .login ]] || {
+    [[ "$#" -eq 4 && "$3" == --jq && "$4" == .login ]] || {
       echo 'gh: unexpected user lookup arguments' >&2; exit 2;
     }
     ;;

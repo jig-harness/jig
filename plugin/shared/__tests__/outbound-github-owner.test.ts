@@ -103,6 +103,41 @@ function processOn(
   return { store, governor, owners };
 }
 
+it("retries a sent identity failure after its backoff without spending the drive's lookup on a local refusal", async () => {
+  const path = databasePath();
+  const env = { GH_TOKEN: "token-a" };
+  let now = currentMs();
+  let attempts = 0;
+  const owners = githubOwnerResolver({
+    owners: sqliteOwnerStore(path, () => now),
+    budget: sqliteBudgetStore(path),
+    clock: () => now,
+    singleLookup: () => true,
+    discover: async () => {
+      attempts++;
+      if (attempts === 1)
+        return {
+          failure: { code: "rate-limited", reason: "local admission refused" },
+          unsent: true,
+        };
+      return attempts === 2
+        ? { failure: { code: "invalid", reason: "malformed identity" } }
+        : { user: { id: 7, login: "recovered" } };
+    },
+  });
+  const first = await owners.resolve(env);
+  expect(first.discoveryFailure?.code).toBe("rate-limited");
+  now += DISCOVERY_BACKOFF_MS + 1;
+  const sent = await owners.resolve(env);
+  expect(sent.discoveryFailure).toMatchObject({
+    code: "invalid",
+    reason: "malformed identity",
+  });
+  now += DISCOVERY_BACKOFF_MS + 1;
+  expect(await owners.resolve(env)).toMatchObject({ login: "recovered" });
+  expect(attempts).toBe(3);
+});
+
 /** A forge client sending with `env`, whose `gh` is `answer`. */
 function client(env: Env, answer: (argv: string[]) => Run = () => ok("{}")) {
   const sent: string[][] = [];

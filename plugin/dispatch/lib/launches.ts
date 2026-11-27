@@ -188,6 +188,8 @@ export interface LaunchRecord {
   /** For a pickup from the ready pool: the launch re-reads it as one, so a later assignment cannot move it to the assigned lane. */
   pooled?: boolean;
   batchItems?: import("./queue-batch.ts").BatchItem[];
+  /** For a batch: the default branch's `dispatch.missing_priority` the tick read, which the pass decides with instead of its workspace's file. */
+  missingPriority?: import("./types.ts").MissingPriority;
   /** For a headless pass: whether the tick admitted it on a host opted in to Codex's bypass (a Codex pass carries the bypass only when this is `true`), and the host's `drive.codex_pass_args` read with it, which a Codex pass carries before its prompt (absent for none); the wrapper reads neither setting itself, since it can read another user layer from the tick's. */
   codexBypass?: boolean;
   codexPassArgs?: string[];
@@ -510,9 +512,7 @@ function isAttempt(value: unknown): value is LaunchAttempt {
   return (
     isMapping(value) &&
     typeof value.at === "string" &&
-    (value.outcome === "sent" ||
-      value.outcome === "failed" ||
-      value.outcome === "lost") &&
+    ["sent", "failed", "lost"].includes(value.outcome as string) &&
     typeof value.detail === "string"
   );
 }

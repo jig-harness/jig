@@ -2,7 +2,7 @@
 import { DecodeError } from "../../../../shared/guards.ts";
 import { indexAttributesGit } from "./attributes.ts";
 import { git, gitRaw, splitNul } from "./git.ts";
-import type { Operation } from "./operation.ts";
+import { type Operation, recordedMergeBase } from "./operation.ts";
 import type { Snapshot, Stage } from "./snapshot.ts";
 
 type Inputs = Pick<Snapshot, "operation" | "sides">;
@@ -56,6 +56,10 @@ function mergeArguments(root: string, op: Inputs["operation"]): string[] {
   const args = ["merge-tree", "--write-tree", "--name-only", "-z"];
   if (isMerging(root, op)) {
     if (op.base === null) args.push("--allow-unrelated-histories");
+    // A merge started with the earlier base's merge base was merged with
+    // it, so its automatic result is rebuilt with the same base.
+    else if (recordedMergeBase(root, op.head) === op.base)
+      args.push(`--merge-base=${op.base}`);
   } else {
     const base =
       op.base ??
