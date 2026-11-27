@@ -11,6 +11,10 @@
  * The pickup's claim assigns the item to the factory identity; the claim
  * marker the pool requires decides between hosts that take the same item.
  */
+import {
+  EPIC_PICKUP_REASON,
+  isEpicPickup,
+} from "../../../shared/epic-pickup.ts";
 import { cacheForTracker } from "./tracker-cache.ts";
 import { AssignerUnknown } from "../../../skills/do-item/scripts/lib/tracker/assigner-unknown.ts";
 import { readFailureOfError } from "../read-failures.ts";
@@ -73,6 +77,7 @@ function heldOut(issue: PoolIssue, policy: ServedPolicy): string | null {
   );
   if (unlabeled === "leave") return "leave";
   if (unlabeled === "hold") return NEEDS_REPOSITORY_LABEL;
+  if (isEpicPickup(issue)) return EPIC_PICKUP_REASON;
   return queueHold({ issue, blockers: [], unblocks: 0 }, policy);
 }
 

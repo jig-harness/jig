@@ -827,7 +827,7 @@ The keys, the options and the answer forms are listed in
 | a failed follow-up, or a stale claim again | `followup` | **Run it again**: deletes the follow-up's marker, so a later tick starts it again with your note in its prompt; **Record it done**: marks the existing marker done in place |
 | an untagged release that needs a person | `release` | **Re-run the failed gates**: requests failed jobs on the releasing commit again once, recommended unless the follow-up recorded that every required check passed or the version is outside automatic tagging, or a re-run was already requested. **Investigate** and **Tag it by hand** leave the chosen step with the person. Releases of a repository that share a remedy are one need listing every version, and the answer covers them all; a release whose one re-run was requested is offered only the last two options, and so is one with no failed gate to re-run (every required check passed, the version is outside automatic tagging, the repository runs no re-run, or its configuration makes the tag a person's step with `changelog.release.tagged_by: person`), which recommends **Tag it by hand**. Answer on the tracker item the need names |
 | a stalled pickup, or a pickup's question it did not frame | `pickup` | **Release the claim**: moves the item back to the first state a pickup starts from, so a later tick picks it up afresh |
-| a checkout the workspace runtime does not list holds the launch's branch | `checkout` | **Detach the checkout**: detaches it at its commit, only when it is idle (clean, its commits on the remote, no drive or process in it) |
+| a checkout the workspace runtime does not list holds the launch's branch | `checkout` | **Detach the checkout**: detaches it at its commit, only when it is idle (clean, its commits on the remote, no drive or process in it). A host can have the open detach more of these without asking: `detach_idle_holders` and `rescue_unpushed` in [the machine file](CONFIGURATION.md#the-machines-dispatch-file) |
 | a drive handed to a person, or stopped with no cause | `drive` | **Re-arm the drive**: adds the `rearm` label |
 | a launch record stuck pending, or one of unknown process that holds a drive | `launch` | **Clear the record**: as `jig dispatch clear` does; for a record of unknown process, only when every process of it could be judged, none runs, no session is joined to its target and no account wall rests on it |
 
@@ -1350,6 +1350,16 @@ so the dashboard's log leaves these rows out unless its class filter
 names `event: notices_read`, and the steward's digest leaves them out of
 the history it judges from. `jig dispatch log` and its text copy list
 them, one a tick.
+
+Whatever the notify stage does, each tick also keeps the log's account of
+the needs on the line: a `need-opened` event (no class) when a need first
+appears, and a `need-closed` event, with how long it was open and how it
+left, once it has been absent from two ticks' lines in a row. A need missing
+from one tick only (a read that failed) stays open and writes nothing. Every
+row, and every tick receipt and launch record, names the plugin `release`
+that wrote it; an ended row names the release its run was launched under,
+and the scheduled upgrades that moved the machine between releases are
+appended to `~/.local/state/jig/upgrade/history.jsonl`.
 
 **The log as text.** The log prints as text, one line a row, or with
 `--jsonl` as JSON lines:
@@ -2466,7 +2476,7 @@ drive:
   max_rounds: 10              # default round budget of a drive-pr run; --max-rounds overrides; default 10
   max_total_rounds: 8         # round ceiling per pull request across re-arms; at most 50; default 8
   max_wall_clock_hours: 12    # hours a pull request may be driven from its first launch; default: no cap
-  pass_deadline_retries: 2    # passes killed at their deadline one drive restarts from, across re-arms; default 2
+  pass_deadline_retries: 2    # passes one drive restarts (deadline or background task), across re-arms; default 2
   ci_repair_rounds: 2         # CI-repair passes per head and failing check on red final CI; 0 stops on red; default 2
   pass_model: sonnet          # model each pass runs on: a model id, a Claude Code alias or a routing tier; default sonnet
 ci:

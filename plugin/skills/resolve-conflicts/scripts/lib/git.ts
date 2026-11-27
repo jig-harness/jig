@@ -9,6 +9,8 @@ export interface GitResult {
   code: number;
   stdout: string;
   stderr: string;
+  /** Set when the call was killed at its deadline. */
+  timedOut?: boolean;
 }
 
 /** Large enough for any lockfile or generated file a stage blob can hold. */
@@ -32,6 +34,7 @@ function spawnGit(
   encoding: "utf8" | "buffer",
   input?: string,
   env?: NodeJS.ProcessEnv,
+  timeoutMs?: number,
 ) {
   const full = [...STABLE, ...(root === null ? [] : ["-C", root]), ...args];
   const r = spawnSync("git", full, {
@@ -39,7 +42,16 @@ function spawnGit(
     maxBuffer: MAX_BUFFER,
     input,
     env,
+    timeout: timeoutMs,
+    killSignal: "SIGKILL",
   });
+  if (
+    r.error &&
+    timeoutMs !== undefined &&
+    "code" in r.error &&
+    r.error.code === "ETIMEDOUT"
+  )
+    return { ...r, status: null, timedOut: true };
   if (r.error) throw new Error(`git ${args.join(" ")}: ${r.error.message}`);
   return r;
 }
@@ -49,12 +61,17 @@ export function gitRaw(
   args: readonly string[],
   input?: string,
   env?: NodeJS.ProcessEnv,
+  timeoutMs?: number,
 ): GitResult {
-  const r = spawnGit(root, args, "utf8", input, env);
+  const r = spawnGit(root, args, "utf8", input, env, timeoutMs);
+  const timedOut = "timedOut" in r;
   return {
     code: r.status ?? -1,
-    stdout: r.stdout.toString(),
-    stderr: r.stderr.toString(),
+    stdout: String(r.stdout ?? ""),
+    stderr: timedOut
+      ? `git ${args[0] ?? ""} timed out after ${Math.round((timeoutMs ?? 0) / 1000)}s`
+      : String(r.stderr ?? ""),
+    ...(timedOut ? { timedOut: true } : {}),
   };
 }
 

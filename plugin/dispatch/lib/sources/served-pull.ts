@@ -1,4 +1,8 @@
 /** Which open blockers of a served item are pulled forward, and why the others are not. */
+import {
+  EPIC_PICKUP_REASON,
+  isEpicPickup,
+} from "../../../shared/epic-pickup.ts";
 import { PULL_DEPTH } from "../../../skills/do-item/scripts/lib/blocker-chain.ts";
 import type {
   IssueRelation,
@@ -81,8 +85,7 @@ export function whyNotPulled(
   if (blocker === null) return "cannot be read";
   if (blocker.truncated.length > 0) return "its read is incomplete";
   if (blocker.assignee !== null) return `assigned to ${blocker.assignee.name}`;
-  if (blocker.isEpic || blocker.hasOpenChildren)
-    return "an epic; assign it to start it";
+  if (isEpicPickup(blocker)) return EPIC_PICKUP_REASON;
   if (!ready(blocker, policy.blockedState ?? null))
     return `in ${blocker.state.name}`;
   if (otherRepoLabel(blocker.labels, policy.repoScope) !== null)

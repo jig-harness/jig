@@ -2,8 +2,9 @@
  * process-cwd.ts: a process listing is an answer only when it is complete.
  * Errors that name a process which ended are accepted, and so is one whose
  * working directory its owner cannot read because it holds privileges its
- * owner lacks; any other error, an ordinary process whose directory cannot
- * be read included, makes the listing no answer.
+ * owner lacks or runs in a nested PID namespace (a container's); any other
+ * error, an ordinary process of the probe's own PID namespace whose
+ * directory cannot be read included, makes the listing no answer.
  */
 import { describe, expect, test } from "bun:test";
 import {
@@ -23,8 +24,15 @@ const result = (status: number, stdout: string, stderr = ""): RunResult => ({
   stdout,
   stderr,
 });
-const statusFile = (permitted: string) =>
-  result(0, `Name:\tx\nCapInh:\t0\nCapPrm:\t${permitted}\nCapEff:\t0\n`);
+/** A `/proc/<pid>/status` read with `CapPrm` set to `permitted` and, when `nstgid` is given, an `NStgid:` line of those pids. */
+const statusFile = (permitted: string, nstgid?: string) =>
+  result(
+    0,
+    `Name:\tx\nTgid:\t42\n${nstgid === undefined ? "" : `NStgid:\t${nstgid}\n`}CapInh:\t0\nCapPrm:\t${permitted}\nCapEff:\t0\n`,
+  );
+/** The probe's own status in its own PID namespace: one pid on `NStgid:`. */
+const SELF = result(0, "Name:\tcat\nTgid:\t9\nNStgid:\t9\n");
+const NO_CAPS = "0000000000000000";
 
 /** A runner answering the listing with `listing`, and each `cat /proc/<pid>/status` from `statuses`. */
 function runner(
@@ -38,6 +46,7 @@ function runner(
       expect(cwd).toBe("/");
       return listing;
     }
+    if (argv[1] === "/proc/self/status") return statuses.self ?? SELF;
     const pid = /^\/proc\/(\d+)\/status$/.exec(argv[1] ?? "")?.[1] ?? "";
     return (
       statuses[pid] ??
@@ -162,6 +171,45 @@ describe("cwdHolders", () => {
       unknown: "process 9's working directory and status cannot be read",
     });
   });
+
+  test.each([
+    ["tabs", "42\t1"],
+    ["spaces, several levels deep", "42 7 1"],
+  ])(
+    "accepts a denied or unread process in a nested PID namespace, its pids separated by %s",
+    (_label, nstgid) => {
+      const denied = runner(
+        result(1, "/proc/1\t/\n", "find: '/proc/42/cwd': Permission denied\n"),
+        { "42": statusFile(NO_CAPS, nstgid) },
+      );
+      expect(cwdHolders(denied.run, TOP)).toEqual({ pids: [] });
+      const blank = runner(result(0, "/proc/1\t/\n/proc/42\t\n"), {
+        "42": statusFile(NO_CAPS, nstgid),
+      });
+      expect(cwdHolders(blank.run, TOP)).toEqual({ pids: [] });
+    },
+  );
+
+  test.each([
+    ["a single pid on NStgid", "42"],
+    ["no NStgid line", undefined],
+  ])(
+    "is no answer for a denied or unread process of the probe's own PID namespace: %s",
+    (_label, nstgid) => {
+      const unknown = {
+        unknown: "process 42's working directory cannot be read",
+      };
+      const denied = runner(
+        result(1, "/proc/1\t/\n", "find: '/proc/42/cwd': Permission denied\n"),
+        { "42": statusFile(NO_CAPS, nstgid) },
+      );
+      expect(cwdHolders(denied.run, TOP)).toEqual(unknown);
+      const blank = runner(result(0, "/proc/1\t/\n/proc/42\t\n"), {
+        "42": statusFile(NO_CAPS, nstgid),
+      });
+      expect(cwdHolders(blank.run, TOP)).toEqual(unknown);
+    },
+  );
 
   test("is no answer for any other error, a failed listing or an empty one", () => {
     expect(
@@ -309,6 +357,21 @@ describe("scanCwds and holdersIn", () => {
       { "42": statusFile("0000000000000000") },
     ],
     [
+      "a denied process in a nested PID namespace",
+      result(1, "/proc/1\t/\n", "find: '/proc/42/cwd': Permission denied\n"),
+      { "42": statusFile(NO_CAPS, "42\t1") },
+    ],
+    [
+      "an unread process in a nested PID namespace",
+      result(0, "/proc/1\t/\n/proc/42\t\n"),
+      { "42": statusFile(NO_CAPS, "42\t1") },
+    ],
+    [
+      "a denied process with a single pid on NStgid",
+      result(1, "/proc/1\t/\n", "find: '/proc/42/cwd': Permission denied\n"),
+      { "42": statusFile(NO_CAPS, "42") },
+    ],
+    [
       "an unreadable directory whose status cannot be read",
       result(0, "/proc/1\t/\n/proc/9\t\n"),
       { "9": result(1, "", "cat: /proc/9/status: Permission denied") },
@@ -340,6 +403,36 @@ describe("scanCwds and holdersIn", () => {
     },
   );
 
+  test.each([
+    ["a nested NStgid", "42\t1", { pids: ["2"] }],
+    [
+      "a single-pid NStgid",
+      "42",
+      { unknown: "process 42's working directory cannot be read" },
+    ],
+    [
+      "no NStgid line",
+      undefined,
+      { unknown: "process 42's working directory cannot be read" },
+    ],
+  ])(
+    "judges a denied or unread process without privileges by its PID namespace: %s",
+    async (_label, nstgid, answer) => {
+      for (const listing of [
+        result(
+          1,
+          "/proc/1\t/\n/proc/2\t/w/holder\n",
+          "find: '/proc/42/cwd': Permission denied\n",
+        ),
+        result(0, "/proc/1\t/\n/proc/2\t/w/holder\n/proc/42\t\n"),
+      ]) {
+        const { run } = runner(listing, { "42": statusFile(NO_CAPS, nstgid) });
+        const scan = await scanCwds(async (argv, cwd) => run(argv, cwd));
+        expect(holdersIn(scan, TOP)).toEqual(answer);
+      }
+    },
+  );
+
   test("starts no status read once its signal fires, and hands each read the time left", async () => {
     const abort = new AbortController();
     const limits: (number | undefined)[] = [];
@@ -365,6 +458,22 @@ describe("scanCwds and holdersIn", () => {
     expect(reads).toHaveLength(1);
     expect(limits[0]).toBeGreaterThanOrEqual(1);
     expect(limits[0]).toBeLessThanOrEqual(5);
+  });
+
+  test("is no answer when /proc is an ancestor namespace's, whatever a denied process shows", async () => {
+    const listing = result(
+      1,
+      "/proc/1\t/\n/proc/42\t\n",
+      "find: '/proc/42/cwd': Permission denied\n",
+    );
+    const { run } = runner(listing, {
+      "42": statusFile(NO_CAPS, "42\t1"),
+      self: result(0, "Name:\tcat\nNStgid:\t90\t9\n"),
+    });
+    const answer = cwdHolders(run, TOP);
+    expect(answer).toHaveProperty("unknown");
+    const scan = await scanCwds(async (argv, cwd) => run(argv, cwd));
+    expect(holdersIn(scan, TOP)).toHaveProperty("unknown");
   });
 
   test("stops waiting for a read in flight when the signal fires", async () => {
@@ -418,9 +527,10 @@ describe("scanCwds and holdersIn", () => {
     expect(
       answers.filter((a) => "pids" in a && a.pids.length > 0),
     ).toHaveLength(1);
-    // The listing, and the one denied process's status; never one per tree.
+    // The listing, the probe's own status and the one denied process's; never one per tree.
     expect(calls).toEqual([
       ["sh", "-c", expect.any(String)],
+      ["cat", "/proc/self/status"],
       ["cat", "/proc/42/status"],
     ]);
   });
