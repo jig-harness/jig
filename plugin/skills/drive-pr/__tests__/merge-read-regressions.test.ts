@@ -300,6 +300,8 @@ for (const scenario of [
   "unresolved",
   "capped",
   "wrong-head",
+  "forge-error",
+  "unreadable-review",
   "labels",
 ] as const) {
   it(`places a converged pull request using paginated pull connections (${scenario})`, async () => {
@@ -323,13 +325,18 @@ for (const scenario of [
       const scenario = ${JSON.stringify(scenario)};
       const after = Number(args.find((arg) => arg.startsWith("after="))?.slice("after=".length) ?? 0);
       appendFileSync(process.env.MERGE_FIXTURE + "/calls", JSON.stringify(args) + "\\n");
-      const field = scenario === "labels" ? "labels" : "reviewThreads";
-      const entry = (i) => field === "labels" ? { name: "label-" + i } : { isResolved: !(scenario === "unresolved" && i === 140) };
+      const field = { labels: "labels", "unreadable-review": "latestReviews" }[scenario] ?? "reviewThreads";
+      const review = (i) => ({ state: "COMMENTED", authorAssociation: "MEMBER", author: i === 140 ? null : { __typename: "User", login: "reviewer-" + i }, commit: { oid: head } });
+      const entry = (i) => field === "labels" ? { name: "label-" + i } : field === "latestReviews" ? review(i) : { isResolved: !(scenario === "unresolved" && i === 140) };
       const page = (from, count, more) => ({
         nodes: Array.from({ length: count }, (_, i) => entry(from + i + 1)),
         pageInfo: { hasNextPage: more, endCursor: String(after + 1) },
       });
       const none = { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } };
+      if (after && scenario === "forge-error") {
+        console.log(JSON.stringify({ errors: [{ message: "Something went wrong" }], data: { repository: { pull: null }, rateLimit: { cost: 1, remaining: 99, limit: 100 } } }));
+        process.exit(0);
+      }
       if (after) {
         const pull = { headRefOid: scenario === "wrong-head" ? "b".repeat(40) : head, [field]: page(after * 100, 40, scenario === "capped") };
         console.log(JSON.stringify({ data: { repository: { pull }, rateLimit: { cost: 1, remaining: 99, limit: 100 } } }));
@@ -350,12 +357,19 @@ for (const scenario of [
     const result = JSON.parse(r.stdout);
     const calls = r.calls.trim().split("\n");
     expect(result.cost).toBe(calls.length);
-    if (scenario === "capped" || scenario === "wrong-head") {
+    const partialReasons = {
+      capped: ["review threads", "3-page cap"],
+      "wrong-head": ["review threads", "original head"],
+      "forge-error": ["review threads", "with an error"],
+      "unreadable-review": ["latest reviews", "was incomplete"],
+    } as const;
+    if (scenario in partialReasons) {
       expect(calls).toHaveLength(scenario === "capped" ? 3 : 2);
       expect(result.placed).toMatchObject({ place: "stay", lane: null });
-      expect(result.partial).toContain("review threads");
-      if (scenario === "capped") expect(result.partial).toContain("3-page cap");
-      else expect(result.partial).toContain("original head");
+      for (const part of partialReasons[
+        scenario as keyof typeof partialReasons
+      ])
+        expect(result.partial).toContain(part);
       return;
     }
     expect(calls).toHaveLength(2);

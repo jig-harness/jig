@@ -466,13 +466,15 @@ check contexts against the head commit, up to four pages including the
 first; labels, review threads, review requests and latest reviews on the
 pull request, up to three pages including the first, the later pages 100
 entries each, and each page only while the pull request's head is still the
-one the first page was read on. Each follow-up query costs about one point,
-recorded with the board read's cost. A connection still incomplete at its
-cap, past the deadline, on a moved head or with an unreadable page marks the
-pull request partial, and the card names the connection and the reason. A
-partial pull request is never in merge now or approve first, since an unread
-failing check, thread, approval or reviewer cannot be ruled out. It never
-fails the read of its repository.
+one the first page was read on. Each follow-up query is one request and
+costs one point, recorded with the board read's cost. A connection still
+incomplete at its cap, past the deadline, on a moved head or with an
+unreadable page marks the pull request partial, and the card names the
+connection and the reason; the pull request's other connections are then not
+followed, since it stays partial either way. A partial pull request is never
+in merge now or approve first, since an unread failing check, thread,
+approval or reviewer cannot be ruled out. It never fails the read of its
+repository.
 
 A pull request whose mergeability reads `UNKNOWN` (the forge recomputes it
 for every open pull request after its base moves, so after every merge) is

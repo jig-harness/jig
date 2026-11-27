@@ -63,6 +63,8 @@ interface PullConnection {
   first: number;
   /** The fields of each entry. */
   entry: string;
+  /** Whether an entry holds every fact the predicate reads from it. */
+  readable: (entry: Record<string, unknown>) => boolean;
 }
 
 /** Entries per continuation page of a pull request's own connection. */
@@ -71,12 +73,19 @@ const PAGE = 100;
 const PULL_PAGES = 3;
 
 const PULL_CONNECTIONS: readonly PullConnection[] = [
-  { field: "labels", label: "labels", first: 100, entry: "name" },
+  {
+    field: "labels",
+    label: "labels",
+    first: 100,
+    entry: "name",
+    readable: (e) => str(e.name) !== "",
+  },
   {
     field: "reviewThreads",
     label: "review threads",
     first: THREADS,
     entry: "isResolved",
+    readable: (e) => typeof e.isResolved === "boolean",
   },
   {
     field: "reviewRequests",
@@ -84,12 +93,14 @@ const PULL_CONNECTIONS: readonly PullConnection[] = [
     first: REVIEWS,
     entry:
       "requestedReviewer { __typename ... on User { login } ... on Bot { login } ... on Team { slug } ... on Mannequin { login } }",
+    readable: (e) => requestOf(e) !== "",
   },
   {
     field: "latestReviews",
     label: "latest reviews",
     first: REVIEWS,
     entry: "state authorAssociation author { __typename login } commit { oid }",
+    readable: (e) => str(e.state) !== "" && reviewOf(e) !== null,
   },
 ];
 
@@ -530,7 +541,12 @@ async function readPage(
       "unreadable",
       `the forge did not return the next ${c.what}: ${next.failure.reason}`,
     );
-  if (!c.pinned(next.value) || at(next.value, "errors") !== undefined)
+  if (at(next.value, "errors") !== undefined)
+    return failed(
+      "unreadable",
+      `the forge answered the next ${c.what} with an error`,
+    );
+  if (!c.pinned(next.value))
     return failed(
       "unreadable",
       `the next ${c.what} did not read on the original head`,
@@ -620,9 +636,12 @@ async function completeChecks(
 }
 
 /** A page's entries, `null` when the list or one entry is unreadable. */
-function recordNodes(page: unknown): unknown[] | null {
+function connectionNodes(c: PullConnection, page: unknown): unknown[] | null {
   const entries = at(page, "nodes");
-  return Array.isArray(entries) && entries.every(isRecord) ? entries : null;
+  return Array.isArray(entries) &&
+    entries.every((entry) => isRecord(entry) && c.readable(entry))
+    ? entries
+    : null;
 }
 
 function pullContinuation(facts: ForgeFacts, c: PullConnection): Continuation {
@@ -633,7 +652,7 @@ function pullContinuation(facts: ForgeFacts, c: PullConnection): Continuation {
     fields: [],
     pinned: (answer) => at(pull(answer), "headRefOid") === facts.head,
     page: (answer) => at(pull(answer), c.field),
-    entries: recordNodes,
+    entries: (page) => connectionNodes(c, page),
   };
 }
 
@@ -648,7 +667,7 @@ async function completeConnection(
 ): Promise<string | null> {
   const initial = at(pull, c.field);
   if (!more(initial) || !isRecord(initial)) return null;
-  const entries = recordNodes(initial);
+  const entries = connectionNodes(c, initial);
   if (entries === null) return `the first ${c.label} page was incomplete`;
   return follow(
     slug,
@@ -662,7 +681,11 @@ async function completeConnection(
   );
 }
 
-/** A partial pull request's facts after following each connection that continues, with why any still did not read whole. */
+/**
+ * A partial pull request's facts after following each connection that
+ * continues, with why one still did not read whole. The first connection
+ * left unread keeps the pull request partial, so the rest are not read.
+ */
 async function completePull(
   slug: string | null,
   pull: unknown,
@@ -670,24 +693,20 @@ async function completePull(
   read: FactsRead,
   deadline: number,
 ): Promise<ForgeFacts> {
-  const why: string[] = [];
-  const checks = await completeChecks(slug, pull, facts, read, deadline);
-  if (checks !== null) why.push(checks);
-  for (const c of PULL_CONNECTIONS) {
-    const reason = await completeConnection(
-      slug,
-      pull,
-      facts,
-      c,
-      read,
-      deadline,
-    );
-    if (reason !== null) why.push(reason);
+  const steps = [
+    () => completeChecks(slug, pull, facts, read, deadline),
+    ...PULL_CONNECTIONS.map(
+      (c) => () => completeConnection(slug, pull, facts, c, read, deadline),
+    ),
+  ];
+  let why: string | null = null;
+  for (const step of steps) {
+    why = await step();
+    if (why !== null) break;
   }
   const reread = parsePull(pull, facts.methods) ?? facts;
-  if (why.length === 0) return reread;
-  const partial = [reread.partial ?? facts.partial, ...why];
-  return { ...reread, partial: partial.filter((p) => p !== null).join("; ") };
+  if (why === null) return reread;
+  return { ...reread, partial: `${reread.partial ?? facts.partial}; ${why}` };
 }
 
 interface FactsPage {
