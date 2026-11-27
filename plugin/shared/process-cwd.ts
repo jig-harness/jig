@@ -345,6 +345,33 @@ export type CwdScan =
   | { entries: CwdEntry[]; blocked: string | null }
   | { unknown: string };
 
+/** Why an unreadable process blocks the scan, if it does: the probe's own `/proc` first, then each process's status once. */
+async function judgeUnreadable(
+  unreadable: Set<string>,
+  read: (argv: string[], cwd: string | undefined) => Promise<RunResult | null>,
+  stopped: () => string | null,
+): Promise<{ blocked: string | null } | { unknown: string }> {
+  const gone = "the process scan was stopped";
+  if (unreadable.size === 0) return { blocked: null };
+  let why = stopped();
+  if (why !== null) return { unknown: why };
+  const own = await read(["cat", "/proc/self/status"], undefined);
+  if (own === null) return { unknown: gone };
+  if (!ownProcfs(own))
+    return {
+      blocked: "the /proc mounted here is not the probe's own PID namespace's",
+    };
+  for (const pid of unreadable) {
+    why = stopped();
+    if (why !== null) return { unknown: why };
+    const status = await read(["cat", `/proc/${pid}/status`], undefined);
+    if (status === null) return { unknown: gone };
+    const blocked = deniedReason(pid, status);
+    if (blocked !== null) return { blocked };
+  }
+  return { blocked: null };
+}
+
 /** Scan once, without blocking the caller; every error is judged as `cwdHolders` judges it, each denied process's status read once, all reads within one deadline and none started after `bounds.signal` fires. */
 export async function scanCwds(
   run: AsyncProbeRun,
@@ -390,24 +417,13 @@ export async function scanCwds(
   if ("unknown" in probed) return probed;
   const entries = parseEntries(probed.listing);
   const unread = entries.filter((e) => e.unread).map((e) => e.pid);
-  let blocked: string | null = null;
-  const unreadable = new Set([...probed.denied, ...unread]);
-  if (unreadable.size > 0) {
-    const why = stopped();
-    if (why !== null) return { unknown: why };
-    const own = await read(["cat", "/proc/self/status"], undefined);
-    if (own === null) return { unknown: "the process scan was stopped" };
-    if (!ownProcfs(own))
-      blocked = "the /proc mounted here is not the probe's own PID namespace's";
-  }
-  for (const pid of blocked === null ? unreadable : []) {
-    const why = stopped();
-    if (why !== null) return { unknown: why };
-    const status = await read(["cat", `/proc/${pid}/status`], undefined);
-    if (status === null) return { unknown: "the process scan was stopped" };
-    blocked = deniedReason(pid, status);
-    if (blocked !== null) break;
-  }
+  const judged = await judgeUnreadable(
+    new Set([...probed.denied, ...unread]),
+    read,
+    stopped,
+  );
+  if ("unknown" in judged) return judged;
+  const { blocked } = judged;
   // A read that finished past the allowance is no answer inside it.
   const last = stopped();
   if (last !== null) return { unknown: last };
