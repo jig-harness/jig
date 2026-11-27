@@ -817,10 +817,24 @@ function dashboardAction(
   return dashboardCommand(args.port);
 }
 
-/** The subcommands that act on a repository's pull requests: the label setup and the follow-up marker. */
-function pullRequestAction(
-  args: Extract<Subcommand, { action: "labels" | "marker" }>,
-): Promise<number> {
+type RepositoryAction = Extract<
+  Subcommand,
+  { action: "labels" | "marker" | "check" }
+>;
+
+const REPOSITORY_ACTIONS: ReadonlySet<string> = new Set([
+  "labels",
+  "marker",
+  "check",
+]);
+
+function isRepositoryAction(args: Subcommand): args is RepositoryAction {
+  return REPOSITORY_ACTIONS.has(args.action);
+}
+
+/** The subcommands that act on one repository: the label setup, the follow-up marker and the configuration check. */
+function repositoryAction(args: RepositoryAction): number | Promise<number> {
+  if (args.action === "check") return checkMain(args.repo ?? consumerRoot());
   if (args.action === "labels")
     return installLabels(
       args.repos.length === 0 ? [consumerRoot()] : args.repos,
@@ -876,12 +890,10 @@ function subcommandMain(
       ...(args.since === undefined ? {} : { since: args.since }),
     });
   if (isRunAction(args)) return runAction(args);
-  if (args.action === "check") return checkMain(args.repo ?? consumerRoot());
   if (args.action === "probe")
     return probeMain({ apply: args.apply, json: args.json }, machineFile());
   if (args.action === "dashboard") return dashboardAction(args, script);
-  if (args.action === "labels" || args.action === "marker")
-    return pullRequestAction(args);
+  if (isRepositoryAction(args)) return repositoryAction(args);
   // `install`. A removal needs no machine file: a broken one must not keep the timer installed.
   return installDispatch(
     {

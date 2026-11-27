@@ -8,7 +8,7 @@
 import { checkConfiguration } from "./lib/config-check.ts";
 
 /** Exit when the tick would refuse a reading. */
-export const CHECK_FAILED_EXIT = 1;
+const CHECK_FAILED_EXIT = 1;
 
 export function checkMain(root: string): number {
   const findings = checkConfiguration(root);
