@@ -51,6 +51,13 @@ export function parseLaunchdEnvironment(
   plist: string,
 ): Outcome<Record<string, string>, "unreadable"> {
   const text = plist.replace(/<!--.*?-->/gs, "");
+  // A comment opener left after removal is an unclosed comment or one that
+  // removal reassembled (`<!<!---->--`): neither is read as a smaller block.
+  if (text.includes("<!--"))
+    return failed(
+      "unreadable",
+      "it holds an XML comment that is not closed or is nested; remove it, then install again",
+    );
   const start = /<key>EnvironmentVariables<\/key>\s*<dict\s*(\/?)>/.exec(text);
   if (start === null) {
     return text.includes("<key>EnvironmentVariables</key>")

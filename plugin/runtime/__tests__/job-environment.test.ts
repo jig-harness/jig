@@ -157,6 +157,13 @@ describe("an environment read whole or not at all", () => {
     expect(parseLaunchdEnvironment(text).ok).toBe(false);
   });
 
+  test("refuses a comment that removal would reassemble or leave open", () => {
+    for (const hidden of ["<!<!---->--", "<!-- open"]) {
+      const text = wrap(`${hidden}<dict><key>A</key><string>1</string></dict>`);
+      expect(parseLaunchdEnvironment(text).ok).toBe(false);
+    }
+  });
+
   test("refuses a name given twice without repeating either value", () => {
     const text = wrap(
       "<dict><key>A</key><string>first-secret</string><key>A</key><string>second-secret</string></dict>",
