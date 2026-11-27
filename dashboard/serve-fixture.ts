@@ -64,11 +64,15 @@ async function main(): Promise<number> {
     now: () => fixed,
     readPr: async () => null,
   });
-  console.log(dashboard.url);
-  await new Promise<void>((settle) => {
+  // The handler is in place before the address is printed: a reader that
+  // stops the server the moment it sees the address must not meet a process
+  // that has not yet installed it.
+  const stopped = new Promise<void>((settle) => {
     for (const signal of ["SIGINT", "SIGTERM"] as const)
       process.once(signal, () => settle());
   });
+  console.log(dashboard.url);
+  await stopped;
   dashboard.stop();
   closeStateDb(root);
   rmSync(root, { recursive: true, force: true });
