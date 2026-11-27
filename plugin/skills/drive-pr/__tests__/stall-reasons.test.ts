@@ -152,3 +152,23 @@ describe("a stall's stop event", () => {
     ]);
   });
 });
+
+describe("a stall's stop line", () => {
+  it("redacts a reason before cutting it, so a cut cannot split an address the redactor matches", async () => {
+    const { stopText } = await import("../scripts/lib/driver/stop-text.ts");
+    const { driverRuntime } = await import("../scripts/lib/driver/runtime.ts");
+    const email = "someone.with.a.long.name@example-domain.org";
+    const reason = `${"x".repeat(77)} ${email}`;
+    driverRuntime.stallReasons = stallReasonsOf([
+      finish(1, "PARTIAL", reason),
+    ]) as NonNullable<typeof driverRuntime.stallReasons>;
+    try {
+      const line = stopText("7", 14, null, null) ?? "";
+      expect(line).not.toContain("@example");
+      expect(line).not.toContain("someone.with");
+      expect(line).not.toContain("example-domain.o");
+    } finally {
+      driverRuntime.stallReasons = null;
+    }
+  });
+});

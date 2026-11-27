@@ -107,13 +107,17 @@ const STALL_LINE_REASON_MAX = 120;
 function fitStallReasons(reasons: StallReasons): StallReasons {
   return {
     ...reasons,
-    last: reasons.last.map((f) => ({
-      ...f,
-      reason:
-        f.reason.length > STALL_LINE_REASON_MAX
-          ? `${f.reason.slice(0, STALL_LINE_REASON_MAX - 1)}…`
-          : f.reason,
-    })),
+    last: reasons.last.map((f) => {
+      // Redact first: a cut can split an address or token the redactor matches.
+      const reason = redactReportText(f.reason);
+      return {
+        ...f,
+        reason:
+          reason.length > STALL_LINE_REASON_MAX
+            ? `${reason.slice(0, STALL_LINE_REASON_MAX - 1)}…`
+            : reason,
+      };
+    }),
   };
 }
 
