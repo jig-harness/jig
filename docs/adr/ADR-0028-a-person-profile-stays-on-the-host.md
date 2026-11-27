@@ -124,13 +124,15 @@ byte comes from the already-open file.
 
 The invariant is what is read, not where the path points: every byte comes
 from one open file, and the Git check and the identity comparisons are
-refusals about that file's identity, not guards on the path. The reader
-does not defend against a process that can write the profile's own
-directory or a parent of it. Such a process can already replace the profile
-with any content, so a swap race gives it nothing the write access did not.
-The reader refuses a profile whose file or directory is writable by
-anyone but its owner, on any path `serve[].profile` names, so the
-owner-only assumption is checked, not hoped for.
+refusals about that file's identity, not guards on the path. A process that
+can write the profile's directory or an ancestor of it can already replace
+the profile with any content, so a swap race gives it nothing the write
+access did not. The owner-only assumption is therefore checked, not hoped
+for: for every profile the reader reads, whether named by `serve[].profile`
+or found at `$JIG_HOME/person.yaml`, it refuses when the resolved file, its
+directory or any ancestor directory up to the filesystem root is writable by
+anyone but its owner or root. A sticky directory (such as `/tmp`) does not
+count as safe for this purpose.
 
 ### 2. One schedule and time-zone primitive (ruling 2A-i)
 
