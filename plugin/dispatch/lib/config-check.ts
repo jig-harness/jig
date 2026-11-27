@@ -60,12 +60,19 @@ export const INLINE_CONTENT_LIMIT = 1024 * 1024;
 
 /**
  * The size of the file as the tick's forge read counts it: the committed
- * blob, which a checkout's line-ending conversion does not change. Where git
- * cannot name the blob (an untracked or modified file, no git), the size of
- * the file on disk stands.
+ * blob, which a checkout's line-ending conversion does not change. Where the
+ * committed blob does not stand for the file's contents (an untracked or
+ * modified file, no git), the size of the file on disk stands.
  */
 function committedSize(root: string, path: string, onDisk: number): number {
   try {
+    // Exits non-zero when the file differs from HEAD, which then is not the
+    // blob the tick would read after a commit.
+    execFileSync("git", ["diff", "--quiet", "HEAD", "--", path], {
+      cwd: root,
+      stdio: "ignore",
+      timeout: 10_000,
+    });
     const out = execFileSync("git", ["cat-file", "-s", `HEAD:${path}`], {
       cwd: root,
       encoding: "utf8",

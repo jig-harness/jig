@@ -298,6 +298,7 @@ describe("checkConfiguration reads only what the tick can read", () => {
     const git = (...args: string[]) =>
       execFileSync("git", ["-C", root, ...args], { stdio: "ignore" });
     git("init", "-q");
+    git("config", "core.autocrlf", "true");
     git("add", "-A");
     git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x");
     // The same file as a checkout with CRLF conversion would write it.
@@ -308,6 +309,24 @@ describe("checkConfiguration reads only what the tick can read", () => {
     writeFileSync(join(root, "catalog.yaml"), crlf);
     expect(Buffer.byteLength(crlf)).toBeGreaterThan(INLINE_CONTENT_LIMIT);
     expect(checkConfiguration(root)).toEqual([]);
+  });
+
+  it("measures a modified catalog by its bytes on disk, not by the committed blob", () => {
+    const body = "areas:\n  docs:\n    paths: [docs/**]\n";
+    const root = dir({
+      ".config/jig.yaml": withCatalog("catalog.yaml"),
+      "catalog.yaml": body,
+    });
+    const git = (...args: string[]) =>
+      execFileSync("git", ["-C", root, ...args], { stdio: "ignore" });
+    git("init", "-q");
+    git("add", "-A");
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x");
+    writeFileSync(
+      join(root, "catalog.yaml"),
+      `${body}#${"x".repeat(INLINE_CONTENT_LIMIT)}\n`,
+    );
+    expect(checkConfiguration(root).map((f) => f.part)).toEqual(["catalog"]);
   });
 
   it("refuses a catalog that is a link leaving the checkout, without reading it", () => {
