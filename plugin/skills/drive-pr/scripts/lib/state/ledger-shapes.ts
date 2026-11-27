@@ -58,9 +58,8 @@ const parked = s.object({
   kind: s.enum(["thread", "finding"]),
   reason: nonempty,
   round: count,
-  person: s.optional(
-    s.string({ pattern: "^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,38})(?:\\[bot\\])?$" }),
-  ),
+  // A forge login; the park reader checks it (`isPerson`).
+  person: s.optional(text),
   at: s.optional(text),
   class: s.optional(s.string({ pattern: "^[a-z][a-z0-9-]*$" })),
   record: s.optional(s.string({ pattern: "\\S" })),

@@ -15,6 +15,7 @@
  * write.
  */
 import { swallow } from "../../../../../shared/errors.ts";
+import { isGithubLogin } from "../../../../../shared/forge-logins.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { localWriter } from "../../../../../shared/records/writer.ts";
 import { ghCall } from "../proc.ts";
@@ -91,7 +92,7 @@ export async function resolveLogin(
     signal,
   );
   const login = r.ok ? r.stdout.trim() : "";
-  return /^[A-Za-z0-9-]+(\[bot\])?$/.test(login) ? login : null;
+  return isGithubLogin(login, { bot: true }) ? login : null;
 }
 
 function forgeComment(c: unknown): ForgeComment | null {

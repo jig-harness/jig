@@ -1044,7 +1044,7 @@ test("dispatch.person accepts only usable recipient logins", () => {
   expect(pattern).toBeDefined();
   if (pattern === undefined) throw new Error("missing dispatch.person pattern");
   const login = new RegExp(pattern);
-  for (const value of ["maintainer", "review-bot[bot]", "A1"])
+  for (const value of ["maintainer", "review-bot[bot]", "A1", "mona_acme"])
     expect(login.test(value)).toBe(true);
   for (const value of [
     "not a login",

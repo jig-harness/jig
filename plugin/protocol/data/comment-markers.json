@@ -952,8 +952,7 @@
                         "maximum": 1.7976931348623157e308
                       },
                       "person": {
-                        "type": "string",
-                        "pattern": "^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,38})(?:\\[bot\\])?$"
+                        "type": "string"
                       },
                       "at": {
                         "type": "string"
@@ -1812,8 +1811,7 @@
                     "maximum": 1.7976931348623157e308
                   },
                   "person": {
-                    "type": "string",
-                    "pattern": "^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,38})(?:\\[bot\\])?$"
+                    "type": "string"
                   },
                   "at": {
                     "type": "string"
