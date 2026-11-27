@@ -68,11 +68,15 @@ function committedSize(root: string, path: string, onDisk: number): number {
   try {
     // Exits non-zero when the file differs from HEAD, which then is not the
     // blob the tick would read after a commit.
-    execFileSync("git", ["diff", "--quiet", "HEAD", "--", path], {
-      cwd: root,
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: 10_000,
-    });
+    execFileSync(
+      "git",
+      ["--literal-pathspecs", "diff", "--quiet", "HEAD", "--", path],
+      {
+        cwd: root,
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 10_000,
+      },
+    );
     const out = execFileSync("git", ["cat-file", "-s", `HEAD:${path}`], {
       cwd: root,
       encoding: "utf8",
@@ -81,6 +85,36 @@ function committedSize(root: string, path: string, onDisk: number): number {
     });
     const size = Number(out.trim());
     return Number.isSafeInteger(size) && size >= 0 ? size : onDisk;
+  } catch {
+    return normalizedSize(root, path, onDisk);
+  }
+}
+
+/**
+ * The size a modified file would have once committed: where the index holds
+ * it with LF endings and the working copy has CRLF (a checkout's conversion),
+ * the commit stores LF again, so each CRLF counts one byte. Anything else,
+ * and a file too large to read here, counts its bytes on disk.
+ */
+function normalizedSize(root: string, path: string, onDisk: number): number {
+  if (onDisk > 2 * INLINE_CONTENT_LIMIT) return onDisk;
+  try {
+    const eol = execFileSync(
+      "git",
+      ["--literal-pathspecs", "ls-files", "--eol", "--", path],
+      {
+        cwd: root,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 10_000,
+      },
+    );
+    if (!/^i\/lf\s+w\/(crlf|mixed)\s/.test(eol)) return onDisk;
+    const bytes = readFileSync(join(root, path));
+    let crlf = 0;
+    for (let i = 1; i < bytes.length; i++)
+      if (bytes[i] === 0x0a && bytes[i - 1] === 0x0d) crlf++;
+    return onDisk - crlf;
   } catch {
     return onDisk;
   }

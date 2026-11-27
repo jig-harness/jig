@@ -329,6 +329,45 @@ describe("checkConfiguration reads only what the tick can read", () => {
     expect(checkConfiguration(root).map((f) => f.part)).toEqual(["catalog"]);
   });
 
+  it("measures a modified catalog under a checkout's CRLF conversion by the bytes a commit would store", () => {
+    const body = "areas:\n  docs:\n    paths: [docs/**]\n";
+    const root = dir({
+      ".config/jig.yaml": withCatalog("catalog.yaml"),
+      "catalog.yaml": body,
+    });
+    const git = (...args: string[]) =>
+      execFileSync("git", ["-C", root, ...args], { stdio: "ignore" });
+    git("init", "-q");
+    git("config", "core.autocrlf", "true");
+    git("add", "-A");
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x");
+    const edited = `${body}#${"x".repeat(INLINE_CONTENT_LIMIT - body.length - 2 - 20)}\n${"\n".repeat(19)}`;
+    writeFileSync(join(root, "catalog.yaml"), edited.replace(/\n/g, "\r\n"));
+    expect(Buffer.byteLength(edited.replace(/\n/g, "\r\n"))).toBeGreaterThan(
+      INLINE_CONTENT_LIMIT,
+    );
+    expect(checkConfiguration(root)).toEqual([]);
+  });
+
+  it("reads a catalog name's pathspec magic literally when it measures a modified file", () => {
+    const body = "areas:\n  docs:\n    paths: [docs/**]\n";
+    const root = dir({
+      ".config/jig.yaml": withCatalog(`":(glob)nomatch.yaml"`),
+      ":(glob)nomatch.yaml": body,
+      "other.yaml": body,
+    });
+    const git = (...args: string[]) =>
+      execFileSync("git", ["-C", root, ...args], { stdio: "ignore" });
+    git("init", "-q");
+    git("add", "-A");
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x");
+    writeFileSync(
+      join(root, ":(glob)nomatch.yaml"),
+      `${body}#${"x".repeat(INLINE_CONTENT_LIMIT)}\n`,
+    );
+    expect(checkConfiguration(root).map((f) => f.part)).toEqual(["catalog"]);
+  });
+
   it("refuses a catalog that is a link leaving the checkout, without reading it", () => {
     const outside = dir({ "secret.yaml": "SECRET-BYTES: [" });
     const root = dir({ ".config/jig.yaml": withCatalog("catalog.yaml") });
