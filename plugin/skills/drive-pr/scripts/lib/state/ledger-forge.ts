@@ -92,6 +92,24 @@ type DirectLoginRead = LoginRead & { unsent?: true };
 
 let directLogin: Promise<DirectLoginRead> | undefined;
 
+/** Let one collector stop waiting without cancelling the shared identity lookup. */
+async function whileActive<T>(
+  pending: Promise<T>,
+  signal: AbortSignal | undefined,
+  aborted: () => T,
+): Promise<T> {
+  if (signal === undefined) return pending;
+  if (signal.aborted) return aborted();
+  let stop: (() => void) | undefined;
+  const stopped = new Promise<T>((resolve) => {
+    stop = () => resolve(aborted());
+    signal.addEventListener("abort", stop, { once: true });
+  });
+  return Promise.race([pending, stopped]).finally(() => {
+    if (stop !== undefined) signal.removeEventListener("abort", stop);
+  });
+}
+
 /** Resolve the authenticated actor through the forge transport. */
 export async function readLogin(
   timeoutSec?: number,
@@ -102,8 +120,10 @@ export async function readLogin(
   // Other commands use this reader too, including a dispatcher that can
   // visit repositories routed to different accounts in the same process.
   if (!forgeIdentityReused()) return readDirectLogin(timeoutSec, signal);
-  const login = await forgeLogin(
-    timeoutSec === undefined ? undefined : timeoutSec * 1000,
+  const login = await whileActive(
+    forgeLogin(timeoutSec === undefined ? undefined : timeoutSec * 1000),
+    signal,
+    () => undefined,
   );
   if (signal?.aborted)
     return failed("unreadable", "the collector deadline passed");
@@ -117,7 +137,7 @@ export async function readLogin(
   directLogin ??= readDirectLogin(timeoutSec, signal);
   const attempt = directLogin;
   const read = await attempt;
-  if (read.unsent && directLogin === attempt) directLogin = undefined;
+  if (!read.ok && directLogin === attempt) directLogin = undefined;
   return read;
 }
 

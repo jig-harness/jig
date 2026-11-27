@@ -103,7 +103,7 @@ function processOn(
   return { store, governor, owners };
 }
 
-it("retains a sent identity failure without spending the drive's lookup on a local refusal", async () => {
+it("retries a sent identity failure after its backoff without spending the drive's lookup on a local refusal", async () => {
   const path = databasePath();
   const env = { GH_TOKEN: "token-a" };
   let now = currentMs();
@@ -120,7 +120,9 @@ it("retains a sent identity failure without spending the drive's lookup on a loc
           failure: { code: "rate-limited", reason: "local admission refused" },
           unsent: true,
         };
-      return { failure: { code: "invalid", reason: "malformed identity" } };
+      return attempts === 2
+        ? { failure: { code: "invalid", reason: "malformed identity" } }
+        : { user: { id: 7, login: "recovered" } };
     },
   });
   const first = await owners.resolve(env);
@@ -132,10 +134,8 @@ it("retains a sent identity failure without spending the drive's lookup on a loc
     reason: "malformed identity",
   });
   now += DISCOVERY_BACKOFF_MS + 1;
-  expect((await owners.resolve(env)).discoveryFailure).toEqual(
-    sent.discoveryFailure,
-  );
-  expect(attempts).toBe(2);
+  expect(await owners.resolve(env)).toMatchObject({ login: "recovered" });
+  expect(attempts).toBe(3);
 });
 
 /** A forge client sending with `env`, whose `gh` is `answer`. */

@@ -511,8 +511,11 @@ export function githubOwnerResolver(deps: {
     const admission = admitDiscovery(owner);
     if (admission !== null) return { failure: admission, unsent: true };
     const answer = await discover(asked.env, deadlineMs, asked.cwd);
-    if (deps.singleLookup?.() === true && !("unsent" in answer))
-      queried.set(slot, "failure" in answer ? answer.failure : null);
+    // A drive needs one successful identity per slot, but a sent failure is
+    // recoverable after the persisted backoff. Keeping it here would turn a
+    // transient forge outage into a process-lifetime failure.
+    if (deps.singleLookup?.() === true && "user" in answer)
+      queried.set(slot, null);
     return answer;
   };
 
@@ -590,6 +593,7 @@ export function githubOwnerResolver(deps: {
     const owner = userOwner(host, userId);
     named.set(owner, `user ID ${userId}`);
     memo.delete(`${key}@${host}`);
+    queried.delete(`${key}@${host}`);
     // Kept as the named user's until the next run asks again: a run that
     // cannot ask (the shared record held, a busy store) is admitted
     // against the allowance GitHub named.
