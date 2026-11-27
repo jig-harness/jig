@@ -459,7 +459,9 @@ export const OUTSIDE_DIGEST_REASON =
 
 /** A list of targets as a set: the refusals that read the targets alone do not depend on their order. */
 export function targetSetKey(targets: readonly string[]): string {
-  return JSON.stringify([...new Set(targets)].sort());
+  return JSON.stringify(
+    [...new Set(targets)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
+  );
 }
 
 /**
