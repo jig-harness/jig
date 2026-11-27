@@ -311,10 +311,19 @@ function driveReserve(
   // time bounds the credit when it exceeds every repository's.
   // A predecessor in flight can run longer than both: its own run time
   // lengthens the wave too.
-  const waveMs = Math.max(
+  const ownWaveMs = Math.max(
     state.measured.runMs,
     state.measured.candidateRunMs ?? 0,
-    ...(state.demand.unestimated ?? []).map((entry) => entry.runMs),
+  );
+  const longer = (state.demand.unestimated ?? []).filter(
+    (entry) => entry.runMs > ownWaveMs,
+  );
+  const longestMs = Math.max(ownWaveMs, ...longer.map((entry) => entry.runMs));
+  // Only the slots those longer runs occupy wait out their time; the others
+  // keep turning over at the pickup's own wave.
+  const heldSlots = Math.min(
+    Math.max(0, state.measured.concurrency - 1),
+    longer.reduce((total, entry) => total + entry.runs, 0),
   );
   // A pickup's runs are sequential, so however many slots are free it
   // finishes at most one run per its own run time before the drive arrives.
@@ -322,9 +331,11 @@ function driveReserve(
   const sequentialCap = Math.floor(
     state.measured.kinds.drive.timeToValidationMs / ownRunMs,
   );
+  const driveAtMs = state.measured.kinds.drive.timeToValidationMs;
   const completedBeforeDrive =
-    state.measured.concurrency *
-    Math.floor(state.measured.kinds.drive.timeToValidationMs / waveMs);
+    (state.measured.concurrency - heldSlots) *
+      Math.floor(driveAtMs / ownWaveMs) +
+    heldSlots * Math.floor(driveAtMs / longestMs);
   // Work already forecast ahead of this pickup spends the early service
   // first. Only remaining service can complete the pickup before a drive
   // reaches validation; otherwise the pickup is incorrectly given the same
