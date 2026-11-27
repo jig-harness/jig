@@ -446,7 +446,13 @@ export function jiraTracker(client: Client): Tracker {
       const lookups = new Map<string, Promise<boolean | null>>();
       for (const c of await client.comments(key, signal)) {
         const author = commentAuthor(c.author);
-        const id = author === null ? null : JSON.stringify(c.author);
+        // Keyed by what `trusted` reads, so display metadata or property
+        // order never splits one account into two lookups.
+        const who = c.author as Record<string, unknown> | null;
+        const id =
+          author === null
+            ? null
+            : JSON.stringify([who?.accountId, who?.accountType, who?.guest]);
         let lookup = id === null ? undefined : lookups.get(id);
         if (lookup === undefined) {
           // An unavailable or refused lookup leaves this author unvouched

@@ -264,6 +264,25 @@ describe("Jira adapter: comment trust lookups", () => {
     ]);
     expect(calls).toBe(1);
   });
+
+  it("keys the lookup by the account, not by its display metadata", async () => {
+    let calls = 0;
+    const renamed = { ...MEMBER, displayName: "Renamed", extra: "x" };
+    const { t } = jira(
+      routes({
+        "GET issue/ENG-1/comment": comments(
+          comment("1", "a", MEMBER, "2026-01-04T09:00:00.000+0000"),
+          comment("2", "b", renamed, "2026-01-05T09:00:00.000+0000"),
+        ),
+        "GET user/assignable/search": () => {
+          calls += 1;
+          throw new Error("down");
+        },
+      }),
+    );
+    await t.listComments("ENG-1");
+    expect(calls).toBe(1);
+  });
 });
 
 describe("Jira adapter: transitions", () => {
