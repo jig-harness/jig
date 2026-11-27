@@ -6,11 +6,16 @@ import type {
   LineDecision,
   LineLinks,
   LineNeed,
+  LineReady,
   NeedCause,
   LineOption,
   LineSession,
   LineSnapshot,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
+import {
+  ACT_WORDS,
+  type Act,
+} from "../../plugin/skills/drive-pr/scripts/lib/merge-ready.ts";
 import {
   actOfLineNeed,
   NEED_ACTS,
@@ -98,6 +103,8 @@ export interface NeedView {
   keyText: string | null;
   foldLabel: string;
   evidence: EvidenceRow[];
+  /** The board placement for the same pull request, when it adds a distinct person action. */
+  board?: ReadyNeedView;
   /** For the one card of a question group: every target it covers (`question-group-view.ts`); absent on a need's own card. */
   group?: QuestionGroupView;
 }
@@ -245,6 +252,7 @@ export function needView(
   n: LineNeed,
   clockNow: Clock,
   tracker?: Tracker,
+  board?: ReadyNeedView,
 ): NeedView {
   const first = n.decisions[0];
   // A park's question is its first decision's; a follow-up's is the line it stopped on.
@@ -287,6 +295,7 @@ export function needView(
     keyText: n.url === null ? n.target : null,
     foldLabel: decision === null ? "Details" : "The whole decision",
     evidence: needEvidence(n, question !== null, clockNow.timeZone),
+    ...(board === undefined ? {} : { board }),
   };
 }
 
@@ -324,9 +333,91 @@ function notMoving(line: LineSnapshot, nowMs: number): LineSession[] {
   );
 }
 
+export interface ReadyNeedView {
+  rowKey: string;
+  /** What the person does about it, which groups the card in Needs you. */
+  act: NeedAct;
+  /** The board's specific person act in words; `null` when absent. */
+  boardAct: string | null;
+  target: string;
+  title: string;
+  repo: string;
+  url: string;
+  age: string;
+  role: Role;
+  says: string;
+  command: string;
+  failing: string[];
+  failingOmitted: number;
+  conditions: LineReady["conditions"];
+  unblocks: number[];
+  /** The work the line links it to; absent when the line does not say. */
+  links?: LineLinks;
+}
+
+/** How each board person-act groups under Needs you's closed acts (design/dispatch-board.md § What each card waits on). */
+const READY_ACT_GROUP: Record<Act, NeedAct> = {
+  merge: "Merge",
+  approve: "Authorize",
+  "request-review": "Authorize",
+  "update-branch": "Do",
+  answer: "Reply",
+  "re-arm": "Investigate",
+  "re-run-check": "Do",
+  "mark-ready": "Do",
+  "remove-label": "Do",
+  "open-pr": "Do",
+};
+
+function readyNeedAct(r: LineReady): NeedAct {
+  return r.act === null ? "Investigate" : READY_ACT_GROUP[r.act];
+}
+
+function readySince(r: LineReady, fallback: string): string {
+  return Number.isFinite(Date.parse(r.since)) ? r.since : fallback;
+}
+
+/** Converged pull requests the board read placed in Needs you, skipping any PR that already has a need on the line. */
+function readyNeeds(line: LineSnapshot): LineReady[] {
+  return (line.ready ?? []).filter(
+    (r) =>
+      r.place === "needs-you" &&
+      r.lane === null &&
+      !line.needs.some((n) => n.repo === r.repo && n.pr === r.pr),
+  );
+}
+
+/** One converged pull request placed in Needs you by the board read, as its card shows it. */
+function readyNeedView(
+  r: LineReady,
+  line: LineSnapshot,
+  clockNow: Clock,
+): ReadyNeedView {
+  const since = readySince(r, line.finishedAt);
+  return {
+    rowKey: `${r.repo} ${r.pr} ${r.head}`,
+    act: readyNeedAct(r),
+    boardAct: r.act === null ? null : ACT_WORDS[r.act],
+    target: `PR #${r.pr}`,
+    title: r.title,
+    repo: r.repo,
+    url: r.url,
+    age: ago(Date.parse(since), clockNow.nowMs),
+    role: ROLES.needs,
+    says: r.says,
+    command: `jig ask drive@${r.repo}#${r.pr}`,
+    failing: r.failing,
+    failingOmitted: r.failingOmitted,
+    conditions: r.conditions,
+    unblocks: r.unblocks,
+    ...(r.links === undefined ? {} : { links: r.links }),
+  };
+}
+
 export type NeedRow =
   | { type: "head"; head: string }
   | { type: "need"; need: NeedView; since: string }
+  | { type: "ready"; ready: ReadyNeedView; since: string }
   | { type: "stuck"; slot: SlotView; since: string };
 
 /** A need's card, or the one card of a question group of two or more, where its oldest need would be. */
@@ -338,7 +429,23 @@ function needCardOf(
 ): NeedView {
   const viewed = (n: LineNeed) => ({
     need: n,
-    view: needView(n, clockNow, trackerOf(line, n.repo)),
+    view: needView(
+      n,
+      clockNow,
+      trackerOf(line, n.repo),
+      (() => {
+        const ready = (line.ready ?? []).find(
+          (r) =>
+            r.repo === n.repo &&
+            r.pr === n.pr &&
+            r.place === "needs-you" &&
+            r.lane === null,
+        );
+        return ready === undefined
+          ? undefined
+          : readyNeedView(ready, line, clockNow);
+      })(),
+    ),
   });
   const lead = viewed(first);
   const id = questionGroupId(first);
@@ -347,12 +454,60 @@ function needCardOf(
     : groupedNeedView(lead, more.map(viewed), id);
 }
 
+type CardNeedRow = Extract<NeedRow, { type: "need" | "ready" }>;
+
+/** The cards under one action heading, oldest first across line and board records. */
+function actRows(
+  act: NeedAct,
+  needs: LineNeed[],
+  board: LineReady[],
+  line: LineSnapshot,
+  clockNow: Clock,
+): CardNeedRow[] {
+  const rows: CardNeedRow[] = [];
+  for (const [first, ...more] of questionGroups(
+    needs.filter((n) => needAct(n) === act),
+  )) {
+    if (first !== undefined)
+      rows.push({
+        type: "need",
+        need: needCardOf(first, more, line, clockNow),
+        since: first.since,
+      });
+  }
+  for (const ready of board.filter((r) => readyNeedAct(r) === act))
+    rows.push({
+      type: "ready",
+      ready: readyNeedView(ready, line, clockNow),
+      since: readySince(ready, line.finishedAt),
+    });
+  return rows.sort((a, b) => Date.parse(a.since) - Date.parse(b.since));
+}
+
+/** The sessions not moving, below all action groups. */
+function stuckRows(line: LineSnapshot, clockNow: Clock): NeedRow[] {
+  const stuck = notMoving(line, clockNow.nowMs).sort(
+    (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
+  );
+  return stuck.length === 0
+    ? []
+    : [
+        { type: "head", head: "Not moving" },
+        ...stuck.map((slot) => ({
+          type: "stuck" as const,
+          slot: slotView(slot, clockNow, line),
+          since: slot.createdAt,
+        })),
+      ];
+}
+
 /**
  * The rows of Needs you: one group per act, in the acts' order, then the
  * sessions not moving. Needs whose decisions are identical apart from their
- * own target are one card (`shared/question-group.ts`). Filtered to one
- * person, only the needs that wait on them stay; a session not moving names
- * nobody, so it goes too.
+ * own target are one card (`shared/question-group.ts`). Converged pull
+ * requests the board read placed in Needs you join their mapped act group,
+ * oldest first. Filtered to one person, only the needs that wait on them
+ * stay; board cards and sessions not moving name nobody, so they go too.
  */
 export function needRows(
   line: LineSnapshot,
@@ -360,38 +515,24 @@ export function needRows(
   person: string | null = null,
 ): NeedRow[] {
   const rows: NeedRow[] = [];
-  const ordered = orderedNeeds(line.needs).filter((n) => waitsOn(n, person));
+  const needs = orderedNeeds(line.needs).filter((n) => waitsOn(n, person));
+  const board = person === null ? readyNeeds(line) : [];
   for (const act of NEED_ACTS) {
-    const list = ordered.filter((n) => needAct(n) === act);
-    if (list.length === 0) continue;
+    const cards = actRows(act, needs, board, line, clockNow);
+    if (cards.length === 0) continue;
     rows.push({ type: "head", head: act });
-    for (const [first, ...more] of questionGroups(list))
-      if (first !== undefined)
-        rows.push({
-          type: "need",
-          need: needCardOf(first, more, line, clockNow),
-          since: first.since,
-        });
+    rows.push(...cards);
   }
-  if (person !== null) return rows;
-  const stuck = notMoving(line, clockNow.nowMs).sort(
-    (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
-  );
-  if (stuck.length > 0) {
-    rows.push({ type: "head", head: "Not moving" });
-    for (const s of stuck)
-      rows.push({
-        type: "stuck",
-        slot: slotView(s, clockNow, line),
-        since: s.createdAt,
-      });
-  }
-  return rows;
+  return person === null ? [...rows, ...stuckRows(line, clockNow)] : rows;
 }
 
 /** Counts records needing a person without formatting evidence that belongs inside a panel. */
 export function needCount(line: LineSnapshot | null, nowMs: number): number {
-  return line === null ? 0 : line.needs.length + notMoving(line, nowMs).length;
+  return line === null
+    ? 0
+    : line.needs.length +
+        readyNeeds(line).length +
+        notMoving(line, nowMs).length;
 }
 
 /** Whether What needs you exists on this page, which decides the page's shape. */
@@ -399,6 +540,7 @@ export function hasNeedRows(line: LineSnapshot | null, nowMs: number): boolean {
   return (
     line !== null &&
     (line.needs.length > 0 ||
+      readyNeeds(line).length > 0 ||
       (line.answeredHolds?.length ?? 0) > 0 ||
       (line.settled?.length ?? 0) > 0 ||
       notMoving(line, nowMs).length > 0)
@@ -420,45 +562,117 @@ export function answerBand(
   logHasRows: boolean,
   pastTense: boolean,
 ): AnswerView {
-  if (line === null)
-    return {
-      title: "No tick has run on this host.",
-      sub: logHasRows
-        ? "The timer writes the first receipt at its first tick."
-        : "No receipts, no log rows. The timer writes the first receipt at its first tick.",
-      loud: false,
-    };
+  if (line === null) return noTickAnswer(logHasRows);
   const { nowMs, timeZone } = clockNow;
   const kinds = line.sessions.map((s) => sessionKind(s, nowMs));
   const moving = kinds.filter(
     (k) => k === "working" || k === "takeover",
   ).length;
   const stuck = notMoving(line, nowMs).length;
-  const needs = orderedNeeds(line.needs);
-  const first = needs[0];
+  const all = answerEntries(line);
+  const first = all[0];
   const tickClock = clock(Date.parse(line.startedAt), timeZone);
   const unread = unreadText(line, timeZone);
-  if (first !== undefined) {
-    const oldest = Math.min(...needs.map((n) => Date.parse(n.since)));
-    const stuckText =
-      stuck > 0 ? `${plural(stuck, "session")} not moving. ` : "";
-    return {
-      title: pastTense
-        ? `${needs.length} needed a person at the ${tickClock} tick.`
-        : needs.length === 1
-          ? "1 needs a person."
-          : `${needs.length} need a person.`,
-      sub: `Oldest ${ago(oldest, nowMs)}. ${stuckText}${plural(moving, "session")} working. First: ${first.target}, ${recordedWord(first, trackerOf(line, first.repo))}.${unread === null ? "" : ` ${unread}`}`,
-      loud: true,
-    };
-  }
+  const boardLimit = boardLimitText(line);
+  if (first !== undefined)
+    return openNeedsAnswer({
+      line,
+      all,
+      first,
+      nowMs,
+      moving,
+      stuck,
+      tickClock,
+      pastTense,
+      unread,
+      boardLimit,
+    });
   return quietBand(line, nowMs, {
     moving,
     stuck,
     tickClock,
     pastTense,
     unread,
+    boardLimit,
   });
+}
+
+function noTickAnswer(logHasRows: boolean): AnswerView {
+  return {
+    title: "No tick has run on this host.",
+    sub: logHasRows
+      ? "The timer writes the first receipt at its first tick."
+      : "No receipts, no log rows. The timer writes the first receipt at its first tick.",
+    loud: false,
+  };
+}
+
+type AnswerEntry =
+  | { kind: "need"; need: LineNeed; sinceMs: number }
+  | { kind: "ready"; ready: LineReady; sinceMs: number };
+
+/** Person actions from records and board placements, ordered within each act. */
+function answerEntries(line: LineSnapshot): AnswerEntry[] {
+  const board = readyNeeds(line);
+  return NEED_ACTS.flatMap((act) => {
+    const entries: AnswerEntry[] = [
+      ...line.needs
+        .filter((need) => needAct(need) === act)
+        .map((need) => ({
+          kind: "need" as const,
+          need,
+          sinceMs: Date.parse(need.since),
+        })),
+      ...board
+        .filter((ready) => readyNeedAct(ready) === act)
+        .map((ready) => ({
+          kind: "ready" as const,
+          ready,
+          sinceMs: Date.parse(readySince(ready, line.finishedAt)),
+        })),
+    ];
+    return entries.sort((a, b) => a.sinceMs - b.sinceMs);
+  });
+}
+
+function openNeedsAnswer({
+  line,
+  all,
+  first,
+  nowMs,
+  moving,
+  stuck,
+  tickClock,
+  pastTense,
+  unread,
+  boardLimit,
+}: {
+  line: LineSnapshot;
+  all: AnswerEntry[];
+  first: AnswerEntry;
+  nowMs: number;
+  moving: number;
+  stuck: number;
+  tickClock: string;
+  pastTense: boolean;
+  unread: string | null;
+  boardLimit: string | null;
+}): AnswerView {
+  const oldest = Math.min(...all.map((entry) => entry.sinceMs));
+  const stuckText = stuck > 0 ? `${plural(stuck, "session")} not moving. ` : "";
+  const firstText =
+    first.kind === "need"
+      ? `${first.need.target}, ${recordedWord(first.need, trackerOf(line, first.need.repo))}`
+      : `PR #${first.ready.pr}, ${first.ready.act === null ? "converged, needs a person" : `converged, ${ACT_WORDS[first.ready.act]}`}`;
+  return {
+    title: pastTense
+      ? `${all.length} needed a person at the ${tickClock} tick.`
+      : all.length === 1
+        ? "1 needs a person."
+        : `${all.length} need a person.`,
+    sub: `Oldest ${ago(oldest, nowMs)}. ${stuckText}${plural(moving, "session")} working. First: ${firstText}.${unread === null ? "" : ` ${unread}`}${boardLimit === null ? "" : ` ${boardLimit}.`}`,
+    loud: true,
+  };
 }
 
 /**
@@ -480,6 +694,22 @@ export function unreadText(
   return `${plural(unread.length, "repository", "repositories")} not read: ${each.join("; ")}.`;
 }
 
+/** Board reads that could hide a person action, in the same words as Merge. */
+function boardLimitText(line: LineSnapshot): string | null {
+  const limits = line.repos.flatMap((repo) => {
+    const slug = repo.slug ?? repo.path;
+    return [
+      ...(repo.boardUnread == null
+        ? []
+        : [`${slug} board not read in full: ${repo.boardUnread}`]),
+      ...(repo.readyOmitted === undefined || repo.readyOmitted === 0
+        ? []
+        : [`${slug}: ${repo.readyOmitted} more board cards not shown`]),
+    ];
+  });
+  return limits.length === 0 ? null : limits.join("; ");
+}
+
 /** The answer when no need is open: sessions not moving still count, a repository not read is named, and a quiet line says what runs and what waits. */
 function quietBand(
   line: LineSnapshot,
@@ -490,9 +720,10 @@ function quietBand(
     tickClock: string;
     pastTense: boolean;
     unread: string | null;
+    boardLimit: string | null;
   },
 ): AnswerView {
-  const { moving, stuck, tickClock, pastTense, unread } = facts;
+  const { moving, stuck, tickClock, pastTense, unread, boardLimit } = facts;
   const walled = line.accounts.filter((a) => wallIsUp(a, nowMs)).length;
   const wallText =
     walled > 0 ? `; ${plural(walled, "account")} behind a wall` : "";
@@ -511,12 +742,12 @@ function quietBand(
       loud: true,
     };
   // A repository the line could not read may hold a need it cannot show, so the answer does not say nothing does.
-  if (unread !== null)
+  if (unread !== null || boardLimit !== null)
     return {
       title: pastTense
         ? `Nothing needed a person in what the ${tickClock} tick read.`
         : "Nothing needs a person in what was read.",
-      sub,
+      sub: `${sub}${boardLimit === null ? "" : ` ${boardLimit}.`}`,
       loud: true,
     };
   return {

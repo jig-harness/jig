@@ -14,8 +14,9 @@ import { LinkedDetail, WorkLead } from "./work.tsx";
  */
 import { type ReactNode, useId, useRef, useState } from "react";
 import { DecisionCounts, filterAnswerStates } from "./decision-counts.tsx";
-import { needCard, slotCard } from "./cards.ts";
+import { needCard, readyNeedCard, slotCard } from "./cards.ts";
 import { CopyButton } from "./copy.tsx";
+import { BoardCardLead, BoardStatus } from "./board-status.tsx";
 import { CommitControls, DecisionRows } from "./decision-rows.tsx";
 import { facetAttrs, memberAttrs } from "./facets.ts";
 import { answerCommentUrl, cardAttrs } from "./keys.ts";
@@ -26,8 +27,14 @@ import { GutterCard, GutterFold } from "./gutter.tsx";
 import { ActPill, BareWord, Glyph } from "./icon-word.tsx";
 import { ACT_ICONS, CAUSE_ICONS, EVERYONE_ICONS, iconOf } from "./icons.ts";
 import { Mark } from "./marks.tsx";
+import { ReadyConditions } from "./merge.tsx";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
-import { type NeedRow, type NeedView, needRows } from "./needs-view.ts";
+import {
+  type NeedRow,
+  type NeedView,
+  type ReadyNeedView,
+  needRows,
+} from "./needs-view.ts";
 import { OptionText } from "./option-text.tsx";
 import { GroupNeedItem } from "./question-group-card.tsx";
 import { SettledRecently } from "./settled.tsx";
@@ -191,6 +198,12 @@ function NeedAsk({ need }: { need: NeedView }) {
       )}
       <AnswerNotes need={need} />
       <WaitsOn need={need} />
+      {need.board === undefined ? null : (
+        <>
+          <p className="q">{need.board.says}</p>
+          <ReadyConditions conditions={need.board.conditions} />
+        </>
+      )}
     </>
   );
 }
@@ -227,6 +240,22 @@ function NeedDetail({ need }: { need: NeedView }) {
         </>
       )}
       <Evidence rows={need.evidence} />
+      {need.board === undefined ? null : (
+        <>
+          <p className="sm">
+            Board action: {need.board.boardAct ?? "needs a person"}.
+          </p>
+          {need.board.failing.length === 0 ? null : (
+            <p className="sm">
+              Failing: {need.board.failing.join(", ")}
+              {need.board.failingOmitted > 0
+                ? ` (+${need.board.failingOmitted} more)`
+                : ""}
+              .
+            </p>
+          )}
+        </>
+      )}
       <LinkedDetail repo={need.repo} target={need.target} links={need.links} />
     </>
   );
@@ -237,10 +266,6 @@ function needFacetAttrs(
   row: NeedCardRow,
   clock: Clock,
 ): Record<string, string> {
-  const card = row.type === "need" ? row.need : row.slot;
-  // A question group's card is found by any of its targets' repositories, stages and ages; one target holds each combination.
-  const members = row.type === "need" ? (row.need.group?.members ?? []) : [];
-  const since = Date.parse(row.since);
   const bucket = (iso: string) => {
     const hours = (clock.nowMs - Date.parse(iso)) / 3_600_000;
     return hours < 1
@@ -249,6 +274,24 @@ function needFacetAttrs(
         ? "1–24 hours"
         : "1 day or more";
   };
+  if (row.type === "ready") {
+    return {
+      ...facetAttrs({
+        act: [row.ready.act],
+        repo: [row.ready.repo],
+        person: [],
+        stage: [],
+        age: [bucket(row.since)],
+      }),
+      "data-facet-since": row.since,
+      "data-facet-age-label": row.ready.age,
+      "data-facet-target": row.ready.target,
+    };
+  }
+  const card = row.type === "need" ? row.need : row.slot;
+  // A question group's card is found by any of its targets' repositories, stages and ages; one target holds each combination.
+  const members = row.type === "need" ? (row.need.group?.members ?? []) : [];
+  const since = Date.parse(row.since);
   const each = (of: (c: { repo: string; stage: string }) => string) =>
     members.length === 0 ? [of(card)] : [...new Set(members.map(of))];
   const ages = [
@@ -361,6 +404,66 @@ function NeedItem({
         </>
       }
       detail={<NeedDetail need={need} />}
+    />
+  );
+}
+
+function ReadyNeedItem({
+  card,
+  rest,
+  facets,
+}: {
+  card: ReadyNeedView;
+  rest: boolean;
+  facets: Record<string, string>;
+}) {
+  const info = readyNeedCard(card);
+  return (
+    <GutterCard
+      className={rest ? "need mCard groupRest" : "need mCard"}
+      attrs={{ ...cardAttrs(info), ...facets }}
+      label={`Ready conditions for ${card.target}`}
+      face={
+        <>
+          <BoardCardLead
+            repo={card.repo}
+            target={card.target}
+            url={card.url}
+            title={card.title}
+            links={card.links}
+            age={card.age}
+            action={card.boardAct}
+          >
+            <ActPill act={card.act} />
+            <Mark role={card.role} />
+          </BoardCardLead>
+          <ItemTitle title={card.title} />
+          <p className="q">{card.says}</p>
+          <BoardStatus
+            failing={card.failing}
+            failingOmitted={card.failingOmitted}
+            unblocks={card.unblocks}
+          />
+          <div className="goto">
+            <span className="m sm mCommand">{card.command}</span>
+            <CopyButton
+              text={card.command}
+              idle="Copy jig ask line"
+              aria={`Copy the ${info.commandLabel} for ${card.target}`}
+            />
+          </div>
+        </>
+      }
+      detail={
+        <>
+          <ReadyConditions conditions={card.conditions} />
+          <LinkedDetail
+            repo={card.repo}
+            target={card.target}
+            links={card.links}
+          />
+        </>
+      }
     />
   );
 }
@@ -516,6 +619,13 @@ function NeedGroup({
             <NeedItem
               key={row.need.rowKey}
               need={row.need}
+              rest={rest}
+              facets={facets}
+            />
+          ) : row.type === "ready" ? (
+            <ReadyNeedItem
+              key={row.ready.rowKey}
+              card={row.ready}
               rest={rest}
               facets={facets}
             />
