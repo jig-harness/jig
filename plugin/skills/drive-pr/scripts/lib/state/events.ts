@@ -249,6 +249,28 @@ export function stopFinishSummary(
   return `Every stalled pass ended \`${finish.state}\`: ${withoutMentions(finish.reason)}`;
 }
 
+/** The summary lines for a stopped drive's last stop: how its passes finished and the reasons they recorded. */
+export function stopSummaries(
+  events: readonly DriveEvent[] | undefined,
+  driver: { state: string; exit?: number | null },
+): string[] {
+  return [
+    stopFinishSummary(events, driver),
+    stopReasonsSummary(events, driver),
+  ].filter((s): s is string => s !== null);
+}
+
+/** A stall's passes' recorded reasons as a `why` suffix; `""` for another stop or one that recorded none. */
+export function stallPassesNote(
+  events: readonly DriveEvent[] | undefined,
+  exit: number,
+): string {
+  const reasons = stopReasons(events, exit);
+  return reasons === null
+    ? ""
+    : `; how its passes finished: ${withoutMentions(stallReasonsLine(reasons))}`;
+}
+
 /** `text` with each `@` that would mention a forge login or team broken by a zero-width space. */
 export function withoutMentions(text: string): string {
   return text.replace(/@(?=[A-Za-z0-9])/g, "@\u200B");
