@@ -108,6 +108,12 @@ function isBelowHighest<T>(state: Selection<T>, round: number | null) {
   );
 }
 
+type Candidate = {
+  round: number | null;
+  reviewedSha: string;
+  carries: boolean;
+};
+
 function considerComment<T extends { body?: string | null | undefined }>(
   state: Selection<T>,
   comment: T,
@@ -130,22 +136,37 @@ function considerComment<T extends { body?: string | null | undefined }>(
   if (isBelowHighest(state, round)) return;
   // Decode rather than merely spotting an opener: malformed protocol
   // evidence is unreadable, never a clean replacement summary.
-  const carries = carriesFindings(body);
+  const candidate = { round, reviewedSha, carries: carriesFindings(body) };
+  if (!candidate.carries && considerFindingFree(state, comment, candidate))
+    return;
+  advanceSelection(state, comment, candidate);
+}
+
+// A finding-free comment is never a replacement without a stamp. Returns
+// whether it was settled here.
+function considerFindingFree<T extends { body?: string | null | undefined }>(
+  state: Selection<T>,
+  comment: T,
+  candidate: Candidate,
+): boolean {
   // A skip notice never describes a review summary. In particular it must
   // not establish the initial selection or an ordering watermark that hides
   // a later affirmative review with findings.
-  if (!carries && isSkipOnly(comment)) return;
+  if (isSkipOnly(comment)) return true;
+  if (candidate.reviewedSha !== "") return false;
   // An unstamped, finding-free comment after a selection is auxiliary: it
   // reviewed nothing, so it neither replaces the selection nor raises the
   // ordering watermark that would hide a later finding-bearing summary.
-  if (!carries && reviewedSha === "") {
-    if (state.selected === undefined)
-      select(state, comment, { round, reviewedSha, carries });
-    return;
-  }
-  // A round number alone never retires findings: a clean replacement of a
-  // finding-bearing summary must carry its own reviewed-head stamp.
-  if (state.carriesFindings && !carries && reviewedSha === "") return;
+  if (state.selected === undefined) select(state, comment, candidate);
+  return true;
+}
+
+function advanceSelection<T>(
+  state: Selection<T>,
+  comment: T,
+  candidate: Candidate,
+): void {
+  const { round, reviewedSha, carries } = candidate;
   // A stamp identifies a reviewed head, not a replacement boundary. Without
   // an affirmative review round it may be an auxiliary acknowledgement on
   // that same head, which must not erase an earlier finding-bearing summary.
@@ -162,7 +183,7 @@ function considerComment<T extends { body?: string | null | undefined }>(
   // A newer declared round is the reviewer's explicit replacement boundary.
   if (round !== null)
     state.highestRound = Math.max(state.highestRound ?? round, round);
-  if (advances) select(state, comment, { round, reviewedSha, carries });
+  if (advances) select(state, comment, candidate);
 }
 
 function retireOrderedMalformed<T>(state: Selection<T>, round: number): void {
@@ -171,11 +192,7 @@ function retireOrderedMalformed<T>(state: Selection<T>, round: number): void {
   );
 }
 
-function select<T>(
-  state: Selection<T>,
-  comment: T,
-  chosen: { round: number | null; reviewedSha: string; carries: boolean },
-): void {
+function select<T>(state: Selection<T>, comment: T, chosen: Candidate): void {
   state.selected = comment;
   state.round = chosen.round;
   state.reviewedSha = chosen.reviewedSha;
