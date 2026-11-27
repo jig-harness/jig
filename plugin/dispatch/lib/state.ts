@@ -67,6 +67,7 @@
  * open is refused as before, the wrapper says so with the stage's own exit
  * code, and the tick finds the launch's wrapper gone without an exit.
  */
+import { PICKUP_SUCCESSOR_SCHEMA } from "./pickup-successor-schema.ts";
 import { type Database, SQLiteError } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -665,6 +666,7 @@ export const MIGRATIONS: readonly Migration[] = [
     additive: true,
     sql: "ALTER TABLE steward_records ADD COLUMN refusal TEXT;",
   },
+  { additive: true, sql: PICKUP_SUCCESSOR_SCHEMA },
 ];
 
 /** The schema version this plugin writes. */

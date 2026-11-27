@@ -89,6 +89,7 @@ import { pendingRearm } from "./rearm-state.ts";
 import { pickupClaims } from "./pickup-claim-table.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { stateRoot } from "../receipts.ts";
+import { upsertLaunchRecord } from "./launch-record-write.ts";
 import { existingStateDb, inTransaction, stateDb, statePath } from "./state.ts";
 import type { StaleCause } from "./types.ts";
 import { cancelledBeforeExecution } from "./cancellation.ts";
@@ -404,19 +405,9 @@ export function writeRecord(record: LaunchRecord, root = stateRoot()): void {
     const release = kept ?? (stored === null ? releaseOf() : undefined);
     if (release !== undefined) tick.release = release;
   }
-  db.query(
-    `INSERT INTO launches (id, repo, action, pr, item, created_at, record)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (id) DO UPDATE SET record = excluded.record`,
-  ).run(
-    record.id,
-    record.repo,
-    record.action,
-    record.pr,
-    record.item,
-    record.createdAt,
-    JSON.stringify(tick),
-  );
+  const text = JSON.stringify(tick);
+  const reads = isLaunchRecord(JSON.parse(text)) ? 1 : 0;
+  upsertLaunchRecord(db, record, text, reads);
 }
 
 /** A column's JSON, `undefined` when the column is empty, `null` when it does not parse. */

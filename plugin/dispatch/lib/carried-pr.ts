@@ -56,8 +56,10 @@ export interface CarrierPr {
 
 /** What the stall watch reads to tell whether an open pull request carries a claimed item. */
 export interface CarrierInput {
-  /** The open pull requests of the repository's own branches the line links to `key`; `null` when the tick could not tell. */
-  carriers(key: string): CarrierPr[] | null;
+  /** The open pull requests of the repository's own branches the line links to `key`, and whether all possible links were read. */
+  carriers(
+    key: string,
+  ): CarrierPr[] | { prs: CarrierPr[]; complete: boolean } | null;
   /** The drive of one open pull request, as this tick read it. */
   drive(pr: number): CarrierDrive;
   /** The pull requests merged since the follow-up stage's start that the line links to `key`; empty where none read. */
@@ -185,6 +187,7 @@ export function carrierInput(read: {
       body: p.body ?? "",
       // The merged listing carries no closing references, so only a link the branch or the description affirms is read; an item in another repository linked by closing references alone reads as not linked.
       closing: [],
+      closingComplete: true,
     }),
   );
   const mergedLinks =
@@ -196,11 +199,17 @@ export function carrierInput(read: {
         }));
   return {
     carriers: (key) =>
-      links
-        ?.prsOf(key)
-        ?.map((p) =>
-          unknownHead.has(p.number) ? { ...p, headUnread: true } : p,
-        ) ?? null,
+      links === null
+        ? null
+        : (() => {
+            const found = links.prsOfResult?.(key);
+            return {
+              complete: found?.complete ?? links.prsOf(key) !== null,
+              prs: (found?.prs ?? links.prsOf(key) ?? []).map((p) =>
+                unknownHead.has(p.number) ? { ...p, headUnread: true } : p,
+              ),
+            };
+          })(),
     drive: (pr) => carrierDrive(pr, read.drives, read.read, read.inScope),
     merged: (key) =>
       (mergedLinks ?? []).flatMap(({ links }) => links.prsOf(key) ?? []),
@@ -282,14 +291,22 @@ function openCarriage(
   input: CarrierInput,
   named: number | undefined,
 ): Carriage {
-  const prs = input.carriers(item.key);
-  if (prs === null)
+  const links = input.carriers(item.key);
+  if (links === null)
     return {
       kind: "stall",
       note: "whether an open pull request carries it cannot be told: the open pull requests' links did not read this tick",
     };
-  if (prs.length === 0) return { kind: "none" };
-  const read = [...prs]
+  const known = Array.isArray(links) ? links : links.prs;
+  const complete = Array.isArray(links) ? true : links.complete;
+  if (known.length === 0)
+    return complete
+      ? { kind: "none" }
+      : {
+          kind: "stall",
+          note: "whether an open pull request carries it cannot be told: the open pull requests' links did not read this tick",
+        };
+  const read = [...known]
     .sort((a, b) => a.number - b.number)
     .map((pr) => ({ pr, drive: input.drive(pr.number) }));
   const told: string[] = [];
@@ -317,6 +334,7 @@ function openCarriage(
     );
     unread ||= drive.kind === "unread";
   }
+  if (!complete) unread = true;
   return {
     kind: "stall",
     note: `${told.join("; ")}${unread ? ", so whether a drive carries it cannot be told" : ""}`,
