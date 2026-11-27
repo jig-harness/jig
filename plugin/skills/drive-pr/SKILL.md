@@ -289,6 +289,13 @@ PR-global `verifiedSha` or certifies convergence.
 With a hold label, the PR-open head runs full CI. Before the first
 intermediate fix push, `finish-round.ts` waits until every required check has
 completed, adds the label, and records the resulting GitHub timeline-event id.
+Until the label is first added, a required check whose newest run is a
+completed skip (a label event's run on a workflow that skips the required job,
+a shape [M13](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/README.md#7-hold)
+forbids) is judged by its newest run that is not a skip: a queued or
+running run is still waited for, a cancelled one is left to the cancelled-run
+recovery, and a check with only skipped runs keeps the wait. After a release,
+the newest run is judged, and a skip there is never complete.
 When no hold label is live or owned and the checks the hold waits for have
 not completed, `ensure` reads the PR's mergeability. GitHub runs no
 `pull_request` CI on a PR that conflicts with its base, so on a `CONFLICTING`
@@ -1096,7 +1103,21 @@ stops admit it on a mechanical state:
   a takeover (it is published to the ledger) and is never renewed without the flag, so the drive stops on
   [`MAX_ROUNDS`](../../protocol/drive-exits.md) again once it spends it. Without the flag the re-arm stops
   at once on the spent budget. Pass the flag only on a person's re-arm,
-  after the handoff file was read.
+  after the handoff file was read. The budget a drive enforces never
+  reaches past the pull request's round ceiling (`drive.max_total_rounds`,
+  default 8, counted across every launch, re-arm and takeover): a re-arm
+  that finds the ceiling spent parks `round-ceiling` at once, and so does
+  the round check that counts a head past it, or past the optional
+  wall-clock cap (`drive.max_wall_clock_hours`, from the first launch).
+  Only a person's override raises the ceiling by one `--max-rounds` block,
+  recorded as `ceilingRaised` and published to the ledger: an answer to the
+  park choosing **Allow one more budget**, read by the next re-arm, or
+  `--past-ceiling` on `drive.ts` or `arm-drive.ts`, which implies
+  `--rearm-budget`. Any other answer to `round-ceiling`, and any answer to
+  `divergence-stop` but **Continue driving**, keeps the drive stopped: the
+  re-arm records it as `circuitStop` and stops with `INDETERMINATE`, asking
+  nothing again, until a person's `--past-ceiling`. An agent never passes
+  `--past-ceiling`, and never answers these parks for a person.
 - **[`HITL_PARKED`](../../protocol/drive-exits.md).** Once **every** parked item has an answer — a
   comment by an author GitHub reports as the repository's owner, member or
   collaborator, last edited (or posted) later than the park, on the item's
@@ -1448,7 +1469,7 @@ could forge or forget.
    it. `--max-rounds` counts from the durable state, so
    re-arming a PR that has already run rounds resumes it ("at round 4 of 10")
    rather than restarting the budget; only `--rearm-budget` extends a spent
-   one (§ Picking up a stopped drive). `--pass-model` names the model each
+   one, within the round ceiling (§ Picking up a stopped drive). `--pass-model` names the model each
    pass runs on for this drive (a model id, a Claude Code alias or a routing
    tier) over `drive.pass_model`; the driver log and `drives.ts` name it.
 5. **Check the spawn once, a few seconds later** — not immediately and not in a
@@ -1899,6 +1920,13 @@ disables the failed-check retry. A spent CI-repair budget stops with
 re-run, and stops with [`CI_INFRA_PERSISTED`](../../protocol/drive-exits.md) past its own bounds. See
 § Terminal states.
 
+The waiting status probe and the driver's optional final-CI and takeover
+polls share the GitHub quota policy in
+[configuration](../../CONFIGURATION.md#drive). The tighter of REST core and
+GraphQL sets the delay within the waiting reader's deadline. The limiting
+window appears in the outbound ledger. Local controls and the fresh reads
+required for a verdict or pass continue on their existing schedule.
+
 ### 1. Gate
 
 **exact** — Run the gate first and obey its result; the script owns liveness and convergence.
@@ -2173,6 +2201,11 @@ renderings remain blocking. The report lists skipped entries under `ignoredBackl
 and status JSON lists their fingerprints under `work.summaryIgnoredBacklogKeys`.
 These entries need no answer. Body bullets, unaccounted slots and backlog
 entries without an explicit non-blocking disposition still count as work.
+The divergence stop alone also leaves out an unaddressed backlog entry the
+non-blocking section renders by its path, line and recorded comment, an
+abbreviated one included: the report lists it under `notBlockingBacklog` and
+status JSON under `work.summaryNotBlockingKeys`. It still needs its answer for
+convergence.
 
 A finding the reviewer could not anchor to a diff line
 creates **no thread** — thread count reads zero while it sits live, so a
@@ -3065,7 +3098,7 @@ loop cannot see, such as converging and wanting the local gates and the
 | Exit | Means | What to do |
 |---|---|---|
 | `0` | Nothing to do, or merged cleanly | `--json`'s `action` says which. On `merged`, run the dependency install step below before validation |
-| `9` | The base **conflicts** with this branch. The worktree was *restored* — nothing is half-merged | Resolve it deliberately with [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), from its Step 1 so its pre-merge changelog conversion runs first: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git merge <remote>/<base>`, then map, resolve (intent-traced; derived files regenerated, never hand-merged), record, check, validate with this section's plan and conclude the merge; then push |
+| `9` | The base **conflicts** with this branch. The worktree was *restored* — nothing is half-merged | Resolve it deliberately with [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), from its Step 1 so its pre-merge changelog conversion runs first and its `start-merge.ts` merges against the right merge base (a base the pull request was stacked on that has since been squash-merged included), then map, resolve (intent-traced; derived files regenerated, never hand-merged), record, check, validate with this section's plan and conclude the merge; then push |
 | `3` | Refused before touching anything: an unconcluded git operation was already open, local changes stood in the merge's way, or an abort could not be verified. Also covers a merge git resolved cleanly (no file left unmerged) but never committed — a `pre-merge-commit` hook rejecting it, most plausibly — which `MERGE_HEAD`'s mere presence cannot distinguish from `9`'s real conflict on its own | The message names which. For an open merge the round inherited, finish it as **A tree the round inherits** above says; in a `conflict-resolve` round, § 0 says what to do. For the middle one: this is not the ordering rule above contradicting itself — it is a distinct, preliminary validation of the round's *own* diff, separate from (and earlier than) the plan that rule gates on `base-sync.ts` succeeding. Run `bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts"` and run what it prints against the current (dirty) tree — it already covers the uncommitted diff, so there is nothing to skip — commit, then re-run `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`. Once that succeeds, the section's normal order resumes: resolve the plan again below, now against the tree the merge just changed. Never commit merely to unblock the merge without having validated first. For the hook case: the worktree was restored; fix or bypass the hook and re-run |
 | `5` | The PR is not `OPEN` | Stop — the same liveness posture `finish-round.ts` takes before its push |
 | `11` | Another live session holds this working tree's tree lease (never under `--check`) | Stop, as for `finish-round.ts`'s `11` below |

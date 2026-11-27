@@ -1458,6 +1458,19 @@ make, use the entry's term instead.
   but is stuck (alive with no progress) or dead with nothing left unpushed;
   it is refused against a driver that is making progress
   ([drive-pr](plugin/skills/drive-pr/README.md#picking-up-a-stopped-drive)).
+- **Round ceiling** — the most review rounds (distinct reviewed heads) one
+  pull request may spend under a *PR drive loop*, counted across every
+  launch, *re-arm and takeover* (`drive.max_total_rounds`, 8 by default). A
+  re-arm never grants rounds past it; reaching it, or the optional
+  wall-clock cap, parks the drive for a person, and only that person's
+  explicit override raises it, by one round budget
+  ([drive-pr](plugin/skills/drive-pr/README.md#the-round-ceiling-and-the-divergence-stop)).
+- **Divergence stop** — the *PR drive loop* parking for a person once two
+  rounds in a row each raised more new review findings than they fixed, with
+  findings still open, not counting the findings the reviewer marks not
+  blocking: a sign the fixes create work faster than they settle it, which
+  more rounds do not cure
+  ([drive-pr](plugin/skills/drive-pr/README.md#the-round-ceiling-and-the-divergence-stop)).
 - **Re-drive** — the *dispatcher* starting a *PR drive loop* again on a pull
   request whose drive converged, once that pull request has gone stale: the
   forge reports it in conflict with its base, or its head moved past the head
@@ -1937,7 +1950,9 @@ make, use the entry's term instead.
   implementation to gather facts; part of tiered model routing (expensive
   models decide, cheap models explore).
 
-- <a id="model-tier"></a>**Model tier** — the cost class of model an agent or
+<a id="model-tier"></a>
+
+- **Model tier** — the cost class of model an agent or
   skill runs on, named by role: *Judgment*, Strategic, Execution or *Scout*;
   it is not chosen from how important the job sounds.
   In agent and skill metadata the tier follows from the model pin, as the
@@ -2466,7 +2481,8 @@ make, use the entry's term instead.
   repository's part of it. It answers "what spent this quota" without
   probing the system. Hourly totals stay 7 days
   in the budget database; `jig budget` and each tick report read them, and
-  a low-quota need names the operations projected to empty a quota.
+  a low-quota need names the operations projected to empty a quota, and a
+  calls-failing need names a caller outside the tick whose calls were all refused.
   [Plugin README](plugin/README.md#the-dispatcher).
 - **Failure class** — one of the closed set of ways a call to an outside
   system fails: rate limited (with the time it clears), unreachable, too

@@ -37,7 +37,11 @@ import {
 } from "./person-pickup-holds.ts";
 import { SERIAL_UNDECIDED } from "./contention.ts";
 import { isFailureCause } from "./failure-notices.ts";
-import { lowQuotaNeeds, type QuotaRisk } from "./outbound-report.ts";
+import {
+  type FailingCaller,
+  outboundNeeds,
+  type QuotaRisk,
+} from "./outbound-report.ts";
 import { preflightNeeds } from "./preflight.ts";
 import { groupItems } from "./release-groups.ts";
 import { boardUnread, readyOf, storedDrive } from "./line-ready.ts";
@@ -104,6 +108,8 @@ export interface LineInput {
   /** The needs of the tick before, whose first sightings a continuing need keeps. */
   previousNeeds?: LineNeed[];
   quotaRisks?: QuotaRisk[];
+  /** The callers whose calls all failed. */
+  failingCallers?: FailingCaller[];
   runId: string;
   startedAt: string;
   finishedAt: string;
@@ -940,15 +946,7 @@ export function buildLine(input: LineInput): LineSnapshot {
       })
       .filter((s): s is LineSession => s !== null),
     needs: [
-      ...(input.quotaRisks === undefined
-        ? (input.previousNeeds ?? []).filter(
-            (n) => n.repo === "host" && n.cause === "low-quota",
-          )
-        : lowQuotaNeeds(
-            input.quotaRisks,
-            input.previousNeeds ?? [],
-            input.finishedAt,
-          )),
+      ...outboundNeeds(input, input.previousNeeds ?? [], input.finishedAt),
       ...views.flatMap((v) =>
         needsOf(v, input.finishedAt, input.previousNeeds ?? []),
       ),

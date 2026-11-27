@@ -1,6 +1,18 @@
 /** A local session runtime whose runs are witnessed by process identity. */
-import { resolve } from "node:path";
-import { cwdHolders } from "../../../shared/process-cwd.ts";
+import { readFileSync, statSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
+import {
+  detachedCarriers,
+  holdersIn,
+  scanCwds,
+  type AsyncProbeRun,
+  type CwdScan,
+} from "../../../shared/process-cwd.ts";
+import {
+  HOOK_TIMEOUT_MS,
+  HOOK_WORKTREE_ENV,
+  realPath,
+} from "../../../shared/worktree-hooks.ts";
 import {
   judge,
   thisHost,
@@ -10,11 +22,8 @@ import {
   processTable,
   type ProcessRow,
 } from "../../../shared/process-table.ts";
+import { CREATE_HOOK_MARK } from "../../../shared/orca-workspace/hooks.ts";
 import { parseGitWorktreeList } from "../../../shared/orca-workspace/git.ts";
-import {
-  localContext,
-  withLimit,
-} from "../../../shared/orca-workspace/runner.ts";
 import { run } from "../../../shared/proc.ts";
 import { readLaunches, type ReadRecord } from "../launches.ts";
 import { failureText } from "../text.ts";
@@ -27,6 +36,8 @@ import { branchTargets } from "./branch-targets.ts";
 import { launchProcess } from "./process-launch.ts";
 import { processOpen } from "./process-workspaces.ts";
 import type { ProcessSettings } from "./process-environment.ts";
+import { swallow } from "../../../shared/errors.ts";
+import { attempt } from "../../../shared/outcome.ts";
 import { parseMs } from "../../../shared/time.ts";
 
 const SOURCE = "git worktree list and dispatcher launch records";
@@ -101,11 +112,110 @@ function activity(records: ReadRecord[], rows: ProcessRow[] | null) {
   return { agents, known: descendants(rows ?? [], known), uncertain };
 }
 
-export function processRuntime(machine: {
-  process?: ProcessSettings;
-  runtimeTimeoutMs: number;
-  workspaceTimeoutMs: number;
-}): SessionRuntime {
+/** The worktree's git directory, read from its `.git` file or directory. */
+function gitDirectory(tree: string): string | null {
+  const dot = join(tree, ".git");
+  try {
+    if (statSync(dot).isDirectory()) return dot;
+    const line = readFileSync(dot, "utf8").trim();
+    if (!line.startsWith("gitdir:")) return null;
+    const dir = line.slice("gitdir:".length).trim();
+    return isAbsolute(dir) ? dir : resolve(tree, dir);
+  } catch (error) {
+    swallow(error, "the worktree's git directory is unreadable");
+    return null;
+  }
+}
+
+/**
+ * The latest moment, in seconds since the epoch, a process the tree's create
+ * hook started can have started. Once the hook has run, its mark's time ends
+ * the window exactly: nothing the hook started began after it finished.
+ * Until then the worktree's creation plus the hook's time limit bounds it.
+ * Work started after it inherited the marker from something else.
+ */
+function preparationEndsAt(tree: string): number {
+  const dir = gitDirectory(tree);
+  if (dir !== null) {
+    try {
+      return statSync(join(dir, CREATE_HOOK_MARK)).mtimeMs / 1000 + 2;
+    } catch (error) {
+      // The hook has not left its mark: fall back to its time limit.
+      swallow(error, "the create hook has left no mark");
+    }
+  }
+  const born = attempt(
+    "tree-unreadable",
+    "the worktree's creation time",
+    () => statSync(join(tree, ".git")).mtimeMs,
+  );
+  return born.ok ? born.value / 1000 + HOOK_TIMEOUT_MS / 1000 + 15 : 0;
+}
+
+/**
+ * How many of the processes working in `tree` the runtime cannot account
+ * for: every one but a run's recorded processes and their descendants
+ * (`known`), and those a worktree hook run for this tree left behind: a
+ * process with no controlling terminal whose environment names the tree
+ * under `HOOK_WORKTREE_ENV`, the dispatcher's own preparation of it. A
+ * process with a terminal, or one that did not keep the environment it
+ * started with, still counts. A listing that does not read counts as one.
+ */
+async function unaccounted(
+  run: AsyncProbeRun,
+  scan: CwdScan,
+  tree: string,
+  known: Set<number>,
+): Promise<number> {
+  const holders = holdersIn(scan, tree);
+  if ("unknown" in holders) return 1;
+  const unknown = holders.pids.filter((pid) => !known.has(Number(pid)));
+  const prepared = await detachedCarriers(
+    run,
+    unknown,
+    `${HOOK_WORKTREE_ENV}=${realPath(tree)}`,
+    preparationEndsAt(tree),
+  );
+  return unknown.filter((pid) => !prepared.has(pid)).length;
+}
+
+/**
+ * The probe the cwd scan runs on this host, without blocking the event loop
+ * every repository's observe shares. Messages stay untranslated: the scan
+ * reads some of them as text.
+ */
+export function localProbe(timeoutSec: number): AsyncProbeRun {
+  return async (argv, cwd, limitSec) => {
+    const result = await run(argv, {
+      timeoutSec: Math.min(timeoutSec, limitSec ?? timeoutSec),
+      env: { ...process.env, LC_ALL: "C", LANGUAGE: "" },
+      ...(cwd === undefined ? {} : { cwd }),
+    });
+    // A probe a signal ended part way through printed a part of the listing.
+    const killed =
+      result.spawnFailed ||
+      result.timedOut ||
+      result.bufferExceeded ||
+      result.signal !== undefined;
+    return {
+      status: killed ? -1 : result.code,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    };
+  };
+}
+
+/** `probe` is the process scan, replaceable where a test counts it. */
+export function processRuntime(
+  machine: {
+    process?: ProcessSettings;
+    runtimeTimeoutMs: number;
+    workspaceTimeoutMs: number;
+  },
+  probe: AsyncProbeRun = localProbe(
+    Math.max(1, Math.ceil(machine.runtimeTimeoutMs / 1000)),
+  ),
+): SessionRuntime {
   const timeoutSec = Math.max(1, Math.ceil(machine.runtimeTimeoutMs / 1000));
   return {
     name: "process",
@@ -137,10 +247,12 @@ export function processRuntime(machine: {
           ({ record }) =>
             record.runtime === "process" && record.repo === repo.slug,
         );
-        const ctx = withLimit(
-          localContext(() => undefined),
-          machine.runtimeTimeoutMs,
-        );
+        // One scan answers every worktree: a scan per worktree would block
+        // the event loop for as many spawns as the host has worktrees.
+        const scan = await scanCwds(probe, {
+          signal,
+          deadlineMs: machine.runtimeTimeoutMs,
+        });
         const workspaces = [];
         for (const tree of worktrees) {
           if (signal?.aborted) return no("the session listing was stopped");
@@ -150,15 +262,7 @@ export function processRuntime(machine: {
               resolve(record.workspace.path) === resolve(tree.path),
           );
           const act = activity(inTree, rows);
-          const holders = cwdHolders(
-            (argv, cwd) => ctx.run(argv, cwd === undefined ? {} : { cwd }),
-            tree.path,
-          );
-          const unknown =
-            "unknown" in holders
-              ? 1
-              : holders.pids.filter((pid) => !act.known.has(Number(pid)))
-                  .length;
+          const unknown = await unaccounted(probe, scan, tree.path, act.known);
           const branch = tree.branch ?? "";
           const comment = inTree
             .map(({ record }) => record.mark ?? "")

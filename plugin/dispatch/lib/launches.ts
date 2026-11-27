@@ -53,10 +53,16 @@ import {
 } from "../../shared/agent-harness/index.ts";
 import { ordinalAnchors } from "./account-ordinal.ts";
 import { relaunchAnchors } from "./pickup-relaunch.ts";
-import { optionalLaunchFields } from "./launch-record-options.ts";
+import {
+  hasStrings,
+  isWorkspace,
+  namesTarget,
+  optionalLaunchFields,
+} from "./launch-record-options.ts";
 import { readNext, type NextOwner } from "./next-owner.ts";
 import { type FramedResult, framedOf } from "./framed-result.ts";
 import { type KeptReport, readKeptReport } from "./closing-report-store.ts";
+import { releaseOf } from "./release.ts";
 import { readRoundSessions, type RoundSession } from "./round-sessions.ts";
 import {
   type PickupRefusal,
@@ -144,6 +150,8 @@ export interface LaunchRecord {
   relaunchLockWait?: true;
   version: 1;
   id: string;
+  /** The plugin release that launched it (`release.ts`), stamped when the record is first written; absent on a record written before releases were named. */
+  release?: string;
   token: string;
   runtime?: "process";
   /** A provider account's launch: its provider and what its wrapper adds to the pass's environment beside the credential it resolves (`provider-launch.ts`); absent for a subscription account's. */
@@ -181,6 +189,8 @@ export interface LaunchRecord {
   /** For a pickup from the ready pool: the launch re-reads it as one, so a later assignment cannot move it to the assigned lane. */
   pooled?: boolean;
   batchItems?: import("./queue-batch.ts").BatchItem[];
+  /** For a batch: the default branch's `dispatch.missing_priority` the tick read, which the pass decides with instead of its workspace's file. */
+  missingPriority?: import("./types.ts").MissingPriority;
   /** For a headless pass: whether the tick admitted it on a host opted in to Codex's bypass (a Codex pass carries the bypass only when this is `true`), and the host's `drive.codex_pass_args` read with it, which a Codex pass carries before its prompt (absent for none); the wrapper reads neither setting itself, since it can read another user layer from the tick's. */
   codexBypass?: boolean;
   codexPassArgs?: string[];
@@ -366,27 +376,48 @@ export function newToken(): string {
   return crypto.randomUUID().replace(/-/g, "");
 }
 
+/** The release a stored record names, if it reads and names one. */
+function storedRelease(text: string): string | undefined {
+  try {
+    const found: unknown = JSON.parse(text);
+    return isMapping(found) && typeof found.release === "string"
+      ? found.release
+      : undefined;
+  } catch (error) {
+    swallow(error, "a stored launch record does not read; it names no release");
+    return undefined;
+  }
+}
+
 /**
  * Write (or rewrite) the tick's part of a record. The samples and episodes
  * live in their own tables, written where they are observed.
  */
 export function writeRecord(record: LaunchRecord, root = stateRoot()): void {
   const { samples: _samples, episodes: _episodes, ...tick } = record;
-  stateDb(root)
-    .query(
-      `INSERT INTO launches (id, repo, action, pr, item, created_at, record)
+  const db = stateDb(root);
+  // The release in effect at launch is the one that first writes the record; a rewrite by another release keeps it.
+  const stored = db
+    .query("SELECT record FROM launches WHERE id = ?")
+    .get(record.id) as { record: string } | null;
+  if (tick.release === undefined) {
+    const kept = stored === null ? undefined : storedRelease(stored.record);
+    const release = kept ?? (stored === null ? releaseOf() : undefined);
+    if (release !== undefined) tick.release = release;
+  }
+  db.query(
+    `INSERT INTO launches (id, repo, action, pr, item, created_at, record)
        VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (id) DO UPDATE SET record = excluded.record`,
-    )
-    .run(
-      record.id,
-      record.repo,
-      record.action,
-      record.pr,
-      record.item,
-      record.createdAt,
-      JSON.stringify(tick),
-    );
+  ).run(
+    record.id,
+    record.repo,
+    record.action,
+    record.pr,
+    record.item,
+    record.createdAt,
+    JSON.stringify(tick),
+  );
 }
 
 /** A column's JSON, `undefined` when the column is empty, `null` when it does not parse. */
@@ -398,34 +429,6 @@ function parseJson(text: string | null, what: string): unknown {
     swallow(error, `${what} does not read`);
     return null;
   }
-}
-
-function isWorkspace(value: unknown): boolean {
-  return (
-    value === null ||
-    (isMapping(value) &&
-      typeof value.id === "string" &&
-      typeof value.path === "string" &&
-      (value.branch === undefined || typeof value.branch === "string"))
-  );
-}
-
-function hasStrings(value: Record<string, unknown>, keys: string[]): boolean {
-  return keys.every((k) => typeof value[k] === "string");
-}
-
-/** What a record names: a pull request for a drive or a follow-up, an item for a pickup. */
-function namesTarget(value: Record<string, unknown>): boolean {
-  if (value.action === "steward")
-    return value.pr === null && value.item === null;
-  if (value.action === "pickup")
-    return typeof value.item === "string" && value.item !== "";
-  return (
-    (value.action === "rearm" ||
-      value.action === "takeover" ||
-      value.action === "followup") &&
-    typeof value.pr === "number"
-  );
 }
 
 /** Whether a parsed value reads as a launch record (the tick's part, as stored). */
@@ -510,9 +513,7 @@ function isAttempt(value: unknown): value is LaunchAttempt {
   return (
     isMapping(value) &&
     typeof value.at === "string" &&
-    (value.outcome === "sent" ||
-      value.outcome === "failed" ||
-      value.outcome === "lost") &&
+    ["sent", "failed", "lost"].includes(value.outcome as string) &&
     typeof value.detail === "string"
   );
 }

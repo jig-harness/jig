@@ -250,6 +250,58 @@ export function readDriverRecord(
 export type Settlement = "settled" | "unsettled";
 
 /**
+ * How a doctor run asks who the forge client is. A single recovery (a
+ * person's `--stop`) asks the client and goes on without a login when it
+ * cannot say. A doctor run asks once for everything it does (the recovery
+ * of every record and the diagnosis of every CI hold), and a client that
+ * cannot say is one it does not read comments through either: the work waits
+ * for a later run, which asks again, instead of each record or hold sending
+ * the same failing calls.
+ */
+export interface LoginAsk {
+  login: () => Promise<string | null>;
+  /** Whether a recovery that gets no login stops before it reads. */
+  required: boolean;
+}
+
+/** A run's one ask, which also says whether the client declined to name a login. */
+export interface RunLoginAsk extends LoginAsk {
+  /** Whether the question was asked and the client named no login. */
+  refused: () => boolean;
+}
+
+const SINGLE_RECOVERY_ASK: LoginAsk = {
+  login: resolveLogin,
+  required: false,
+};
+
+/** `--doctor`'s exit when the forge client named no login. */
+const NO_LOGIN_EXIT = 4;
+
+/** The run's one failing call has been sent: say so once, print nothing on standard output and name the reason as the exit. */
+export function refuseNoLogin(): number {
+  console.error(
+    "doctor: the forge client names no login (no credential, or it cannot answer), so no comment was read and no leftover record or CI hold was settled or diagnosed against its ledger: that question was the run's only forge call. Give the client a login and run it again.",
+  );
+  return NO_LOGIN_EXIT;
+}
+
+/** A run's ask: one question, its answer (a refusal included) for every record and hold. */
+export function askedOnce(): RunLoginAsk {
+  let asked: Promise<string | null> | undefined;
+  let refused = false;
+  return {
+    login: () =>
+      (asked ??= resolveLogin().then((login) => {
+        refused = login === null;
+        return login;
+      })),
+    required: true,
+    refused: () => refused,
+  };
+}
+
+/**
  * The recovery from a driver record: when its pass tree was witnessed gone
  * and its driver is gone, mark its ledger stopped, guarded, and drop the
  * record once nothing is left to do. A lock the driver left behind is no
@@ -260,6 +312,7 @@ export async function recoverFromDriverRecord(
   pr: string,
   lock: { diag: { started: string } | null },
   acquired?: string,
+  ask: LoginAsk = SINGLE_RECOVERY_ASK,
 ): Promise<Settlement> {
   const record = readDriverRecord(stateDir, pr);
   if (record === null) return "settled";
@@ -270,7 +323,9 @@ export async function recoverFromDriverRecord(
     if (
       await recoverObservedDriver(stateDir, pr, record, async () => {
         markDriverRecordReleased(stateDir, pr, record.started);
-        if ((await markLedgerStopped(stateDir, pr, record, null)) === "done") {
+        if (
+          (await markLedgerStopped(stateDir, pr, record, null, ask)) === "done"
+        ) {
           outcome = removeSettledRecord(stateDir, pr, record);
         }
       })
@@ -285,7 +340,7 @@ export async function recoverFromDriverRecord(
   if (pidAlive(record.pid, record.host)) return "unsettled";
   let outcome: Settlement = "unsettled";
   await reserveDeadDriver(stateDir, pr, record, async () => {
-    if ((await markLedgerStopped(stateDir, pr, record, null)) === "done") {
+    if ((await markLedgerStopped(stateDir, pr, record, null, ask)) === "done") {
       outcome = removeSettledRecord(stateDir, pr, record);
     }
   });
@@ -296,6 +351,7 @@ export async function recoverFromDriverRecord(
 async function recoverDriverRecords(
   stateDir: string,
   skip: (pr: string) => boolean,
+  ask: LoginAsk,
 ): Promise<void> {
   const drive = driveDb(stateDir);
   const prs = (
@@ -306,7 +362,13 @@ async function recoverDriverRecords(
   for (const pr of prs) {
     if (skip(pr)) continue;
     const claim = inspectLock(stateDir, prLockName(pr));
-    await recoverFromDriverRecord(stateDir, pr, { diag: claim?.diag ?? null });
+    await recoverFromDriverRecord(
+      stateDir,
+      pr,
+      { diag: claim?.diag ?? null },
+      undefined,
+      ask,
+    );
   }
 }
 
@@ -534,6 +596,7 @@ export async function markLedgerStopped(
   pr: string,
   diag: StoppedDiag | null,
   exit: number | null,
+  ask: LoginAsk = SINGLE_RECOVERY_ASK,
 ): Promise<"done" | "retry"> {
   if ((process.env.DRIVE_PR_LEDGER ?? "") === "off" || diag === null)
     return "done";
@@ -553,6 +616,7 @@ export async function markLedgerStopped(
       diag,
       exit ?? pending,
       pending !== null,
+      ask,
     );
   } catch (err) {
     console.error(
@@ -568,13 +632,16 @@ async function markGuarded(
   diag: StoppedDiag,
   exit: number | null,
   pending: boolean,
+  ask: LoginAsk,
 ): Promise<"done" | "retry"> {
   const who = {
     actor: `wt-${worktreePathKey(diag.worktree)}`,
     clone: cloneId(stateDir),
     started: diag.started,
   };
-  const login = await resolveLogin();
+  const login = await ask.login();
+  // The run says once that the client names no login; no comment is read.
+  if (login === null && ask.required) return "retry";
   const snapshot = await stoppedLedgerSnapshot(pr, login);
   if (snapshot === null) return "retry";
   const byPerson =
@@ -665,7 +732,8 @@ export async function recoverIdleStop(
 /** `--doctor`'s recovery: every driver record a released driver left. */
 export async function recoverStoppedLedgers(
   stateDir: string,
+  ask: LoginAsk = askedOnce(),
   skip: (pr: string) => boolean = () => false,
 ): Promise<void> {
-  await recoverDriverRecords(stateDir, skip);
+  await recoverDriverRecords(stateDir, skip, ask);
 }

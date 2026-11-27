@@ -7,9 +7,8 @@ import { log } from "../shared/log.ts";
 import { type Failure, failed } from "../shared/outcome.ts";
 import { main as withResourceLock } from "../shared/resource-lock.ts";
 import { gcConfiguration } from "./config.ts";
-import { fixtureCapacityFailure } from "../shared/fixture-health.ts";
 import { install } from "./install.ts";
-import { verifyFixtureRetirement } from "./kinds/fixture-retirement.ts";
+import { verifyFixtureRegistry } from "./kinds/fixture-retirement.ts";
 import { collectionPlan } from "./plan.ts";
 import { readReceipt, receiptPaths } from "./receipts.ts";
 import {
@@ -221,20 +220,10 @@ function failedRun(options: Options, failure: Failure): number {
 async function executeRun(options: Options): Promise<number> {
   const kinds = await collectionPlan(options);
   if (!kinds.ok) return failedRun(options, kinds.failure);
-  if (
-    options.scheduled &&
-    options.collect &&
-    !kinds.value.some((kind) => kind.name === "scratch")
-  ) {
-    const failure = fixtureCapacityFailure(
-      "The scheduled run has no scratch collection plan.",
-    );
-    if (failure !== null) return failedRun(options, failure);
-  }
   const { receipt, path } = await runCollection(kinds.value, {
     ...options,
-    ...(options.scheduled && options.collect
-      ? { verify: verifyFixtureRetirement }
+    ...(options.scheduled && (options.kind ?? "scratch") === "scratch"
+      ? { verify: verifyFixtureRegistry(options.collect) }
       : {}),
   });
   console.log(
@@ -267,7 +256,7 @@ export function showReceipts(query: string | undefined): number {
   console.log(JSON.stringify(receipt.value, null, 2));
   return 0;
 }
-/** Whether a scheduled run collects today, or why its configuration cannot say. */
+/** Whether a scheduled run collects today, or why its configuration cannot say; a registry over its limit never stops it, which fails only its scratch kind. */
 function applySchedule(options: Options): Failure | null {
   if (!options.scheduled) return null;
   const configuration = gcConfiguration(process.cwd(), null);
@@ -278,9 +267,7 @@ function applySchedule(options: Options): Failure | null {
     Temporal.Now.plainDateISO(),
     stat.bavail * stat.bsize,
   );
-  return options.collect
-    ? null
-    : fixtureCapacityFailure("The scheduled run is report-only.");
+  return null;
 }
 /** The collecting run the heavy-run lock wraps: this one's selection, collecting. */
 function collectingArguments(options: Options): string[] {

@@ -605,6 +605,16 @@ in) spends nothing and is listed apart under "no Linear key configured",
 with its callers; a logged-in client's calls are labelled as that client's
 own login.
 
+A `calls-failing` need names a caller outside the tick and its passes (a
+skill a timer or a person runs) with credentials whose every call to one
+system, over the ledger's last hours, was refused as `unauthorized` or
+`invalid`, at least 20 calls in all. Each such credential is judged by its own
+calls: another credential of the same caller that works does not hide it. A wait, an absence or a fault of
+the system's own never counts. It appears once per caller and system, keeps its age while the
+failures continue and clears after the ledger holds none, which is up to two
+hours after they stop. A caller that starts each run with a credential of its
+own (a fresh configuration directory) shows as many credentials.
+
 A `low-quota` need names the operations spending a quota when the last hour's
 rate would empty it before its refill. It appears once per quota and clears
 when the projection recovers. The rate estimate weights partial hourly buckets
@@ -1356,6 +1366,16 @@ names `event: notices_read`, and the steward's digest leaves them out of
 the history it judges from. `jig dispatch log` and its text copy list
 them, one a tick.
 
+Whatever the notify stage does, each tick also keeps the log's account of
+the needs on the line: a `need-opened` event (no class) when a need first
+appears, and a `need-closed` event, with how long it was open and how it
+left, once it has been absent from two ticks' lines in a row. A need missing
+from one tick only (a read that failed) stays open and writes nothing. Every
+row, and every tick receipt and launch record, names the plugin `release`
+that wrote it; an ended row names the release its run was launched under,
+and the scheduled upgrades that moved the machine between releases are
+appended to `~/.local/state/jig/upgrade/history.jsonl`.
+
 **The log as text.** The log prints as text, one line a row, or with
 `--jsonl` as JSON lines:
 
@@ -1799,7 +1819,7 @@ whose configuration names the tracker.
 | --- | --- |
 | `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, whether its process is alive, dead or unknown, why, and when its launch began (`since`); the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
 | `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](protocol/drive-exits.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `held` (a person's pickup hold on the dispatching host, shown even when the item already has a holder or an open need, which stay in `holder` and `waitsOn`), `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
-| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential`, `sign in to the account again`, `investigate the account's startup failures`, `inspect the quota spending`, `inspect Jig state storage`, `settle the launch that holds the drive` or `release the pickup hold`; and `needAct`, what the person does as the dispatch dashboard groups it, one of [the acts](protocol/needs-and-answers.md#what-a-need-asks-of-a-person) (a park's comes from its decision class) |
+| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential`, `sign in to the account again`, `investigate the account's startup failures`, `inspect the quota spending`, `inspect Jig state storage`, `inspect the failing caller`, `settle the launch that holds the drive` or `release the pickup hold`; and `needAct`, what the person does as the dispatch dashboard groups it, one of [the acts](protocol/needs-and-answers.md#what-a-need-asks-of-a-person) (a park's comes from its decision class) |
 | `overlap`, `footprint` | for a pick-up still assigned, when the newest tick found it so: why it waits on [overlap](https://github.com/jig-harness/jig/blob/main/design/overlap-aware-admission.md#the-reason-a-person-sees) with the work in flight (the relation, `waits on overlap` or `waits on the overlap bound`; each pull request or pickup it waits on with its state and link; how many; and the sentence its `waitsOn` repeats), and the note on a footprint unknown or derived from area labels alone (`footprint unknown: …`). The dispatcher uses these tiers to order its pickup attempts |
 | `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim; from the outcome log, its stage and its [closing report](#the-closing-report) (`last.report`: who wrote it, what it concluded, the next step it suggests and its cause, and for a run that left none the path of its transcript's copy, `transcript`), which the text prints as `last.run`: the stage, when it ended, what it concluded and the suggested next step, or that it ended without a report, naming the copy |
 | `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |
@@ -2469,6 +2489,8 @@ drive:
   change_areas_catalog: docs/change-areas.yaml      # change-area catalog for area-aware reports; default: none
   reviews_drafts: true        # does the AI reviewer review draft pull requests
   max_rounds: 10              # default round budget of a drive-pr run; --max-rounds overrides; default 10
+  max_total_rounds: 8         # round ceiling per pull request across re-arms; at most 50; default 8
+  max_wall_clock_hours: 12    # hours a pull request may be driven from its first launch; default: no cap
   pass_deadline_retries: 2    # passes killed at their deadline one drive restarts from, across re-arms; default 2
   ci_repair_rounds: 2         # CI-repair passes per head and failing check on red final CI; 0 stops on red; default 2
   pass_model: sonnet          # model each pass runs on: a model id, a Claude Code alias or a routing tier; default sonnet

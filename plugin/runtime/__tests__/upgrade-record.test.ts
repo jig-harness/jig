@@ -4,13 +4,22 @@
  * receipt shows, and the value the launcher passes a job.
  */
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  appendUpgradeHistory,
   capped,
   DETAIL_LIMIT,
   everyMs,
+  historyPath,
+  type ScheduledUpgrade,
   SCHEDULED_UPGRADE_ENV,
   takeScheduledUpgrade,
   upgradeLine,
@@ -117,4 +126,42 @@ test("a detail is held to its limit, keeping its start and its end", () => {
   expect(held.endsWith(" end")).toBe(true);
   expect(held).toContain("characters left out");
   expect(capped("short")).toBe("short");
+});
+
+test("the upgrade history only grows: each update or failure adds a line, the first untouched", () => {
+  const root = mkdtempSync(join(tmpdir(), "upgrade-history-"));
+  const first: ScheduledUpgrade = {
+    outcome: "updated",
+    detail: "0.1.0 -> 0.2.0",
+    at: "2026-11-23T10:00:00.000Z",
+    from: "0.1.0",
+    to: "0.2.0",
+  };
+  const second: ScheduledUpgrade = {
+    outcome: "failed",
+    detail: "the marketplace did not answer",
+    at: "2026-11-23T11:00:00.000Z",
+  };
+  expect(appendUpgradeHistory(root, first)).toBe(true);
+  const afterFirst = readFileSync(historyPath(root), "utf8");
+  expect(appendUpgradeHistory(root, second)).toBe(true);
+  const lines = readFileSync(historyPath(root), "utf8").trimEnd().split("\n");
+  expect(`${lines[0]}\n`).toBe(afterFirst);
+  expect(lines.map((l) => JSON.parse(l))).toEqual([
+    { version: 1, ...first },
+    { version: 1, ...second },
+  ]);
+});
+
+test("an attempt that moved nothing is not a line of the upgrade history", () => {
+  const root = mkdtempSync(join(tmpdir(), "upgrade-history-"));
+  for (const outcome of ["withheld", "skipped", "unchanged"] as const)
+    expect(
+      appendUpgradeHistory(root, {
+        outcome,
+        detail: "",
+        at: "2026-11-23T10:00:00.000Z",
+      }),
+    ).toBe(false);
+  expect(existsSync(historyPath(root))).toBe(false);
 });

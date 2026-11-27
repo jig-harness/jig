@@ -50,6 +50,8 @@ import { runReviewPassPhase } from "./review-pass.ts";
 
 import { publishRunning } from "./ledger.ts";
 
+import { checkDivergence } from "./circuit-breaker.ts";
+
 import { sweepProvisional } from "./provisional-sweep.ts";
 
 import { parkedFromStateJson } from "./../state/framed-park.ts";
@@ -251,6 +253,12 @@ export async function runRoundIteration(
   }
   {
     const stage = await checkRoundStall(status, context, stallRounds);
+    if (stage !== null) return stage;
+  }
+  {
+    // Rounds whose fixes raise more findings than they resolve park for a
+    // person (`circuit-breaker.ts`); no progress at all is the stall stop's.
+    const stage = await checkDivergence(context.pr, status, context.dryRun);
     if (stage !== null) return stage;
   }
   {

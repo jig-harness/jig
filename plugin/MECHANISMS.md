@@ -285,11 +285,13 @@ development and shipped as a version.
   Every other worktree is reported. It also removes its own receipts past their
   retention. State: one receipt per run under `~/.local/state/jig/gc/<date>/`. Refuses: an
   unreadable process identity or forge answer keeps the resource, and an
-  abandoned admission token blocks collection rather than being taken over.
+  admission token that may still be held blocks collection.
   Each admission token holds its creator's
   [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
-  (`shared/liveness.ts`), and the refusal names a stale one's creator and why
-  it counts as gone, for a person to remove.
+  (`shared/liveness.ts`): a collector removes the token when its record names
+  this host and the host proves its process gone, and otherwise the refusal
+  names the creator and why it counts as gone, and `jig doctor gc` and the
+  dispatch dashboard raise one host need for a person to inspect it.
 - **Reasoned.** None. Sessions only take part as owners: a scratch creator
   holds shared admission while it creates its folder (`shared/gc-lock.ts`).
 - **If it fails.** Exit 1 and a receipt that records the failure.
@@ -977,7 +979,16 @@ stops a model. A team that runs passes unattended should know which:
   same login as the person, or holding the person's tracker credential, can
   therefore post a comment those scripts would trust, and one holding the
   dispatcher's own login or tracker credential, shared or dedicated, can write
-  that record; only the instructions say it must not.
+  that record; only the instructions say it must not. A pickup's reuse of a
+  Scout Findings comment is the same rule on an issue: `list_comments.ts`
+  reports each comment's author login and the tracker's association for them
+  (a workspace member's is `MEMBER` on Linear and Jira), and
+  `select_scout_finding.ts` selects a comment only when
+  `shared/trusted-authors.ts` trusts that association, listing any other
+  findings comment as untrusted and ignoring it. What the pickup does with the
+  rest of an issue's comments is instruction-only: `do-item` reads a comment
+  from an untrusted author as data and names it as such, and no script stops
+  the session from following one.
 - **The machine's state folders.** Launch records, walls, receipts, the
   outcome log and the drive's state are files under `~/.local/state/jig/`,
   writable by every session the same user runs. Leases and tokens fence the

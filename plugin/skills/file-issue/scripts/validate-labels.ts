@@ -39,6 +39,11 @@ import {
   openTracker,
   type Tracker,
 } from "../../do-item/scripts/lib/tracker/index.ts";
+import {
+  FACETS,
+  type NewIssue,
+  TrackerRequestError,
+} from "../../do-item/scripts/lib/tracker/port.ts";
 import { readConfig } from "../../../shared/consumer.ts";
 import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
 import { taxonomyPath } from "./lib/config.ts";
@@ -57,9 +62,14 @@ const USAGE =
   "                          [--native-type <issue type>] <label>...\n" +
   "       (or the labels as a JSON array, or the issue as a JSON object, on stdin or in --input <file>)";
 
+type LabelTracker = Pick<
+  Tracker,
+  "listLabels" | "filedAs" | "unavailableFacets"
+>;
+
 export interface Deps {
   /** The consumer's tracker, opened only for `--check-tracker`. */
-  openTracker: () => Pick<Tracker, "listLabels">;
+  openTracker: () => LabelTracker;
   /** Standard input, read only when no label is given as an argument. */
   readStdin: () => Promise<string>;
 }
@@ -143,6 +153,9 @@ interface IssueRead {
   labels: string[];
   facets?: IssueFacetInput;
   nativeType?: string | null;
+  filing?: NewIssue | undefined;
+  /** The draft is a child whose parent is filed after this check. */
+  parentPending?: boolean;
 }
 
 /** The labels, and with an issue its facets and type, that stdin names; or a usage message. */
@@ -160,24 +173,50 @@ function stdinIssue(text: string): IssueRead | string {
   if (value === null || typeof value !== "object") return STDIN_SHAPE;
   const issue = value as Record<string, unknown>;
   const labels = issue.labels ?? [];
-  const optionalText = (v: unknown) =>
-    v === undefined || v === null || typeof v === "string";
-  if (
-    !names(labels) ||
-    !optionalText(issue.type) ||
-    !optionalText(issue.size) ||
-    !optionalText(issue.nativeType) ||
-    !(issue.priority === undefined || Number.isInteger(issue.priority))
-  )
-    return STDIN_SHAPE;
+  if (!names(labels) || !validFacetShape(issue)) return STDIN_SHAPE;
+  const facets = {
+    type: (issue.type as string | null | undefined) ?? null,
+    size: (issue.size as string | null | undefined) ?? null,
+    priority: (issue.priority as number | undefined) ?? 0,
+  };
   return {
     labels,
-    facets: {
-      type: (issue.type as string | null | undefined) ?? null,
-      size: (issue.size as string | null | undefined) ?? null,
-      priority: (issue.priority as number | undefined) ?? 0,
-    },
+    facets,
     nativeType: (issue.nativeType as string | null | undefined) ?? null,
+    filing: filingDraft(issue, labels, facets),
+    ...(issue.parentPending === true ? { parentPending: true } : {}),
+  };
+}
+
+/** Whether the facet fields of a stdin issue have their expected shapes. */
+function validFacetShape(issue: Record<string, unknown>): boolean {
+  const optionalText = (v: unknown) =>
+    v === undefined || v === null || typeof v === "string";
+  return (
+    optionalText(issue.type) &&
+    optionalText(issue.size) &&
+    optionalText(issue.nativeType) &&
+    (issue.priority === undefined || Number.isInteger(issue.priority))
+  );
+}
+
+/** Only a create payload supplies the text and optional parent for placement. */
+function filingDraft(
+  issue: Record<string, unknown>,
+  labels: string[],
+  facets: { type: string | null; size: string | null; priority: number },
+): NewIssue | undefined {
+  const { title, description, parent } = issue;
+  if (typeof title !== "string" || typeof description !== "string")
+    return undefined;
+  return {
+    title,
+    description,
+    labels,
+    priority: facets.priority,
+    ...(facets.type === null ? {} : { type: facets.type }),
+    ...(facets.size === null ? {} : { size: facets.size }),
+    ...(typeof parent === "string" ? { parent } : {}),
   };
 }
 
@@ -198,8 +237,8 @@ function print(result: Validation, json: boolean): void {
 /** Ends the run with an exit code and a message for standard error. */
 class Stop extends Error {
   readonly code: number;
-  constructor(code: number, message: string) {
-    super(message);
+  constructor(code: number, message: string, options?: ErrorOptions) {
+    super(message, options);
     this.code = code;
   }
 }
@@ -277,11 +316,11 @@ function loadTaxonomy(option: string | undefined): Taxonomy {
  */
 async function unresolvedInTracker(
   labels: string[],
-  deps: Deps,
+  tracker: LabelTracker,
 ): Promise<{ missing: string[]; ambiguous: string[] }> {
   const counts = new Map<string, number>();
   try {
-    for (const { name } of await deps.openTracker().listLabels())
+    for (const { name } of await tracker.listLabels())
       counts.set(name, (counts.get(name) ?? 0) + 1);
   } catch (e) {
     throw new Stop(
@@ -296,20 +335,71 @@ async function unresolvedInTracker(
   };
 }
 
+/** Check a draft's omissions against the screen its adapter would use. */
+async function validateFiling(
+  tracker: LabelTracker,
+  issue: IssueRead,
+  taxonomy: Taxonomy,
+  initial: Validation,
+): Promise<Validation> {
+  const { labels, facets, nativeType, filing } = issue;
+  const missing = FACETS.filter((facet) => initial.missing.includes(facet));
+  if (
+    filing === undefined ||
+    nativeType != null ||
+    tracker.filedAs === undefined ||
+    tracker.unavailableFacets === undefined
+  )
+    return initial;
+  try {
+    // Placement decides the native type, which can satisfy a rule by itself,
+    // so it is resolved even when no facet is missing.
+    const placement = await tracker.filedAs(
+      filing,
+      issue.parentPending ? { parentPending: true } : undefined,
+    );
+    const unavailable =
+      missing.length === 0
+        ? []
+        : await tracker.unavailableFacets(placement.nativeType, missing);
+    return validateLabels(
+      labels,
+      taxonomy,
+      facets,
+      issueType(placement.nativeType),
+      unavailable,
+    );
+  } catch (e) {
+    throw new Stop(
+      e instanceof TrackerRequestError ? 3 : 1,
+      `ERROR: ${reason(e)}`,
+      { cause: e },
+    );
+  }
+}
+
 async function run(argv: string[], deps: Deps): Promise<number> {
   const options = parseArgs(argv);
   if (typeof options === "string") throw new Stop(2, `${options}\n${USAGE}`);
-  const { labels, facets, nativeType } = await readIssue(options, deps);
-  const result = validateLabels(
-    labels,
-    loadTaxonomy(options.taxonomy),
-    facets,
-    issueType(nativeType),
-  );
+  const issue = await readIssue(options, deps);
+  const { labels, facets, nativeType } = issue;
+  const taxonomy = loadTaxonomy(options.taxonomy);
+  let result = validateLabels(labels, taxonomy, facets, issueType(nativeType));
   if (options.checkTracker) {
+    let tracker: LabelTracker;
+    try {
+      tracker = deps.openTracker();
+    } catch (e) {
+      throw new Stop(
+        1,
+        `ERROR: the tracker could not be opened: ${reason(e)}`,
+        { cause: e },
+      );
+    }
+    result = await validateFiling(tracker, issue, taxonomy, result);
     const { missing, ambiguous } = await unresolvedInTracker(
       result.labels,
-      deps,
+      tracker,
     );
     if (missing.length)
       result.errors.push(

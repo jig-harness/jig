@@ -404,6 +404,266 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.315.0] - 2026-11-27
+
+### Added
+
+- `/jig:resolve-conflicts` starts a base merge with its new
+  `start-merge.ts`. When the pull request was stacked on another branch that
+  has since been squash- or rebase-merged into its base, the merge takes the
+  point where the branch left that earlier base as its merge base. Only the
+  pull request's own changes can then conflict, and the earlier branch's
+  changes no longer conflict with their own squashed copy, which used to
+  spend a drive's conflict-resolve round. The merge commit records the
+  earlier branch and the merge base, and `conflict-map.ts` maps the conflicts
+  against that base. In every other case the merge is Git's own, as before.
+
+### Fixed
+
+- **Steward:** an `order` record the queue cannot take is now refused with its
+  reason instead of being kept unapplied and unexplained. The tick refuses one
+  whose targets are not all wanted, or do not tie on every ranking key (the
+  exact creation time included), keeps why on the record, and lists the
+  refusal in the steward's next digest under `refused` while the targets read
+  as they did; an order naming the same targets is then not kept again. The
+  steward skill now says what a tie is. The dispatcher's state database gains
+  one column for the refusal. **Consumer action:** none.
+- Drive review waits now pace optional forge reads against both GitHub REST core and GraphQL quotas. The limiting window appears in the outbound cost ledger, and the waits respect their existing deadlines. Each drive process also reuses its signed-in GitHub identity.
+- A fixed batch's pass decides whether a member whose priority was cleared
+  after the tick may start with the `dispatch.missing_priority` the
+  dispatcher read from the default branch, not with the setting in its
+  workspace's `.config/jig.yaml`, which a reused workspace could carry
+  unreviewed. A batch's launch record gains an optional `missingPriority`
+  field (`hold` or `start`), written only on a batch's record; a record
+  without it reads as before, and its pass decides as under `hold`. The
+  pass's prompt hands the value to `work-batch`'s proposal as
+  `candidates.ts --fixed … --missing-priority <value>`, and the proposal now
+  names the member to work alone when fewer than two stay (`alone` in its
+  JSON form, with each left-out member's `noPriority`), or none, with the
+  members held for their missing priority.
+
+## [0.314.3] - 2026-11-27
+
+### Fixed
+
+- Jira filing accepts an omitted facet when the selected issue type's create
+  screen lacks its custom field. The weekly sweep reports how many issues
+  it passes over for each facet absent from both screens.
+  **Consumer action:** none.
+
+## [0.314.2] - 2026-11-27
+
+### Fixed
+
+- A pickup hold whose dependency the dispatcher reads itself (a pull request
+  to merge, an item to close) is a held row under Queue, and `jig ask
+  --waiting` no longer lists it as a hold to release: nothing waits on a
+  person while the dependency is open. A hold with no dependency, one whose
+  stored dependency cannot be read, and one whose pull request closed
+  unmerged still wait on a person.
+- The members of an ended batch whose pass asked a question about the whole
+  batch are released when an open pull request carries the batch's anchor
+  (or the anchor's item is in `pr_open`, whether or not its pull request is matched), so they are picked up instead of waiting
+  on an answer the anchor cannot take; the anchor keeps its claim.
+
+## [0.314.1] - 2026-11-27
+
+### Fixed
+
+- When Jira's changelog has no record of the current assignment, Jig explains that Jira omits assignments made at issue creation and asks a trusted person to unassign and reassign the issue to start a pickup.
+- The working-directory probe that dispatch, the idle-worktree checks and
+  `jig gc` use no longer reports every worktree as unknowable while a
+  container runs under the host user's uid: a process whose directory its
+  owner cannot read is now accepted when it runs in a nested PID namespace
+  (more than one pid on `NStgid:` in its `/proc/<pid>/status`), as one
+  holding privileges its owner lacks already was. A process of the probe's
+  own PID namespace whose directory cannot be read still makes the answer
+  unknown.
+
+## [0.314.0] - 2026-11-27
+
+The dispatcher's outcome log now records a need's life, and every record names the release that ran it.
+
+The dispatch dashboard serves a scoreboard by release and the live checks.
+
+### Added
+
+- The outcome log gets a `need-opened` row when a need first appears on the line and a `need-closed` row when it has left, written whatever the notify stage did. A need absent from a single tick (a read that failed, a forge that did not answer) stays open: it closes only when it is absent from two ticks in a row, timed at the first, and its close row says how long it was open and how it left. The log's text copy and `jig dispatch log --jsonl` print the rows. **Consumer action:** none.
+- Every tick receipt, launch record and outcome log row carries a `release` field, the plugin version that wrote it. A run counts under the release in effect when it was launched: its ended row names the launch record's release, not the release installed when it ended. Records written before the field read without it. The log table gets a `release` column for counting by release. **Consumer action:** none.
+- `jig upgrade --scheduled` appends each upgrade that updated the plugin or failed to `~/.local/state/jig/upgrade/history.jsonl`, one line each. The upgrade never rewrites or prunes the file, so the releases a machine ran, and when each began, stay readable after the receipts that held them expire. **Consumer action:** none.
+- `GET /scoreboard` gives six numbers for each release that ran something in the last 7 or 30 days: merged pull requests, answers per merge, median need age, session-hours not converged, idle slot-hours and median rounds. A record counts under the release it names; records that name none count under `null`. It also names an end cause that no run had in the 14 days before, once three runs under one release ended with it.
+- `GET /checks` serves the live-check report, and answers `checks-unavailable` while this release has none.
+- Both only read, and answer under the dashboard's token and host checks.
+
+## [0.313.4] - 2026-11-27
+
+### Fixed
+
+- A scratch admission token left by a process that died no longer blocks
+  every scratch collection until a person removes it. When a token's record
+  names this host and the host proves its process gone (no process has that
+  pid with that start time, or the host restarted since), the collector
+  removes the token and logs it; the scratch collector likewise takes over
+  the `writer` file of a collector that was killed. A token that may still be
+  held, or that gc cannot prove gone (no record, a record written before
+  records named a host, another host, an unreadable process table), still
+  blocks and is kept, and `jig doctor gc` and the dispatch dashboard now
+  raise one host need naming it, with the check a person makes.
+
+## [0.313.3] - 2026-11-27
+
+### Fixed
+
+- drive-pr's divergence stop parked drives that were converging. A round now
+  diverges only when it raises more review findings than it fixes, so a round
+  that raises as many as it fixes no longer counts. Backlog findings the
+  reviewer renders in its not-blocking *Beyond this PR* section are no longer
+  counted, even when that section abbreviates them. Convergence still asks for
+  an answer to such an entry. The status JSON lists these entries under
+  `work.summaryNotBlockingKeys`. The round ceiling and the two diverging rounds
+  that park are unchanged.
+  A drive that was counting under the earlier rule starts its count again at
+  its next round.
+
+## [0.313.2] - 2026-11-27
+
+The drive doctor asks its forge client who it is once per run, and the dispatcher's line now shows a caller whose credentials never succeed.
+
+### Fixed
+
+- `jig gc` kept a worktree as `unverified` ("process holders could not be
+  enumerated") when `lsof` listed a process in it but also warned about a
+  mount it cannot read, a desktop's document portal or a container's mounts,
+  because `lsof` then exits 1 and only an exit 0 counted as a holder. A
+  listed process now reads as held, so the worktree is reported as in use, and
+  one with no process listed over such warnings reads as not held. A warning
+  about the worktree's own mount, a run that was killed or timed out, and an
+  exit status that is no listing still leave the holders unknown, and the
+  reason now names which.
+- `drives.ts --doctor` still sent a `GET /user` and an issue-comment read for every drive whose state carried an unreleased CI hold, on every run, all failing when its forge client had no login. The diagnosis of every CI hold and the recovery of every leftover record now share one question per run, whatever the run was asked to do. A client that names no login makes that one failing call, prints one line on standard error and nothing on standard output, and exits `4`, leaving the records for a later run; a run that needs no forge read asks nothing. `drives-read-only.ts` and `jig ask`, which read the doctor, report the same reason. **Consumer action:** advised at machine, instructions. A job that reads `--doctor`'s exit code treats `4` as the client naming no login, not as a finding. To confirm after upgrading, `jig budget --hours 3 --json` shows the failing `GET /user` and issue-comment reads of `skill:drives.ts` falling to about one per run on a host whose client has no login; before the change they were about 58 of each per run.
+- The `calls-failing` host need never appeared for a caller that had one working credential beside its failing ones, because the working one hid the rest. Each credential is now judged by its own calls: a caller with credentials whose every call was refused as `unauthorized` or `invalid`, at least 20 calls in all, shows on the line.
+
+## [0.313.1] - 2026-11-27
+
+### Fixed
+
+- `jig gc` collects a process-runtime worktree that Orca also lists. Orca lists every Git worktree of a repository whose external worktrees it shows, so on a host with both runtimes such worktrees were always kept as unverified ("also listed by Orca") and piled up with every dispatched run. A process-owned worktree is now collectible when the process owner's evidence and Orca's registry both say it is finished: every launch that names it has ended with its recorded processes dead, and Orca shows no agent at work and no live terminal in it. A registry that cannot be read, or a terminal whose agents Orca cannot report, keeps the worktree as unverified and the reason names Orca. Git state, pull request, ignored content, process holders and idleness are checked as before, so a worktree with uncommitted work or unpushed commits is still kept. See [gc's process runtime section](plugin/gc/README.md).
+- On the process runtime, a pickup whose worktree create hook left a daemon
+  running in the new worktree (a build tool's, started by a dependency
+  install) was held in the tick that prepared it, as a workspace with a
+  terminal whose agent the runtime cannot report, and launched only a tick
+  later. A worktree hook now runs with `JIG_HOOK_WORKTREE` naming its
+  worktree, and the runtime leaves out of the count a process that has no
+  controlling terminal and whose environment names that worktree so, so the
+  pickup launches in the same tick. Any other process working in the
+  worktree, a person's shell or an agent started by hand, still holds the
+  pickup; on a host without `/proc` the count is unchanged, and
+  `process.env_keep` refuses the variable. Why this way and not another is in
+  [the process runtime's design](design/dispatched-sessions.md#a-worktree-hooks-leftovers).
+
+## [0.313.0] - 2026-11-27
+
+A drive doctor with a forge client that has no login no longer repeats failing
+calls on every run, and a caller whose calls all fail now shows on the
+dispatcher's line.
+
+### Added
+
+- The dispatcher's line raises one `calls-failing` host need for a caller
+  outside the tick and its passes whose calls to a system were all refused as
+  `unauthorized` or `invalid` under credentials that never succeeded (at least
+  20 in all), naming the caller, the classes and the number of credentials. The need clears once the
+  ledger holds no such calls. To confirm after upgrading,
+  `jig budget --hours 1 --json` shows no `invalid` results for
+  `skill:drives.ts`, and no new unverified owner record every five minutes.
+
+### Fixed
+
+- `drives.ts --doctor` sent a `GET /user` and a comment read for every
+  leftover driver record on every run, and all of them failed when its forge
+  client had no login. The recovery now asks who the client is once for all its
+  records, reads no comment when it cannot say, and leaves the records for a
+  later run. A census that wants no forge access runs
+  `drives-read-only.ts --doctor`, which skips the recovery.
+- A forge client's refusal to run for want of a token for the account a call
+  addresses is classed `unauthorized`, not `invalid`.
+
+## [0.312.3] - 2026-11-27
+
+A pickup reuses a Scout Findings comment only when its author is trusted.
+
+### Changed
+
+- A pickup fetches an issue's comments with `list_comments.ts` for its scout
+  check even when a launcher cached them, since the cache names no author
+  association; a findings comment from the native Linear tool, which names
+  none either, is ignored and the scouts run again.
+
+### Security
+
+- `list_comments.ts` now reports each comment's author login and the
+  tracker's association for them (`authorAssociation`: GitHub's own value, a
+  workspace member as `MEMBER` on Linear and Jira, `UNKNOWN` when the tracker
+  cannot say), and `select_scout_finding.ts` selects a findings comment only
+  from an author `shared/trusted-authors.ts` trusts. Any other findings
+  comment is listed under `untrusted` in the decision and ignored, so on a
+  public repository a comment from anyone else is no longer taken as a
+  pickup's plan. `/jig:do-item` reads such comments as data, marked as
+  untrusted, and `plugin/MECHANISMS.md` describes the boundary.
+
+## [0.312.2] - 2026-11-27
+
+### Fixed
+
+- drive-pr: a drive under a CI hold no longer waits on `CI_HOLD_WAIT` until it
+  stops as stalled when a label event's skipped run is a required check's
+  newest run on the head. This happens on a repository whose workflows skip
+  the required job on label events, and the drive's own state-label writes
+  start such runs. Until the hold is first added, the drive judges the newest
+  run of that check that is not a skip, so it adds the hold and pushes. A
+  queued or running run is still waited for. A cancelled run is still left to
+  the cancelled-run recovery. A skip is never read as a complete run or a
+  passing one. After a release, and for the final CI check, the drive still
+  judges the newest run. The workflow-convention lint still reports the
+  workflow shape, which M13 forbids.
+
+## [0.312.1] - 2026-11-27
+
+### Fixed
+
+- With `runtime: process`, a dispatch tick no longer scans the host's processes once per worktree, each scan a blocking spawn on the event loop every repository's observe shares. Listing a repository's sessions scans once, without blocking, and every worktree is judged on that one answer, so a small repository's runtime phase no longer waits behind other repositories' scans. The holders found and the handling of an incomplete scan are unchanged. To see the effect, read the `runtime` figure of each repository's `took` line in `jig receipts dispatch <date>` before and after the upgrade. **Consumer action:** none.
+
+## [0.312.0] - 2026-11-27
+
+### Added
+
+- drive-pr enforces a round ceiling: `drive.max_total_rounds` (default 8, at most 50) caps the review rounds of one pull request across every launch, re-arm and takeover, and `--rearm-budget` never grants past it. A drive that reaches it, or the optional wall-clock cap `drive.max_wall_clock_hours`, parks for a person with a `round-ceiling` decision that states the rounds, the elapsed time and why re-arming is refused. Answering it with "Allow one more budget", or arming with `--past-ceiling`, raises the ceiling by one round budget. See the [configuration reference](plugin/CONFIGURATION.md) and drive-pr's [README](plugin/skills/drive-pr/README.md).
+- drive-pr stops a diverging drive: when two rounds in a row raise at least as many findings as they fix, with findings still open, the drive parks with a `divergence-stop` decision listing the counts of each round.
+
+### Changed
+
+- A drive's effective round budget is now the smaller of `drive.max_rounds` and the round ceiling, so with the defaults a drive stops after 8 rounds rather than 10. A repository that wants longer drives raises `drive.max_total_rounds`.
+
+### Fixed
+
+- An answered non-blocking `winddown-deferred` summary finding stays answered: drive-pr no longer asks it again every few rounds. A reviewer that reports the same finding as blocking is still asked.
+
+## [0.311.3] - 2026-11-27
+
+### Fixed
+
+- A fixture registry over its limit no longer stops the scheduled `jig gc` run
+  before any kind runs. It fails the scratch kind alone: the receipt marks
+  `scratch` as `failed` (every other kind as `run`), the run's exit and the
+  dashboard's state-storage need name the scratch kind, and the worktrees and
+  the other kinds still collect on the collecting run, worktrees first.
+
+## [0.311.2] - 2026-11-26
+
+### Fixed
+
+- Converged pull requests that the board read places in Needs you (`place: "needs-you"`, `lane: null` in `line.ready`, such as pull requests blocked by an unread branch-protection rule, converged drafts, re-applied hold labels, post-convergence review threads or failing checks) now appear on the dispatch dashboard's Needs you tab under their mapped act group with their board reason, copyable `jig ask` command and folded Ready conditions, and are included in the Needs you tab count, answer band, command palette and pull request standing popover instead of disappearing from both Merge and Needs you. **Consumer action:** none.
+
 ## [0.311.1] - 2026-11-25
 
 ### Fixed
@@ -11193,7 +11453,23 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.311.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.315.0...HEAD
+[0.315.0]: https://github.com/jig-harness/jig/compare/v0.314.3...v0.315.0
+[0.314.3]: https://github.com/jig-harness/jig/compare/v0.314.2...v0.314.3
+[0.314.2]: https://github.com/jig-harness/jig/compare/v0.314.1...v0.314.2
+[0.314.1]: https://github.com/jig-harness/jig/compare/v0.314.0...v0.314.1
+[0.314.0]: https://github.com/jig-harness/jig/compare/v0.313.4...v0.314.0
+[0.313.4]: https://github.com/jig-harness/jig/compare/v0.313.3...v0.313.4
+[0.313.3]: https://github.com/jig-harness/jig/compare/v0.313.2...v0.313.3
+[0.313.2]: https://github.com/jig-harness/jig/compare/v0.313.1...v0.313.2
+[0.313.1]: https://github.com/jig-harness/jig/compare/v0.313.0...v0.313.1
+[0.313.0]: https://github.com/jig-harness/jig/compare/v0.312.3...v0.313.0
+[0.312.3]: https://github.com/jig-harness/jig/compare/v0.312.2...v0.312.3
+[0.312.2]: https://github.com/jig-harness/jig/compare/v0.312.1...v0.312.2
+[0.312.1]: https://github.com/jig-harness/jig/compare/v0.312.0...v0.312.1
+[0.312.0]: https://github.com/jig-harness/jig/compare/v0.311.3...v0.312.0
+[0.311.3]: https://github.com/jig-harness/jig/compare/v0.311.2...v0.311.3
+[0.311.2]: https://github.com/jig-harness/jig/compare/v0.311.1...v0.311.2
 [0.311.1]: https://github.com/jig-harness/jig/compare/v0.311.0...v0.311.1
 [0.311.0]: https://github.com/jig-harness/jig/compare/v0.310.0...v0.311.0
 [0.310.0]: https://github.com/jig-harness/jig/compare/v0.309.3...v0.310.0

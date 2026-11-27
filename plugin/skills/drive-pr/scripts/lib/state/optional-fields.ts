@@ -7,6 +7,7 @@ import { isOptionalRulings } from "./rulings.ts";
 import { isOptionalRetryCount } from "./deadline-retries.ts";
 import { isOptionalLadderVerdicts } from "./ladder-verdict-model.ts";
 import { isOptionalResolvedParks } from "./resolution-receipt.ts";
+import { isOptionalCircuit } from "./circuit-breaker.ts";
 
 /** The fields a stored state may lack: absent, or well-formed. */
 export function hasUsableOptionalFields(s: Record<string, unknown>): boolean {
@@ -15,6 +16,7 @@ export function hasUsableOptionalFields(s: Record<string, unknown>): boolean {
     isOptionalTakeovers(s.takeovers),
     isOptionalRetryCount(s.deadlineRetries),
     isOptionalRetryCount(s.roundsGranted),
+    isOptionalCircuit(s),
     isOptionalDecisions(s.decisions),
     isOptionalEvents(s.events),
     isOptionalCiActions(s.ciActions),

@@ -16,8 +16,14 @@
  * bounds, and a failed tool's whole output would otherwise reach every
  * receipt and every withheld line of the interval.
  */
-import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import {
+  appendFileSync,
+  mkdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 import {
   isMapping,
   readConfigFile,
@@ -143,6 +149,44 @@ export function takeScheduledUpgrade(
   const upgrade = scheduledUpgradeOf(env);
   delete env[SCHEDULED_UPGRADE_ENV];
   return upgrade;
+}
+
+/** The file the upgrade history is appended to, under the upgrade state directory `root`. */
+export function historyPath(root: string): string {
+  return join(root, "history.jsonl");
+}
+
+/** The outcomes that change what the machine runs or say it could not: `withheld`, `skipped` and `unchanged` attempts move nothing and, on a timer, repeat every interval. */
+const HISTORY_OUTCOMES: readonly UpgradeOutcome[] = ["updated", "failed"];
+
+/**
+ * Appends the upgrade to the history, one line of JSON, when it moved the
+ * machine's release or failed to. The file is only ever appended to: the
+ * upgrade neither rewrites nor prunes it, so the releases a machine ran, and
+ * when each began, can be read back after the receipts that held them have
+ * expired. The `upgrade-stamp.ts` stamp holds the latest attempt only.
+ * Returns false when the outcome is not recorded or the file cannot be
+ * written: the upgrade itself is never failed by its history.
+ */
+export function appendUpgradeHistory(
+  root: string,
+  upgrade: ScheduledUpgrade,
+): boolean {
+  if (!HISTORY_OUTCOMES.includes(upgrade.outcome)) return false;
+  try {
+    mkdirSync(root, { recursive: true, mode: 0o700 });
+    appendFileSync(
+      historyPath(root),
+      `${JSON.stringify({ version: 1, ...bounded(upgrade) })}\n`,
+      {
+        mode: 0o600,
+      },
+    );
+    return true;
+  } catch (error) {
+    swallow(error, "the upgrade's history line is left unwritten");
+    return false;
+  }
 }
 
 /** The machine's setting: whether the timers upgrade the plugin, and how often at most. */

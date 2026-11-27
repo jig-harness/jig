@@ -34,6 +34,8 @@ import {
 
 import { recordDriveEvent } from "./rearm.ts";
 
+import { circuitStop } from "./circuit-breaker.ts";
+
 import { driverRuntime } from "./runtime.ts";
 
 import {
@@ -348,6 +350,10 @@ export async function readRoundBudget(
   const countedRaw = countedRes.stdout.trim();
   const counted = isDigits(countedRaw) ? Number.parseInt(countedRaw, 10) : 0;
   const round = Math.max(counted, peekedAttempts);
+  // The round ceiling and the wall-clock cap stop before the budget's own
+  // bound: a pull request past either is a person's to drive on.
+  const circuit = await circuitStop(context.circuit, counted, context.dryRun);
+  if (circuit !== null) return circuit;
   if (counted > context.maxRoundsN || peekedAttempts > context.maxAttemptsN) {
     console.error(
       `hit --max-rounds (${context.maxRoundsN}) on PR #${context.pr} without converging`,

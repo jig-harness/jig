@@ -30,6 +30,43 @@ function tracker(nodes: unknown[]) {
 }
 
 describe("Linear adapter: comment authors", () => {
+  it("lists each comment with its author and what Linear vouches for about them", async () => {
+    const { t } = tracker([
+      {
+        id: "c1",
+        body: "a",
+        createdAt: "2026-01-01T00:00:00Z",
+        user: { id: "u1", name: "Dana", guest: false },
+      },
+      {
+        id: "c2",
+        body: "b",
+        createdAt: "2026-01-02T00:00:00Z",
+        user: { id: "u2", name: "Visitor", guest: true },
+      },
+      { id: "c3", body: "c", createdAt: "2026-01-03T00:00:00Z", user: null },
+    ]);
+    expect(await t.listComments("ENG-1")).toEqual([
+      {
+        body: "a",
+        createdAt: "2026-01-01T00:00:00Z",
+        author: "Dana",
+        authorAssociation: "MEMBER",
+      },
+      {
+        body: "b",
+        createdAt: "2026-01-02T00:00:00Z",
+        author: "Visitor",
+        authorAssociation: "GUEST",
+      },
+      {
+        body: "c",
+        createdAt: "2026-01-03T00:00:00Z",
+        authorAssociation: "UNKNOWN",
+      },
+    ]);
+  });
+
   it("keeps a malformed edit time as written so the answer reader rejects the comment", async () => {
     const { t } = tracker([
       {

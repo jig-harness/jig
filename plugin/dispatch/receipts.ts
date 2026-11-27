@@ -53,11 +53,16 @@ import {
 } from "../shared/liveness.ts";
 import type { LastRun } from "../runtime/component.ts";
 import type { ScheduledUpgrade } from "../runtime/upgrade-record.ts";
-import type { QuotaRisk, SystemSpending } from "./lib/outbound-report.ts";
+import type {
+  FailingCaller,
+  QuotaRisk,
+  SystemSpending,
+} from "./lib/outbound-report.ts";
 import type { NotAdmitted } from "./lib/accounts.ts";
 import type { FailureEntry } from "./lib/failures.ts";
 import type { LineLoad } from "./lib/dashboard-contract.ts";
 import type { ReflectionReport } from "./lib/reflection-route.ts";
+import { releaseOf } from "./lib/release.ts";
 import { tickFailure } from "./lib/tick-failure.ts";
 import { failureText } from "./lib/text.ts";
 import type { Defect, EndRunOutcome, RepoReport } from "./lib/types.ts";
@@ -69,6 +74,8 @@ const RETENTION_DAYS = 30;
 export interface TickReceipt {
   version: 1;
   runId: string;
+  /** The plugin release that ran the tick (`lib/release.ts`); absent from a receipt written before releases were named. */
+  release?: string;
   startedAt: string;
   finishedAt: string;
   completed: boolean;
@@ -133,6 +140,8 @@ export interface TickReceipt {
   outboundUnavailable?: boolean;
   /** Quotas the last hour's estimated spending empties before their refill horizon. */
   quotaRisks?: QuotaRisk[];
+  /** Callers outside the tick and its passes whose calls to a system all failed in the last hours. */
+  failingCallers?: FailingCaller[];
   repos: RepoReport[];
 }
 
@@ -165,6 +174,11 @@ export function newRunId(now: Temporal.Instant): string {
   return `${stamp}-${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
+/** A receipt as stored, in its file and in the line: it names the release that ran its tick, whichever path wrote it. */
+export function receiptJson(receipt: TickReceipt): string {
+  return JSON.stringify({ release: releaseOf(), ...receipt }, null, 2);
+}
+
 /** Write the receipt atomically; returns its path. */
 export function writeReceipt(receipt: TickReceipt, root = stateRoot()): string {
   const dir = join(receiptsRoot(root), receipt.startedAt.slice(0, 10));
@@ -173,7 +187,7 @@ export function writeReceipt(receipt: TickReceipt, root = stateRoot()): string {
   const temporary = `${path}.${crypto.randomUUID()}.tmp`;
   const fd = openSync(temporary, "wx", 0o600);
   try {
-    writeFileSync(fd, `${JSON.stringify(receipt, null, 2)}\n`);
+    writeFileSync(fd, `${receiptJson(receipt)}\n`);
     fsyncSync(fd);
   } finally {
     closeSync(fd);

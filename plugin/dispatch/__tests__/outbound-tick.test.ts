@@ -114,6 +114,57 @@ test("real ticks keep one low-quota need while it stands and withdraw it after b
   expect(await tick()).toEqual([]);
 });
 
+test("real ticks keep one calls-failing need for a caller outside the tick whose calls all fail", async () => {
+  const w = world();
+  current = w;
+  w.setConfig(
+    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\n`,
+  );
+  machineFile(w, [account(w, "a", "a@example.com")], {}, []);
+  const path = budgetPath(w.home);
+  const now = Date.now();
+  for (const credential of ["github:fresh-1", "github:fresh-2"])
+    for (let i = 0; i < 12; i += 1)
+      recordCall({
+        path,
+        system: "github",
+        credential,
+        operation: "GET /user",
+        caller: "skill:example.ts",
+        failure: "invalid",
+        durationMs: 10,
+        at: now,
+      });
+  // The tick's own failures are on its receipt, never a need of this kind.
+  for (let i = 0; i < 30; i += 1)
+    recordCall({
+      path,
+      system: "github",
+      credential: "github:fresh-3",
+      operation: "GET /user",
+      caller: "tick:before",
+      failure: "invalid",
+      durationMs: 10,
+      at: now,
+    });
+  const tick = async () => {
+    const r = await w.dispatch(["--json"]);
+    expectSpawnExit(r, 0);
+    return line(w).needs.filter((n) => n.cause === "calls-failing");
+  };
+  const first = await tick();
+  expect(first).toHaveLength(1);
+  expect(first[0]).toMatchObject({
+    repo: "host",
+    act: "Investigate",
+    target: "github skill:example.ts",
+  });
+  expect(first[0]?.reason).toContain("24 request(s)");
+  const again = await tick();
+  expect(again).toHaveLength(1);
+  expect(again[0]?.since).toBe(first[0]?.since);
+});
+
 test("Linear headers reach the ledger and the quota projection with the same measured points", async () => {
   const w = world();
   current = w;

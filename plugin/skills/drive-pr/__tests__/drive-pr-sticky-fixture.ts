@@ -25,9 +25,9 @@ const backlogEntries = [
   // No `reason`/`firstRound`: a plain "Beyond this PR" carry-forward. The
   // one-head grace keys on backlog MEMBERSHIP, so this entry must
   // get exactly the same treatment there as the wind-down-reasoned one above.
-  // `reason` is NOT retired: past that one head it still selects the separate,
-  // round-bounded exemption, which this entry does not get — the
-  // two rules are stacked, not one superseding the other.
+  // `reason` is NOT retired: past that one head it still selects the separate
+  // winddown exemption, which this entry does not get — the two rules are
+  // stacked, not one superseding the other.
   {
     fingerprint: "c773d9fdb7974e6d",
     path: "AGENTS.md",
@@ -39,7 +39,17 @@ const backlogEntries = [
   },
 ];
 
-export type StickyBacklog = boolean | "winddown-only" | "blocking-only";
+/**
+ * `held-not-blocking` carries the plain carry-forward entry alone, rendered in
+ * the not-blocking section the way the reviewer renders a held entry: behind
+ * its severity and category header, so no rendered field reproduces its
+ * fingerprint.
+ */
+export type StickyBacklog =
+  | boolean
+  | "winddown-only"
+  | "blocking-only"
+  | "held-not-blocking";
 
 export function stickyBody(
   opts: {
@@ -56,7 +66,9 @@ export function stickyBody(
       ? backlogEntries.slice(0, 1)
       : opts.backlog === "blocking-only"
         ? backlogEntries.map((entry) => ({ ...entry, blocking: true }))
-        : backlogEntries;
+        : opts.backlog === "held-not-blocking"
+          ? backlogEntries.slice(1)
+          : backlogEntries;
   const backlogBlob = Buffer.from(JSON.stringify(entries)).toString("base64");
   return [
     "<!-- ai-code-review -->",
@@ -76,13 +88,23 @@ export function stickyBody(
     "",
     ...(opts.backlog === false
       ? []
-      : [
-          "<details><summary>🗂️ <b>Beyond this PR</b></summary>",
-          "",
-          "- `AGENTS.md` — 🟡 **medium** (correctness · adjacent) — The Linear section claims…",
-          "",
-          "</details>",
-        ]),
+      : opts.backlog === "held-not-blocking"
+        ? [
+            "<details><summary>🗂️ <b>Beyond this PR</b> — 1 finding(s) for triage (not posted inline)</summary>",
+            "",
+            "Held out of the inline threads so this PR can converge — **not blocking**.",
+            "",
+            `- \`AGENTS.md\` — 🔵 **low** · 🏷️ category: docs (maintainability · adjacent) — ${backlogEntries[1]?.comment ?? ""}`,
+            "",
+            "</details>",
+          ]
+        : [
+            "<details><summary>🗂️ <b>Beyond this PR</b></summary>",
+            "",
+            "- `AGENTS.md` — 🟡 **medium** (correctness · adjacent) — The Linear section claims…",
+            "",
+            "</details>",
+          ]),
     "",
     `<!-- ai-reviewed-sha: ${sha} -->`,
     ...(opts.round === null

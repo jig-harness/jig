@@ -1,6 +1,7 @@
 import { statfsSync, type StatsFs } from "node:fs";
 import { dirname } from "node:path";
 import { failureFields } from "./errors.ts";
+import { unprovenAdmissionTokens } from "./gc-lock.ts";
 import {
   fixtureRegistryUsage,
   testFixtureRegistryRoot,
@@ -80,9 +81,43 @@ export function fixtureRegistryCheck(): DoctorCheck {
     : {
         id,
         status: "fail",
-        detail: `${detail} and exceeds its limit`,
-        fix: "Run jig gc --collect and inspect the receipt for retained registrations",
+        detail: `${detail} and exceeds its limit, so the scratch kind of jig gc fails a scheduled run that retires no registration`,
+        fix: "Run jig gc --kind scratch --collect and inspect the receipt for retained registrations; when no registered repository declares the scratch kind, add it to that repository's gc.kinds, declare its scratch prefixes, and refresh the installed collector first: collection intersects the base declaration recorded at install, and a machine that disables the kind skips it",
       };
+}
+
+/**
+ * Admission tokens gc will not remove and cannot show a live process holds:
+ * each one blocks the collection it guards until a person inspects it.
+ */
+export function admissionTokenCheck(
+  read: () => { path: string; why: string }[] = unprovenAdmissionTokens,
+): DoctorCheck {
+  const id = "gc:admission-tokens";
+  let tokens: { path: string; why: string }[];
+  try {
+    tokens = read();
+  } catch (error) {
+    log.debug("Cannot read gc's admission tokens", failureFields(error));
+    return {
+      id,
+      status: "fail",
+      detail: `Cannot read gc's admission tokens: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+  if (tokens.length === 0)
+    return {
+      id,
+      status: "pass",
+      detail: "no admission token stands that gc cannot judge",
+    };
+  const named = tokens.map((token) => token.why).join("; ");
+  return {
+    id,
+    status: "fail",
+    detail: `${tokens.length} admission token(s) block collection and gc cannot prove their holder gone: ${named}`,
+    fix: "Inspect each token's holder: a token with no record, one written before records named a host, or one from another host stays until a person has checked that no process of its holder can still run, and then removes the file; leave a token whose holder may still run",
+  };
 }
 
 export function fixtureCapacityFailure(reason: string): Failure | null {
@@ -92,7 +127,7 @@ export function fixtureCapacityFailure(reason: string): Failure | null {
   return count > limit
     ? failed(
         "fixture-registry-over-limit",
-        `${count} registrations exceed the limit of ${limit}. ${reason} Run jig gc --collect and inspect the receipt.`,
+        `${count} registrations exceed the limit of ${limit}. ${reason} Run jig gc --kind scratch --collect and inspect the receipt.`,
       ).failure
     : null;
 }

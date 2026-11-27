@@ -1,5 +1,5 @@
 /** Lifecycle evidence is separate from age and from authority to remove. */
-import type { Outcome as Result } from "../shared/outcome.ts";
+import type { Failure, Outcome as Result } from "../shared/outcome.ts";
 import type { ScheduledUpgrade } from "../runtime/upgrade-record.ts";
 
 export type KindName =
@@ -63,7 +63,7 @@ export interface Receipt {
   finishedAt: string;
   collect: boolean;
   completed: boolean;
-  kinds: { name: KindName; repository?: string; declaration: string }[];
+  kinds: KindRecord[];
   resources: ReceiptLine[];
   exitStatus: number;
   /** The plugin upgrade the launcher ran before this scheduled run (`runtime/upgrade-record.ts`). */
@@ -71,8 +71,28 @@ export interface Receipt {
   /** A run-level failure, such as refused configuration or unresolved fixture registry pressure. */
   failure?: RunFailure;
 }
+/**
+ * A kind a run evaluated. Its `status` is `run` unless the run's own
+ * verification failed the kind (the fixture registry's capacity fails
+ * `scratch`), then `failed` with the `reason`; the other kinds stay `run`.
+ * A receipt older than the field has none.
+ */
+export interface KindRecord {
+  name: KindName;
+  repository?: string;
+  declaration: string;
+  status?: "run" | "failed";
+  reason?: string;
+}
 /** A run's failure as its receipt records it: a stable code and its reason. */
 export interface RunFailure {
   code: string;
   reason: string;
+  /** The kind the failure belongs to, when it fails one kind and not the whole run. */
+  kind?: KindName;
+}
+/** A kind's failure found after the run evaluated every kind. */
+export interface KindFailure {
+  kind: KindName;
+  failure: Failure;
 }

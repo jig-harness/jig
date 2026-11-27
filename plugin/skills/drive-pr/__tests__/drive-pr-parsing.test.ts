@@ -139,7 +139,6 @@ import {
   parseMarkerPayload,
   reviewerPosition,
   severityOf,
-  WINDDOWN_EXEMPTION_ROUNDS,
   winddownFingerprintsOf,
 } from "../scripts/summary-findings";
 import {
@@ -1322,120 +1321,92 @@ describe("summary-findings parsing", () => {
     const found = collectAddressed(sources, {
       reviewerPosition: () => "past",
       winddownDeferred: new Set(["wd1"]),
-      currentRound: 8,
     });
     expect([...found]).toEqual(["wd1"]);
   });
 
-  it("EXPIRES a winddown-deferred marker once the exemption bound is past", () => {
-    // The other half of the same missing signal. Because the reviewer forwards
-    // these entries without re-verifying them, a later round that REVERTS the
-    // fix re-emits the identical fingerprint under the identical reason — so
-    // an unbounded exemption suppresses a genuinely live finding forever, and
-    // drive-status.ts converges over it. Elapsed rounds are the only evidence
-    // available on this side, so the marker names the round it was posted in
-    // and the exemption lapses WINDDOWN_EXEMPTION_ROUNDS later.
-    const sources = [
-      {
-        body: "**accepted** — fixed.\n<!-- drive-pr-addressed: wd1@aaaa111#7 -->",
-        authorAssociation: "OWNER",
-      },
-    ];
-    const at = (currentRound: number) => [
-      ...collectAddressed(sources, {
-        reviewerPosition: () => "past",
-        winddownDeferred: new Set(["wd1"]),
-        currentRound,
-      }),
-    ];
-    // The LAST round the marker still holds, and the first one it does not.
-    // Written as arithmetic on the constant rather than as literals so the two
-    // move together if the bound is ever retuned — the point under test is the
-    // boundary, not the number 3.
-    expect(at(7 + WINDDOWN_EXEMPTION_ROUNDS)).toEqual(["wd1"]);
-    expect(at(7 + WINDDOWN_EXEMPTION_ROUNDS + 1)).toEqual([]);
+  it.each([3, 4, 10, 50])(
+    "keeps an answered winddown-deferred marker standing %i rounds after its answer",
+    (elapsed) => {
+      // The reviewer forwards a non-blocking wind-down entry without
+      // re-verifying it, so its re-emission on a later round says nothing new.
+      // An answer posted in round 7 stays the answer: the finding is neither
+      // re-asked (`collectAddressed`) nor reposted at the same head
+      // (`findExactMarkers`, which the answer script's reconciliation calls),
+      // however many rounds the sticky has moved on since.
+      const fingerprint = "b9a7a18089043564";
+      const body = stickyBody({ round: STICKY_ROUND + elapsed });
+      const sources = [
+        {
+          body: `**accepted** — fixed.\n<!-- drive-pr-addressed: ${fingerprint}@${HEAD}#${STICKY_ROUND} -->`,
+          authorAssociation: "OWNER",
+        },
+      ];
+      const winddownDeferred = winddownFingerprintsOf(body);
+      expect([...winddownDeferred]).toEqual([fingerprint]);
+      expect([
+        ...collectAddressed(sources, {
+          reviewerPosition: () => "past",
+          winddownDeferred,
+        }),
+      ]).toEqual([fingerprint]);
+      expect([
+        ...findExactMarkers(sources, new Set([fingerprint]), HEAD),
+      ]).toEqual([fingerprint]);
+    },
+  );
+
+  it("still asks a BLOCKING backlog entry that shares an answered winddown fingerprint", () => {
+    // `blocking: true` is the reviewer saying the entry holds the PR, whatever
+    // its reason. It is outside the winddown set, so an earlier answer for the
+    // same fingerprint does not survive the reviewer reading past it, and the
+    // entry is open work again.
+    const blockingBody = stickyBody({ backlog: "blocking-only" });
+    const fingerprint = "b9a7a18089043564";
+    const winddownDeferred = winddownFingerprintsOf(blockingBody);
+    expect([...winddownDeferred]).toEqual([]);
+    const addressed = collectAddressed(
+      [
+        {
+          body: `**accepted** — fixed.\n<!-- drive-pr-addressed: ${fingerprint}@${HEAD}#${STICKY_ROUND} -->`,
+          authorAssociation: "OWNER",
+        },
+      ],
+      { reviewerPosition: () => "past", winddownDeferred },
+    );
+    expect([...addressed]).toEqual([]);
+    const r = classify({
+      pr: 1,
+      stickyCommentId: 9,
+      stickyBody: blockingBody,
+      anchoredKeys: [".claude/agents/review-arbiter.md"],
+      addressedFingerprints: addressed,
+      reviewedSha: HEAD,
+    });
+    expect(r.unaddressed.map((f) => f.fingerprint)).toContain(fingerprint);
   });
 
-  it("withholds the exemption from a FUTURE or unsafe round instead of computing a negative gap", () => {
-    // No producer ever stamps a round ahead of `currentRound` — but the round
-    // rides in on hand-writable marker text, and `currentRound - round`
-    // going negative is `<= WINDDOWN_EXEMPTION_ROUNDS` for ANY negative value.
-    // Left unchecked, a marker naming a round the reviewer hasn't reached yet
-    // stays exempt until `currentRound` catches up past `round +
-    // WINDDOWN_EXEMPTION_ROUNDS` — permanent in practice for a large enough
-    // round — unbounded suppression.
-    const sources = [
-      {
-        body: "**accepted** — fixed.\n<!-- drive-pr-addressed: wd1@aaaa111#999999 -->",
-        authorAssociation: "OWNER",
-      },
-    ];
-    expect([
-      ...collectAddressed(sources, {
-        reviewerPosition: () => "past",
-        winddownDeferred: new Set(["wd1"]),
-        currentRound: 8,
-      }),
-    ]).toEqual([]);
-    // A digit run past Number.MAX_SAFE_INTEGER must fail closed the same way,
-    // rather than exempting on an imprecise/rounded comparison.
-    const unsafe = [
-      {
-        body: `**accepted** — fixed.\n<!-- drive-pr-addressed: wd1@aaaa111#${"9".repeat(30)} -->`,
-        authorAssociation: "OWNER",
-      },
-    ];
-    expect([
-      ...collectAddressed(unsafe, {
-        reviewerPosition: () => "past",
-        winddownDeferred: new Set(["wd1"]),
-        currentRound: 8,
-      }),
-    ]).toEqual([]);
-  });
-
-  it("withholds the exemption from a marker carrying no round, and from a roundless sticky", () => {
-    // Both directions fail CLOSED. A roundless marker is either hand-written or
-    // predates the bound; a sticky with no `ai-review-round` leaves nothing to
-    // measure elapsed rounds against. Either way the exemption cannot be
-    // bounded, and an unbounded one is the defect — so the finding goes back on
-    // the unaddressed list, which costs one re-answer and re-stamps a round.
-    const winddownDeferred = new Set(["wd1"]);
-    const roundless = [
-      {
-        body: "**accepted** — fixed.\n<!-- drive-pr-addressed: wd1@aaaa111 -->",
-        authorAssociation: "OWNER",
-      },
-    ];
-    expect([
-      ...collectAddressed(roundless, {
-        reviewerPosition: () => "past",
-        winddownDeferred,
-        currentRound: 8,
-      }),
-    ]).toEqual([]);
+  it("honours a winddown marker that carries no round", () => {
+    // The round records when an answer was posted and proves nothing about
+    // which finding it answers: the fingerprint and the dated SHA do that. A
+    // roundless marker (a roundless sticky produces one) is therefore honoured
+    // on the same terms as a rounded one.
     expect([
       ...collectAddressed(
         [
           {
-            body: "**accepted** — fixed.\n<!-- drive-pr-addressed: wd1@aaaa111#7 -->",
+            body: "**accepted** — fixed.\n<!-- drive-pr-addressed: wd1@aaaa111 -->",
             authorAssociation: "OWNER",
           },
         ],
-        {
-          reviewerPosition: () => "past",
-          winddownDeferred,
-          currentRound: null,
-        },
+        { reviewerPosition: () => "past", winddownDeferred: new Set(["wd1"]) },
       ),
-    ]).toEqual([]);
+    ]).toEqual(["wd1"]);
   });
 
   it("does not let the round suffix restore an expired NON-winddown marker", () => {
-    // The round is read only inside the exemption. A fingerprint the reviewer
-    // does re-verify keeps the full position expiry no matter how fresh its
-    // marker is, or the bound would become a general-purpose grace period on
-    // every fix-dependent answer.
+    // No rule reads the round. A fingerprint the reviewer does re-verify keeps
+    // the full position expiry no matter how fresh its marker is.
     const found = collectAddressed(
       [
         {
@@ -1446,7 +1417,6 @@ describe("summary-findings parsing", () => {
       {
         reviewerPosition: () => "past",
         winddownDeferred: new Set(["wd1"]),
-        currentRound: 8,
       },
     );
     expect([...found]).toEqual([]);
@@ -1618,7 +1588,7 @@ describe("summary-findings parsing", () => {
   it("a winddown backlog finding answered at a reviewed head stays addressed end to end", () => {
     // The half of the same wiring, at the position the one-head grace
     // above no longer covers: the winddown set is read off the sticky's own
-    // backlog blob, the marker is dated AND rounded, and the reviewer has read
+    // backlog blob, the marker is dated, and the reviewer has read
     // PAST that head while still carrying the entry forward. The sibling entry,
     // never answered, must remain the only unaddressed finding.
     const body = stickyBody();
@@ -1635,11 +1605,7 @@ describe("summary-findings parsing", () => {
           authorAssociation: "OWNER",
         },
       ],
-      {
-        reviewerPosition: () => "past",
-        winddownDeferred,
-        currentRound: STICKY_ROUND,
-      },
+      { reviewerPosition: () => "past", winddownDeferred },
     );
     const r = classify({
       pr: 1,
@@ -1695,13 +1661,13 @@ describe("summary-findings parsing", () => {
       ).toString("base64")} -->`,
     ].join("\n");
 
-    // Both sets drop it — the grace and the round budget are stacked rules, so
-    // closing only one leaves the other honouring the same marker.
+    // Both sets drop it — the grace and the winddown exemption are stacked
+    // rules, so closing only one leaves the other honouring the same marker.
     expect([...backlogFingerprintsOf(body)]).toEqual([]);
     expect([...winddownFingerprintsOf(body)]).toEqual([]);
 
-    // And end to end: with those sets, neither `at` nor a within-budget round
-    // retires the finding.
+    // And end to end: with those sets, neither `at` nor the winddown
+    // exemption retires the finding.
     const sources = [
       {
         body: `**accepted** — fixed.\n<!-- drive-pr-addressed: ${dual}@${HEAD}#7 -->`,
@@ -1713,7 +1679,6 @@ describe("summary-findings parsing", () => {
         reviewerPosition: () => "at",
         backlogFingerprints: backlogFingerprintsOf(body),
         winddownDeferred: winddownFingerprintsOf(body),
-        currentRound: 7,
       }),
     ]).toEqual([]);
   });
@@ -1721,26 +1686,17 @@ describe("summary-findings parsing", () => {
   it("refuses the winddown exemption for a marker SHA git cannot resolve", () => {
     // The exemption ignores POSITION by design, but "the marker names no
     // commit this repository has" is not a position: folded into `past`, a
-    // hand-written marker would ride the exemption for its entire round
-    // budget. `unknown` separates the two, and only the position half is
-    // ignored.
-    //
-    // The marker carries a `#round` INSIDE the budget, and that is what makes
-    // the probe bind: `exemptFromExpiry` fails closed on a roundless marker all
-    // by itself, so an undated one passes this test whether the `unknown` gate
-    // exists or not, and mutating the gate out would leave it green. The
-    // markers below differ ONLY in position, so the gate is the sole thing
-    // separating their outcomes.
+    // hand-written marker would ride the exemption indefinitely. `unknown`
+    // separates the two, and only the position half is ignored. The markers
+    // below differ ONLY in position, so the gate is the sole thing separating
+    // their outcomes.
     const sources = (sha: string) => [
       {
         body: `**accepted** — fixed.\n<!-- drive-pr-addressed: wd1@${sha}#7 -->`,
         authorAssociation: "OWNER",
       },
     ];
-    const opts = {
-      winddownDeferred: new Set(["wd1"]),
-      currentRound: 8,
-    };
+    const opts = { winddownDeferred: new Set(["wd1"]) };
     expect([
       ...collectAddressed(sources(BASE), {
         ...opts,
@@ -2025,68 +1981,6 @@ describe("summary-findings parsing", () => {
       expect([...findExactMarkers(sources, new Set(["fp1"]), "sha1")]).toEqual(
         [],
       );
-    });
-
-    it("lets a STALE winddown-deferred marker be reposted at the same SHA with a fresh round", () => {
-      // The reviewer forwards a winddown-deferred backlog entry WITHOUT a new
-      // commit, so a legitimate re-answer after `collectAddressed` expires the
-      // old marker reuses the exact same `pushedSha`. Treating that stale
-      // marker as an exact match would make `answer-summary-finding.ts` skip
-      // the repost forever — the finding stays unaddressed with nothing left
-      // to refresh it. Posted in round 7, exemption window is
-      // WINDDOWN_EXEMPTION_ROUNDS (3): still a match through round 10, a
-      // refresh target from round 11 on.
-      const sources = [
-        {
-          body: "**accepted** — fixed.\n<!-- drive-pr-addressed: fp1@sha1#7 -->",
-          authorAssociation: "OWNER",
-        },
-      ];
-      const winddownDeferred = new Set(["fp1"]);
-      expect([
-        ...findExactMarkers(sources, new Set(["fp1"]), "sha1", {
-          winddownDeferred,
-          currentRound: 7 + WINDDOWN_EXEMPTION_ROUNDS,
-        }),
-      ]).toEqual(["fp1"]);
-      expect([
-        ...findExactMarkers(sources, new Set(["fp1"]), "sha1", {
-          winddownDeferred,
-          currentRound: 7 + WINDDOWN_EXEMPTION_ROUNDS + 1,
-        }),
-      ]).toEqual([]);
-      // A NON-winddown fingerprint in the exact same shape must still match
-      // unconditionally — the crash-recovery guarantee is untouched for the
-      // common case, which never legitimately reposts at the same SHA.
-      expect([
-        ...findExactMarkers(sources, new Set(["fp1"]), "sha1", {
-          winddownDeferred: new Set(["other"]),
-          currentRound: 7 + WINDDOWN_EXEMPTION_ROUNDS + 1,
-        }),
-      ]).toEqual(["fp1"]);
-    });
-    it("keeps the ordinary unconditional match for a winddown fingerprint when the sticky carries NO round", () => {
-      // With no `opts.currentRound`, `exemptFromExpiry` fails closed to "not
-      // exempt" unconditionally — if that alone triggered the stale-refresh
-      // path, EVERY same-SHA winddown marker would read as stale, including
-      // one this very pass posted moments ago (crash recovery). Worse,
-      // `answer-summary-finding.ts` stamps no round on a roundless sticky
-      // either, so the "fresh" repost would be textually identical to the
-      // marker just posted — an infinite loop of duplicate comments, not a
-      // one-time refresh. `currentRound: null` must retain the ordinary
-      // unconditional match instead.
-      const sources = [
-        {
-          body: "**accepted** — fixed.\n<!-- drive-pr-addressed: fp1@sha1 -->",
-          authorAssociation: "OWNER",
-        },
-      ];
-      expect([
-        ...findExactMarkers(sources, new Set(["fp1"]), "sha1", {
-          winddownDeferred: new Set(["fp1"]),
-          currentRound: null,
-        }),
-      ]).toEqual(["fp1"]);
     });
   });
   it("excludes a body finding whose path DID receive an inline comment", () => {

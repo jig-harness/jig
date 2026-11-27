@@ -66,6 +66,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       (v) => v === undefined || v === null || typeof v === "number",
     ) &&
     batchShape(value.batchItems) &&
+    [undefined, "hold", "start"].includes(value.missingPriority as string) &&
     (value.stewardDecision === undefined ||
       Number.isSafeInteger(value.stewardDecision)) &&
     [
@@ -182,5 +183,36 @@ function optionalProvider(value: Record<string, unknown>): boolean {
     typeof p.provider === "string" &&
     typeof p.identity === "string" &&
     (p.baseUrl === null || typeof p.baseUrl === "string")
+  );
+}
+
+export function isWorkspace(value: unknown): boolean {
+  return (
+    value === null ||
+    (isMapping(value) &&
+      typeof value.id === "string" &&
+      typeof value.path === "string" &&
+      (value.branch === undefined || typeof value.branch === "string"))
+  );
+}
+
+export function hasStrings(
+  value: Record<string, unknown>,
+  keys: string[],
+): boolean {
+  return keys.every((k) => typeof value[k] === "string");
+}
+
+/** What a record names: a pull request for a drive or a follow-up, an item for a pickup. */
+export function namesTarget(value: Record<string, unknown>): boolean {
+  if (value.action === "steward")
+    return value.pr === null && value.item === null;
+  if (value.action === "pickup")
+    return typeof value.item === "string" && value.item !== "";
+  return (
+    (value.action === "rearm" ||
+      value.action === "takeover" ||
+      value.action === "followup") &&
+    typeof value.pr === "number"
   );
 }

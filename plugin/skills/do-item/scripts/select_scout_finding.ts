@@ -1,13 +1,17 @@
 #!/usr/bin/env bun
 /**
- * Select the newest `## Scout Findings` comment on a Linear issue and decide
- * whether to reuse it or re-run scouts — the freshness procedure Step 2 of
- * SKILL.md describes.
+ * Select the newest `## Scout Findings` comment of a trusted author on an
+ * issue and decide whether to reuse it or re-run scouts — the freshness
+ * procedure Step 2 of SKILL.md describes.
  *
  * Type: Decision
  * Input: JSON array of comments on stdin, each `{ body, created_at? |
- *   createdAt? }` — Linear's cache path supplies snake_case, `list_comments`
- *   supplies camelCase; either is accepted.
+ *   createdAt?, author?, authorAssociation? }` — a launcher's cache supplies
+ *   snake_case, `list_comments` supplies camelCase; either timestamp is
+ *   accepted. A findings comment counts only when its `authorAssociation`
+ *   (the tracker's word for what the author may do) is one
+ *   `shared/trusted-authors.ts` trusts; any other, or none, is reported in
+ *   `untrusted` and ignored.
  * Output: JSON `ScoutFindingsDecision` on stdout.
  *
  * Usage:
@@ -30,11 +34,18 @@ import {
 } from "../../../shared/json-input.ts";
 import { parseArgs, runEntry } from "./lib/cli.ts";
 import { currentMs, parseMs } from "../../../shared/time.ts";
+import { isTrustedAuthor } from "../../../shared/trusted-authors.ts";
 
 export interface ScoutFindingsComment {
   body: string;
   created_at?: string;
   createdAt?: string;
+  /** The author's login, as the tracker names it. */
+  author?: string;
+  /** What the tracker vouches for about the author (`MEMBER`, `NONE`, …). */
+  authorAssociation?: string;
+  /** True when the signed-in credential wrote the comment. */
+  self?: boolean;
 }
 
 /** Runtime guard for one parsed-JSON array element — see the `main()` call site. */
@@ -46,7 +57,11 @@ export function isScoutFindingsCommentShape(
   return (
     typeof v.body === "string" &&
     (v.created_at === undefined || typeof v.created_at === "string") &&
-    (v.createdAt === undefined || typeof v.createdAt === "string")
+    (v.createdAt === undefined || typeof v.createdAt === "string") &&
+    (v.author === undefined || typeof v.author === "string") &&
+    (v.authorAssociation === undefined ||
+      typeof v.authorAssociation === "string") &&
+    (v.self === undefined || typeof v.self === "boolean")
   );
 }
 
@@ -58,6 +73,8 @@ export interface ScoutFindingsDecision {
   selectedIndex: number | null;
   /** The git hash extracted from the selected comment's heading, or null if absent/unparsable. */
   selectedHash: string | null;
+  /** Indexes of the findings comments left out because their author is not trusted, in input order. */
+  untrusted: number[];
   reason: string;
 }
 
@@ -66,6 +83,19 @@ const HEADING_RE = /^##\s*scout findings\s*\(([0-9a-f]{4,40})\)/i;
 
 function isScoutFindingsComment(body: string): boolean {
   return /^##\s*scout findings\b/i.test(body.trim());
+}
+
+/**
+ * Whether the tracker vouches for the comment's author, by the one rule the
+ * loop's other readers use. A comment that names no association (a cache
+ * that carries none, a tool that drops it) is not vouched for.
+ */
+function isTrustedComment(c: ScoutFindingsComment): boolean {
+  return isTrustedAuthor(
+    c.author ?? "",
+    c.authorAssociation ?? "",
+    c.self === true ? (c.author ?? "") : null,
+  );
 }
 
 /**
@@ -128,14 +158,45 @@ function hashesMatch(a: string, b: string): boolean {
   return shorter.length >= MIN_SAFE_HASH_LEN && longer.startsWith(shorter);
 }
 
+/**
+ * The findings comments among `comments`, each with its index and ordering
+ * time, split by who wrote them. Anyone who can comment can open a comment
+ * with the heading, so only a trusted author's is a candidate; the others are
+ * listed by index and take no part in the choice.
+ */
+function splitFindings(comments: readonly ScoutFindingsComment[]) {
+  const findings = comments
+    .map((c, index) => ({ c, index, orderMs: parseOrderingMs(c) }))
+    .filter((entry) => isScoutFindingsComment(entry.c.body));
+  return {
+    candidates: findings.filter((entry) => isTrustedComment(entry.c)),
+    untrusted: findings
+      .filter((entry) => !isTrustedComment(entry.c))
+      .map((entry) => entry.index),
+  };
+}
+
+/** Why no findings comment was selected, naming the case where only untrusted ones exist. */
+function noFindingReason(untrusted: readonly number[]): string {
+  return untrusted.length === 0
+    ? "No findings comment"
+    : "No findings comment from a trusted author";
+}
+
+/** Why a selected comment whose hash differs is stale. */
+function staleWhy(freshnessMs: number | null, hash: string | null): string {
+  if (freshnessMs !== null) return "timestamp is stale (>= 24h)";
+  return hash === null
+    ? "no parsable timestamp and no readable hash heading"
+    : "no parsable timestamp";
+}
+
 export function selectScoutFinding(
   comments: readonly ScoutFindingsComment[],
   currentHash: string,
   now: number = currentMs(),
 ): ScoutFindingsDecision {
-  const candidates = comments
-    .map((c, index) => ({ c, index, orderMs: parseOrderingMs(c) }))
-    .filter((entry) => isScoutFindingsComment(entry.c.body));
+  const { candidates, untrusted } = splitFindings(comments);
 
   // Newest by raw (ordering) timestamp, future values included — see
   // `parseOrderingMs`. Missing/unparsable timestamps sort as oldest, so they
@@ -153,7 +214,8 @@ export function selectScoutFinding(
       action: "run",
       selectedIndex: null,
       selectedHash: null,
-      reason: "No findings comment",
+      untrusted,
+      reason: noFindingReason(untrusted),
     };
   }
 
@@ -187,6 +249,7 @@ export function selectScoutFinding(
       action: "reuse",
       selectedIndex: selected.index,
       selectedHash,
+      untrusted,
       reason: `Reuse: ${why}`,
     };
   }
@@ -195,22 +258,18 @@ export function selectScoutFinding(
       action: "rerun",
       selectedIndex: selected.index,
       selectedHash,
+      untrusted,
       reason:
         "Re-run: selected comment looks fresh, but another comment has no " +
         "parsable timestamp and could actually be the newest",
     };
   }
-  const why =
-    freshnessMs === null
-      ? selectedHash === null
-        ? "no parsable timestamp and no readable hash heading"
-        : "no parsable timestamp"
-      : "timestamp is stale (>= 24h)";
   return {
     action: "rerun",
     selectedIndex: selected.index,
     selectedHash,
-    reason: `Re-run: different hash (or none readable) and ${why}`,
+    untrusted,
+    reason: `Re-run: different hash (or none readable) and ${staleWhy(freshnessMs, selectedHash)}`,
   };
 }
 
@@ -265,7 +324,8 @@ async function main(): Promise<number> {
   if (badIndex !== -1) {
     console.error(
       `stdin[${badIndex}] is not a valid comment: expected an object with a ` +
-        'string "body" and, if present, a string "created_at"/"createdAt"',
+        'string "body" and, if present, a string "created_at"/"createdAt", ' +
+        '"author" and "authorAssociation"',
     );
     return 1;
   }
