@@ -232,6 +232,70 @@ export function cwdHolders(run: ProbeRun, top: string): CwdAnswer {
 }
 
 /**
+ * Prints each pid among its arguments, after the first two, whose environment
+ * holds the first argument as a whole entry, whose controlling terminal
+ * (field 7 of `/proc/<pid>/stat`) is none and which started no later than the
+ * second argument (seconds since the epoch, from its start time in field 22
+ * and the boot time in `/proc/stat`); prints nothing on a host without
+ * `/proc`. Run as `sh -c <probe> sh <entry> <latest-start> <pid>...`.
+ */
+const DETACHED_CARRIER_PROBE = `[ -e /proc/self/environ ] || exit 0
+entry=$1
+latest=$2
+shift 2
+hz=$(getconf CLK_TCK 2>/dev/null || echo 100)
+boot=$(awk '$1 == "btime" { print $2 }' /proc/stat 2>/dev/null)
+[ -n "$boot" ] || exit 0
+for p do
+  tr '\\0' '\\n' < "/proc/$p/environ" 2>/dev/null | grep -qxF -e "$entry" || continue
+  fields=$(awk '{ s = $0; sub(/.*\\) /, "", s); split(s, f, " "); print f[5], f[20] }' "/proc/$p/stat" 2>/dev/null)
+  tty=\${fields%% *}
+  started=\${fields##* }
+  [ "$tty" = 0 ] || continue
+  [ -n "$started" ] || continue
+  [ $((boot + started / hz)) -le "$latest" ] && printf '%s\\n' "$p"
+done
+exit 0`;
+
+/**
+ * The pids among `pids` that were started with the environment entry
+ * `entry` (`NAME=value`), have no controlling terminal and started no later
+ * than `latestStartSec` (seconds since the epoch), read from `/proc` in one
+ * probe: a daemon keeps the environment it started with when it leaves its
+ * process group or session, while a shell a person types into has a
+ * terminal. The start bound keeps work a person started later, which
+ * inherited the entry from such a daemon, out of the answer. A process whose
+ * environment or status cannot be read (a host without `/proc`, a process
+ * that ended or one its owner may not inspect) is not among them, and
+ * neither is any when the probe fails.
+ */
+export async function detachedCarriers(
+  run: AsyncProbeRun,
+  pids: string[],
+  entry: string,
+  latestStartSec: number,
+): Promise<Set<string>> {
+  const numeric = pids.filter((pid) => /^\d+$/.test(pid));
+  if (numeric.length === 0) return new Set();
+  const read = await run(
+    [
+      "sh",
+      "-c",
+      DETACHED_CARRIER_PROBE,
+      "sh",
+      entry,
+      String(Math.floor(latestStartSec)),
+      ...numeric,
+    ],
+    "/",
+  );
+  if (read.status !== 0) return new Set();
+  return new Set(
+    read.stdout.split("\n").filter((pid) => numeric.includes(pid)),
+  );
+}
+
+/**
  * One scan of this user's processes' working directories, read once and
  * asked about any number of trees with `holdersIn`: the parsed listing and
  * the first reason a process whose directory could not be read may still be

@@ -9,6 +9,7 @@ import {
 } from "../../../shared/agent-harness/index.ts";
 import { isMapping } from "../../../shared/config-layers.ts";
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
+import { HOOK_WORKTREE_ENV } from "../../../shared/worktree-hooks.ts";
 
 export interface ProcessSettings {
   path?: string;
@@ -31,6 +32,8 @@ const BLOCKED = new Set([
   "CODEX_HOME",
   "CLAUDECODE",
   "JIG_LAUNCH",
+  // A pass carrying it would be read as a worktree hook's leftover.
+  HOOK_WORKTREE_ENV,
   "PATH",
   "BASH_ENV",
   "ENV",
