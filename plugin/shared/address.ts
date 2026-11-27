@@ -151,6 +151,21 @@ export function parseAddress(
   return key.ok ? ok({ station, repo, key: key.value }) : key;
 }
 
+/** The empty key of a station that names its repository alone; malformed when one was written. */
+function noKey(
+  input: string,
+  station: Station,
+  inline: string | null,
+  second: string | undefined,
+): Outcome<string, "malformed"> {
+  return inline === null && second === undefined
+    ? ok("")
+    : malformed(
+        input,
+        `a ${station} address names its repository and no key (${station}@owner/name)`,
+      );
+}
+
 /** The key an address names, inline (`inline`) or as a second argument (`second`); empty for a station that takes none. */
 function writtenKey(
   input: string,
@@ -161,12 +176,7 @@ function writtenKey(
   if (inline !== null && second !== undefined)
     return malformed(input, "it names its key twice");
   if (STATIONS[station].key === "none")
-    return inline === null && second === undefined
-      ? ok("")
-      : malformed(
-          input,
-          `a ${station} address names its repository and no key (${station}@owner/name)`,
-        );
+    return noKey(input, station, inline, second);
   const key = (inline ?? second ?? "").trim();
   if (key === "") return malformed(input, "it names no key");
   if (!RAW_KEY.test(key))

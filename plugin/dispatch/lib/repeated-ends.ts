@@ -222,6 +222,21 @@ function endedBackoff(
   };
 }
 
+/** What the tick's note says about head reviews it could not read; empty when it read them. */
+function unreadReviews(pr: DrivenPr): string {
+  return typeof pr.evidence.headReviewsUnread === "string"
+    ? ` (its head's reviews did not read this tick: ${pr.evidence.headReviewsUnread})`
+    : "";
+}
+
+/** The observations that end a `NOT_SETTLED` wait before its backoff does. */
+function awaitedSignals(pr: DrivenPr, last: ReadRecord): string {
+  return (recordedState(last) ?? pr.evidence.probeState) ===
+    "MERGEABILITY_UNKNOWN"
+    ? "a review of that head, a new head or settled mergeability"
+    : "a review of that head or a new head";
+}
+
 /**
  * Each `NOT_SETTLED` ledger whose latest re-arms stopped `NOT_SETTLED` again
  * at the head it shows now: waiting out its backoff under the cap unless the
@@ -267,17 +282,9 @@ export function settleRepeatedNotSettled(
     const until = notBefore(last, run.length, settings.backoffMs);
     if (nowMs !== undefined && parseMs(until) <= nowMs)
       return endedBackoff(pr, stopped, until, evidence);
-    const unread =
-      typeof pr.evidence.headReviewsUnread === "string"
-        ? ` (its head's reviews did not read this tick: ${pr.evidence.headReviewsUnread})`
-        : "";
-    const signals =
-      (recordedState(last) ?? pr.evidence.probeState) === "MERGEABILITY_UNKNOWN"
-        ? "a review of that head, a new head or settled mergeability"
-        : "a review of that head or a new head";
     return {
       ...pr,
-      why: `${pr.why}; ${stopped}, so it is not re-armed until ${until}, or until ${signals} arrives${unread}`,
+      why: `${pr.why}; ${stopped}, so it is not re-armed until ${until}, or until ${awaitedSignals(pr, last)} arrives${unreadReviews(pr)}`,
       evidence,
       retryAfter: until,
     };

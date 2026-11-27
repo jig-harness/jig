@@ -158,11 +158,8 @@ export async function applySteward(
     report.launches.push(openedWorkspace.outcome);
     return skip(openedWorkspace.outcome.detail);
   }
-  const vendor = admittedVendor(slots.account);
-  const runtime = harnessFor(vendor).runtime;
-  const models = parseRoutingModels(opened.values, "steward");
-  const family = models[runtime]?.complex;
-  if (family === undefined) {
+  const model = stewardModel(opened.values, slots.account);
+  if (model === undefined) {
     report.launches.push(
       waits(action, "the complex tier has no model for the admitted runtime"),
     );
@@ -171,8 +168,8 @@ export async function applySteward(
   const record = stewardRecord(state, observation, {
     id,
     account: slots.account,
-    vendor,
-    model: runtimeModel(runtime, family),
+    vendor: model.vendor,
+    model: model.model,
     facts: hash,
     workspace: openedWorkspace.workspace,
     mark: named.mark,
@@ -181,12 +178,35 @@ export async function applySteward(
   report.launches.push(launch);
   const kept = state.records.some((r) => r.record.id === record.id);
   report.steward = stewardStatus(launch, kept, counts, hash, request);
-  if (kept && request !== null)
-    takeStewardRequest(
-      request,
-      requestRow(request, repo.slug, { started: record.id }),
-      state.root,
-    );
+  if (kept) takeRequestWith(state, repo.slug, request, record.id);
+}
+
+/** The vendor and complex-tier model the admitted account runs the steward on; `undefined` when the runtime has none. */
+function stewardModel(
+  values: RepoObservation["opened"]["values"],
+  account: Parameters<typeof admittedVendor>[0],
+): { vendor: ReturnType<typeof admittedVendor>; model: string } | undefined {
+  const vendor = admittedVendor(account);
+  const runtime = harnessFor(vendor).runtime;
+  const family = parseRoutingModels(values, "steward")[runtime]?.complex;
+  return family === undefined
+    ? undefined
+    : { vendor, model: runtimeModel(runtime, family) };
+}
+
+/** Takes the request a started pass answers, with the pass named. */
+function takeRequestWith(
+  state: ApplyState,
+  slug: string,
+  request: StewardRequest | null,
+  started: string,
+): void {
+  if (request === null) return;
+  takeStewardRequest(
+    request,
+    requestRow(request, slug, { started }),
+    state.root,
+  );
 }
 
 /**
