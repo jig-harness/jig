@@ -8,13 +8,16 @@
  * faults: the tick releases their markers only while the host's health check
  * passes (`rerun-gate.ts`), and `failures.rerun_died: 0` turns them off.
  *
- * A startup that stopped is recognised for every stage whose Claude Code
- * session the wrapper starts (`failedStartup`), and the wrapper walls its
- * account: until the reset a usage notice states (`startupReset`), else for
- * `wall_backoff`. A pickup stopped by a notice is wanted again once a wall
- * keeps it off that account (`pickup-hold.ts`).
+ * A startup that stopped is recognised for every stage whose session the
+ * wrapper starts (`failedStartup`), Claude Code's by its transcripts and
+ * Codex's by its rollouts, and the wrapper walls its account: until the reset
+ * a usage notice states (`startupReset`), else for `wall_backoff`. A pickup
+ * stopped by a notice is wanted again once a wall keeps it off that account
+ * (`pickup-hold.ts`). Every pickup the tick starts is such a headless pass;
+ * an interactive pickup an earlier release started runs in its terminal,
+ * whose exit the wrapper never sees, so no startup of one is read.
  */
-import { statSync } from "node:fs";
+import { type Dirent, statSync } from "node:fs";
 import { harnessNamed } from "../../shared/agent-harness/index.ts";
 import { basename, join } from "node:path";
 import {
@@ -75,6 +78,74 @@ function transcriptFiles(configDir: string, deadline: number): string[] | null {
     return complete;
   });
   return read && complete ? files : null;
+}
+
+/**
+ * Whether a harness that prints its session id (Codex) left no transcript of
+ * the session: none printed, the session never reached its header; one
+ * printed, the harness's own lookup (Codex's rollout under its home's day
+ * directories) finds none in a complete walk. A link, an unreadable
+ * directory or a walk the lookup cut short withholds the retry.
+ */
+function printedSessionAbsent(
+  record: LaunchRecord,
+  started: number,
+  output: string,
+): boolean {
+  const harness = harnessNamed(record.vendor);
+  if (harness === null) return false;
+  const session = harness.sessionIdIn(output);
+  if (session === null) return true;
+  let complete = true;
+  const walk = (dir: string, onEntry: (entry: Dirent) => boolean) => {
+    const read = forEachDirEntry(dir, (entry) => {
+      // A stop is a link this walk does not follow, the transcript found, or the lookup's own bound.
+      if (!entry.isSymbolicLink() && onEntry(entry)) return true;
+      complete = false;
+      return false;
+    });
+    if (!read) complete = false;
+    return read;
+  };
+  try {
+    const path = harness.transcript({
+      configDir: record.configDir,
+      session,
+      startedMs: started,
+      walk,
+    });
+    return path === null && complete;
+  } catch (error) {
+    swallow(error, "the session's transcript absence could not be confirmed");
+    return false;
+  }
+}
+
+/**
+ * Whether the wrapper reads a stopped startup of the harness's sessions:
+ * one whose sign-in it probes (Claude Code), or one that prints its session
+ * id, whose transcript its own lookup finds (Codex).
+ */
+export function readsStartup(vendor: string): boolean {
+  const capabilities = harnessNamed(vendor)?.capabilities;
+  return (
+    capabilities?.signInProbe === true || capabilities?.sessionId === "printed"
+  );
+}
+
+/** Whether the session left nothing of its work behind: the minted session's transcript, or the printed one's. */
+function sessionAbsent(
+  record: LaunchRecord,
+  started: number,
+  output: string,
+): boolean {
+  return printsSession(record)
+    ? printedSessionAbsent(record, started, output)
+    : transcriptAbsent(record, started);
+}
+
+function printsSession(record: LaunchRecord): boolean {
+  return harnessNamed(record.vendor)?.capabilities.sessionId === "printed";
 }
 
 function transcriptAbsent(record: LaunchRecord, started: number): boolean {
@@ -240,8 +311,9 @@ export function quickStartupDeath(
 ): boolean {
   return (
     ownSession(record) &&
-    harnessNamed(record.vendor)?.capabilities.signInProbe === true &&
-    typeof record.sessionId === "string" &&
+    readsStartup(record.vendor) &&
+    // A minted session id is the tick's, on the record; a printed one is in the output.
+    (printsSession(record) || typeof record.sessionId === "string") &&
     code !== null &&
     code !== 0 &&
     !passedStartupWindow(started, exited)
@@ -257,12 +329,16 @@ export function failedStartup(
   keepPhrase?: (phrase: SignInPhrase) => void,
 ): Exclude<StartupFailure, "breaker"> | undefined {
   if (!quickStartupDeath(record, code, started, exited)) return;
-  const phrase = signInPhrase(output) ?? transcriptSignIn(record);
+  // The sign-in phrases are Claude Code's; no other harness's are read yet.
+  const phrase =
+    harnessNamed(record.vendor)?.capabilities.signInProbe === true
+      ? (signInPhrase(output) ?? transcriptSignIn(record))
+      : undefined;
   if (phrase !== undefined) {
     keepPhrase?.(phrase);
     return "sign-in";
   }
-  if (!transcriptAbsent(record, started)) return;
+  if (!sessionAbsent(record, started, output)) return;
   return quotaNotice(output) === null ? "unstarted" : "quota";
 }
 

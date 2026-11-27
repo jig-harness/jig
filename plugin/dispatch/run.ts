@@ -189,6 +189,7 @@ import {
   failedStartup,
   passedStartupWindow,
   quickStartupDeath,
+  readsStartup,
   type SignInPhrase,
   type StartupFailure,
   startupReset,
@@ -616,7 +617,7 @@ function startupOf(
 } {
   if (
     !ownPass(record) ||
-    harnessNamed(record.vendor)?.capabilities.signInProbe !== true ||
+    !readsStartup(record.vendor) ||
     ran.started === undefined ||
     ran.exited === undefined
   )

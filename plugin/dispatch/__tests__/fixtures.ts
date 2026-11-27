@@ -414,7 +414,7 @@ fs.appendFileSync(F + "/doctor-runs.jsonl", JSON.stringify({ argv: process.argv.
 process.stdout.write(fs.existsSync(F + "/doctor.json") ? fs.readFileSync(F + "/doctor.json", "utf8") : JSON.stringify({ rows: [] }));
 `;
 
-/** The Codex a pickup's wrapper starts in tests: it records how it was started and runs until \`claude-exit\` appears. */
+/** The Codex a pickup's wrapper starts in tests: it records how it was started and runs until \`claude-exit\` appears; with \`codex-exit\`, it exits at once with that code, printing \`codex-said\`. */
 const FAKE_CODEX = `#!/usr/bin/env bun
 const fs = require("node:fs");
 const F = process.env.DISPATCH_FAKE_DIR;
@@ -425,6 +425,10 @@ fs.appendFileSync(F + "/codex-runs.jsonl", JSON.stringify({
   configDir: process.env.CLAUDE_CONFIG_DIR ?? null,
   token: process.env.CLAUDE_CODE_OAUTH_TOKEN ?? null,
 }) + "\\n");
+if (fs.existsSync(F + "/codex-exit")) {
+  if (fs.existsSync(F + "/codex-said")) process.stdout.write(fs.readFileSync(F + "/codex-said", "utf8"));
+  process.exit(Number(fs.readFileSync(F + "/codex-exit", "utf8")));
+}
 const until = Date.now() + 60000;
 while (!fs.existsSync(F + "/claude-exit") && Date.now() < until) Bun.sleepSync(50);
 process.exit(0);
