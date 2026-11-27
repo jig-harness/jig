@@ -775,9 +775,9 @@ development and shipped as a version.
   assigned to someone else (exit 3) and, after writing, stands down when a
   re-read finds another assignee, no longer finds this identity assigned,
   or finds no issue or a state other than `in_progress` (exit 4). Two
-  concurrent claims on this host share a file mutex across worktrees. It
-  refuses an item with an open or unreadable blocker too (exit 3), unless a
-  person in an interactive session passes `--override-blockers "<reason>"`,
+  concurrent claims on this host share a file mutex across worktrees. In an
+  interactive session it refuses an item with an open or unreadable blocker
+  too (exit 3), unless the person passes `--override-blockers "<reason>"`,
   which clears only that refusal and is recorded on the item.
   `claim --for <identity>` preserves the served person's sole assignment
   and checks writer provenance, holds, blockers and inherited ancestry live.

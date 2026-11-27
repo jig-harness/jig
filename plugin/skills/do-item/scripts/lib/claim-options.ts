@@ -43,11 +43,13 @@ export interface ClaimOptions {
   factoryAncestor?: string | undefined;
   /** The person's reason for starting ahead of open blockers. */
   overrideBlockers?: string | undefined;
+  /** A work-batch member's claim (`--work-batch`). */
+  workBatch?: boolean;
 }
 
 const needs = (flag: string) =>
   flag === "--override-blockers"
-    ? "--override-blockers requires a reason"
+    ? "--override-blockers requires a reason (write --override-blockers=<reason> for one that begins with --)"
     : `${flag} requires an identity or issue key`;
 
 /** Join each valued option to its value before generic positional and flag validation. */
@@ -98,7 +100,7 @@ export function overrideRefusal(
 ): string | null {
   if (options.overrideBlockers === undefined) return null;
   if (options.overrideBlockers.trim() === "")
-    return "--override-blockers requires a reason";
+    return needs("--override-blockers");
   if (launchOf(env) !== null)
     return "--override-blockers is a person's decision in an interactive session; a session the line started (JIG_LAUNCH is set) cannot take it";
   if (options.person !== undefined || options.factoryAncestor !== undefined)
@@ -120,6 +122,7 @@ export function claimOptions(
     blocking: read("--blocking"),
     factoryAncestor: read("--factory-ancestor"),
     overrideBlockers: read("--override-blockers"),
+    workBatch: flags.has(WORK_BATCH_FLAG),
   };
   const served =
     options.person !== undefined ||
@@ -134,7 +137,7 @@ export function claimOptions(
     options.person === undefined
   )
     throw new UsageError("--ancestor and --blocking require --for");
-  const refused = overrideRefusal(options, flags.has(WORK_BATCH_FLAG), env);
+  const refused = overrideRefusal(options, options.workBatch === true, env);
   if (refused !== null) throw new UsageError(refused);
   return options;
 }

@@ -25,11 +25,13 @@ release: minor
 
 ### Changed
 
-- A claim without `--for` or `--factory-ancestor` refuses an item with an
+- A claim made in an interactive session (`JIG_LAUNCH` unset), without
+  `--for`, `--factory-ancestor` or `--work-batch`, refuses an item with an
   open `blocked_by` relation, or one whose blocker cannot be read (exit 3,
-  `"why": "blockers"`, nothing written), as a served claim already did;
-  work-batch drops such a member like any other start-rule refusal. Each
-  plain claim reads the item's relations and each blocker once more.
-  **Consumer action:** advised at instructions. Where a runbook starts a
-  blocked item by hand, have the person claim it with
+  `"why": "blockers"`, nothing written, the blockers and the consequence
+  statement in its JSON), as a served claim already did; one the claim
+  would refuse anyway reports that refusal instead. Such a claim reads the
+  item's relations and each blocker once more. Dispatched and work-batch
+  claims are unchanged. **Consumer action:** advised at instructions. Where
+  a runbook starts a blocked item by hand, have the person claim it with
   `--override-blockers "<reason>"` instead of removing the blocker link.

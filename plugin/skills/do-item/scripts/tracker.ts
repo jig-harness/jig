@@ -61,15 +61,12 @@
  * person. `"marker"` in the JSON says whether the read after the write
  * confirmed it.
  *
- * A claim without `--for` or `--factory-ancestor` refuses an item with an
- * open or unreadable `blocked_by` relation (exit 3, `"why": "blockers"`).
- * `--override-blockers <reason>`, a person's decision in an interactive
- * session (`lib/claim-options.ts` refuses it under `JIG_LAUNCH`, with
- * `--for`, `--factory-ancestor` or `--work-batch`, exit 2), clears that
- * refusal and a preflight refusal tagged `kind: blockers`, nothing else; the
- * claim then records the override (`lib/blocker-override.ts`) and prints it
- * as `"override"` in its JSON. `--work-batch` marks a work-batch member's
- * claim and changes nothing else.
+ * In an interactive session (`JIG_LAUNCH` unset or blank), a claim without
+ * `--for`, `--factory-ancestor` or `--work-batch` refuses an item with open
+ * or unreadable blockers (exit 3, `"why": "blockers"`); a person's
+ * `--override-blockers <reason>` (`=<reason>` for one that begins with
+ * `--`) clears that refusal and a preflight refusal tagged `kind: blockers`,
+ * and the claim records it (`lib/blocker-override.ts`, `lib/claim-options.ts`).
  *
  * Canonical states: backlog, todo, in_progress, in_review, done, canceled,
  * and where the consumer uses them triage, pr_open, blocked, ops_pending,
@@ -153,12 +150,18 @@ import {
   servedClaimStillStands,
 } from "./lib/served-claim.ts";
 import { withClaimLock } from "./lib/claim-lock.ts";
-import { claimIssue, claimStillStands } from "./lib/claim.ts";
+import {
+  claimIssue,
+  claimStillStands,
+  refusalBeforeWrite,
+} from "./lib/claim.ts";
+import { launchOf } from "../../../shared/launched-session.ts";
 import { blockedClaimRefusal } from "./lib/blocked-claim.ts";
 import {
   type BlockerGate,
   blockerGate,
   markerOverride,
+  preflightRefusal,
   withOverrideRecorded,
 } from "./lib/blocker-override.ts";
 import {
@@ -216,6 +219,7 @@ const USAGE = `usage:
   tracker.ts children <issue-key>
   tracker.ts transition <issue-key> <canonical-state>
   tracker.ts claim <issue-key> [--override-blockers <reason>] [--work-batch]
+                   (--override-blockers=<reason> for a reason that begins with --)
   tracker.ts comment <issue-key>   (body on stdin)
   tracker.ts states
   tracker.ts issue-states          (item keys on stdin, one per line)
@@ -445,6 +449,7 @@ async function claim(
     blocking,
     factoryAncestor,
     overrideBlockers,
+    workBatch,
   }: ClaimOptions,
 ): Promise<unknown> {
   const config = ownTrackerConfig();
@@ -472,8 +477,9 @@ async function claim(
     return unreadablePreflight(normalized, factoryIdentity.failure.reason);
   // Before the lock and before any write: a refusal leaves nothing behind.
   const rules = await startRules(tracker, root, overlay, normalized, shape, {
-    plain: !person && !factoryAncestor,
+    applies: !person && !factoryAncestor && !workBatch && launchOf() === null,
     overrideBlockers,
+    claimFrom: settings.claimFrom,
   });
   if ("refusal" in rules) return rules.refusal;
   const override = rules.override;
@@ -560,8 +566,19 @@ async function startRules(
   overlay: Record<string, unknown> | null,
   key: string,
   shape: ReturnType<typeof issueKeysOf>,
-  options: { plain: boolean; overrideBlockers: string | undefined },
+  options: {
+    applies: boolean;
+    overrideBlockers: string | undefined;
+    claimFrom: ServedClaim["claimFrom"];
+  },
 ): Promise<BlockerGate> {
+  const gate = {
+    applies: options.applies,
+    admission: () =>
+      refusalBeforeWrite(tracker, key, {
+        claimFrom: options.claimFrom ?? null,
+      }),
+  };
   const command = await claimPreflightCommand(root, overlay);
   if (!command.ok)
     return { refusal: unreadablePreflight(key, command.failure.reason) };
@@ -576,11 +593,11 @@ async function startRules(
           options.overrideBlockers !== undefined,
         );
   if (preflight !== null && preflight.outcome !== "overridden")
-    return { refusal: preflight };
+    return { refusal: await preflightRefusal(preflight, gate) };
   const blocked = await blockedClaimRefusal(tracker, key);
   if (blocked !== null) return { refusal: blocked };
   return blockerGate(tracker, key, {
-    plain: options.plain,
+    ...gate,
     reason: options.overrideBlockers,
     preflight: preflight?.reason ?? null,
     person: async () => (await tracker.viewer()).name,

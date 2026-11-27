@@ -197,10 +197,15 @@ backstop.
 
 ### Starting ahead of open blockers
 
-A claim of the skill's own (without `--for` or `--factory-ancestor`) also
-refuses an item with an open blocker: a `blocked_by` relation to an item
-that is not finished, or one that cannot be read, since an unreadable
-blocker is not known to be finished. Nothing is written. When a person
+A claim a person makes in an interactive session (not a dispatched or
+driven one, and without `--for`, `--factory-ancestor` or `--work-batch`)
+also refuses an item with an open blocker: a `blocked_by` relation to an
+item that is not finished, or one that cannot be read, since an unreadable
+blocker is not known to be finished. Nothing is written, and the refusal
+lists the blockers and what starting early risks. A claim that would be
+refused anyway (the item already in progress, say) reports that refusal
+instead. A dispatched claim reads no blockers: the dispatcher chose the
+item. When a person
 knowingly decides to start the work anyway, they say so in an interactive
 session, and the claim runs again with `--override-blockers "<reason>"`.
 That clears the blocker refusal, and a preflight refusal the repository's

@@ -8,6 +8,7 @@ import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { decodeMarker } from "../../../shared/records/envelope.ts";
+import { currentIso, currentMs, isoFromMs } from "../../../shared/time.ts";
 import { OVERRIDE_CONSEQUENCE } from "../scripts/lib/blocker-override.ts";
 import {
   claimMarkerBody,
@@ -59,10 +60,16 @@ describe("a plain claim and the item's open blockers", () => {
   it("refuses an item with an open blocker, writing nothing", async () => {
     const out = await claim([OPEN]);
     expectSpawnExit(out, 3);
-    expect(JSON.parse(out.stdout)).toMatchObject({
+    expect(JSON.parse(out.stdout)).toEqual({
       outcome: "refused",
+      issue: "#5",
       why: "blockers",
       overridable: true,
+      reason: expect.stringContaining("#5 waits on #3 (Todo)"),
+      blockers: [
+        { key: "#3", title: "Ship the API", state: "Todo", assignee: "dana" },
+      ],
+      consequence: OVERRIDE_CONSEQUENCE,
     });
     expect(out.stderr).toContain("#5 waits on #3");
     expect(out.stderr).toContain("--override-blockers");
@@ -82,12 +89,57 @@ describe("a plain claim and the item's open blockers", () => {
     expectSpawnExit(out, 0);
     expect(JSON.parse(out.stdout).override).toBeUndefined();
   });
+
+  it("reports the refusal the claim would meet anyway, unmarked, instead of the blockers'", async () => {
+    const cases: Array<[string, Awaited<ReturnType<typeof cli>>]> = [
+      ["in_progress", await claim([OPEN], {}, { labels: ["In Progress"] })],
+      ["assigned", await claim([OPEN], {}, { logins: ["dana"] })],
+      [
+        "state",
+        await claim([OPEN], {
+          committed: "do_item:\n  claim_from: [in_review]\n",
+        }),
+      ],
+    ];
+    for (const [why, out] of cases) {
+      expectSpawnExit(out, 3, why);
+      const result = JSON.parse(out.stdout);
+      expect(result.why).toBe(why);
+      expect(result.overridable).toBeUndefined();
+      expect(out.writes).toEqual([]);
+    }
+  });
+});
+
+describe("a claim that reads no blockers", () => {
+  it("claims as before in a session the line started (JIG_LAUNCH set)", async () => {
+    const out = await claim([OPEN], { env: { JIG_LAUNCH: "launch-1" } });
+    expectSpawnExit(out, 0);
+    const result = JSON.parse(out.stdout);
+    expect(result.outcome).toBe("claimed");
+    expect(result.override).toBeUndefined();
+  });
+
+  it("claims as before for a work-batch member", async () => {
+    const out = await claim([OPEN], { args: ["--work-batch"] });
+    expectSpawnExit(out, 0);
+    expect(JSON.parse(out.stdout).outcome).toBe("claimed");
+  });
+
+  it("reads blanks in JIG_LAUNCH as unset", async () => {
+    const out = await claim([OPEN], { env: { JIG_LAUNCH: "  " } });
+    expectSpawnExit(out, 3);
+    expect(JSON.parse(out.stdout).why).toBe("blockers");
+  });
 });
 
 describe("--override-blockers", () => {
   it("claims the item, stating the blockers and the consequence before it writes", async () => {
     const out = await overriding([OPEN, UNREADABLE, CLOSED]);
     expectSpawnExit(out, 0);
+    expect(out.stderr).toContain(
+      `#5 will be claimed ahead of its blockers on factory's decision: ${REASON}`,
+    );
     expect(out.stderr).toContain('#3 "Ship the API": Todo, assigned to dana');
     expect(out.stderr).toContain("#4: could not be read");
     expect(out.stderr).not.toContain("#6");
@@ -140,6 +192,26 @@ describe("--override-blockers", () => {
       name: "jig:started-early",
       added: true,
     });
+  });
+
+  it("keeps the claim and reports a comment it could not post", async () => {
+    const out = await overriding([OPEN], { failComment: true });
+    expectSpawnExit(out, 0);
+    const result = JSON.parse(out.stdout);
+    expect(result.outcome).toBe("claimed");
+    expect(result.override.comment).toMatchObject({ posted: false });
+    expect(result.override.comment.reason).toBeTruthy();
+    expect(out.stderr).toContain(
+      "the override of #5's blockers was not recorded in a comment",
+    );
+  });
+
+  it("keeps the person's whole reason in the comment, control characters made spaces", async () => {
+    const long = `${"a".repeat(400)}\tend`;
+    const out = await claim([OPEN], { args: [`--override-blockers=${long}`] });
+    expectSpawnExit(out, 0);
+    const [body] = comments(out.writes);
+    expect(body).toContain(`${"a".repeat(400)} end`);
   });
 
   it("keeps the claim and reports a label the repository does not have", async () => {
@@ -248,6 +320,22 @@ describe("--override-blockers and the repository's preflight command", () => {
   const preflight = (mode: string) =>
     `do_item:\n  preflight_command: ${JSON.stringify(`bun ${JSON.stringify(FIXTURE)} ${mode}`)}\n`;
 
+  it("marks a tagged refusal overridable only where the override could clear it", async () => {
+    const launched = await claim([], {
+      committed: preflight("refuse-blockers"),
+      env: { JIG_LAUNCH: "launch-1" },
+    });
+    expectSpawnExit(launched, 3);
+    expect(JSON.parse(launched.stdout)).not.toHaveProperty("overridable");
+    const held = await claim(
+      [],
+      { committed: preflight("refuse-blockers") },
+      { labels: ["In Progress"] },
+    );
+    expectSpawnExit(held, 3);
+    expect(JSON.parse(held.stdout).why).toBe("in_progress");
+  });
+
   it("clears an exit 3 whose second line is kind: blockers, recording its reason", async () => {
     const refused = await claim([], {
       committed: preflight("refuse-blockers"),
@@ -323,7 +411,7 @@ describe("--override-blockers leaves every other refusal standing", () => {
       session: "session-2",
       branch: "main",
       claimant: "factory",
-      at: new Date().toISOString(),
+      at: currentIso(),
     });
     const out = await overriding([OPEN], {
       committed: "do_item:\n  claim_marker: true\n",
@@ -331,7 +419,7 @@ describe("--override-blockers leaves every other refusal standing", () => {
         {
           id: "IC_0",
           body: theirs,
-          createdAt: new Date(Date.now() - 60_000).toISOString(),
+          createdAt: isoFromMs(currentMs() - 60_000),
           authorAssociation: "MEMBER",
           viewerDidAuthor: false,
         },

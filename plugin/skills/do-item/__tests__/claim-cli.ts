@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { currentIso } from "../../../shared/time.ts";
 import { conn, issueNode, oneIssue } from "./github-fixtures.ts";
 
 export const FIXTURE = join(
@@ -173,7 +174,7 @@ export async function cli(
         comments.push({
           id: `IC_${comments.length + 1}`,
           body: String(variables.body),
-          createdAt: new Date().toISOString(),
+          createdAt: currentIso(),
           authorAssociation: "NONE",
           viewerDidAuthor: true,
         });

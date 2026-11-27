@@ -9,7 +9,7 @@
  *
  * - 0 proceeds;
  * - 3 refuses, and the first line of its standard output is the reason;
- *   a second line that reads exactly `kind: blockers` says the refusal is
+ *   a second line that reads `kind: blockers` after trimming says the refusal is
  *   only for the item's open blockers, which a person's
  *   `--override-blockers` may clear (`blocker-override.ts`); an untagged
  *   refusal never clears;

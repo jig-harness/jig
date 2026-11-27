@@ -10,6 +10,7 @@
  * dispatcher checks its running sessions for that case.
  */
 
+import type { OpenBlocker } from "./blocker-override.ts";
 import {
   CANONICAL_STATES,
   type CanonicalState,
@@ -57,6 +58,10 @@ export type ClaimResult =
       reason: string;
       /** A refusal `--override-blockers` clears: open blockers, or a preflight refusal tagged `kind: blockers`. */
       overridable?: true;
+      /** A `blockers` refusal: the open blockers, as the claim read them. */
+      blockers?: OpenBlocker[];
+      /** A `blockers` refusal: what starting ahead of them risks. */
+      consequence?: string;
       /** A preflight refusal: the item's `updatedAt` as the command saw it. */
       updatedAt?: string;
     }
@@ -148,22 +153,9 @@ export async function claimIssue(
   key: string,
   rules: ClaimRules = { claimFrom: null },
 ): Promise<ClaimResult> {
-  const me = await tracker.viewer();
-  const before = await tracker.poolIssue(key);
-  if (before === null)
-    throw new TrackerRequestError("unresolved", `issue ${key} does not exist`);
-  const admission = startAdmission(tracker, key, before, rules);
-  if ("refusal" in admission) return admission.refusal;
-  const started = admission.started;
-  const holders = await tracker.assignees(key);
-  const others = holders.filter((u) => u.id !== me.id);
-  if (others.length > 0)
-    return {
-      outcome: "refused",
-      issue: key,
-      why: "assigned",
-      reason: `${key} is assigned to ${names(others)}, not to ${me.name}`,
-    };
+  const admitted = await admit(tracker, key, rules);
+  if ("refusal" in admitted) return admitted.refusal;
+  const { me, started, holders } = admitted;
 
   // The assignment first: a claim racing this one then reads it and refuses.
   if (!holders.some((u) => u.id === me.id)) await tracker.assign(key, me);
@@ -188,6 +180,52 @@ export async function claimIssue(
       reason: `another change landed first: ${key} is now ${after?.state.name ?? "gone"}, not ${started}`,
     };
   return { outcome: "claimed", issue: key, claimant: me, state: started };
+}
+
+/**
+ * The reads a claim makes before it writes, and the refusal they lead to:
+ * an item in progress, in `pr_open` or `blocked`, outside
+ * `do_item.claim_from`, or assigned to anyone but the viewer. Writes nothing.
+ */
+async function admit(
+  tracker: ClaimTracker,
+  key: string,
+  rules: ClaimRules,
+): Promise<
+  | { refusal: ClaimResult }
+  | { me: TrackerUser; started: string; holders: TrackerUser[] }
+> {
+  const me = await tracker.viewer();
+  const before = await tracker.poolIssue(key);
+  if (before === null)
+    throw new TrackerRequestError("unresolved", `issue ${key} does not exist`);
+  const admission = startAdmission(tracker, key, before, rules);
+  if ("refusal" in admission) return admission;
+  const holders = await tracker.assignees(key);
+  const others = holders.filter((u) => u.id !== me.id);
+  if (others.length > 0)
+    return {
+      refusal: {
+        outcome: "refused",
+        issue: key,
+        why: "assigned",
+        reason: `${key} is assigned to ${names(others)}, not to ${me.name}`,
+      },
+    };
+  return { me, started: admission.started, holders };
+}
+
+/**
+ * Read-only: the refusal `claimIssue` would return before it writes, `null`
+ * when it would go on to write. Writes nothing.
+ */
+export async function refusalBeforeWrite(
+  tracker: ClaimTracker,
+  key: string,
+  rules: ClaimRules = { claimFrom: null },
+): Promise<ClaimResult | null> {
+  const admitted = await admit(tracker, key, rules);
+  return "refusal" in admitted ? admitted.refusal : null;
 }
 
 /**

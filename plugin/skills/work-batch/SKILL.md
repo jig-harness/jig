@@ -249,11 +249,12 @@ the release in step 4 restores them. Then, for each:
    bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" claim "<KEY>" --work-batch
    ```
 
-   `--work-batch` marks the claim as a batch member's: it changes nothing
-   else, and makes the claim refuse `--override-blockers` (exit `2`), so a
-   batch never starts an item ahead of its open blockers. Never drop it,
-   and never pass `--override-blockers` here; an item a person wants started
-   early goes through `/jig:do-item` on its own.
+   `--work-batch` marks the claim as a batch member's: the claim does not
+   read the member's `blocked_by` relations, and it refuses
+   `--override-blockers` (exit `2`), so a batch never starts an item on a
+   person's override. Never drop it, and never pass `--override-blockers`
+   here; an item a person wants started early goes through `/jig:do-item`
+   on its own.
    For a dispatched served batch, append `--for "<identity>"` and that item's
    `--ancestor "<epic-key>"` when supplied. Keep each identity and ancestor
    as one quoted argument. Preserve the served assignee.
@@ -267,9 +268,8 @@ the release in step 4 restores them. Then, for each:
    its members changes.
 
    The exception is a refusal by the repository's start rules, exit `3` with
-   `"why": "preflight"` (its `do_item.preflight_command`), `"why": "state"`
-   (a state outside its `do_item.claim_from`) or `"why": "blockers"` (an
-   open or unreadable blocker) in the JSON on standard output
+   `"why": "preflight"` (its `do_item.preflight_command`) or `"why": "state"`
+   (a state outside its `do_item.claim_from`) in the JSON on standard output
    (the reason is on stderr): nothing was written for that issue, so in an ordinary batch drop
    it, name it and its reason in the report, and go on with the rest; when
    fewer than two issues remain, release the ones claimed (step 4's release)

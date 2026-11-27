@@ -4,10 +4,13 @@
  *
  * An item with an open `blocked_by` relation waits on that blocker: one
  * whose state is not completed, canceled or duplicate, or one that cannot be
- * read, since an unreadable blocker is not known to be finished. A plain
- * claim (`tracker.ts claim` without a served or factory claim's options)
- * refuses such an item with nothing written (`"why": "blockers"`), as a
- * served claim withholds it (`served-claim.ts`).
+ * read, since an unreadable blocker is not known to be finished. An
+ * interactive plain claim (`tracker.ts claim` with `JIG_LAUNCH` unset and
+ * without a served or factory claim's options or `--work-batch`) refuses
+ * such an item with nothing written (`"why": "blockers"`, the blockers and
+ * the consequence statement in its JSON), as a served claim withholds it
+ * (`served-claim.ts`). A dispatched claim reads no blockers here: the
+ * dispatcher chose the item.
  *
  * A person who knowingly decides to start the work anyway passes
  * `--override-blockers "<reason>"` (`claim-options.ts` refuses it outside an
@@ -100,6 +103,8 @@ export function blockersRefusal(
     why: "blockers",
     overridable: true,
     reason: `${key} waits on ${blockers.map(named).join(", ")}: a person may start it ahead of them with --override-blockers "<reason>"`,
+    blockers,
+    consequence: OVERRIDE_CONSEQUENCE,
   };
 }
 
@@ -117,7 +122,7 @@ export function overrideStatement(
   override: BlockerOverride,
 ): string {
   return [
-    `${key} is claimed ahead of its blockers on ${override.person}'s decision: ${override.reason}`,
+    `${key} will be claimed ahead of its blockers on ${override.person}'s decision: ${override.reason}`,
     ...override.blockers.map((b) => `  blocked by ${blockerLine(b)}`),
     ...(override.preflight === undefined
       ? []
@@ -125,6 +130,9 @@ export function overrideStatement(
     OVERRIDE_CONSEQUENCE,
   ].join("\n");
 }
+
+/** Text with each run of control characters a space: the whole of it, unlike a bounded line. */
+const plain = (text: string) => text.replace(/\p{Cc}+/gu, " ").trim();
 
 /** The comment that records the override on the item. */
 export function overrideComment(
@@ -134,7 +142,7 @@ export function overrideComment(
   return [
     "## Blocker override",
     "",
-    `${override.person} started ${key} ahead of its open blockers: ${oneLine(override.reason)}`,
+    `${override.person} started ${key} ahead of its open blockers: ${plain(override.reason)}`,
     "",
     ...override.blockers.map((b) => `- ${blockerLine(b)}`),
     ...(override.preflight === undefined
@@ -168,35 +176,51 @@ export type BlockerGate =
   | { override: BlockerOverride | null };
 
 export interface GateInput {
-  /** A plain claim: no served or factory claim's options. */
-  plain: boolean;
+  /**
+   * The claim reads blockers at all: a plain claim (no served or factory
+   * claim's options, not a work-batch member's) in an interactive session
+   * (`JIG_LAUNCH` unset). A dispatched claim leaves blockers to the
+   * dispatcher, as before the gate existed.
+   */
+  applies: boolean;
   /** `--override-blockers`' reason, when the person gave one. */
   reason: string | undefined;
   /** The preflight command's blocker refusal the reason clears, when it refused. */
   preflight: string | null;
   /** The identity the override is recorded under, read only for an override. */
   person: () => Promise<string>;
+  /**
+   * The refusal the claim would meet before it writes whatever its blockers
+   * (`claim.ts`'s `refusalBeforeWrite`), read only when it has open
+   * blockers and no override, so a refusal is offered for override only
+   * when the override could succeed.
+   */
+  admission: () => Promise<ClaimResult | null>;
   say?: (line: string) => void;
 }
 
 /**
- * Before the claim lock and any write: refuse a plain claim of an item with
- * open blockers, unless the person overrides them, in which case the
- * blockers and the consequence are printed and the override returned for
- * the claim to record. A served or factory claim reads no blockers here: it
- * checks its own.
+ * Before the claim lock and any write: refuse an interactive plain claim of
+ * an item with open blockers, unless the person overrides them, in which
+ * case the blockers and the consequence are printed and the override
+ * returned for the claim to record. A refusal the claim would meet anyway
+ * (the item in progress, in `pr_open`, outside `do_item.claim_from`, or
+ * someone else's) is returned instead of the blockers', so an overridable
+ * refusal is one an override clears. A served or factory claim reads no
+ * blockers here: it checks its own.
  */
 export async function blockerGate(
   tracker: BlockerTracker,
   key: string,
   input: GateInput,
 ): Promise<BlockerGate> {
-  if (!input.plain) return { override: null };
+  if (!input.applies) return { override: null };
   const blockers = await openBlockers(tracker, key);
-  if (input.reason === undefined)
-    return blockers.length === 0
-      ? { override: null }
-      : { refusal: blockersRefusal(key, blockers) };
+  if (input.reason === undefined) {
+    if (blockers.length === 0) return { override: null };
+    const anyway = await input.admission();
+    return { refusal: anyway ?? blockersRefusal(key, blockers) };
+  }
   if (blockers.length === 0 && input.preflight === null) {
     (input.say ?? console.error)(
       `${key} has no open blockers: --override-blockers overrides nothing, and the claim goes on as any other`,
@@ -213,6 +237,25 @@ export async function blockerGate(
   return { override };
 }
 
+/**
+ * A preflight refusal as the claim returns it. One the command tagged as for
+ * blockers alone stays overridable only where the gate applies and the
+ * claim would not refuse anyway; elsewhere the override cannot clear it, so
+ * it is not marked.
+ */
+export async function preflightRefusal(
+  refusal: ClaimResult,
+  input: Pick<GateInput, "applies" | "admission">,
+): Promise<ClaimResult> {
+  if (refusal.outcome !== "refused" || refusal.overridable !== true)
+    return refusal;
+  if (!input.applies) {
+    const { overridable: _dropped, ...unmarked } = refusal;
+    return unmarked;
+  }
+  return (await input.admission()) ?? refusal;
+}
+
 const reasonOf = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
@@ -227,9 +270,10 @@ export async function recordOverride(
   override: BlockerOverride,
   label: string | null,
 ): Promise<OverrideReport> {
+  const body = overrideComment(key, override);
   let comment: OverrideReport["comment"] = { posted: true };
   try {
-    await tracker.postComment(key, overrideComment(key, override));
+    await tracker.postComment(key, body);
   } catch (error) {
     comment = { posted: false, reason: reasonOf(error) };
   }
