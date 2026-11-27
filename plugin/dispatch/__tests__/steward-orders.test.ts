@@ -15,6 +15,7 @@ import {
   orderByStewardRecords,
   refusedOrders,
   STEWARD_ORDERED,
+  unshownRefusals,
 } from "../lib/steward-orders.ts";
 import type { WantedItem } from "../lib/types.ts";
 
@@ -91,29 +92,29 @@ function keepRun(
 }
 
 test("an order for two wanted items created seconds apart is refused with its reason", () => {
-  submitOrder("run-1", ["#924", "#925"], ["#925", "#924"]);
+  submitOrder("run-1", ["#11", "#12"], ["#12", "#11"]);
   const items = [
-    item("#924", "2026-01-01T00:00:00Z"),
-    item("#925", "2026-01-01T00:00:03Z"),
+    item("#11", "2026-01-01T00:00:00Z"),
+    item("#12", "2026-01-01T00:00:03Z"),
   ];
   const ordered = orderByStewardRecords(REPO, items, true, root);
-  expect(ordered.map((i) => i.key)).toEqual(["#924", "#925"]);
+  expect(ordered.map((i) => i.key)).toEqual(["#11", "#12"]);
   const [record] = stewardRecords(REPO, root);
   expect(record).toMatchObject({
     applied: true,
     effect: "refused",
     refusal: {
-      reason: "#925 and #924 do not tie: their creation times differ",
+      reason: "#12 and #11 do not tie: their creation times differ",
     },
   });
 });
 
 test("an order naming an item the tick does not want is refused with its reason", () => {
-  submitOrder("run-1", ["#924", "#925"], ["#925", "#924"]);
-  orderByStewardRecords(REPO, [item("#924")], true, root);
+  submitOrder("run-1", ["#11", "#12"], ["#12", "#11"]);
+  orderByStewardRecords(REPO, [item("#11")], true, root);
   expect(stewardRecords(REPO, root)[0]).toMatchObject({
     effect: "refused",
-    refusal: { reason: "#925 is not among the items this tick wants" },
+    refusal: { reason: "#12 is not among the items this tick wants" },
   });
 });
 
@@ -139,10 +140,10 @@ test("a tick that does not apply judges nothing, and a tied order is taken and k
 });
 
 test("the next digest marks the refused order, and the same order on the same facts is not kept again", () => {
-  submitOrder("run-1", ["#924", "#925"], ["#925", "#924"]);
+  submitOrder("run-1", ["#11", "#12"], ["#12", "#11"]);
   const items = [
-    item("#924", "2026-01-01T00:00:00Z"),
-    item("#925", "2026-01-01T00:00:03Z"),
+    item("#11", "2026-01-01T00:00:00Z"),
+    item("#12", "2026-01-01T00:00:03Z"),
   ];
   orderByStewardRecords(REPO, items, true, root);
   const refused = refusedOrders(REPO, items, root);
@@ -150,18 +151,18 @@ test("the next digest marks the refused order, and the same order on the same fa
     {
       record: 1,
       kind: "order",
-      targets: ["#925", "#924"],
-      refusal: "#925 and #924 do not tie: their creation times differ",
+      targets: ["#12", "#11"],
+      refusal: "#12 and #11 do not tie: their creation times differ",
     },
   ]);
 
-  submitOrder("run-2", ["#924", "#925"], ["#925", "#924"], refused);
+  submitOrder("run-2", ["#11", "#12"], ["#12", "#11"], refused);
   expect(stewardRecords(REPO, root)).toHaveLength(1);
 
   // Changed facts take the refusal out of the digest, so the steward's next order is kept.
-  const changed = [item("#924"), item("#925")];
+  const changed = [item("#11"), item("#12")];
   expect(refusedOrders(REPO, changed, root)).toEqual([]);
-  submitOrder("run-3", ["#924", "#925"], ["#925", "#924"], []);
+  submitOrder("run-3", ["#11", "#12"], ["#12", "#11"], []);
   expect(stewardRecords(REPO, root)).toHaveLength(2);
 });
 
@@ -209,4 +210,38 @@ test("the digest lists the latest refusal per list of targets, and none once no 
   orderByStewardRecords(REPO, items, true, root);
   expect(stewardRecords(REPO, root)[2]?.effect).toBe("refused");
   expect(refusedOrders(REPO, items, root).map((r) => r.record)).toEqual([2]);
+});
+
+test("a permutation of a refused order's targets is not kept again", () => {
+  submitOrder("run-1", ["#11", "#12"], ["#12", "#11"]);
+  const items = [
+    item("#11", "2026-01-01T00:00:00Z"),
+    item("#12", "2026-01-01T00:00:03Z"),
+  ];
+  orderByStewardRecords(REPO, items, true, root);
+  const refused = refusedOrders(REPO, items, root);
+  submitOrder("run-2", ["#11", "#12"], ["#11", "#12"], refused);
+  expect(stewardRecords(REPO, root)).toHaveLength(1);
+});
+
+test("a refusal for an item outside its digest does not suppress the order once a later digest holds it", () => {
+  submitOrder("run-1", ["#11"], ["#12", "#11"]);
+  const outside = [item("#11"), item("#12")];
+  orderByStewardRecords(REPO, outside, true, root);
+  const refused = refusedOrders(REPO, outside, root);
+  expect(refused).toHaveLength(1);
+  submitOrder("run-2", ["#11", "#12"], ["#12", "#11"], refused);
+  expect(stewardRecords(REPO, root)).toHaveLength(2);
+});
+
+test("a refusal no recent digest listed is owed a steward pass", () => {
+  submitOrder("run-1", ["#11", "#12"], ["#12", "#11"]);
+  const items = [
+    item("#11", "2026-01-01T00:00:00Z"),
+    item("#12", "2026-01-01T00:00:03Z"),
+  ];
+  orderByStewardRecords(REPO, items, true, root);
+  expect(unshownRefusals(REPO, items, 20, root)).toBe(1);
+  submitOrder("run-2", ["#11"], ["#11"], refusedOrders(REPO, items, root));
+  expect(unshownRefusals(REPO, items, 20, root)).toBe(0);
 });

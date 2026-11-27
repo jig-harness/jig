@@ -44,7 +44,7 @@ import {
 } from "../steward-backlog.ts";
 import { parkClassesOf } from "../steward-resume.ts";
 import { unreportedRuns } from "../steward-causes.ts";
-import { refusedOrders } from "../steward-orders.ts";
+import { refusedOrders, unshownRefusals } from "../steward-orders.ts";
 import type { StationContext } from "../line-station.ts";
 import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
 import type { PoolIssue } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
@@ -131,7 +131,22 @@ export async function applySteward(
   const found = await backlogOf(state, observation, station, judged);
   if (!found.ok) return skip(found.failure.reason);
   const backlog = found.value.backlog;
-  const trigger = stewardTrigger(backlog.members, judged);
+  const owed = unshownRefusals(
+    repo.slug,
+    observation.tracked.pickups,
+    undefined,
+    state.root,
+  );
+  const base = stewardTrigger(backlog.members, judged);
+  // A refusal no pass was shown is owed one, though no backlog member stands for it.
+  const trigger: StewardTrigger =
+    base.kind !== "due" && owed > 0
+      ? {
+          kind: "due",
+          members: base.kind === "empty" ? 0 : base.members,
+          unjudged: owed,
+        }
+      : base;
   if (trigger.kind !== "due") {
     report.steward = notStarted(trigger);
     return;
@@ -144,7 +159,7 @@ export async function applySteward(
     stage: "steward",
     target: "the steward",
     record: "runtime",
-    reason: `${trigger.unjudged} of the judgment backlog's ${trigger.members} members wait on the steward's judgment`,
+    reason: `${trigger.unjudged} of the judgment backlog's ${trigger.members} members, or refused orders, wait on the steward's judgment`,
     evidence: { hash },
   };
   const admitted = await admitAccount(

@@ -429,9 +429,10 @@ export function submitStewardRecords(
         .get(run) as { submitted: number; digest: string } | null;
       if (row === null) return "missing-run" as const;
       if (row.submitted) return "already-submitted" as const;
-      const refused = refusedIn(row.digest);
+      const kept = keptDigest(row.digest);
+      const refused = kept?.refused ?? [];
       for (const record of checked.value.filter(
-        (r) => !refusedAgain(r, refused),
+        (r) => !refusedAgain(r, refused, kept),
       ))
         db.query(
           "INSERT INTO steward_records (run, repo, value) SELECT id, repo, ? FROM steward_runs WHERE id = ?",
@@ -444,22 +445,42 @@ export function submitStewardRecords(
     });
   });
 }
-/** The refused orders a kept digest lists; none when it lists none or does not read. */
-function refusedIn(digest: string): RefusedOrder[] {
+/** The digest a run kept; none when it does not read. */
+function keptDigest(digest: string): StewardDigest | null {
   const got = attempt("unreadable", "the steward digest does not read", () =>
     JSON.parse(digest),
   );
-  return got.ok && isStewardDigest(got.value) ? (got.value.refused ?? []) : [];
+  return got.ok && isStewardDigest(got.value) ? got.value : null;
 }
 
-/** An order naming the same targets, in the same order, as one its digest lists refused on facts that still hold. */
+/** The refusal an order meets when it names an item outside its own digest. */
+export const OUTSIDE_DIGEST_REASON =
+  "the order names an item outside its own digest";
+
+/** A list of targets as a set: the refusals that read the targets alone do not depend on their order. */
+export function targetSetKey(targets: readonly string[]): string {
+  return JSON.stringify([...new Set(targets)].sort());
+}
+
+/**
+ * An order naming the same targets, in any order, as one its digest lists
+ * refused on facts that still hold. A refusal for naming an item outside its
+ * own digest holds only while the new order is outside the new digest too.
+ */
 function refusedAgain(
   record: StewardRecord,
   refused: readonly RefusedOrder[],
+  digest: StewardDigest | null,
 ): boolean {
   if (record.kind !== "order") return false;
-  const same = JSON.stringify(record.targets);
-  return refused.some((r) => JSON.stringify(r.targets) === same);
+  const same = targetSetKey(record.targets);
+  return refused.some(
+    (r) =>
+      targetSetKey(r.targets) === same &&
+      (r.refusal !== OUTSIDE_DIGEST_REASON ||
+        digest === null ||
+        !recordBelongsToDigest(record, digest)),
+  );
 }
 
 export function stewardRecords(
@@ -569,6 +590,24 @@ export function markStewardEffect(
       "UPDATE steward_records SET effect = ?, effect_at_ms = ? WHERE id = ? AND effect IS NULL",
     )
     .run(effect, currentMs(), id);
+}
+
+/**
+ * Claim an unjudged record and keep its accepted effect in one write, so an
+ * interrupted tick never leaves it claimed with no verdict.
+ */
+export function takeStewardRecord(
+  id: number,
+  effect: string,
+  root = stateRoot(),
+): boolean {
+  return (
+    stateDb(root)
+      .query(
+        "UPDATE steward_records SET applied = 1, effect = ?, effect_at_ms = ? WHERE id = ? AND applied = 0 AND effect IS NULL",
+      )
+      .run(effect, currentMs(), id).changes === 1
+  );
 }
 
 /** Refuse an unjudged record for good, keeping why and the facts it was refused on. */
