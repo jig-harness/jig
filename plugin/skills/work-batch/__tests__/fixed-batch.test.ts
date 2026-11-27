@@ -1,6 +1,7 @@
 /** A fixed batch's proposal: the dispatcher names the members, and no size is a question. */
 import { describe, expect, it } from "bun:test";
 import { renderTable, run, verdictPrompt } from "../scripts/candidates.ts";
+import { leftOutLines } from "../scripts/lib/fixed-batch.ts";
 import { catalog, fakeTracker, issue, policy, relabel } from "./helpers.ts";
 
 const P = policy();
@@ -223,6 +224,18 @@ describe("the member a fixed batch with fewer than two kept works alone", () => 
       heldForPriority: [],
     });
     expect(renderTable(started, P)).toContain("work ENG-1 alone");
+  });
+
+  it("names another guard, not priority, when every left-out member is barred by one", () => {
+    const lines = leftOutLines([], {
+      missingPriority: "hold",
+      claim: null,
+      heldForPriority: [],
+    });
+    expect(lines.join("\n")).toContain(
+      "none may start: another guard bars every left-out member.",
+    );
+    expect(lines.join("\n")).not.toContain("dispatch.missing_priority");
   });
 
   it("starts no member that lost its priority as well as its size, whichever reason its exclusion shows", async () => {

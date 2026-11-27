@@ -203,9 +203,14 @@ function aloneLines(choice: AloneChoice | null | undefined): string[] {
       `Fewer than two kept: work ${sanitizeForDisplay(choice.claim)} alone.`,
     ];
   const held = choice.heldForPriority.map(sanitizeForDisplay).join(", ");
+  if (held === "")
+    return [
+      "",
+      "Fewer than two kept, and none may start: another guard bars every left-out member.",
+    ];
   return [
     "",
-    `Fewer than two kept, and none may start (dispatch.missing_priority: ${choice.missingPriority})${held === "" ? "" : `: ${held} lost ${choice.heldForPriority.length === 1 ? "its" : "their"} priority`}.`,
+    `Fewer than two kept, and none may start (dispatch.missing_priority: ${choice.missingPriority}): ${held} lost ${choice.heldForPriority.length === 1 ? "its" : "their"} priority.`,
   ];
 }
 
