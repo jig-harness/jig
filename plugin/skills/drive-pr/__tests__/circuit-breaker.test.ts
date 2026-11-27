@@ -437,9 +437,12 @@ const state = (await openStore("12")).read().state;
 console.log(JSON.stringify({ exits, history: state.roundFindings ?? [], parked: state.parked.map((p) => p.key) }));
 `;
 
-  async function gates(statuses: Record<string, unknown>[]) {
+  async function gates(
+    statuses: Record<string, unknown>[],
+    seed: Record<string, unknown> = {},
+  ) {
     const forge = fakeForge();
-    writeState(forge.stateDir, "12", freshState(12));
+    writeState(forge.stateDir, "12", { ...freshState(12), ...seed });
     const file = join(forge.dir, "probe.ts");
     writeFileSync(file, PROBE);
     const r = await runIn(forge, file, [], {
@@ -462,6 +465,23 @@ console.log(JSON.stringify({ exits, history: state.roundFindings ?? [], parked: 
       summaryUnaddressedKeys: open,
       summaryNotBlockingKeys: held,
     },
+  });
+
+  it("rebaselines findings recorded under an earlier counting rule", async () => {
+    const r = await gates([gate(["a", "b", "c"], [], 1)], {
+      openFindings: ["a", "b", "c", "x"],
+      roundFindings: [
+        {
+          round: 1,
+          head: "1".repeat(40),
+          newFindings: 3,
+          fixedFindings: 0,
+          open: 4,
+        },
+      ],
+    });
+    expect(r.history.length).toBe(0);
+    expect(r.exits).toEqual([null]);
   });
 
   it("records open 0 and never parks when only not-blocking findings churn", async () => {

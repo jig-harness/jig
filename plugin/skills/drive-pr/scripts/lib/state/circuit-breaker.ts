@@ -59,6 +59,8 @@ export interface CircuitBreakerState {
   firstDrivenAt?: string;
   /** Hours a person's override added to the wall-clock cap; never lowered. */
   wallClockRaisedHours?: number;
+  /** The counting rule `openFindings` and `roundFindings` were recorded under; absent, or another number, means an earlier rule. */
+  findingRule?: number;
   /** The open findings the last round gate reported, by key. */
   openFindings?: string[];
   /** The last rounds' finding movement, oldest first. */
@@ -120,12 +122,16 @@ function isRoundFindings(v: unknown): v is RoundFindings {
   );
 }
 
+/** The rule that counts open findings (not-blocking backlog left out); recorded history under another rule is not comparable. */
+export const FINDING_RULE = 2;
+
 /** The circuit breaker's fields: each absent, or well-formed. */
 export function isOptionalCircuit(s: Record<string, unknown>): boolean {
   return (
     (s.ceilingRaised === undefined || isCount(s.ceilingRaised)) &&
     (s.firstDrivenAt === undefined || isMoment(s.firstDrivenAt)) &&
     (s.wallClockRaisedHours === undefined || isHours(s.wallClockRaisedHours)) &&
+    (s.findingRule === undefined || isCount(s.findingRule)) &&
     (s.openFindings === undefined ||
       (Array.isArray(s.openFindings) &&
         s.openFindings.every((k) => typeof k === "string"))) &&

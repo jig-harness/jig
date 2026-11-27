@@ -12,3 +12,5 @@ release: patch
   an answer to such an entry. The status JSON lists these entries under
   `work.summaryNotBlockingKeys`. The round ceiling and the two diverging rounds
   that park are unchanged.
+  A drive that was counting under the earlier rule starts its count again at
+  its next round.

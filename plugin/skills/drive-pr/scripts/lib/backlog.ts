@@ -225,8 +225,22 @@ export function partitionBacklog(
       backlog,
       rendered,
       freshFingerprints,
+      bullets,
     ),
   };
+}
+
+/** A rendered bullet's severity and category header: an icon, the bold severity, optional fields, then ` — `. */
+const BULLET_HEADER = /^\S+ \*\*[A-Za-z]+\*\*[^—]* — $/;
+
+/** Whether a bullet is at the entry's location and reads its recorded comment, whole or after a header. */
+function reads(b: BodyFinding, e: BacklogEntry): boolean {
+  if (b.path !== e.path || b.line !== e.line) return false;
+  if (b.text === e.comment) return true;
+  return (
+    b.text.endsWith(e.comment) &&
+    BULLET_HEADER.test(b.text.slice(0, b.text.length - e.comment.length))
+  );
 }
 
 /**
@@ -250,14 +264,14 @@ export function renderedNotBlocking(
   backlog: readonly BacklogEntry[],
   rendered: readonly BodyFinding[],
   fresh: ReadonlySet<string>,
+  freshBullets: readonly BodyFinding[] = [],
 ): string[] {
-  const reads = (b: BodyFinding, e: BacklogEntry) =>
-    b.path === e.path &&
-    b.line === e.line &&
-    (b.text === e.comment || b.text.endsWith(` — ${e.comment}`));
   const out: string[] = [];
   for (const entry of candidates) {
     if (entry.blocking === true || fresh.has(entry.fingerprint)) continue;
+    // A fresh bullet at the entry's location that reads its comment raises it
+    // again, whatever header or abbreviation changes its fingerprint.
+    if (freshBullets.some((b) => reads(b, entry))) continue;
     const bullets = rendered.filter((b) => reads(b, entry));
     if (bullets.length !== 1) continue;
     const bullet = bullets[0] as BodyFinding;

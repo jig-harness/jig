@@ -898,9 +898,9 @@ hand the pull request to a person with a framed decision
   round diverges when it raised more findings than it fixed; a round that
   raised as many as it fixed does not. After two diverging rounds in a row
   with a finding still open, the drive parks `divergence-stop`, listing the
-  counts of its last rounds. A round whose findings did not move counts
-  neither way (the stall stop judges no progress), and rounds whose findings
-  hold level or decrease never park.
+  counts of its last rounds. A round whose findings did not move is recorded
+  as no movement and ends a streak of diverging rounds (the stall stop judges
+  no progress), and rounds whose findings hold level or decrease never park.
   The counts of the last four rounds are kept in the drive state.
 
 Only you raise a spent ceiling. Answer the `round-ceiling` decision with

@@ -28,6 +28,7 @@ import {
   byCodeUnit,
   DIVERGENCE_ROUNDS,
   divergenceStops,
+  FINDING_RULE,
   findingMovement,
   USED_OVERRIDES_KEPT,
   hoursDriven,
@@ -376,8 +377,12 @@ export async function checkDivergence(
   const store = await openStore(pr);
   let history: CircuitBreakerState["roundFindings"] = [];
   await store.update((s) => {
-    const moved = findingMovement(s.openFindings, keys);
-    const next = { ...s, openFindings: keys };
+    // History recorded under another counting rule is not comparable:
+    // rebaseline it rather than read the rule change as findings moving.
+    const current = s.findingRule === FINDING_RULE;
+    const moved = findingMovement(current ? s.openFindings : undefined, keys);
+    const next = { ...s, openFindings: keys, findingRule: FINDING_RULE };
+    if (!current) delete next.roundFindings;
     if (moved !== null)
       next.roundFindings = withRoundFindings(s.roundFindings, {
         round: s.rounds,

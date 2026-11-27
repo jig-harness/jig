@@ -75,15 +75,30 @@ describe("the entries the reviewer renders as not blocking", () => {
       fingerprint: fingerprintOf("c.md", 4, "The same lead, another one."),
     };
     const shown = abbreviated("d.md", 1, "Shown once");
-    // One bullet that reads as either of two entries renders only one.
-    const tail = abbreviated("g.md", 7, "A tail");
-    const longer = abbreviated("g.md", 7, "A lead — A tail");
-    longer.comment = `A lead — ${tail.comment}`;
     const r = classifyBeyondThisPr(
-      [flagged, hidden, twinA, twinB, shown, tail, longer],
-      [flagged, twinA, twinB, shown, longer].map(rendering),
+      [flagged, hidden, twinA, twinB, shown],
+      [flagged, twinA, twinB, shown].map(rendering),
     );
     expect(r.notBlockingBacklog).toEqual([shown.fingerprint]);
+  });
+
+  it("reads a bullet's prefix as evidence only when it is the severity and category header", () => {
+    const tail = abbreviated("g.md", 7, "A tail");
+    const r = classifyBeyondThisPr(
+      [tail],
+      [`- \`g.md:7\` — unrelated finding — ${tail.comment}`],
+    );
+    expect(r.notBlockingBacklog).toEqual([]);
+  });
+
+  it("never names an entry a fresh bullet raises again under another header or abbreviation", () => {
+    const entry = abbreviated("h.md", 4, "Raised again");
+    const r = classifyBeyondThisPr(
+      [entry],
+      [rendering(entry)],
+      [`- \`h.md:4\` — 🟡 **medium** — ${entry.comment}`],
+    );
+    expect(r.notBlockingBacklog).toEqual([]);
   });
 
   it("never names an entry a fresh body bullet raises again", () => {

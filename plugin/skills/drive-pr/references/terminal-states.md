@@ -643,7 +643,7 @@ the reviewer renders in its not-blocking *Beyond this PR* section, matched by
 path, line and the comment its backlog blob records (an abbreviated rendering
 included), never one flagged `blocking: true`, one a fresh body bullet raises
 again, or one the section renders ambiguously. Convergence still counts those
-entries. A gate whose keys did not move records nothing. Two diverging rounds
+entries. A gate whose keys did not move records a round of no movement, which ends a streak of diverging rounds. Two diverging rounds
 in a row (`newFindings > fixedFindings`; a tie does not diverge) with a
 finding still open park `divergence-stop`
 ([`HITL_PARKED`](../../../protocol/drive-exits.md)).
