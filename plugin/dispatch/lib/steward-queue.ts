@@ -51,21 +51,28 @@ export function orderFacts(
   targets: readonly string[],
 ): string {
   return JSON.stringify(
-    targets.map((key) => {
-      const item = items.find((i) => i.key === key);
-      if (item === undefined) return [key, null];
-      const issue = item.queueIssue;
-      return [
+    targets.map((key) =>
+      factsOf(
         key,
-        issue?.priority ?? null,
-        item.queueRank?.unblocks ?? null,
-        item.queueRank?.epicOrder ?? null,
-        issue?.size ?? null,
-        issue?.createdAt ?? null,
-        rankOf(item) !== null,
-      ];
-    }),
+        items.find((i) => i.key === key),
+      ),
+    ),
   );
+}
+
+/** One target's ranking facts, or that the tick does not want it. */
+function factsOf(key: string, item: WantedItem | undefined): unknown[] {
+  if (item === undefined) return [key, null];
+  const { queueIssue: issue, queueRank: rank } = item;
+  return [
+    key,
+    issue?.priority,
+    rank?.unblocks,
+    rank?.epicOrder,
+    issue?.size,
+    issue?.createdAt,
+    rankOf(item) !== null,
+  ].map((v) => v ?? null);
 }
 
 /** Only records whose targets all tie (`orderRefusal`) exchange those targets' existing slots. */

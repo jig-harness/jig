@@ -84,7 +84,7 @@ export function queueDifference(a: QueueItem, b: QueueItem): QueueKey | null {
 }
 
 /** A tie under the queue's rules, before the stable identifier fallback. */
-export function compareQueue(a: QueueItem, b: QueueItem): number {
+function compareQueue(a: QueueItem, b: QueueItem): number {
   const values = rankDeltas(a, b);
   const key = firstDiffering(values);
   return key === null ? 0 : values[key];

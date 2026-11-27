@@ -18,6 +18,7 @@ import {
   refuseStewardRecord,
   STEWARD_REFUSED,
   stewardRecords,
+  type KeptStewardRecord,
   type RefusedOrder,
   type StewardRecord,
 } from "./steward.ts";
@@ -39,28 +40,40 @@ export function orderByStewardRecords<T extends WantedItem>(
   write: boolean,
   root = stateRoot(),
 ): T[] {
-  const taken: OrderRecord[] = [];
-  for (const kept of stewardRecords(repo, root)) {
-    if (kept.value.kind !== "order" || kept.effect === STEWARD_REFUSED)
-      continue;
-    const digest = readStewardDigest(kept.run, root);
-    if (!digest.ok) continue;
-    const refusal = recordBelongsToDigest(kept.value, digest.value)
-      ? orderRefusal(items, kept.value.targets)
-      : "the order names an item outside its own digest";
-    const first = write && kept.effect === null;
-    if (refusal === null) {
-      if (first && claimStewardRecord(kept.id, root))
-        markStewardEffect(kept.id, STEWARD_ORDERED, root);
-      taken.push(kept.value);
-    } else if (first)
-      refuseStewardRecord(
-        kept.id,
-        { reason: refusal, facts: orderFacts(items, kept.value.targets) },
-        root,
-      );
-  }
+  const taken = stewardRecords(repo, root).flatMap((kept) =>
+    kept.value.kind === "order" && kept.effect !== STEWARD_REFUSED
+      ? judgeOrder(kept, kept.value, items, write, root)
+      : [],
+  );
   return applyStewardOrder(items, taken);
+}
+
+/** The order when the queue takes it; an unjudged one is kept as taken or refused when the tick writes. */
+function judgeOrder(
+  kept: KeptStewardRecord,
+  order: OrderRecord,
+  items: readonly WantedItem[],
+  write: boolean,
+  root: string,
+): OrderRecord[] {
+  const digest = readStewardDigest(kept.run, root);
+  if (!digest.ok) return [];
+  const refusal = recordBelongsToDigest(order, digest.value)
+    ? orderRefusal(items, order.targets)
+    : "the order names an item outside its own digest";
+  const first = write && kept.effect === null;
+  if (refusal === null) {
+    if (first && claimStewardRecord(kept.id, root))
+      markStewardEffect(kept.id, STEWARD_ORDERED, root);
+    return [order];
+  }
+  if (first)
+    refuseStewardRecord(
+      kept.id,
+      { reason: refusal, facts: orderFacts(items, order.targets) },
+      root,
+    );
+  return [];
 }
 
 /** The refused order records whose targets still read as they did when the tick refused them, one per list of targets, the latest. */

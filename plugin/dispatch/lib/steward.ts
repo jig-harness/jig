@@ -409,9 +409,9 @@ function isStewardDigest(value: unknown): value is StewardDigest {
       value.passes,
       value.failures,
     ].every(Array.isArray) &&
-    (value.history === undefined || Array.isArray(value.history)) &&
-    (value.refused === undefined || Array.isArray(value.refused)) &&
-    (value.unreported === undefined || Array.isArray(value.unreported))
+    [value.history, value.refused, value.unreported].every(
+      (v) => v === undefined || Array.isArray(v),
+    )
   );
 }
 export function submitStewardRecords(
