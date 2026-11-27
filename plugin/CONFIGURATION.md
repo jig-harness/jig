@@ -1385,7 +1385,7 @@ reflection:
 environment layers. For duplicate slugs, the higher layer supplies the whole
 entry. Within a layer, an inline entry takes precedence over the file.
 Missing or unreadable files produce a warning and gathering continues.
-Malformed entries, a slug repeated within one list and invalid YAML or JSON are configuration errors; so is a list over the entry limit, while a file over the size limit is a warning and is not read. Only `reflect gather` validates and reads the vocabularies, so a mistake in one never stops the journal or the review of stored findings. The configuration check validates the merged setting and does not read the vocabulary files. Every command's settings reader still loads and parses all configuration layers, so a malformed layer outside the vocabularies is reported there.
+Malformed entries, a slug repeated within one list and invalid YAML or JSON are configuration errors; so is a list over the entry limit, while a file over the size limit is a warning and is not read. Only `reflect gather` validates and reads the vocabularies, so a mistake in a vocabulary entry or file never stops the journal or the review of stored findings. The configuration check validates the merged setting and does not read the vocabulary files. Every command's settings reader still loads and parses all configuration layers, so a configuration layer that cannot be parsed at all stops every command, vocabularies aside.
 A seed's shape supplies the example, and the store still supplies the
 finding count. When a store read fails, `store_error` reports the failure
 and any available seeds appear with zero findings. Escalation and review
