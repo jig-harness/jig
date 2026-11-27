@@ -84,6 +84,10 @@ describe("a repository with no automated reviewer, against Team/Standard", () =>
     expect(survey).toContain("`absent`, never");
     expect(survey).toContain("When examined");
     expect(survey).toContain("a draft's unexamined criteria stay as they are");
+    expect(survey).toContain("the audit's `--at` option");
+    expect(survey).toContain(
+      "carry the evidence gap into synthesis as unverified",
+    );
     const criteria = readFileSync(
       `${root}criteria/M7-pr-lifecycle-review.yaml`,
       "utf8",
