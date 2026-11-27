@@ -507,6 +507,23 @@ describe.skipIf(
     });
   }, 60_000);
 
+  test("a holder lsof lists only after the remove hook keeps the tree through collection", () => {
+    const f = setup();
+    idle(f);
+    const warning = `lsof: WARNING: can't stat() fuse.portal file system /run/user/1000/doc\n      Output information may be incomplete.\n`;
+    // Idle until the remove hook has run, then a process works in the tree.
+    f.lsof(
+      warning,
+      `if [ -e '${join(f.root, "hook-ran")}' ]; then printf 'p4242\\nfcwd\\nn%s\\n' '${f.tree}'; fi\nexit 1`,
+    );
+    const kept = line(gc(f, ["--collect"]), 1);
+    expect(kept).toMatchObject({
+      outcome: "failed",
+      reason: expect.stringContaining("a process holds the worktree"),
+    });
+    expect(existsSync(f.tree)).toBe(true);
+  }, 60_000);
+
   test("one the idle guard has not passed is kept", () => {
     const f = setup();
     const kept = line(gc(f, ["--collect"]));

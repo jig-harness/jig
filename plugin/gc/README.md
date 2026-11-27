@@ -74,10 +74,11 @@ The process-holder check asks `lsof` which processes have files open under
 the worktree. `lsof` warns about every mount it cannot read, whatever path
 it was asked about (a desktop's document portal, a container's mounts), and
 exits 1 for those warnings whether or not it also listed processes. A
-process it listed is a holder, whatever its exit status or its warnings, and
-the worktree is kept as live. With no process listed, a warning about a mount
-that neither holds the worktree nor lies inside it is set aside and the
-worktree is not held. A warning about the worktree's own mount or one inside
+process listed by a run that completed, untruncated, is a holder, whatever
+its exit status or its warnings, and the worktree is kept as live. With no
+process listed, exit status 1 and only warnings about mounts that neither
+hold the worktree nor lie inside it read as not held; the same warnings
+under another exit status leave the holders unknown. A warning about the worktree's own mount or one inside
 it, anything else `lsof` reports as an error, a run that was killed, timed
 out or cut off, or an exit status that is no listing leaves the holders
 unknown and the worktree `unverified`; the reason names which.
