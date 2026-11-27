@@ -159,6 +159,81 @@ describe("a claimed item an open pull request carries", () => {
     });
   });
 
+  it.each([6, 12])(
+    "recognises every item in a %i-issue batch and an unrelated pull request amid incomplete links",
+    (size) => {
+      const closing = Array.from({ length: size }, (_, index) => ({
+        number: 12 + index,
+        repository: SLUG,
+      }));
+      const batch = pr({ headRefName: "batch", body: "", closing });
+      const other = pr({
+        number: 32,
+        url: `https://github.com/${SLUG}/pull/32`,
+        headRefName: "another-fix",
+        body: "Closes #50",
+        closing: [],
+      });
+      const partial = pr({
+        number: 33,
+        url: `https://github.com/${SLUG}/pull/33`,
+        headRefName: "partial",
+        body: "Fixes #51",
+        closing: null,
+      });
+      const pickup = input(
+        stalled(
+          [batch, other, partial],
+          [
+            LIVE,
+            { ...LIVE, number: 32, url: other.url, head: other.headRefName },
+            {
+              ...LIVE,
+              number: 33,
+              url: partial.url,
+              head: partial.headRefName,
+            },
+          ],
+        ),
+      );
+      const keys = [...closing.map(({ number }) => `#${number}`), "#50", "#51"];
+      const plan = planPickups({
+        ...pickup,
+        claimed: keys.map((key) => ({ key, title: key, state: "In Progress" })),
+        idleSince: new Map(keys.map((key) => [key, NOW - 2 * HOUR])),
+      });
+      expect(plan.actions).toEqual([]);
+      const carried = new Map(
+        plan.quiet
+          .filter((entry) => entry.class === "claimed-carried")
+          .map((entry) => [entry.target, entry.carried?.pr]),
+      );
+      expect(carried).toEqual(
+        new Map(
+          keys.map((key) => [
+            key,
+            key === "#50" ? 32 : key === "#51" ? 33 : 31,
+          ]),
+        ),
+      );
+    },
+  );
+
+  it("keeps an incomplete forge link carried when its known pull request has a live drive", () => {
+    const partial = pr({
+      closing: [{ number: 12, repository: SLUG }],
+      closingComplete: false,
+    });
+    const plan = planPickups(input(stalled([partial], [LIVE])));
+    expect(plan.actions).toEqual([]);
+    expect(plan.quiet).toContainEqual({
+      target: "#12",
+      class: "claimed-carried",
+      why: expect.stringContaining(`carried by pull request #31 (${URL})`),
+      carried: { pr: 31, url: URL, drive: "driving" },
+    });
+  });
+
   it("raises no stall need while the drive has converged and the pull request waits for its merge", () => {
     const plan = planPickups(input(stalled([pr()], [CONVERGED])));
     expect(plan.actions).toEqual([]);
