@@ -76,9 +76,10 @@ export function ancestorProblem(
 }
 
 /**
- * The first problem along the way the kernel resolves `directory`: every link
- * it meets, intermediate targets included, must be the reader's or root's and
- * sit in a directory whose own chain only the reader or root can change;
+ * The first problem along the way the kernel resolves `directory`: every
+ * component it visits, link targets and components a `..` later leaves
+ * included, must be the reader's or root's and sit in a directory whose own
+ * chain only the reader or root can change;
  * `null` when the whole resolution is trusted.
  */
 export function linkChainProblem(
@@ -98,15 +99,17 @@ export function linkChainProblem(
     const next = join(resolved, name);
     const read = attempt("socket-unreadable", "", () => lstatSync(next));
     if (!read.ok) return `has a path component that cannot be read (${next})`;
+    // Every component the kernel visits is checked, those a later `..` leaves
+    // behind included: its owner could swap it for a link and move the `..`.
+    if (uid !== undefined && read.value.uid !== uid && read.value.uid !== 0)
+      return `has a path component owned by user ${read.value.uid} (${next})`;
+    const holder = ancestorProblem(join(resolved, "x"), uid);
+    if (holder !== null) return holder;
     if (!read.value.isSymbolicLink()) {
       resolved = next;
       continue;
     }
     if (++hops > 40) return "has too many symbolic links in its path";
-    if (uid !== undefined && read.value.uid !== uid && read.value.uid !== 0)
-      return `has a link owned by user ${read.value.uid} (${next})`;
-    const holder = ancestorProblem(join(resolved, "x"), uid);
-    if (holder !== null) return holder;
     const target = attempt("socket-unreadable", "", () => readlinkSync(next));
     if (!target.ok) return `has a link that cannot be read (${next})`;
     if (target.value.startsWith("/")) resolved = "/";

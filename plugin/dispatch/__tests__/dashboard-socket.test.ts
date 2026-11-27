@@ -211,6 +211,23 @@ describe("the private socket", () => {
     expect(linkChainProblem(join(base, "hop"), uid)).toBeNull();
   });
 
+  it("checks a component a later `..` leaves behind", () => {
+    const base = scratch();
+    const open = join(base, "open");
+    mkdirSync(open, { mode: 0o700 });
+    const inner = join(base, "inner");
+    mkdirSync(inner, { mode: 0o700 });
+    const uid = process.getuid?.();
+    const path = join(open, "..", "inner");
+    expect(linkChainProblem(path, uid)).toBeNull();
+    chmodSync(open, 0o777);
+    expect(linkChainProblem(path, uid)).toBeNull();
+    // The walk must flag a visited component owned by another user.
+    expect(linkChainProblem(path, (uid ?? 0) + 12345)).toContain(
+      "owned by user",
+    );
+  });
+
   it("is created under a tight umask, so no mode is wider than 0600 to begin with", () => {
     const dir = scratch();
     const before = process.umask(0o000);
