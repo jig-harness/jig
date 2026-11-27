@@ -1,22 +1,30 @@
 import { GcError } from "./gc-error.ts";
 /**
- * Cooperative reader/writer admission for resource publication. Stale tokens
- * are retained: without captured ownership evidence a lock is never stolen.
+ * Cooperative reader/writer admission for resource publication. Without
+ * captured ownership evidence a lock is never stolen.
  *
  * A creator's admission token (`reader-<pid>-<uuid>`) and a collector's
  * `writer` file each hold their process's identity (`liveness.ts`); a token
  * in its earlier empty form names its pid in its name, and a writer in its
- * earlier form holds a bare pid. A token found stale is reported with its
- * holder and why it counts as gone, and is still never removed by gc.
+ * earlier form holds a bare pid. A token whose record names its host and
+ * whose process that host proves gone (no process has the pid with that
+ * start time, or the host restarted since) can no longer protect anything:
+ * the collector removes it and says so. Any other token that is not alive,
+ * one with no record, an earlier form that names no host, one from another
+ * host or one whose process table cannot be read, is reported with its
+ * holder and why it counts as gone, kept, and listed by
+ * `unprovenAdmissionTokens` for a person to inspect.
  *
- * The `install` kind, which no creator's token admits, alone takes over a
- * writer whose recorded holder is judged dead (`exclusiveInstallLock`): an
+ * The `install` kind, which no creator's token admits, takes over a writer
+ * whose recorded holder is judged dead (`exclusiveInstallLock`): an
  * install, a refresh or a scheduled upgrade killed while it held the lock
  * would otherwise refuse every later one until a person removed the file.
- * The takeover runs under a file lock (`file-lock.ts`), and removes the
- * writer only while it still holds what was judged dead. Ordinary collection
- * never takes a writer over. A fresh fixture publisher may recover its own
- * kind of writer, which carries a distinct marker alongside the identity.
+ * The `scratch` kind takes over a writer only when its record proves its
+ * holder gone (`WRITER_TAKEOVER_KINDS`). The takeover runs under a file lock
+ * (`file-lock.ts`), and removes the writer only while it still holds what
+ * was judged dead. Collection of any other kind never takes a writer over. A
+ * fresh fixture publisher may recover its own kind of writer, which carries
+ * a distinct marker alongside the identity.
  */
 import { randomUUID } from "node:crypto";
 import {
@@ -25,6 +33,7 @@ import {
   linkSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -43,6 +52,7 @@ import {
 } from "./liveness.ts";
 import { log } from "./log.ts";
 import { attempt, failed, type Outcome } from "./outcome.ts";
+import { currentMs } from "./time.ts";
 
 function gcLockRoot(): string {
   return join(homedir(), ".local", "state", "jig", "gc-locks");
@@ -59,15 +69,28 @@ function recorded(
   return decodeIdentity(text);
 }
 
+/** What a recorded holder is judged to be: running, ended, or not decidable from this host. */
+type Holder = "alive" | "dead" | "unknown";
+
+interface Judged {
+  holder: Holder;
+  /** The holder is judged dead (it may still be one gc cannot prove). */
+  gone: boolean;
+  /**
+   * The holder is dead on the strength of a record that names its host: no
+   * process of this host has that pid and start time, or this host restarted
+   * since. An earlier record that names no host is never proof.
+   */
+  proven: boolean;
+  text: string;
+}
+
 /**
  * The file at `path` with its holder as judged now: `gone` only for a holder
  * judged dead, never for one that cannot be read or judged. `null` when the
  * file is gone.
  */
-function judged(
-  path: string,
-  namedPid: number | null,
-): { gone: boolean; text: string } | null {
+function judged(path: string, namedPid: number | null): Judged | null {
   let content: string;
   try {
     content = readFileSync(path, "utf8");
@@ -75,17 +98,28 @@ function judged(
     if (errnoCode(error) === "ENOENT") return null;
     const cause = error instanceof Error ? error.message : String(error);
     return {
+      holder: "unknown",
       gone: false,
+      proven: false,
       text: `${path}: its holder cannot be read (${cause})`,
     };
   }
   const identity = recorded(content, namedPid);
   if (identity === null)
-    return { gone: false, text: `${path}: it names no holder to judge` };
+    return {
+      holder: "unknown",
+      gone: false,
+      proven: false,
+      text: `${path}: it names no holder to judge`,
+    };
   const verdict = isAliveSync(identity);
   const reason = verdict.ok ? verdict.value.reason : verdict.failure.reason;
+  const holder: Holder = !verdict.ok ? "unknown" : verdict.value.state;
+  const names = identity.hostId !== "" || identity.host !== "";
   return {
-    gone: verdict.ok && verdict.value.state === "dead",
+    holder,
+    gone: holder === "dead",
+    proven: holder === "dead" && names,
     text: `${path} (${describeIdentity(identity)}): ${reason}`,
   };
 }
@@ -133,9 +167,54 @@ export function sharedGcLock(kind: string, root = gcLockRoot()): () => void {
 }
 
 /**
+ * The kinds whose collector takes over a writer left by a collector that was
+ * killed, once the writer's own record proves its process gone. `install`
+ * takes over any writer judged dead, a record that names no host included
+ * (`exclusiveInstallLock`). The scratch collector proves every scope again
+ * before it removes anything, removes a root before it retires that root's
+ * registration, and finds a registration whose roots are gone retirable, so
+ * a successor can go on from a stop between those steps.
+ */
+const WRITER_TAKEOVER_KINDS: ReadonlySet<string> = new Set(["scratch"]);
+
+/** Whether the collector of `kind` removes this writer itself. */
+function takesOverWriter(kind: string, writer: Judged): boolean {
+  return kind === "install"
+    ? writer.gone
+    : writer.proven && WRITER_TAKEOVER_KINDS.has(kind);
+}
+
+/**
+ * Removes every creator's token whose record proves its process gone, and
+ * returns the names that remain. Under the writer, no creator is admitted,
+ * and a token's name is unique, so a token judged dead cannot be written
+ * again.
+ */
+function reapProvenDeadTokens(
+  kind: string,
+  dir: string,
+  names: string[],
+): string[] {
+  return names.filter((name) => {
+    const path = join(dir, name);
+    if (heldReaderTokens.has(path)) return true;
+    const token = judged(path, namedPid(name));
+    if (token === null) return false;
+    if (!token.proven) return true;
+    rmSync(path, { force: true });
+    log.warn("Removed an admission token whose process is gone", {
+      kind,
+      holder: token.text,
+    });
+    return false;
+  });
+}
+
+/**
  * Why collection cannot be admitted while creators' tokens stand: the live
- * or unjudgeable ones as creators holding the lock, the stale ones with their
- * holders and why each counts as gone, for a person to remove.
+ * or unjudgeable ones as creators holding the lock, the stale ones, whose
+ * process is gone but not provably, with their holders and why each counts as
+ * gone, for a person to inspect and remove.
  */
 function admissionRefusal(kind: string, dir: string, names: string[]): string {
   const tokens = names.flatMap((name) => {
@@ -149,11 +228,85 @@ function admissionRefusal(kind: string, dir: string, names: string[]): string {
     parts.push(`a creator holds the lock: ${held.join("; ")}`);
   if (stale.length > 0)
     parts.push(
-      `stale admission token ${stale.join("; stale admission token ")}; gc never removes an admission token: remove it after inspection`,
+      `stale admission token ${stale.join("; stale admission token ")}; gc removes a token only when its record names this host and the host proves its process gone, and this one cannot be proven: remove it after inspection`,
     );
   if (parts.length === 0)
     parts.push("a creator held the lock as collection began; retry");
   return `gc ${kind}: ${parts.join("; ")}`;
+}
+
+/** How long a token that no one can judge may stand before it is a need: a creator on another host holds one only while it creates a scope. */
+const UNPROVEN_TOKEN_GRACE_MS = 10 * 60_000;
+
+/**
+ * Each admission token the collector will not remove and whose holder is not
+ * known to be running: a token with no record, an earlier record that names
+ * no host, a token of another host, a holder whose process table cannot be
+ * read, and a writer whose holder is gone that its kind's collector does not
+ * take over. A token of a live process is no entry. Entries stay for a
+ * person to inspect: `path` is the file and `why` says what is known of its
+ * holder.
+ */
+export function unprovenAdmissionTokens(
+  root = gcLockRoot(),
+  now = currentMs(),
+): { path: string; why: string }[] {
+  return listNames(root).flatMap((kind) =>
+    listNames(join(root, kind)).flatMap((name) => {
+      const path = join(root, kind, name);
+      const why = unprovenReason(kind, name, path, now);
+      return why === null ? [] : [{ path, why }];
+    }),
+  );
+}
+
+/** The sorted names in a folder; none when it cannot be read. */
+function listNames(dir: string): string[] {
+  try {
+    return readdirSync(dir).sort();
+  } catch (error) {
+    swallow(error, "a folder that cannot be read holds no admission token");
+    return [];
+  }
+}
+
+/** What is known of a token's holder when it is one to report, else `null`. */
+function unprovenReason(
+  kind: string,
+  name: string,
+  path: string,
+  now: number,
+): string | null {
+  const role = name === "writer" ? "writer" : "reader";
+  if (role === "reader" && !name.startsWith("reader-")) return null;
+  const token = judged(path, role === "writer" ? null : namedPid(name));
+  return token !== null && isUnproven(kind, role, token, path, now)
+    ? token.text
+    : null;
+}
+
+/** Whether nothing shows the token's holder running and gc will not remove the token. */
+function isUnproven(
+  kind: string,
+  role: "reader" | "writer",
+  token: Judged,
+  path: string,
+  now: number,
+): boolean {
+  if (token.holder === "alive") return false;
+  if (role === "writer" ? takesOverWriter(kind, token) : token.proven)
+    return false;
+  return token.holder !== "unknown" || older(path, now);
+}
+
+/** Whether the file was last written more than the grace ago; a file whose age cannot be read counts as old. */
+function older(path: string, now: number): boolean {
+  try {
+    return now - statSync(path).mtimeMs > UNPROVEN_TOKEN_GRACE_MS;
+  } catch (error) {
+    swallow(error, "a token whose age cannot be read is old enough to report");
+    return true;
+  }
 }
 
 /**
@@ -365,7 +518,13 @@ export async function exclusiveGcLock<T>(
   if (!publishWriter(writer)) {
     const seen = writerText(writer);
     const held = judged(writer, null);
-    if (options.takeOverDead !== true || held?.gone !== true || seen === null)
+    if (
+      held === null ||
+      !(options.takeOverDead === true
+        ? held.gone
+        : takesOverWriter(kind, held)) ||
+      seen === null
+    )
       throw new GcError(refusal(kind, writer, held));
     const lost = await takeOverDead(writer, seen);
     if (lost !== null)
@@ -377,8 +536,10 @@ export async function exclusiveGcLock<T>(
     );
   }
   try {
-    const tokens = readdirSync(dir).filter((name) =>
-      name.startsWith("reader-"),
+    const tokens = reapProvenDeadTokens(
+      kind,
+      dir,
+      readdirSync(dir).filter((name) => name.startsWith("reader-")),
     );
     if (tokens.length > 0)
       throw new GcError(admissionRefusal(kind, dir, tokens));
