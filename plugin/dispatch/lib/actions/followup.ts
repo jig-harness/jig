@@ -687,6 +687,7 @@ function unreportedNeed(
       pr,
       record.command ?? command,
       wanted,
+      true,
     )(held.workspace, held.reason),
   );
 }

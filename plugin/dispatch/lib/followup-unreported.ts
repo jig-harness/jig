@@ -15,6 +15,7 @@ export function followupUnreportedNeed(
   pr: { number: number; url: string },
   command: string,
   wanted: string,
+  replay = false,
 ): (workspace: string, reason: string) => Action {
   return (workspace, reason) => ({
     stage: "notify",
@@ -23,6 +24,13 @@ export function followupUnreportedNeed(
     reason: `${wanted}; but ${reason}, so nothing is started until a person settles it`,
     evidence: { url: pr.url, workspace, stage: "followup" },
     cause: "needs-person",
-    notice: followupUnreportedNotice(slug, pr, command, workspace, reason),
+    notice: followupUnreportedNotice(
+      slug,
+      pr,
+      command,
+      workspace,
+      reason,
+      replay,
+    ),
   });
 }
