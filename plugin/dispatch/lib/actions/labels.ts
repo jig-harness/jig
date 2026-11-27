@@ -333,24 +333,35 @@ export async function writeLabels(
     }
     const of = { key, kind: "label" as const, target: base.target };
     let refusal = await attempt(change);
-    const missing = refusal?.missing ?? [];
-    if (
-      creator !== null &&
-      missing.length > 0 &&
-      missing.every(creator.knows)
+    // A single edit can name its missing labels one at a time.  Retry no more
+    // often than the labels this edit adds, preserving creation de-duplication
+    // and the tick's deadline/freshness guard between remote calls.
+    for (
+      let retries = 0;
+      creator !== null && retries < change.add.length;
+      retries++
     ) {
+      const missing = refusal?.missing ?? [];
+      if (missing.length === 0 || !missing.every(creator.knows)) break;
       const uncreated = await creator.ensure(missing);
-      // Counted once for the repository on the create's own row, not on this pull request's.
       if (uncreated !== null) {
         out.push({
           ...base,
           outcome: "failed",
           detail: `${describe(change)} was refused, and a later tick tries again: ${uncreated}`,
         });
-        continue;
+        refusal = null;
+        break;
+      }
+      const retryWait = await waitsFor(change, key, mode);
+      if (retryWait !== null) {
+        out.push({ ...base, outcome: "waits", detail: retryWait });
+        refusal = null;
+        break;
       }
       refusal = await attempt(change);
     }
+    if (refusal === null && out.at(-1)?.target === base.target) continue;
     if (refusal === null) {
       out.push({ ...base, outcome: "written", detail: describe(change) });
       mode.book?.ran(of, null);

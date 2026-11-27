@@ -28,6 +28,7 @@ import {
 import { forgeReread, ledgerStillCurrent } from "./label-freshness.ts";
 import { manualOpsLabel } from "./owed-steps.ts";
 import { markerSet } from "./pr-markers.ts";
+import { AUTOMATION_SPEC } from "./automation.ts";
 import { unobservedTarget } from "./notices.ts";
 import { bookOf, type TickContext } from "./tick-context.ts";
 import { pullRequestHead, pullRequestLabels } from "./forge.ts";
@@ -114,7 +115,9 @@ function creatable(
 ): Map<string, LabelSpec> {
   const specs = [
     ...labelSet(labels),
-    ...(manualOps === null ? [] : markerSet(manualOps)),
+    // Automation is independent of the manual-operations marker.  Only the
+    // owed-steps marker needs a configured manual-operations label.
+    ...(manualOps === null ? [AUTOMATION_SPEC] : markerSet(manualOps)),
   ];
   return new Map(specs.map((l) => [l.name, l]));
 }

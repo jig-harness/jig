@@ -107,8 +107,9 @@ function printedSessionAbsent(
 ): boolean {
   const harness = harnessNamed(record.vendor);
   if (harness === null) return false;
-  const session =
-    harness.sessionIdIn(output.head) ?? harness.sessionIdIn(output.tail);
+  // The startup header is the authority.  Later output can quote another
+  // session and must not turn an otherwise inconclusive startup into a retry.
+  const session = harness.sessionIdIn(output.head);
   if (session === null)
     return output.head.trim() === "" && output.tail.trim() === "";
   let complete = true;

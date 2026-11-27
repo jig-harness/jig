@@ -433,6 +433,7 @@ function routineLines(record: LaunchRecord): string[] {
   const standing = record.standing;
   if (standing === undefined || standing === null) return tags;
   const answers = standing.classes
+    .filter((id) => offered.some((q) => q.id === id))
     .map(routineQuestion)
     .filter((q) => q !== undefined)
     .map((q) => `- ${q.id} (${q.covers}): ${q.answer}`);
@@ -481,7 +482,11 @@ function followupPrompt(record: LaunchRecord): string {
     `It claimed the follow-up with the marker comment ${marker} on the pull request. That claim is this pass's: post no marker of your own. Before each act that writes outside the pull request (an issue closed, a tag pushed), check that you still hold the claim, and stop on any nonzero exit (an earlier marker, an unreadable forge, a missing marker): ${jigCommand(["marker", "check", pr, "--comment", marker, "--repo", record.repo])}`,
     "Leave routine local housekeeping (branch retention, retired workspaces and scratch notes) to periodic cleanup, even when no collector covers a leftover yet. Do not ask a person about it or treat it as an incomplete arm or a failed result. Evidence of unlanded work or an active operational problem still belongs in the follow-up.",
     ...unattendedLines(record),
-    `For a release that still owes a tag and needs a person, record "[person-owed] release <version> owed" in the release arm's evidence. Run ${jigCommand(["release-owed", record.id, record.token])} <tag> --state <state> with the quoted tag and that version's state from the tag plan before filing. Follow the skill's instructions for the returned status. Finish the other arms and record done when settled. The release need carries the decision on its own, so do not emit a Question line for it.`,
+    ...(offeredClasses(record).some((q) => q.id === "person-owed")
+      ? [
+          `For a release that still owes a tag and needs a person, record "[person-owed] release <version> owed" in the release arm's evidence. Run ${jigCommand(["release-owed", record.id, record.token])} <tag> --state <state> with the quoted tag and that version's state from the tag plan before filing. Follow the skill's instructions for the returned status. Finish the other arms and record done when settled. The release need carries the decision on its own, so do not emit a Question line for it.`,
+        ]
+      : []),
     `Where an arm you may carry out cannot go on without a person's decision, do not guess: carry out what does not depend on it, then stop, and end your output with one line that starts "${QUESTION_PREFIX}" and states what the person must decide, with no secret or personal data in it. The dispatcher sends that line to a person.`,
     ...framingLines(record),
     ...routineLines(record),

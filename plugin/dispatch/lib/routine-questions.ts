@@ -67,7 +67,7 @@ export function routineQuestion(id: string): RoutineQuestion | undefined {
  */
 export function followupRoutine(value: unknown): Outcome<string[], "invalid"> {
   const every = ROUTINE_QUESTIONS.map((q) => q.id);
-  if (value === undefined || value === null) return ok(every);
+  if (value === undefined) return ok(every);
   const listed = `one of ${every.join(", ")}`;
   if (!Array.isArray(value))
     return failed(

@@ -119,7 +119,8 @@ async function writeEach<L extends LabelSpec>(
       refused.push({ label, why: failureText(error) });
       continue;
     }
-    if (written.ok) console.log(`${slug}: ${done} ${label.name}`);
+    if (written.ok || written.failure.code === "exists")
+      console.log(`${slug}: ${done} ${label.name}`);
     else refused.push({ label, why: written.failure.reason });
   }
   return refused;

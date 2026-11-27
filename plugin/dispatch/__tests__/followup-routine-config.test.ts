@@ -48,7 +48,11 @@ describe("dispatch.followup_routine", () => {
   });
 
   it("refuses a value that is not a list, and a class named twice", () => {
-    for (const value of ["drafted-items", ["person-owed", "person-owed"]]) {
+    for (const value of [
+      "drafted-items",
+      null,
+      ["person-owed", "person-owed"],
+    ]) {
       const section = dispatchSection({
         dispatch: { followup_routine: value },
       });

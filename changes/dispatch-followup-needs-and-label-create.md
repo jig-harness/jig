@@ -19,10 +19,11 @@ release: minor
   and says to close the terminals that run no agent; a follow-up beside an
   agent the runtime reports working still waits.
 - A Codex follow-up, steward or pickup pass that stops within its first
-  minute without starting a session is now treated like a Claude Code one
-  that could not start: its account backs off and the follow-up is retried
-  instead of waiting for a person. A Codex pass that started work and then
-  failed still counts as a pass that died.
+  minute is retried only when its startup output is empty and a complete
+  rollout lookup confirms that no session began. A sign-in or usage error
+  without that evidence remains inconclusive; a pass that started work and
+  then failed still counts as a pass that died. This applies to headless
+  dispatcher passes; interactive pickups are not supervised by the wrapper.
 - When a release adds a dispatch label a repository does not have yet, the
   dispatcher creates it and writes the pull request's label in the same
   tick. If the signed-in account may not create labels, a person is told
