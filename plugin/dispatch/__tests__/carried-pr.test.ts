@@ -219,6 +219,21 @@ describe("a claimed item an open pull request carries", () => {
     },
   );
 
+  it("keeps an incomplete forge link carried when its known pull request has a live drive", () => {
+    const partial = pr({
+      closing: [{ number: 12, repository: SLUG }],
+      closingComplete: false,
+    });
+    const plan = planPickups(input(stalled([partial], [LIVE])));
+    expect(plan.actions).toEqual([]);
+    expect(plan.quiet).toContainEqual({
+      target: "#12",
+      class: "claimed-carried",
+      why: expect.stringContaining(`carried by pull request #31 (${URL})`),
+      carried: { pr: 31, url: URL, drive: "driving" },
+    });
+  });
+
   it("raises no stall need while the drive has converged and the pull request waits for its merge", () => {
     const plan = planPickups(input(stalled([pr()], [CONVERGED])));
     expect(plan.actions).toEqual([]);

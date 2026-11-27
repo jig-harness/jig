@@ -388,11 +388,8 @@ function rollupOf(node: Record<string, unknown>): {
 /** The issues the forge says a pull request closes, each with its repository; nothing when they do not read. */
 function closingOf(node: Record<string, unknown>): {
   closing?: Array<{ number: number; repository: string }>;
+  closingComplete?: boolean;
 } {
-  if (
-    field(node, "closingIssuesReferences", "pageInfo", "hasNextPage") !== false
-  )
-    return {};
   const nodes = field(node, "closingIssuesReferences", "nodes");
   if (!Array.isArray(nodes)) return {};
   const closing = nodes.map((n) => ({
@@ -402,7 +399,12 @@ function closingOf(node: Record<string, unknown>): {
   return closing.every(
     (c) => typeof c.number === "number" && text(c.repository),
   )
-    ? { closing: closing as Array<{ number: number; repository: string }> }
+    ? {
+        closing: closing as Array<{ number: number; repository: string }>,
+        closingComplete:
+          field(node, "closingIssuesReferences", "pageInfo", "hasNextPage") ===
+          false,
+      }
     : {};
 }
 

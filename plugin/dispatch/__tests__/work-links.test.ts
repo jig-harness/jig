@@ -420,6 +420,24 @@ describe("a GitHub issue number, which pull requests share", () => {
     ]);
     expect(links.prsOf("#14")).toBeNull();
   });
+
+  it("keeps a known forge match while reporting that another match may be unread", () => {
+    const links = workLinks(
+      [
+        pr({
+          number: 9,
+          closing: [{ number: 12, repository: REPO }],
+          closingComplete: false,
+        }),
+      ],
+      ISSUES,
+    );
+    expect(links.itemsOf(9)).toBeNull();
+    expect(links.prsOfResult?.("#12")).toEqual({
+      prs: [{ number: 9, url: `https://github.com/${REPO}/pull/9` }],
+      complete: false,
+    });
+  });
 });
 
 describe("the reverse map", () => {

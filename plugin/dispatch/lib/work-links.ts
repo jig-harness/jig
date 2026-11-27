@@ -37,8 +37,10 @@ export interface PrLinkText {
   /** Whether its head is in another repository (a fork); absent where the read did not say, which no write relies on. */
   crossRepository?: boolean;
   /** The issues the forge says it closes, each with its repository (`owner/name`). */
-  /** `null` when the forge returned only part of its closing-reference connection. */
+  /** `null` when the forge could not read the closing-reference connection. */
   closing: ReadonlyArray<{ number: number; repository: string }> | null;
+  /** Whether `closing` contains every closing reference. */
+  closingComplete?: boolean;
 }
 
 /** How a repository's keys are read. */
@@ -56,8 +58,13 @@ export interface LinkRules {
 export interface WorkLinks {
   /** The keys a pull request is linked to, in canonical form; `null` when it is not one the read held, so nothing is known of it. */
   itemsOf(pr: number): string[] | null;
-  /** The open pull requests certainly linked to an item, by number, even when another pull request's closing references are incomplete; `null` only when no certain match exists and any closing references are unread. */
+  /** The open pull requests certainly linked to an item, by number; `null` when no certain match exists and a reference listing was incomplete. */
   prsOf(key: string): Array<{ number: number; url: string }> | null;
+  /** The open pull requests certainly linked to an item, and whether every possible match was read. */
+  prsOfResult?(key: string): {
+    prs: Array<{ number: number; url: string }>;
+    complete: boolean;
+  };
 }
 
 /** A word that closes what follows it: `close`, `closes`, `closed`, `fix`, `fixes`, `fixed`, `resolve`, `resolves`, `resolved`. */
@@ -368,6 +375,7 @@ function itemsOfPr(
     for (const ref of pr.closing)
       if (sameRepository(ref.repository, rules.issueRepository))
         add(keys.normalize(String(ref.number)));
+    return { items: found, complete: pr.closingComplete !== false };
   }
   return { items: found, complete: true };
 }
@@ -393,10 +401,14 @@ export function workLinks(
   }
   return {
     itemsOf: (pr) => items.get(pr) ?? null,
-    prsOf: (key) => {
+    prsOfResult: (key) => {
       const linked = reverse.get(rules.keys.normalize(key) ?? key) ?? [];
-      return linked.length > 0
-        ? [...linked]
+      return { prs: [...linked], complete: !incompleteClosingReferences };
+    },
+    prsOf: (key) => {
+      const result = reverse.get(rules.keys.normalize(key) ?? key) ?? [];
+      return result.length > 0
+        ? [...result]
         : incompleteClosingReferences
           ? null
           : [];

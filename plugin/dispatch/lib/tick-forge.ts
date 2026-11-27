@@ -305,6 +305,7 @@ function linkText(raw: unknown): PrLinkText | null {
     closing: Array.isArray(p.closing)
       ? (p.closing as Exclude<PrLinkText["closing"], null>)
       : null,
+    closingComplete: p.closingComplete === true,
   };
 }
 
