@@ -77,9 +77,19 @@ export function readerSettings(
   listen: Listen,
   requireToken: boolean,
   allowedHosts: readonly string[],
+  socket: string | null = null,
 ): string {
+  // The socket joins the fingerprint only when set, so a host without one
+  // keeps the fingerprint its running reader recorded.
   return createHash("sha256")
-    .update(JSON.stringify({ listen, requireToken, allowedHosts }))
+    .update(
+      JSON.stringify({
+        listen,
+        requireToken,
+        allowedHosts,
+        ...(socket === null ? {} : { socket }),
+      }),
+    )
     .digest("hex");
 }
 
@@ -167,6 +177,8 @@ export async function keepDashboard(options: {
   listen: Listen;
   requireToken: boolean;
   allowedHosts: readonly string[];
+  /** The private Unix socket to listen on as well; `null` for none. */
+  socket?: string | null;
   /** The `jig.ts` this reader runs, recorded so a status can compare it with the installed copy. */
   entry?: string;
   root?: string;
@@ -194,6 +206,7 @@ export async function keepDashboard(options: {
           return ok(
             serveDashboard({
               listen: options.listen,
+              ...(options.socket == null ? {} : { socket: options.socket }),
               ...(options.dataRoot === undefined
                 ? {}
                 : { root: options.dataRoot }),
@@ -241,6 +254,7 @@ export async function keepDashboard(options: {
                 options.listen,
                 options.requireToken,
                 options.allowedHosts,
+                options.socket ?? null,
               ),
             }),
             { mode: 0o600, flag: "wx" },

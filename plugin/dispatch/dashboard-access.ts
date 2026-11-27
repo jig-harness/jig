@@ -144,6 +144,7 @@ export function accessReport(
             config.dashboardListen,
             config.dashboardRequireToken,
             config.dashboardAllowedHosts,
+            config.dashboardSocket,
           )));
   if (config?.dashboardFront != null)
     return frontReport(

@@ -21,6 +21,10 @@
  * A machine file that sets `dashboard.require_token: false` on a loopback
  * address serves without one, for a front on the host (Tailscale Serve, a
  * reverse proxy) that authenticates each person before the request arrives.
+ * With `dashboard.socket` it also listens on a Unix socket created mode 0600
+ * (`dashboard-socket.ts`), which a private-network front targets: the same
+ * routes and the same refusals, with no token and no `Host` check, since
+ * only its owner and root can open the socket and no browser can.
  * The page names a web app manifest and its icons (`GET /manifest.webmanifest`,
  * `GET /icons/*`), which a phone's browser reads to offer the page as an app.
  * They are static, and answer under the same checks as the rest: an installed
@@ -44,6 +48,7 @@ import { currentMs } from "../shared/time.ts";
 import { readLine, readLineReceipt, stateAnswer } from "./lib/line-store.ts";
 import { authorityAllowed, isLoopback, type Listen } from "./lib/listen.ts";
 import { existingStateDb } from "./lib/state.ts";
+import { bindSocket } from "./dashboard-socket.ts";
 import { stateRoot } from "./receipts.ts";
 
 /** The port the dashboard listens on when neither `--port` nor the address names one. */
@@ -279,6 +284,8 @@ export function serveDashboard(options: {
   token?: string | null;
   /** Host names a front forwards under, besides the loopback names; only read when no token is asked for. */
   allowedHosts?: readonly string[];
+  /** The private Unix socket to listen on as well, mode 0600; an absolute path. */
+  socket?: string;
   /** The clock the answers read; the real one unless a check holds it still. */
   now?: () => number;
   /** A forge reader; fixtures provide their own instead of reaching a live account. */
@@ -330,67 +337,93 @@ export function serveDashboard(options: {
     );
   }
 
+  /** Answer one request; `onSocket` is the private socket, whose mode is its own check. */
+  async function answer(
+    request: Request,
+    onSocket: boolean,
+  ): Promise<Response> {
+    const url = new URL(request.url);
+    if (request.method !== "GET")
+      return answered(
+        failed("not-allowed", "this dashboard only reads"),
+        request,
+        405,
+      );
+    // Without a token the request's own authority is the only check: a page
+    // an attacker's name rebinds to this address must not read it.
+    if (
+      !onSocket &&
+      token === null &&
+      !authorityAllowed(request.headers.get("host"), fronts)
+    )
+      return answered(
+        failed(
+          "host-refused",
+          "this dashboard answers only to its loopback names and the front hosts the machine file lists",
+        ),
+        request,
+        403,
+      );
+    if (
+      !onSocket &&
+      token !== null &&
+      !sameToken(url.searchParams.get("token"), token)
+    )
+      return url.pathname === "/"
+        ? pageResponse(refused, request, 403)
+        : answered(
+            failed(
+              "token-refused",
+              "this dashboard needs the token its command printed",
+            ),
+            request,
+            403,
+          );
+    try {
+      return await route(request, url);
+    } catch (defect) {
+      console.error(
+        "jig dispatch dashboard: a defect while answering",
+        url.pathname,
+        defect,
+      );
+      return answered(
+        failed(
+          "defect",
+          "the dashboard hit a bug answering this; the terminal it runs in has the details",
+        ),
+        request,
+        500,
+      );
+    }
+  }
+
   const server = Bun.serve({
     hostname: options.listen.host,
     port: options.port ?? options.listen.port ?? DEFAULT_PORT,
-    async fetch(request) {
-      const url = new URL(request.url);
-      if (request.method !== "GET")
-        return answered(
-          failed("not-allowed", "this dashboard only reads"),
-          request,
-          405,
-        );
-      // Without a token the request's own authority is the only check: a page
-      // an attacker's name rebinds to this address must not read it.
-      if (
-        token === null &&
-        !authorityAllowed(request.headers.get("host"), fronts)
-      )
-        return answered(
-          failed(
-            "host-refused",
-            "this dashboard answers only to its loopback names and the front hosts the machine file lists",
-          ),
-          request,
-          403,
-        );
-      if (token !== null && !sameToken(url.searchParams.get("token"), token))
-        return url.pathname === "/"
-          ? pageResponse(refused, request, 403)
-          : answered(
-              failed(
-                "token-refused",
-                "this dashboard needs the token its command printed",
-              ),
-              request,
-              403,
-            );
-      try {
-        return await route(request, url);
-      } catch (defect) {
-        console.error(
-          "jig dispatch dashboard: a defect while answering",
-          url.pathname,
-          defect,
-        );
-        return answered(
-          failed(
-            "defect",
-            "the dashboard hit a bug answering this; the terminal it runs in has the details",
-          ),
-          request,
-          500,
-        );
-      }
-    },
+    fetch: (request) => answer(request, false),
   });
+  // Bound after the address, so a second reader on this configuration fails
+  // on the address before it can touch a live reader's socket.
+  const socket =
+    options.socket === undefined
+      ? null
+      : bindSocket(options.socket, (request) => answer(request, true));
+  if (socket !== null && !socket.ok) {
+    server.stop(true);
+    throw new ExitError(USAGE_EXIT, socket.failure.reason, {
+      cause: socket.failure.cause,
+    });
+  }
   const host = options.listen.host.includes(":")
     ? `[${options.listen.host}]`
     : options.listen.host;
   return {
     url: `http://${host}:${server.port}/${token === null ? "" : `?token=${token}`}`,
-    stop: () => server.stop(true),
+    stop: () => {
+      server.stop(true);
+      if (socket?.ok) socket.value.stop();
+    },
   };
 }
 
@@ -401,6 +434,7 @@ export async function dashboardMain(
   machinePath: string,
   requireToken = true,
   allowedHosts: readonly string[] = [],
+  socket: string | null = null,
 ): Promise<number> {
   if (listen === null)
     throw new ExitError(
@@ -411,10 +445,13 @@ export async function dashboardMain(
   existingStateDb();
   const dashboard = serveDashboard({
     listen,
+    ...(socket === null ? {} : { socket }),
     ...(port === undefined ? {} : { port }),
     ...(requireToken ? {} : { token: null, allowedHosts }),
   });
   console.log(`jig dispatch dashboard: ${dashboard.url}`);
+  if (socket !== null)
+    console.log(`Also listening on the private socket ${socket} (mode 0600).`);
   console.log(
     "It reads what the dispatcher recorded when the page asks; Ctrl-C stops it.",
   );

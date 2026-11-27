@@ -41,6 +41,12 @@ import {
 } from "./dashboard-reader.ts";
 import { attempt, failed, ok, type Outcome } from "../shared/outcome.ts";
 import { DEFAULT_PORT } from "./dashboard.ts";
+import { funnelFinding } from "./dashboard-funnel.ts";
+import {
+  readSocketFacts,
+  socketAnswers,
+  socketProblem,
+} from "./dashboard-socket.ts";
 import type { Listen } from "./lib/listen.ts";
 import { currentMs } from "../shared/time.ts";
 
@@ -285,6 +291,7 @@ function settingsMatch(
         machine.value.dashboardListen,
         machine.value.dashboardRequireToken,
         machine.value.dashboardAllowedHosts,
+        machine.value.dashboardSocket,
       )
   );
 }
@@ -306,6 +313,44 @@ async function answers(url: string): Promise<boolean> {
     () => false,
   );
   return cancelled && response.value.ok;
+}
+
+/** The private socket's and Funnel's lines for `--status`, and whether both are as installed. */
+async function frontStatus(
+  machine: ReturnType<typeof readMachineConfig>,
+): Promise<{ lines: string[]; ok: boolean }> {
+  const config = machine.ok ? machine.value : null;
+  if (config?.dashboardListen == null) return { lines: [], ok: true };
+  const lines: string[] = [];
+  let healthy = true;
+  const socket = config.dashboardSocket;
+  if (socket !== null) {
+    const facts = readSocketFacts(socket);
+    const problem = facts.ok
+      ? socketProblem(facts.value, process.getuid?.())
+      : facts.failure.reason;
+    const answering = problem === null && (await socketAnswers(socket));
+    healthy = answering;
+    lines.push(
+      `socket: ${problem ?? (answering ? "healthy (mode 0600, the reader's own)" : "not answering")}`,
+    );
+  }
+  const funnel = await funnelFinding({
+    listen: config.dashboardListen,
+    defaultPort: DEFAULT_PORT,
+    socket,
+  });
+  if (funnel.state === "exposed") {
+    healthy = false;
+    lines.push(
+      `funnel: ON for ${funnel.routes.join(", ")}, which publishes the dashboard to the open internet; turn it off with tailscale funnel`,
+    );
+  } else if (funnel.state === "unknown") {
+    healthy = false;
+    lines.push(`funnel: cannot tell (${funnel.reason})`);
+  } else if (funnel.state === "clear")
+    lines.push("funnel: off for the dashboard");
+  return { lines, ok: healthy };
 }
 
 export async function dashboardStatus(): Promise<number> {
@@ -333,6 +378,8 @@ export async function dashboardStatus(): Promise<number> {
       ? `reader: ${healthy ? "healthy" : "not answering"} (pid ${access.value.identity.pid}); private URL: jig dispatch dashboard --access`
       : `reader: ${access.failure.reason}`,
   );
+  const front = await frontStatus(readMachineConfig());
+  for (const line of front.lines) console.log(line);
   const refused = await availability();
   if (refused !== null) console.log(`availability: ${refused}`);
   console.log(`logs: ${schedulerLogs(scheduler.ok ? scheduler.value : null)}`);
@@ -341,7 +388,12 @@ export async function dashboardStatus(): Promise<number> {
       "configuration: reader does not match the current readable dashboard settings; waiting for renewal",
     );
   if (copy !== null) console.log(copy);
-  return healthy && viable && matches && copy === null && refused === null
+  return healthy &&
+    viable &&
+    matches &&
+    copy === null &&
+    refused === null &&
+    front.ok
     ? 0
     : 1;
 }
@@ -374,6 +426,7 @@ export async function scheduledDashboard(script: string): Promise<number> {
     listen: machine.value.dashboardListen,
     requireToken: machine.value.dashboardRequireToken,
     allowedHosts: machine.value.dashboardAllowedHosts,
+    socket: machine.value.dashboardSocket,
     entry: ownEntry,
     current: async () => {
       const currentConfig = attempt(

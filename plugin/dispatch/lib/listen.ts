@@ -6,6 +6,7 @@
  * since what it resolves to cannot be held to a range.
  */
 import { isIP } from "node:net";
+import { isAbsolute } from "node:path";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 
 export interface Listen {
@@ -129,4 +130,20 @@ export function parseListen(value: string): Outcome<Listen, "invalid"> {
   )
     return failed("invalid", `${value} names no port between 1 and 65535`);
   return ok({ host, port });
+}
+
+/** The longest socket path: the system's address field is about 108 bytes, with room to spare. */
+export const SOCKET_PATH_MAX_BYTES = 100;
+
+/** The mode the socket must keep: its owner alone (root is not bound by a mode). */
+export const SOCKET_MODE = 0o600;
+
+/** Why a configured socket path cannot be used; `null` when it can. */
+export function socketPathProblem(path: string): string | null {
+  if (path === "" || path.includes("\0"))
+    return "must be a path with no NUL character";
+  if (!isAbsolute(path)) return "must be an absolute path";
+  if (Buffer.byteLength(path) > SOCKET_PATH_MAX_BYTES)
+    return `is longer than ${SOCKET_PATH_MAX_BYTES} bytes, more than a socket address holds`;
+  return null;
 }

@@ -163,6 +163,77 @@ without it.
    phone's ordinary browser. Confirm the browser shows an address with no
    token in it, and bookmark it. Then run the [phone checks](#phone-checks).
 
+## A private socket for the front
+
+Pointing the front at the loopback port has a cost: every process of every
+user on the host can open that port too, so the dashboard cannot tell the
+front's requests from anyone else's. A **Unix socket** that only the reader's
+own user and root can open removes that, and is where a front that adds the
+viewer's login can be trusted later. The dashboard does not read an identity
+header today; the socket is the listener it would read one on.
+
+1. **Name the socket.** In the machine file, beside `listen`:
+
+   ```yaml
+   dashboard:
+     listen: 127.0.0.1:8765
+     socket: /run/user/1000/jig-dashboard.sock
+   ```
+
+   Use a path in a directory only you can enter (a runtime directory is
+   right), at most 100 bytes. The reader creates the socket mode 0600 and
+   removes it when it stops; it replaces one a crashed reader left, and
+   refuses a path that holds anything else. The reader restarts on its own
+   when the setting changes (allow up to two minutes).
+
+2. **Point the front at it.** Tailscale's daemon runs as root, which a 0600
+   socket admits, and serving a Unix socket needs root too:
+
+   ```sh
+   sudo tailscale serve --bg --https=8443 unix:/run/user/1000/jig-dashboard.sock
+   tailscale serve status
+   ```
+
+   Replace the route from the Serve section on the same port; read
+   `tailscale serve status` first, as there. The socket takes no token and no
+   `Host` name, so `require_token` and `allowed_hosts` still guard the
+   loopback port only.
+
+3. **Check it.** `jig dispatch dashboard --status` prints `socket:` and
+   `funnel:` lines and exits non-zero when the socket is missing, is not
+   mode 0600 and yours, or does not answer, and when Tailscale Funnel (which
+   publishes to the open internet) is on for a route to the socket or the
+   dashboard's port. A Funnel for another service is not named. From the
+   host, a second user cannot open it:
+
+   ```sh
+   sudo -u nobody curl -sS --unix-socket /run/user/1000/jig-dashboard.sock http://dashboard/
+   ```
+
+   answers a permission error, and `curl -X POST` to the loopback port still
+   answers `405`.
+
+4. **The day-1 probe, run by a person.** What the front adds to a request is
+   a fact about Tailscale and the tailnet's policy, so it is observed, not
+   assumed. Use a socket of its own and a spare HTTPS port, so the reader and
+   its route stay as they are. Serve a throwaway listener that prints the two
+   headers, and point a temporary route at it:
+
+   ```sh
+   bun -e 'Bun.serve({unix:"/run/user/1000/jig-probe.sock",fetch:(r)=>{console.log(r.headers.get("tailscale-user-login"),r.headers.get("tailscale-app-capabilities"));return new Response("ok")}})' &
+   sudo tailscale serve --bg --https=8444 --accept-app-caps=<capability> unix:/run/user/1000/jig-probe.sock
+   ```
+
+   Open `https://<host>.<tailnet>.ts.net:8444/` from the phone, then
+   `curl` it from the host itself. The phone's request must print the
+   viewer's login and, with a grant for the capability, the capability; the
+   host's own request must print neither. Record both in the verification
+   record below, then remove the route (`sudo tailscale serve --https=8444
+   --set-path=/ off`), stop the listener and delete `jig-probe.sock`.
+
+Undo it by removing `socket` from the machine file and pointing the front
+back at the loopback port; the reader removes the socket file itself.
+
 ## Without Orca or Tailscale: an authenticated reverse proxy
 
 Any [reverse proxy](https://en.wikipedia.org/wiki/Reverse_proxy) that
@@ -375,3 +446,6 @@ claims it works until it has.
 | Copy after the clipboard permission is refused | Not yet run |
 | Install app offered in Chrome on the phone; the installed app opens in its own window, reads the page and copies a command | Partly run, 2026-11-15: the page installs as an app on the phone from the HTTPS front; the manifest (`start_url` `/`, `display` `standalone`) and its 192, 512 and maskable 512 icons each answer `200` through the front. Not yet observed: the installed app opening without a browser bar, showing no token in its addresses, reading the page and copying a command |
 | Reverse-proxy path, with its product and version | Not yet run |
+| Private socket: a second user cannot open it; the loopback port still answers `405` to every request that is not a read | Not yet run (the tests check the socket's mode and owner; the second-user check is the host's) |
+| Day-1 probe: the phone's request through the socket carries the login and the capability; the host's own carries neither | Not yet run |
+| `jig dispatch dashboard --status` fails with Funnel on for the socket, and passes with it off | Not yet run |
