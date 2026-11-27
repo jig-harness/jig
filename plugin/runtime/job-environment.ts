@@ -16,20 +16,27 @@
  */
 import { failed, ok, type Outcome } from "../shared/outcome.ts";
 
-/** A plist string's text, its XML escapes undone, numeric references included. */
+const NAMED_ENTITIES: Record<string, string> = {
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  amp: "&",
+};
+
+/**
+ * A plist string's text, its XML escapes undone in one pass, numeric
+ * references included; a reference that names no character stays as written.
+ */
 export function unxml(value: string): string {
-  return value
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) =>
-      String.fromCodePoint(Number.parseInt(hex, 16)),
-    )
-    .replace(/&#([0-9]+);/g, (_, decimal: string) =>
-      String.fromCodePoint(Number.parseInt(decimal, 10)),
-    )
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, "&");
+  return value.replace(
+    /&(?:#x([0-9a-fA-F]+)|#([0-9]+)|(lt|gt|quot|apos|amp));/g,
+    (whole, hex?: string, decimal?: string, named?: string) => {
+      if (named !== undefined) return NAMED_ENTITIES[named] ?? whole;
+      const code = Number.parseInt(hex ?? decimal ?? "", hex ? 16 : 10);
+      return code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+    },
+  );
 }
 
 /**

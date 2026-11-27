@@ -800,7 +800,7 @@ async function restore(snapshot: SchedulerSnapshot): Promise<void> {
   await stopReplacement(snapshot.scheduler === "launchd", snapshot.spec);
   for (const [path, text] of Object.entries(snapshot.files))
     if (text === null) rmSync(path, { force: true });
-    else writeFileSync(path, text, { mode: 0o600 });
+    else writePrivate(path, text);
   await startPrevious(snapshot);
 }
 /** Whether `files` (from `jobFiles`) differ from the job the snapshot saw. */
@@ -900,7 +900,7 @@ export function jobPreview(spec: JobSpec, remove: boolean): string {
   try {
     carried = carriedFromInstalled(scheduler, spec);
   } catch (error) {
-    return `Scheduler preview unavailable: ${reasonOf(error)}`;
+    return `Scheduler preview unavailable for the ${spec.name} job: ${reasonOf(error)}`;
   }
   const job = installedJob(spec, false, carried);
   const captured = Object.keys(spec.capturedEnv ?? {});

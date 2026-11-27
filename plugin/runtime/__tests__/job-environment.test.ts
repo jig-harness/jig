@@ -95,6 +95,17 @@ describe("the variables kept from the installed launchd job", () => {
     });
   });
 
+  test("decode each reference once, and keep one that names no character", () => {
+    const edited = plist({ PATH: "/bin" }).replace(
+      "</dict>",
+      "<key>ONCE</key><string>&#38;lt;</string><key>FAR</key><string>&#1114112;</string></dict>",
+    );
+    expect(carriedEnvironment(edited, managed)).toEqual({
+      ok: true,
+      value: { ONCE: "&lt;", FAR: "&#1114112;" },
+    });
+  });
+
   test("are read from a job a plist tool laid out on lines of its own", () => {
     const edited = `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0">
