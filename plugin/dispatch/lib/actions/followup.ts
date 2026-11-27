@@ -58,6 +58,8 @@ import {
   writeRecord,
 } from "../launches.ts";
 import { retryable, stuckAction } from "../stuck-launches.ts";
+import { followupUnreportedNeed } from "../followup-unreported.ts";
+import { pullUrl } from "../forge.ts";
 import { offeredField } from "../routine-questions.ts";
 import {
   type Dispatched,
@@ -494,8 +496,15 @@ async function dropUnmarked(
   return unsettled;
 }
 
-/** Why a marked record's replay waits (`wait`), or can never be proven safe (`never`); `null` when it may go ahead. */
-type ReplaySafety = { wait: string } | { never: string } | null;
+/**
+ * Why a marked record's replay waits (`wait`, with the `workspace` whose
+ * unreportable terminals hold it, when that is the reason), or can never be
+ * proven safe (`never`); `null` when it may go ahead.
+ */
+type ReplaySafety =
+  | { wait: string; workspace?: string }
+  | { never: string }
+  | null;
 
 type Marked = LaunchRecord & { pr: number; marker: number };
 
@@ -551,7 +560,10 @@ async function sessionsFree(
   }
   const joined = (w: { prs: number[] }): boolean => w.prs.includes(pr);
   const held = holding(sessions, joined);
-  if (held.kind === "unknown") return { wait: held.reason };
+  if (held.kind === "unknown")
+    return held.workspace === undefined
+      ? { wait: held.reason }
+      : { wait: held.reason, workspace: held.workspace };
   // An agent the runtime reports holds the pull request, but a terminal it
   // cannot report beside it is an uncertainty, not a verdict: wait.
   const unread = sessions.ok
@@ -631,6 +643,11 @@ async function retryMarked(
       });
       continue;
     }
+    if (safety?.workspace !== undefined)
+      unreportedNeed(report, repo.slug, record, ctx.section.followupCommand, {
+        reason: safety.wait,
+        workspace: safety.workspace,
+      });
     const blocked =
       safety === null
         ? await accountBlock(state, record)
@@ -639,6 +656,39 @@ async function retryMarked(
     report.launches.push(headless(outcome, record));
   }
   return held;
+}
+
+/**
+ * A replay held only by a joined workspace's unreportable terminals is a
+ * person's need naming that workspace, as a fresh follow-up's is: the
+ * pending record otherwise waits each tick with nothing on the line. Raised
+ * once per pull request and workspace in the report.
+ */
+function unreportedNeed(
+  report: RepoReport,
+  slug: string,
+  record: Marked,
+  command: string,
+  held: { reason: string; workspace: string },
+): void {
+  const target = `PR #${record.pr}`;
+  const raised = report.actions.some(
+    (a) =>
+      a.stage === "notify" &&
+      a.target === target &&
+      a.evidence.workspace === held.workspace,
+  );
+  if (raised) return;
+  const pr = { number: record.pr, url: pullUrl(slug, record.pr) };
+  const wanted = `launch record ${record.id}'s follow-up is pending with its marker posted, and its launch is replayed`;
+  report.actions.push(
+    followupUnreportedNeed(
+      slug,
+      pr,
+      record.command ?? command,
+      wanted,
+    )(held.workspace, held.reason),
+  );
 }
 
 /** `--apply` for one repository's follow-ups. */

@@ -153,6 +153,44 @@ describe("a follow-up whose launch never ran after its marker was posted", () =>
     expect(recordIds(w)).toEqual([]);
   });
 
+  it("is a person's need naming the workspace, and launched by nothing, while that workspace holds terminals the runtime cannot report", async () => {
+    const w = fixture();
+    const record = await stoppedBeforeTheAnswer(w);
+    const path = join(w.root, "ws-9");
+    w.setWorkspaces([
+      {
+        branch: "feature/9-done",
+        linkedPR: 9,
+        path,
+        unverifiableTerminalCount: 2,
+      },
+    ]);
+
+    const next = await applyTick(w, false);
+    expect(launches(next)).toEqual([
+      expect.objectContaining({
+        target: "PR #9",
+        record: record.id,
+        detail: expect.stringContaining("cannot report"),
+      }),
+    ]);
+    const needs = (next.repos[0]?.actions ?? []).filter(
+      (a) => a.cause === "needs-person" && a.evidence.workspace === path,
+    );
+    expect(needs).toEqual([
+      expect.objectContaining({
+        stage: "notify",
+        target: "PR #9",
+        evidence: expect.objectContaining({ stage: "followup" }),
+      }),
+    ]);
+    expect(notifyWrites(w).at(-1)?.join(" ")).toContain(
+      "Close the terminals in",
+    );
+    expect(claudeRuns(w)).toEqual([]);
+    expect(readRecord(record.id, dispatchState(w))?.attempts).toEqual([]);
+  });
+
   it("is launched again with the command it was launched with once the repository names none and the stage runs the default", async () => {
     const w = fixture();
     const record = await stoppedBeforeTheAnswer(w);
