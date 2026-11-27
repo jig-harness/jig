@@ -795,6 +795,28 @@ function repeatFilter(opts: OffsetOptions): (id: unknown) => boolean {
   };
 }
 
+/** Adds a page's items the read keeps to `out`; how many it added. */
+function keepItems(
+  items: Record<string, unknown>[],
+  opts: OffsetOptions,
+  keep: (id: unknown) => boolean,
+  out: Record<string, unknown>[],
+): number {
+  const before = out.length;
+  for (const item of items)
+    if (keep(opts.strings === true ? item.name : opts.idOf(item)))
+      out.push(item);
+  return out.length - before;
+}
+
+/** Refuses a page before the end that moves the read on without bringing anything. */
+function checkProgress(read: number, added: number, where: string): void {
+  if (read === 0)
+    throw shape(where, "an empty page before the end of the list");
+  if (added === 0)
+    throw shape(where, "a page before the end holds only items read before");
+}
+
 /**
  * Every item of an offset-paged listing. The end is `isLast: true`, else
  * `startAt + items.length >= total`; a page with neither, an item seen on
@@ -816,20 +838,11 @@ export async function offsetPages(
     const query = { ...request.query, startAt, maxResults };
     const page = await transport({ ...request, query }, opts.signal);
     const items = offsetItems(page, opts);
-    const read = out.length;
-    for (const item of items)
-      if (keep(opts.strings === true ? item.name : opts.idOf(item)))
-        out.push(item);
+    const added = keepItems(items, opts, keep, out);
     const next = startAt + items.length;
     if (lastOffsetPage(page as Record<string, unknown>, next, opts.where))
       return out;
-    if (items.length === 0)
-      throw shape(opts.where, "an empty page before the end of the list");
-    if (out.length === read)
-      throw shape(
-        opts.where,
-        "a page before the end holds only items read before",
-      );
+    checkProgress(items.length, added, opts.where);
     startAt = next;
   }
 }
