@@ -84,6 +84,10 @@ describe("the hold precondition on a head whose newest run is a skip", () => {
     );
   });
 
+  it("does not count a completed run without a conclusion before the skip", () => {
+    expect(neverHeld(thenSkipped((id, n) => run(id, n, null)))).toBe(false);
+  });
+
   it("never reads a head with only skipped runs as complete", () => {
     const skips = REQUIRED.map((name, i) =>
       run(i + 100, name, "skipped", "completed", LATER),

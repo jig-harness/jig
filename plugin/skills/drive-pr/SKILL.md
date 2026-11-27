@@ -291,7 +291,8 @@ intermediate fix push, `finish-round.ts` waits until every required check has
 completed, adds the label, and records the resulting GitHub timeline-event id.
 Until the label is first added, a required check whose newest run is a
 completed skip (a label event's run on a workflow that skips the required job,
-which M13 forbids) is judged by its newest run that is not a skip: a queued or
+a shape [M13](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/README.md#7-hold)
+forbids) is judged by its newest run that is not a skip: a queued or
 running run is still waited for, a cancelled one is left to the cancelled-run
 recovery, and a check with only skipped runs keeps the wait. After a release,
 the newest run is judged, and a skip there is never complete.
