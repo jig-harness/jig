@@ -188,6 +188,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
           ? null
           : { id: issue.assignee.id, name: issue.assignee.login },
       labels: model.visibleLabels(labels),
+      ...(kids.length > 0 ? { hasChildren: true } : {}),
       hasOpenChildren: kids.some(
         (k) => record(k, "sub-issue").state === "OPEN",
       ),
