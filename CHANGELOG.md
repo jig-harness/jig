@@ -404,6 +404,78 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.317.0] - 2026-11-27
+
+### Fixed
+
+- `/jig:drive-pr`: on a converged head whose failures only cancelled runs carry, the driver log prints the recovery's wait line when the wait starts and when what it waits for changes (the head, or the failing checks), not on every 10-second poll, so a long grace period no longer fills the log with one line. The wait for a run to replace a cancelled check does the same.
+- `/jig:drive-pr`: the skill's exit table, its CI-repair sections, the re-arm banner and the README no longer say a spent CI-repair budget stops the drive by itself. A spent budget starts one diagnosing session on the failing head, `CI_REPAIR_SPENT` (exit 21) is the stop when that session could not complete the repair, and a re-arm on the same head stops again with the recorded diagnosis unless the park it named was answered, as the exit registry says.
+- `/jig:drive-pr`: when the round-boundary takeover check rejects the ledger's comment listing (a transport failure, a blank, malformed, interrupted or truncated page set, a driver with no ledger floor), the driver log now names the reason once per run of rejections for that reason. The check still reads the listing again at the next checkpoint, so a drive that keeps retrying it is visible in its log.
+- `/jig:drive-pr`: a stall stop now says how its passes finished when they did not all end on the same state: the last reasons their `finish-round.ts` recorded and how many passes recorded none. The stall's `stop` event keeps that tally as `reasons`, and the ledger's summary, the closing report and the dispatcher's account of the stalled drive, which the steward's digest carries, name it, so a stall re-drive, the steward or a person starts from what the passes said.
+
+## [0.316.0] - 2026-11-27
+
+### Added
+
+- The dispatcher can free a pull request's branch from a leftover checkout
+  without asking a person, where the host opts in through two keys in the
+  machine file, `~/.jig/dispatch.yaml`. Both default to `false`. With
+  `detach_idle_holders`, a workspace open also detaches a checkout the
+  workspace runtime does not list when no process, drive or session uses it
+  and every commit it holds is on the remote. It does this even when the
+  checkout's tree holds uncommitted changes, and those changes stay in the
+  tree. With `rescue_unpushed` as well, the open also detaches a checkout
+  whose commits the remote lacks. It first keeps those commits on a
+  [rescue branch](GLOSSARY.md), a local branch
+  `jig-rescue/<tree>-<time>` that the dispatcher never pushes and `jig gc`
+  never collects. Where the remote has the branch, it then moves the branch
+  back to the remote's copy so the open can check it out. The launch's receipt and a
+  comment on the pull request name the rescue branch and its clone. A rescue
+  that fails leaves the checkout as it was, and a person is asked as before.
+  A checkout that a process, a drive or a session uses is never touched.
+  The settings are described in
+  [CONFIGURATION.md](plugin/CONFIGURATION.md#the-machines-dispatch-file).
+
+### Changed
+
+- `/jig:drive-pr` restarts a pass that exits with a process it started still
+  running in the background, instead of stopping the drive with
+  [`WORKTREE_UNCLEAN`](plugin/protocol/drive-exits.md) over fixes the pass
+  never shipped. A headless pass has no next turn, so such a process (the
+  gates run in the background, say) reports to nobody. The driver gives every
+  pass a token in its environment, finds a live process still carrying it or
+  still in the pass's process group when the pass exits, and stops it. The
+  driver then starts the pass again in the same tree, with a notice saying
+  what happened and what the tree holds, since the process may have been
+  validation the pass never saw finish. A process that cannot be stopped, or
+  a scan that cannot look or cannot inspect a process that began after the
+  driver, ends the drive with `INDETERMINATE`, with its locks kept. Signals
+  are bound to each process's creation identity, and only a program name is
+  recorded, never its arguments. These restarts share the `drive.pass_deadline_retries`
+  budget with restarts after a pass deadline, and the drive's ledger records
+  them as `restart` events with the cause `background-pending`. The
+  environment check needs `/proc` (Linux). On other POSIX hosts the driver
+  finds only processes still in the pass's process group, and on Windows it
+  finds none.
+
+### Fixed
+
+- `jig dispatch`'s validation capacity gauge (`load.validation`) charges
+  each pass's lock runs, whether still to arrive, at the lock now or
+  reserved by a new pickup for the drive after it, its own repository's
+  run time, measured once the repository's passes have made five runs,
+  instead of the 90th percentile of every run on the host: a repository
+  whose passes make short targeted runs is no longer charged another
+  repository's full gate runs. A repository without its own measure keeps
+  every repository's figure.
+- The gauge's runs at once is now at least the slots the test lock's own
+  load and memory check admits on the host as the tick reads it, up to
+  `LOCK_SLOTS`, and the observed peak (itself held to the current
+  `LOCK_SLOTS`) where that is higher; the reason names the count, or why it
+  was not read. A `LOCK_SLOTS` or `LOCK_STATIC_SLOTS` the lock refuses holds
+  the pass at admission, as an unusable `LOCK_TIMEOUT` does.
+- The dispatcher keeps epics and issues with sub-issues out of the pickup queue and explains why. A direct or replayed claim of an epic is refused before assignment or status changes.
+
 ## [0.315.0] - 2026-11-27
 
 ### Added
@@ -11453,7 +11525,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.315.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.317.0...HEAD
+[0.317.0]: https://github.com/jig-harness/jig/compare/v0.316.0...v0.317.0
+[0.316.0]: https://github.com/jig-harness/jig/compare/v0.315.0...v0.316.0
 [0.315.0]: https://github.com/jig-harness/jig/compare/v0.314.3...v0.315.0
 [0.314.3]: https://github.com/jig-harness/jig/compare/v0.314.2...v0.314.3
 [0.314.2]: https://github.com/jig-harness/jig/compare/v0.314.1...v0.314.2

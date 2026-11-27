@@ -406,8 +406,11 @@ describe("drive.ts loop control", () => {
     DIAGNOSING_DRIVE_TIMEOUT,
   );
 
-  /** A converged red head, driven with `drive.ci_repair_rounds: 1` in the configuration. */
-  async function driveWithRepairSetting(env: Record<string, string>) {
+  /** A converged red head, driven with `drive.ci_repair_rounds: <rounds>` (1 by default) in the configuration. */
+  async function driveWithRepairSetting(
+    env: Record<string, string>,
+    rounds = "1",
+  ) {
     const { dir, stateDir } = writeFixture({
       threads: [],
       head: scratchClean.head,
@@ -422,7 +425,7 @@ describe("drive.ts loop control", () => {
     );
     writeFileSync(
       overlay,
-      base.replace(/^drive:\n/m, "drive:\n  ci_repair_rounds: 1\n"),
+      base.replace(/^drive:\n/m, `drive:\n  ci_repair_rounds: ${rounds}\n`),
     );
     return runDriveIn(
       dir,
@@ -449,6 +452,15 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain("stopping for /fix-ci");
     expect(r.stderr).not.toContain("Running CI-repair pass");
     expectSpawnExit({ ...r, stdout: null }, 1);
+  });
+
+  it("stops on a malformed drive.ci_repair_rounds rather than guessing a budget", async () => {
+    const r = await driveWithRepairSetting({}, "two");
+    expectSpawnExit({ ...r, stdout: null }, 1);
+    expect(r.stderr).toContain("drive.ci_repair_rounds");
+    expect(r.stderr).toContain("must be a whole number of at least 0");
+    expect(r.stderr).not.toContain("Running CI-repair pass");
+    expect(r.stderr).not.toContain("TASK=ci-");
   });
 
   it("--dry-run against a converged PR with a red final verdict previews the CI-repair pass", async () => {

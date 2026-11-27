@@ -20,6 +20,7 @@ import {
 import type { TimedOutJob } from "../job-timeout.ts";
 import { sleep } from "../cli.ts";
 import { FINAL_CI_POLL_SECONDS, UNLABEL_SETTLE_SECONDS } from "./settings.ts";
+import { sayWaiting } from "./wait-line.ts";
 
 export async function pendingRetryDisposition(
   context: DriveRoundContext,
@@ -170,8 +171,10 @@ export async function cancelledRunRecovery(
   if (isTimedOut(recovery))
     return await repair(withTimedOut(failing, recovery), recovery.timedOut);
   if (recovery === "none") return null;
-  console.error(
+  sayWaiting(
+    context,
     `review converged; '${finalVerdict}' failed only in cancelled runs, so it is recovered as a cancellation, not repaired`,
+    `cancelled-recovery ${head} ${finalVerdict}`,
   );
   await sleep(FINAL_CI_POLL_SECONDS);
   return "continue";

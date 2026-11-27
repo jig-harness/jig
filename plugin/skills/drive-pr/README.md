@@ -402,7 +402,8 @@ Local mailbox stop, hold and resume and the provisional-decision sweep
 retain a ten-second idle cadence, independent of bulk CI observation.
 After a complete round-boundary takeover read, the drive waits at least
 sixty seconds between read starts. If the listing cannot be read, the next
-round checkpoint retries it. The drive still reads claims fresh before
+round checkpoint retries it, and the drive's log says why, once for each run of
+rejections with the same reason. The drive still reads claims fresh before
 dispatching a pass and before writing the ledger. The mailbox runs before
 remote reads. In-flight work adds its helper deadline;
 GitHub's Retry-After and primary reset holds still take precedence. These
@@ -528,7 +529,7 @@ not infer whether the code has already been fixed.
 
 - **A PR exists and you want the review loop run to completion** → this skill. Normally you don't even start it by hand: a `/jig:do-item` run arms the drive when it opens the draft PR. Typing `/jig:drive-pr [PR]` in a session does the same thing: the agent starts the driver below (in a terminal tab of its own in Orca, in the background elsewhere; see [Arming from a session](#arming-from-a-session)), reports its log path, and stops — it does not work a round itself.
 - **You want exactly one round, interactively, with yourself in the loop** → `/jig:drive-pr --interactive [PR]` (one in-session round, then stop), or [`/jig:resolve-review-comments`](../resolve-review-comments/README.md) (the drive wraps it).
-- **CI is red and that's the only problem** → repair it directly, with [`/jig:fix-ci`](../fix-ci/SKILL.md). (A drive already in flight repairs red CI itself, up to `drive.ci_repair_rounds` times; repair by hand when there is no drive running, or when its budget is spent.)
+- **CI is red and that's the only problem** → repair it directly, with [`/jig:fix-ci`](../fix-ci/SKILL.md). (A drive already in flight repairs red CI itself, up to `drive.ci_repair_rounds` times and then once more through a diagnosing session; repair by hand when there is no drive running.)
 
 ## How to start it
 
@@ -681,7 +682,10 @@ recorded: the refusal that stops the round now. When every stalled pass's
 `finish-round.ts` ended on the same state (`CI_HOLD_WAIT`, say), the stop and
 its closing report name that state and its reason, and the report's cause
 follows from it (`environment` for `CI_HOLD_WAIT`) instead of `unknown`; the
-drive's ledger names them too. A failed push's reason says why it failed (a
+drive's ledger names them too. When they did not all end on one state, the stop
+names the last reasons they recorded instead and counts each pass that recorded none, and the
+ledger, the closing report and the dispatcher's account of the stall (which the
+steward reads) carry that tally. A failed push's reason says why it failed (a
 pre-push gate, the remote's rejection, the connection, a timeout) with the
 last lines the push wrote, and a stall whose every push failed is handed to a
 person to fix that before re-arming, never re-driven onto it until a push
