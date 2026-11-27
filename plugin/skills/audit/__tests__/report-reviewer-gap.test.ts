@@ -93,8 +93,25 @@ describe("a repository with no automated reviewer, against Team/Standard", () =>
     expect(survey).not.toContain("Ignore PRs");
     expect(survey).not.toContain("targeting any branch, not only");
     expect(survey).toContain("in the 90 days before the observation time");
+    expect(survey).toContain(
+      "Count only activity timestamped within that 90-day window",
+    );
+    expect(survey).toContain("historical records the host no longer retains");
+    expect(survey).toContain(
+      "judge evidence completeness per criterion against that criterion's scope",
+    );
     expect(survey).toContain("opened by `--examine-all`");
     expect(survey).toContain("stop and report the audit incomplete");
+    expect(survey).toContain(
+      "record the settled score and note the unchecked channel in the evidence instead of stopping",
+    );
+    const skill = readFileSync(`${root}SKILL.md`, "utf8");
+    expect(skill).toContain(
+      "preserve the confirmed observations, close the gap yourself",
+    );
+    expect(skill).toContain(
+      "where confirmed observations already settle the score, record them with the gap noted instead of stopping",
+    );
     const criteria = readFileSync(
       `${root}criteria/M7-pr-lifecycle-review.yaml`,
       "utf8",
