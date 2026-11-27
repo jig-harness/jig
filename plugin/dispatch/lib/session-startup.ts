@@ -142,16 +142,17 @@ function assistantTexts(entry: Record<string, unknown>): string[] {
 
 /** The text of a rate-limit error entry that holds one text part and no line break; `undefined` for any other entry. */
 function noticeText(entry: Record<string, unknown>): string | undefined {
-  if (entry.error !== "rate_limit") return undefined;
+  if (entry.error !== "rate_limit" || entry.isApiErrorMessage !== true)
+    return undefined;
   const texts = assistantTexts(entry);
   const text = texts.length === 1 ? (texts[0] ?? "").trim() : "";
   return /[\r\n]/.test(text) ? undefined : text;
 }
 
 /**
- * The usage notice a Claude Code session's transcript ends on: its last user
- * or assistant entry is an assistant entry the vendor marked as a rate-limit
- * error (`error: "rate_limit"`) whose text is the notice and nothing else;
+ * The usage notice a Claude Code session's transcript ends on: its last
+ * assistant entry (user entries and tool output are skipped) is an entry the vendor marked as a rate-limit
+ * error (`error: "rate_limit"` with `isApiErrorMessage`) whose text is the notice and nothing else;
  * ordinary model output that reads like the notice is none. A notice in a user entry, in a tool's output or call, or
  * inside longer text is none. Only the notice is returned, never other
  * content.
@@ -165,7 +166,6 @@ function transcriptUsageNotice(record: LaunchRecord): string | undefined {
   for (const line of lines.reverse()) {
     const entry = transcriptEntry(line);
     if (entry === undefined) continue;
-    if (entry.type === "user") return undefined;
     if (entry.type !== "assistant") continue;
     const text = noticeText(entry);
     return text !== undefined && noticeClause(text) !== null ? text : undefined;

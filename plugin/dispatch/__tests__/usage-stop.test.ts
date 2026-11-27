@@ -179,6 +179,10 @@ describe("which ended sessions stopped on a usage notice", () => {
       [assistantText(notice)],
     ],
     [
+      "a rate_limit error that lacks the vendor's error-message marker",
+      [{ ...limitEntry(notice), isApiErrorMessage: undefined }],
+    ],
+    [
       "the notice in an earlier assistant entry",
       [limitEntry(notice), userEntry("go on"), assistantText("Carrying on.")],
     ],
@@ -187,6 +191,15 @@ describe("which ended sessions stopped on a usage notice", () => {
     writeTranscript(record.configDir, SESSION, entries);
     expect(failedStartup(record, 1, started, "", quick)).toBeUndefined();
     expect(failedStartup(record, 1, started, "", late)).toBeUndefined();
+  });
+
+  it("reads the last assistant entry past a user entry that follows it", () => {
+    const record = recordOf();
+    writeTranscript(record.configDir, SESSION, [
+      limitEntry(notice),
+      userEntry("queued message"),
+    ]);
+    expect(failedStartup(record, 1, started, "", late)).toBe("quota");
   });
 
   it("classes a notice in the output of a pass with no session id as quota", () => {
