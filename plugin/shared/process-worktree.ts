@@ -44,7 +44,7 @@ const PUBLICATION_TIMEOUT_MS = 30_000;
  * keeps collection closed until the launch can be reconciled.
  */
 export async function openProcessWorktree(
-  port: Pick<OpenPort, "host" | "runHook" | "drivers">,
+  port: Pick<OpenPort, "host" | "runHook" | "drivers" | "holders">,
   options: ProcessWorktreeOptions,
   publish: (
     worktree: WorkspaceCheckout,

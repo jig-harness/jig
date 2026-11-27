@@ -123,6 +123,7 @@ describe("facet reads within their caller's bounds", () => {
               state: { id: "s", name: "Backlog", type: "backlog" },
               assignee: null,
               labels: { pageInfo: { hasNextPage: false }, nodes: [] },
+              allChildren: { nodes: [] },
               children: { pageInfo: { hasNextPage: false }, nodes: [] },
             },
           ],

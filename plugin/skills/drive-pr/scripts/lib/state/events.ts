@@ -4,8 +4,10 @@
  * a pull request whichever clone drove it.
  *
  *   - `restart`: the driver restarted itself from a stop that needs no
- *     decision: `pass-deadline` (a pass killed at its deadline) or `stall`
- *     (the one extra round after two passes that changed nothing).
+ *     decision: `pass-deadline` (a pass killed at its deadline),
+ *     `background-pending` (a pass that ended with a background task still
+ *     running) or `stall` (the one extra round after two passes that changed
+ *     nothing).
  *   - `rearm`: a stopped drive was picked up again from its durable state:
  *     `quota-account` (another account after a usage wall),
  *     `quota-reset` (the wall's reset passed), `window-reopened` (a person
