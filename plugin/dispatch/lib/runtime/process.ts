@@ -36,6 +36,7 @@ import { branchTargets } from "./branch-targets.ts";
 import { launchProcess } from "./process-launch.ts";
 import { processOpen } from "./process-workspaces.ts";
 import type { ProcessSettings } from "./process-environment.ts";
+import { swallow } from "../../../shared/errors.ts";
 import { attempt } from "../../../shared/outcome.ts";
 import { parseMs } from "../../../shared/time.ts";
 
@@ -120,7 +121,8 @@ function gitDirectory(tree: string): string | null {
     if (!line.startsWith("gitdir:")) return null;
     const dir = line.slice("gitdir:".length).trim();
     return isAbsolute(dir) ? dir : resolve(tree, dir);
-  } catch {
+  } catch (error) {
+    swallow(error, "the worktree's git directory is unreadable");
     return null;
   }
 }
@@ -137,8 +139,9 @@ function preparationEndsAt(tree: string): number {
   if (dir !== null) {
     try {
       return statSync(join(dir, CREATE_HOOK_MARK)).mtimeMs / 1000 + 2;
-    } catch {
+    } catch (error) {
       // The hook has not left its mark: fall back to its time limit.
+      swallow(error, "the create hook has left no mark");
     }
   }
   const born = attempt(
