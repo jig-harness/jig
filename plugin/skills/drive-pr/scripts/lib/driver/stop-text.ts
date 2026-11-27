@@ -7,10 +7,17 @@
  * read; every other exit says what the terminal-state registry's
  * `report.stop` says for it.
  */
+import { redactReportText } from "../../../../../shared/closing-report.ts";
 import type { ParkedItem } from "../state/park-frame.ts";
 import type { DriveState } from "../state/schema.ts";
 import { diagnosisDetail, latestDiagnosedPark } from "../state/ci-actions.ts";
-import { lastStopEvent, stopInstant } from "../state/events.ts";
+import {
+  lastStopEvent,
+  type StallReasons,
+  stallReasonsLine,
+  stopInstant,
+  stopReasons,
+} from "../state/events.ts";
 import {
   DRIVE_EXIT,
   driveExitReport,
@@ -93,6 +100,48 @@ function forgeLimitStop(
   return `PR #${pr} stopped on the forge's rate limit for its credential, which resets ${until}${reason} (exit ${code})`;
 }
 
+/** The longest a reason is kept in a stall's stop line, so three of them and the missing-pass count fit the closing report's 600 characters. */
+const STALL_LINE_REASON_MAX = 120;
+
+/** The tally with each reason cut to its share of the stop line. */
+function fitStallReasons(reasons: StallReasons): StallReasons {
+  return {
+    ...reasons,
+    last: reasons.last.map((f) => {
+      // Redact first: a cut can split an address or token the redactor matches.
+      const reason = redactReportText(f.reason);
+      return {
+        ...f,
+        reason:
+          reason.length > STALL_LINE_REASON_MAX
+            ? `${reason.slice(0, STALL_LINE_REASON_MAX - 1)}…`
+            : reason,
+      };
+    }),
+  };
+}
+
+/**
+ * The line for a stall: the state every stalled pass ended on when they
+ * agree, else how they finished as the stop recorded it; `null` when the
+ * stop recorded neither. The passes wrote the reasons, so they are redacted
+ * here for every reader of the line, the Orca card's comment included.
+ */
+function stallStop(
+  pr: string,
+  code: number,
+  state: DriveState | null,
+  stall: StallFinish | null,
+): string | null {
+  if (stall !== null)
+    return `PR #${pr}'s drive stalled: every stalled pass's round ended ${stall.state}: ${oneLine(redactReportText(stall.reason))} (exit ${code})`;
+  const reasons =
+    driverRuntime.stallReasons ?? stopReasons(state?.events, code);
+  return reasons === null
+    ? null
+    : `PR #${pr}'s drive stalled, its passes changing nothing: ${redactReportText(stallReasonsLine(fitStallReasons(reasons)))} (exit ${code})`;
+}
+
 /**
  * The line for a drive that stopped with exit `code`. `state` is the drive
  * state, read for a park's question and a limit's reset; `null` when it
@@ -112,8 +161,10 @@ export function stopText(
     if (diagnosis !== undefined)
       return `PR #${pr} stopped after diagnosing CI (exit ${code}): ${diagnosis}`;
   }
-  if (code === exitOf("STALLED") && stall !== null)
-    return `PR #${pr}'s drive stalled: every stalled pass's round ended ${stall.state}: ${oneLine(stall.reason)} (exit ${code})`;
+  if (code === exitOf("STALLED")) {
+    const stalled = stallStop(pr, code, state, stall);
+    if (stalled !== null) return stalled;
+  }
   if (code === exitOf("FORGE_RATE_LIMITED"))
     return forgeLimitStop(pr, code, state);
   const probe = driverRuntime.stopProbe;

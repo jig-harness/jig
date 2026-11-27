@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -33,7 +33,8 @@ const DRIVE_DEADLINE_MS = 60_000;
  * walking up its process's ancestors (`/proc` where there is one, else `ps`): under the final re-read (the
  * `drive-status.ts` call that carries `--once`) it answers from the fixture in
  * `$REREAD_FIXTURES`, and under the CI hold's release it kills that release, as
- * a stop from outside does, when `$KILL_RELEASE` is set.
+ * a stop from outside does, when `$KILL_RELEASE` is set, or fails every
+ * call of that release with `$RELEASE_GH_ERROR` on stderr.
  */
 const ANCESTOR_GH = `#!/bin/sh
 args_of() {
@@ -57,6 +58,10 @@ while [ -n "$pid" ] && [ "$pid" -gt 1 ]; do
     *"ci-hold.ts release"*)
       if [ -n "$KILL_RELEASE" ]; then
         kill -KILL "$pid"
+        exit 1
+      fi
+      if [ -n "$RELEASE_GH_ERROR" ]; then
+        echo "$RELEASE_GH_ERROR" >&2
         exit 1
       fi
       if [ -n "$RECOVERY_SNAPSHOT_TIMEOUT" ] &&
@@ -304,6 +309,33 @@ describe.skipIf(
       DRIVE_DEADLINE_MS * (testCase.expectedWaits + 1),
     );
   }
+
+  it(
+    "keeps what the CI hold's release printed on stderr in the driver log",
+    async () => {
+      const { dir, stateDir } = writeFixture({
+        head: scratchClean.head,
+        reviewedSha: scratchClean.head,
+        threads: [],
+        ciHeld: true,
+      });
+      const marker = "gh-stub: HTTP 422 release-refused-marker";
+      const r = await driveUntilEnd(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--keep-draft", "--", ...PASS_NOOP],
+        { RELEASE_GH_ERROR: marker },
+      );
+      expectEnded(r);
+      const log = readFileSync(join(stateDir, "drive-pr-999.log"), "utf8");
+      // The release's own stderr, captured and written through the console,
+      // lands in the durable log as well as on the terminal.
+      expect(r.stderr).toContain("release-refused-marker");
+      expect(log).toContain("release-refused-marker");
+      expect(log).not.toContain("ci-hold.ts release printed no error");
+    },
+    DRIVE_DEADLINE_MS * 2,
+  );
 
   it(
     "logs why the CI hold's release failed when it exits with nothing on stderr",
