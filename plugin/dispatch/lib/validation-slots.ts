@@ -12,9 +12,11 @@ import { slotSettings } from "../../shared/resource-lock.ts";
 
 /**
  * The slots the lock admits at the host's load other than its own runs.
- * `holding` is the distinct runs holding the lock, whose cost the load
- * average already shows: that cost is taken out, since a slot they release
- * goes to the next run only while the rest of the host leaves room for it.
+ * `settled` is the distinct runs holding the lock long enough for the load
+ * average to show them: their cost is taken out, since a slot they release
+ * goes to the next run only while the rest of the host leaves room for it. A
+ * holder too fresh to show is not in the average, so nothing is taken out
+ * for it.
  * Each run then counts from none, at its full cost, as the lock counts a run
  * too fresh for the average to show. Memory is read as it stands; below the
  * floor the lock admits one run at a time. `env` is the environment the lock
@@ -23,7 +25,7 @@ import { slotSettings } from "../../shared/resource-lock.ts";
  */
 export function lockSlots(
   host: HostLoad,
-  holding: number,
+  settled: number,
   env: Record<string, string | undefined>,
 ): Outcome<number, "lock-slots-unread"> {
   const settings = attempt(
@@ -39,7 +41,7 @@ export function lockSlots(
     load1:
       host.load1 === null
         ? null
-        : Math.max(0, host.load1 - policy.runCost * Math.max(0, holding)),
+        : Math.max(0, host.load1 - policy.runCost * Math.max(0, settled)),
   };
   let count = 0;
   while (

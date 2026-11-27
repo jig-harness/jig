@@ -29,6 +29,8 @@ export interface ArrivalQueueInput {
   candidateRunMs?: number;
   /** Runs holding or waiting for the lock now. */
   atLock: number;
+  /** The run times of those runs at the lock whose repository measures its own. */
+  atLockRunMs?: readonly number[];
   /** Passes with an arrival estimate. */
   arrivals: readonly ValidationArrival[];
   /** Runs with no estimate, counted at the lock when the candidate arrives. */
@@ -84,14 +86,30 @@ function earliest(pending: Request[]): Request | undefined {
   return pending.splice(best, 1)[0];
 }
 
+/**
+ * How long each run at the lock now holds a slot, longest first: which of
+ * them hold and which wait is not read, so the longest are taken to hold.
+ */
+function atLockRunTimes(input: ArrivalQueueInput): number[] {
+  const own = [...(input.atLockRunMs ?? [])].slice(0, input.atLock);
+  const rest = Math.max(0, input.atLock - own.length);
+  return [...own, ...Array<number>(rest).fill(input.runMs)].sort(
+    (a, b) => b - a,
+  );
+}
+
 /** Every request known before the lock serves any: the queue, the estimated and unestimated arrivals, the candidate. */
-function requestsOf(input: ArrivalQueueInput, holding: number): Request[] {
+function requestsOf(
+  input: ArrivalQueueInput,
+  queuedRunMs: readonly number[],
+): Request[] {
   const pending: Request[] = [];
   const add = (count: number, request: Request) => {
     for (let index = 0; index < count; index++) pending.push({ ...request });
   };
   const { runMs } = input;
-  add(input.atLock - holding, { at: 0, rank: QUEUED, next: 0, runMs });
+  for (const queued of queuedRunMs)
+    add(1, { at: 0, rank: QUEUED, next: 0, runMs: queued });
   for (const arrival of input.arrivals)
     add(arrival.runs > 0 ? 1 : 0, {
       at: Math.max(0, arrival.atMs),
@@ -122,7 +140,7 @@ interface Occupancy {
  * Serve the lock's requests in the order they arrive, each on the slot that
  * frees first, until the candidate's last run takes one; each run holds its
  * slot for its own pass's run time. A holder now may have just begun, so it
- * releases a whole run of every repository's run time from now. A run counts ahead
+ * releases a whole run of its own from now. A run counts ahead
  * when it asked by the candidate's arrival and still holds or waits then,
  * and served when it released before; a run asking later queues behind the
  * candidate's first run, but can still be ahead of its later ones, each of
@@ -133,8 +151,9 @@ interface Occupancy {
 export function arrivalQueue(input: ArrivalQueueInput): ArrivalQueue {
   const { concurrency, runMs, arriveMs } = input;
   const holding = Math.min(input.atLock, concurrency);
+  const atLockRunMs = atLockRunTimes(input);
   const releases = Array.from({ length: concurrency }, (_, index) =>
-    index < holding ? runMs : 0,
+    index < holding ? (atLockRunMs[index] ?? runMs) : 0,
   );
   const result = {
     waitMs: 0,
@@ -149,7 +168,7 @@ export function arrivalQueue(input: ArrivalQueueInput): ArrivalQueue {
     else result.ahead++;
   };
   releases.slice(0, holding).forEach(settle);
-  const pending = requestsOf(input, holding);
+  const pending = requestsOf(input, atLockRunMs.slice(holding));
   const waits: Occupancy[] = [];
   const laterRuns: Occupancy[] = [];
   const record = (request: Request, start: number, end: number) => {

@@ -432,26 +432,38 @@ export interface ResourceLockRun {
   workspace: string | null;
 }
 
-/** One entry per live process holding or waiting on the lock, including older owners without workspace metadata. */
+/**
+ * One entry per live process holding or waiting on the lock, including older
+ * owners without workspace metadata; `settled` counts the distinct holders
+ * that have held long enough for the load average to show them.
+ */
 export function resourceLockRuns(
   root: string,
   name: string,
   windows = process.platform === "win32",
-): { holders: number; waiters: number; runs: ResourceLockRun[] } {
+): {
+  holders: number;
+  waiters: number;
+  settled: number;
+  runs: ResourceLockRun[];
+} {
   const { holders, waiters } = lockUsers(root, name, windows);
   const runs = new Map(
     waiters.map(({ pid, workspace }) => [pid, { workspace }]),
   );
   const readHolders = new Set<number>();
-  for (const { path, pid } of holders) {
+  let settled = 0;
+  for (const { path, pid, ageSeconds } of holders) {
     if (readHolders.has(pid)) continue;
     readHolders.add(pid);
+    if (ageSeconds >= FRESH_SECONDS) settled++;
     const { workspace } = recordedHolder(path, String(pid));
     runs.set(pid, { workspace: workspace ?? runs.get(pid)?.workspace ?? null });
   }
   return {
     holders: holders.length,
     waiters: waiters.length,
+    settled,
     runs: [...runs.values()],
   };
 }

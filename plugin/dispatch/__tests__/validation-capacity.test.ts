@@ -736,8 +736,9 @@ describe("validation forecast", () => {
     expect(gauge.fill).not.toBeNull();
     expect(gauge.fill ?? Infinity).toBeLessThan(1);
     expect(validationHold(state, 1, "pickup", 3 * HOUR, repo)).toBeNull();
-    // Read with the lock's slot count on that host (16 cores at 0.15 load
-    // per core, one run holding), it still reads below the line.
+    // Read with the lock's slot count, it still reads below the line. The
+    // receipt gives the load per core, not the cores: 16 stand in, at 0.15
+    // load per core with one run holding.
     const slots = lockSlots(
       { load1: 0.15 * 16, cores: 16, availableBytes: 32 * 1024 ** 3 },
       1,

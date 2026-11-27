@@ -117,8 +117,8 @@ export function validationPassesOf(
 
 /**
  * The slots the lock admits now, from the host's reading and the lock's
- * occupancy, or why they cannot be read. A holder counts once however many
- * slots it holds, so an exclusive holder is one run.
+ * holders the load average shows, or why they cannot be read. A reading
+ * that does not say which holders it shows takes none out of the load.
  */
 function slotsOf(
   host: HostLoad | undefined,
@@ -127,11 +127,7 @@ function slotsOf(
 ): { slots: number } | { unread: string } {
   if (host === undefined) return { unread: "no host reading" };
   if ("unread" in lock) return { unread: lock.unread };
-  const holding =
-    lock.runs === undefined
-      ? lock.holders
-      : Math.max(0, lock.runs.length - lock.waiters);
-  const slots = lockSlots(host, holding, env);
+  const slots = lockSlots(host, lock.settled ?? 0, env);
   return slots.ok ? { slots: slots.value } : { unread: slots.failure.reason };
 }
 
@@ -317,10 +313,20 @@ function driveReserve(
   // may consume service before the drive arrives. Admitted passes still have
   // to reach validation, even when their eventual runs are being reserved
   // for this downstream drive, so they and the pickup's own runs are counted
-  // ahead of it.
+  // ahead of it, the pickup's at its repository's run time.
+  const { candidateRunMs, runMs } = state.measured;
+  const timed =
+    candidateRunMs === undefined ||
+    candidateRunMs === runMs ||
+    stillRunning <= 0
+      ? []
+      : [{ runs: stillRunning, runMs: candidateRunMs }];
   return {
     ...state.demand,
     toArrive: state.demand.toArrive + state.admittedRuns + stillRunning,
+    ...(timed.length > 0
+      ? { unestimated: [...(state.demand.unestimated ?? []), ...timed] }
+      : {}),
   };
 }
 

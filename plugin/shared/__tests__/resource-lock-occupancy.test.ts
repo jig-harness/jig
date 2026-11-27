@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import {
   existsSync,
+  lutimesSync,
   mkdtempSync,
   readdirSync,
   realpathSync,
@@ -49,6 +50,7 @@ describe("the lock's occupancy", () => {
     expect(resourceLockRuns(dir, "heavy")).toEqual({
       holders: 0,
       waiters: 1,
+      settled: 0,
       runs: [{ workspace: null }],
     });
   });
@@ -76,6 +78,7 @@ describe("the lock's occupancy", () => {
       expect(JSON.parse(child.stdout.toString())).toEqual({
         holders: 1,
         waiters: 1,
+        settled: 0,
         runs: [{ workspace: null }],
       });
     },
@@ -94,6 +97,7 @@ describe("the lock's occupancy", () => {
       expect(resourceLockRuns(dir, "heavy")).toEqual({
         holders: 2,
         waiters: 1,
+        settled: 0,
         runs: [{ workspace: null }],
       });
       writeFileSync(
@@ -109,6 +113,23 @@ describe("the lock's occupancy", () => {
       expect(lockOccupancy(join(dir, "missing"), "heavy")).toEqual({
         holders: 0,
         waiters: 0,
+      });
+    },
+  );
+
+  it.if(process.platform !== "win32")(
+    "counts a holder as settled once the load average shows it, once however many slots it holds",
+    () => {
+      const dir = root();
+      const slots = ["jig-lock.heavy", "jig-lock.heavy-slot-2"];
+      for (const slot of slots)
+        symlinkSync(String(process.pid), join(dir, slot));
+      expect(resourceLockRuns(dir, "heavy").settled).toBe(0);
+      const old = new Date(Date.now() - 5 * 60_000);
+      for (const slot of slots) lutimesSync(join(dir, slot), old, old);
+      expect(resourceLockRuns(dir, "heavy")).toMatchObject({
+        holders: 2,
+        settled: 1,
       });
     },
   );
@@ -144,6 +165,7 @@ describe("the lock's occupancy", () => {
       expect(resourceLockRuns(dir, "heavy")).toEqual({
         holders: 1,
         waiters: 1,
+        settled: 0,
         runs: [{ workspace: dir }, { workspace: null }],
       });
       rmSync(held);

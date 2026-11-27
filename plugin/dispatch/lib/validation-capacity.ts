@@ -415,6 +415,12 @@ export interface ValidationDemand {
    * The rest hold a slot for every repository's run time.
    */
   unestimated?: readonly TimedRuns[];
+  /**
+   * The run times of the runs among `atLock` whose pass's repository
+   * measures its own; absent when none does. The rest hold a slot for every
+   * repository's run time.
+   */
+  atLockRunMs?: readonly number[];
 }
 
 /**
@@ -438,10 +444,46 @@ function arrivalOf(
   return Number.isFinite(atMs) && atMs >= 0 ? atMs : null;
 }
 
+/** What one pass in flight still owes the lock, and when it is expected to ask. */
+interface PassDemand {
+  runs: number;
+  arrival: ValidationArrival | null;
+  unestimated: TimedRuns | null;
+}
+
+function passDemand(
+  measured: ValidationMeasurements,
+  pass: ValidationPass,
+  done: { made: number; atLock: number },
+  nowMs: number | undefined,
+): PassDemand {
+  const { made, atLock } = done;
+  const runs = Math.max(
+    0,
+    runsPerPassFor(measured, pass.kind, pass.repo) - made - atLock,
+  );
+  if (runs === 0) return { runs, arrival: null, unestimated: null };
+  const atMs =
+    nowMs === undefined
+      ? null
+      : arrivalOf(measured, pass, made + atLock > 0, nowMs);
+  const runMs = runMsFor(measured, pass.repo);
+  const own = runMs !== measured.runMs;
+  if (atMs !== null)
+    return {
+      runs,
+      arrival: own ? { atMs, runs, runMs } : { atMs, runs },
+      unestimated: null,
+    };
+  return { runs, arrival: null, unestimated: own ? { runs, runMs } : null };
+}
+
 /**
  * Count each in-flight run once, at the lock or among runs yet to arrive.
  * Given `nowMs`, estimate when each pass's next run reaches the lock; a
- * run without an estimate is counted ahead.
+ * run without an estimate is counted ahead. Each run is charged its own
+ * pass's repository's run time, a run at the lock from no pass in flight
+ * every repository's.
  */
 export function validationDemand(
   measured: ValidationMeasurements,
@@ -455,26 +497,28 @@ export function validationDemand(
   let toArrive = 0;
   const arrivals: ValidationArrival[] = [];
   const unestimated: TimedRuns[] = [];
+  const atLockRunMs: number[] = [];
   for (const pass of inFlight) {
-    const atLock =
-      pass.workspace === null ? 0 : (active.get(pass.workspace)?.length ?? 0);
+    const held =
+      pass.workspace === null ? [] : (active.get(pass.workspace) ?? []);
     if (pass.workspace !== null) active.delete(pass.workspace);
-    const made = completed.get(pass)?.count ?? 0;
-    const runs = Math.max(
-      0,
-      runsPerPassFor(measured, pass.kind, pass.repo) - made - atLock,
-    );
-    toArrive += runs;
-    const atMs =
-      nowMs === undefined || runs === 0
-        ? null
-        : arrivalOf(measured, pass, made + atLock > 0, nowMs);
     const runMs = runMsFor(measured, pass.repo);
-    const timed = runMs === measured.runMs ? {} : { runMs };
-    if (atMs !== null) arrivals.push({ atMs, runs, ...timed });
-    else if (runs > 0 && "runMs" in timed) unestimated.push({ runs, runMs });
+    if (runMs !== measured.runMs) atLockRunMs.push(...held.map(() => runMs));
+    const made = completed.get(pass)?.count ?? 0;
+    const owed = passDemand(
+      measured,
+      pass,
+      { made, atLock: held.length },
+      nowMs,
+    );
+    toArrive += owed.runs;
+    if (owed.arrival !== null) arrivals.push(owed.arrival);
+    if (owed.unestimated !== null) unestimated.push(owed.unestimated);
   }
-  const timed = unestimated.length > 0 ? { unestimated } : {};
+  const timed = {
+    ...(unestimated.length > 0 ? { unestimated } : {}),
+    ...(atLockRunMs.length > 0 ? { atLockRunMs } : {}),
+  };
   return nowMs === undefined
     ? { atLock: lockRuns.length, toArrive, ...timed }
     : { atLock: lockRuns.length, toArrive, arrivals, ...timed };
@@ -564,6 +608,9 @@ function queuedFor(
     runMs,
     ...(candidateRunMs === undefined ? {} : { candidateRunMs }),
     atLock: demand.atLock,
+    ...(demand.atLockRunMs === undefined
+      ? {}
+      : { atLockRunMs: demand.atLockRunMs }),
     arrivals,
     unknownRuns: Math.max(0, toArrive - runsOf(arrivals) - runsOf(unestimated)),
     unestimated,

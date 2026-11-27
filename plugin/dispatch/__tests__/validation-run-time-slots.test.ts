@@ -10,7 +10,12 @@ import {
   type ValidationPass,
   type ValidationSample,
 } from "../lib/validation-capacity.ts";
-import { readValidationLoad, validationGauge } from "../lib/validation-load.ts";
+import {
+  readValidationLoad,
+  type ValidationLoad,
+  validationGauge,
+  validationHold,
+} from "../lib/validation-load.ts";
 import { lockSlots } from "../lib/validation-slots.ts";
 
 const MINUTE = 60_000;
@@ -188,6 +193,75 @@ describe("run time per repository", () => {
   });
 });
 
+describe("run time per repository at the lock and in the drive reserve", () => {
+  const measured: ValidationMeasurements = {
+    ...measureValidation([], []),
+    runMs: 30 * MINUTE,
+    runMsPerRepository: new Map([["short/repo", MINUTE]]),
+    concurrency: 1,
+    kinds: {
+      pickup: {
+        runsPerPass: 1,
+        runsPerRepository: new Map([["short/repo", 10]]),
+        timeToValidationMs: 0,
+      },
+      drive: { runsPerPass: 1, timeToValidationMs: 0 },
+    },
+    defaults: [],
+  };
+
+  test("a pickup of many short runs keeps room for a drive at its own run time", () => {
+    const state: ValidationLoad = {
+      measured,
+      demand: { atLock: 0, toArrive: 0 },
+      waitLimitMs: HOUR,
+      waitSource: "LOCK_TIMEOUT",
+      driveDeadlineMs: 3 * HOUR,
+      admittedRuns: 0,
+    };
+    expect(
+      validationHold(state, 1, "pickup", 3 * HOUR, "short/repo"),
+    ).toBeNull();
+    // The same ten runs at every repository's 30 minutes leave no room.
+    expect(
+      validationHold(
+        { ...state, measured: { ...measured, runMsPerRepository: new Map() } },
+        1,
+        "pickup",
+        3 * HOUR,
+        "short/repo",
+      ),
+    ).toContain("keep room for a drive");
+  });
+
+  test("a run at the lock holds its slot for its own pass's repository's run time", () => {
+    // A drive making its one run, so it owes none still to arrive.
+    const flight: ValidationPass = {
+      kind: "drive",
+      workspace: "flight",
+      repo: "short/repo",
+      launchedAtMs: 0,
+    };
+    const demand = validationDemand(
+      measured,
+      [{ workspace: "flight" }, { workspace: null }],
+      [flight],
+      [],
+    );
+    expect(demand.atLockRunMs).toEqual([MINUTE]);
+    // Two runs at one slot: the unknown one is taken to hold (the longer),
+    // the short one waits behind it, so the candidate waits 31 minutes.
+    const forecast = forecastValidation(
+      measured,
+      "drive",
+      demand,
+      HOUR,
+      3 * HOUR,
+    );
+    expect(forecast.fill).toBeCloseTo(31 / 60);
+  });
+});
+
 function host(
   load1: number | null,
   cores: number,
@@ -279,17 +353,28 @@ describe("the lock's load-derived slot count", () => {
     );
   });
 
-  test("an exclusive holder counts as one run, not as every slot it takes", () => {
-    const reading = readValidationLoad(
-      [],
-      { holders: 64, waiters: 0, runs: [{ workspace: null }] },
-      0,
-      90 * MINUTE,
-      {},
-      host(4, 16),
-    );
-    // Its one run's cost of 4 is all the load: the rest of the host is idle.
-    expect(reading.measured.lockSlots).toBe(3);
+  test("only the holders the load average shows are taken out of the load", () => {
+    const read = (settled?: number) =>
+      readValidationLoad(
+        [],
+        {
+          holders: 64,
+          waiters: 0,
+          ...(settled === undefined ? {} : { settled }),
+          runs: [{ workspace: null }],
+        },
+        0,
+        90 * MINUTE,
+        {},
+        host(4, 16),
+      ).measured.lockSlots;
+    // One settled holder, an exclusive one across every slot, is the whole
+    // load of 4: the rest of the host is idle.
+    expect(read(1)).toBe(3);
+    // A holder too fresh to show, or a reading that does not say, leaves the
+    // load as it reads.
+    expect(read(0)).toBe(2);
+    expect(read()).toBe(2);
   });
 
   test("with the slot count unread, runs at once is the peak and the gauge says why", () => {
@@ -330,9 +415,11 @@ describe("the lock's load-derived slot count", () => {
 describe("the replays with the slot count read", () => {
   test("November 14: a host the passes loaded still holds launches before the deadline wave", () => {
     // The ticks of the November 14 replay (validation-capacity.test.ts),
-    // with the slot count read from a host whose load the 25 passes in
-    // flight raised past its cores: once a holder releases, the lock admits
-    // one run at a time.
+    // with the slot count read from a host other work had loaded past its
+    // cores. The receipts carry no load figure: this reading reproduces what
+    // the lock did that day, admitting one run at a time once a holder
+    // released. On a host with room for more, the count reads higher and the
+    // forecast admits more; the peak the samples saw would raise it as much.
     const replay = [
       { holding: 4, waiting: 4, openPickups: 3, openDrives: 1, launches: 4 },
       { holding: 5, waiting: 13, openPickups: 7, openDrives: 3, launches: 6 },
