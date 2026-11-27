@@ -377,7 +377,16 @@ them (a claimed member keeps its own rule), so the queue picks them up and no
 need is raised for them. A question that names no member is about the whole
 batch: it is one need, on the batch's anchor, the other members wait on it
 with no need of their own, and its answer releases every member the record
-still holds that the pass never claimed.
+still holds that the pass never claimed. When an open pull request carries
+the anchor (or the anchor is in `pr_open`), its claim stays with that pull
+request and the answer cannot be taken there, so the tick releases the members
+the pass never claimed and the anchor keeps its claim.
+
+A pickup hold with a dependency (a pull request to merge, an item to close)
+is not a need while the tick reads that dependency every tick: the item is a
+held row under Queue, and the hold lists nothing among what waits on a person.
+A hold with no dependency, one whose stored dependency cannot be read, and one
+whose pull request closed unmerged is a person's to release or settle.
 
 #### A label write failing
 
