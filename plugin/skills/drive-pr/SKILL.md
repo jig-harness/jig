@@ -289,6 +289,12 @@ PR-global `verifiedSha` or certifies convergence.
 With a hold label, the PR-open head runs full CI. Before the first
 intermediate fix push, `finish-round.ts` waits until every required check has
 completed, adds the label, and records the resulting GitHub timeline-event id.
+Until the label is first added, a required check whose newest run is a
+completed skip (a label event's run on a workflow that skips the required job,
+which M13 forbids) is judged by its newest run that is not a skip: a queued or
+running run is still waited for, a cancelled one is left to the cancelled-run
+recovery, and a check with only skipped runs keeps the wait. After a release,
+the newest run is judged, and a skip there is never complete.
 When no hold label is live or owned and the checks the hold waits for have
 not completed, `ensure` reads the PR's mergeability. GitHub runs no
 `pull_request` CI on a PR that conflicts with its base, so on a `CONFLICTING`
