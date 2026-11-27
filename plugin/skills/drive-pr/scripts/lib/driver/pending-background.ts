@@ -311,8 +311,8 @@ async function stillSame(found: PendingTask[]): Promise<PendingTask[]> {
       return stat !== null && stat.start === task.start && stat.state !== "Z";
     }
     return (
-      rows !== null &&
-      rows.some((row) => row.pid === task.pid && row.start === task.start)
+      rows?.some((row) => row.pid === task.pid && row.start === task.start) ??
+      false
     );
   });
 }
