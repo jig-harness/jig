@@ -129,15 +129,22 @@ describe("which ended sessions stopped on a usage notice", () => {
     },
   );
 
-  it("classes a late pass whose own output is the notice as quota", () => {
+  it("classes a late pass whose own output is the notice as quota when no transcript exists", () => {
     const record = recordOf();
-    writeTranscript(record.configDir, SESSION, [assistantText("working")]);
     expect(failedStartup(record, 1, started, `${notice}\n`, late)).toBe(
       "quota",
     );
     expect(failedStartup(record, 1, started, `${notice}\n`, quick)).toBe(
       "quota",
     );
+  });
+
+  it("does not let output text override a readable transcript that rejected the notice", () => {
+    const record = recordOf();
+    writeTranscript(record.configDir, SESSION, [assistantText("working")]);
+    expect(
+      failedStartup(record, 1, started, `${notice}\n`, late),
+    ).toBeUndefined();
   });
 
   it.each([

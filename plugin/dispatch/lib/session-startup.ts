@@ -153,11 +153,15 @@ function noticeText(entry: Record<string, unknown>): string | undefined {
  * The usage notice a Claude Code session's transcript ends on: its last
  * assistant entry (user entries and tool output are skipped) is an entry the vendor marked as a rate-limit
  * error (`error: "rate_limit"` with `isApiErrorMessage`) whose text is the notice and nothing else;
- * ordinary model output that reads like the notice is none. A notice in a user entry, in a tool's output or call, or
+ * ordinary model output that reads like the notice is none (`undefined`: the
+ * transcript was read and rejected it); `null` when the transcript holds no
+ * assistant entry to judge (no session, no file, unreadable). A notice in a user entry, in a tool's output or call, or
  * inside longer text is none. Only the notice is returned, never other
  * content.
  */
-function transcriptUsageNotice(record: LaunchRecord): string | undefined {
+function transcriptUsageNotice(
+  record: LaunchRecord,
+): string | undefined | null {
   const lines = transcriptTail(
     record,
     65_536,
@@ -170,7 +174,7 @@ function transcriptUsageNotice(record: LaunchRecord): string | undefined {
     const text = noticeText(entry);
     return text !== undefined && noticeClause(text) !== null ? text : undefined;
   }
-  return undefined;
+  return null;
 }
 
 /** One transcript line as an entry; a partial line, or one that is no JSON mapping, is none. */
@@ -204,13 +208,15 @@ function transcriptTail(
 
 /**
  * The usage notice the session's transcript ends on (the vendor's own error
- * entry), else the last standalone notice in the output: an earlier notice
- * never outranks a later one, and the transcript's verified entry outranks
- * the output.
+ * entry), else, only when no transcript could be judged, the last standalone
+ * notice in the output: an earlier notice never outranks a later one, and a
+ * readable transcript's verdict outranks the output.
  */
 function noticeOf(record: LaunchRecord, output: string): string | undefined {
   const verified = transcriptUsageNotice(record);
-  if (verified !== undefined) return verified;
+  // A transcript that was read and rejected the notice is the provenance
+  // check's answer: echoed or model-produced output text never overrides it.
+  if (verified !== null) return verified;
   const notices = output
     .split(/\r?\n/)
     .filter((line) => noticeClause(line) !== null);

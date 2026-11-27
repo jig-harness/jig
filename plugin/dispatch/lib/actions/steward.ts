@@ -227,6 +227,8 @@ function answerRequest(
   const answered = state.records.find(
     (r) =>
       r.record.action === "steward" &&
+      // A launch still pending may never have started a pass.
+      r.state.kind !== "pending" &&
       r.record.repo.toLowerCase() === request.repo &&
       parseMs(r.record.createdAt) >= parseMs(request.at),
   );
