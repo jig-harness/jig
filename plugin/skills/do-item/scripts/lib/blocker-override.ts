@@ -107,7 +107,7 @@ export function blockersRefusal(
     issue: key,
     why: "blockers",
     overridable: true,
-    reason: `${key} waits on ${blockers.map(named).join(", ")}: a person may start it ahead of them with --override-blockers "<reason>"`,
+    reason: `${plain(key)} waits on ${blockers.map(named).join(", ")}: a person may start it ahead of them with --override-blockers "<reason>"`,
     blockers,
     consequence: OVERRIDE_CONSEQUENCE,
   };
@@ -132,7 +132,7 @@ export function overrideStatement(
     ...override.blockers.map((b) => `  blocked by ${blockerLine(b)}`),
     ...(override.preflight === undefined
       ? []
-      : [`  the repository's preflight check: ${override.preflight}`]),
+      : [`  the repository's preflight check: ${plain(override.preflight)}`]),
     OVERRIDE_CONSEQUENCE,
   ].join("\n");
 }
@@ -150,7 +150,9 @@ export function overrideComment(
     ...override.blockers.map((b) => `- ${blockerLine(b)}`),
     ...(override.preflight === undefined
       ? []
-      : [`- the repository's preflight check: ${oneLine(override.preflight)}`]),
+      : [
+          `- the repository's preflight check: ${plain(oneLine(override.preflight))}`,
+        ]),
     "",
     OVERRIDE_CONSEQUENCE,
     "",
@@ -226,7 +228,7 @@ export async function blockerGate(
   }
   if (blockers.length === 0 && input.preflight === null) {
     (input.say ?? console.error)(
-      `${key} has no open blockers: --override-blockers overrides nothing, and the claim goes on as any other`,
+      `${plain(key)} has no open blockers: --override-blockers overrides nothing, and the claim goes on as any other`,
     );
     return { override: null };
   }

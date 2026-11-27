@@ -368,6 +368,15 @@ describe("--override-blockers and the repository's preflight command", () => {
     );
   });
 
+  it("escapes display controls in a preflight refusal before printing or recording it", async () => {
+    const out = await overriding([], {
+      committed: preflight("refuse-blockers-control"),
+    });
+    expectSpawnExit(out, 0);
+    expect(out.stderr).not.toContain("\u001b");
+    expect(comments(out.writes).join("\n")).not.toContain("\u001b");
+  });
+
   it("never clears an untagged exit 3 or a failed command", async () => {
     for (const mode of ["refuse", "refuse-tagged-otherwise", "fail"]) {
       const out = await overriding([OPEN], { committed: preflight(mode) });

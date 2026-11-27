@@ -19,6 +19,10 @@ if (mode === "refuse-blockers") {
   process.stdout.write("waits on #3\r\n kind: blockers \n");
   process.exit(3);
 }
+if (mode === "refuse-blockers-control") {
+  process.stdout.write("waits on \u001b[2J#3\nkind: blockers\n");
+  process.exit(3);
+}
 if (mode === "refuse-tagged-otherwise") {
   console.log("waits on legal");
   console.log("kind: blockers, and legal");
