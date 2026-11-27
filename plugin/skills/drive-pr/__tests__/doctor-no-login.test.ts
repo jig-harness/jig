@@ -6,7 +6,7 @@ import { dbPathFor } from "../scripts/lib/state/db.ts";
 import { freshState } from "../scripts/lib/state/schema.ts";
 import { SCRIPTS, fakeForge } from "./ledger-forge-fixtures.ts";
 import { scopedStateDir } from "./scoped-state-dir.ts";
-import { writeState } from "./state-rows.ts";
+import { retainedCiHold, writeState } from "./state-rows.ts";
 
 /** The exit that says the doctor's forge client named no login. */
 const NO_LOGIN_EXIT = 4;
@@ -18,14 +18,7 @@ function stage(count: number, login?: string) {
   for (let i = 0; i < count; i++) {
     const pr = String(700 + i);
     const state = freshState(Number(pr));
-    state.ciHold = {
-      phase: "held",
-      eventId: "42",
-      actor: "operator",
-      addedAtHead: "a".repeat(40),
-      createdAt: new Date().toISOString(),
-      checkRunWatermark: 1,
-    };
+    state.ciHold = retainedCiHold();
     writeState(leaf, pr, state);
   }
   return { forge, leaf };
@@ -44,8 +37,8 @@ async function run(
     stderr: "pipe",
   });
   const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
+    proc.stdout.text(),
+    proc.stderr.text(),
     proc.exited,
   ]);
   return { stdout, stderr, exitCode };
