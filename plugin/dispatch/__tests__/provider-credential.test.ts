@@ -87,25 +87,28 @@ describe("resolving a credential reference", () => {
   });
 
   it("keeps a 4 KiB value whose command also prints 5 KiB of diagnostics", async () => {
+    const expected = "cred4k-".repeat(585) + "k";
     const done = await resolveCredential(
       command(
-        "process.stdout.write('k'.repeat(4096)); process.stderr.write('d'.repeat(5120))",
+        `process.stdout.write(${JSON.stringify(expected)}); process.stderr.write('diag5k-'.repeat(732))`,
       ),
       "ref",
       process.env,
     );
-    expect(done.ok && done.value).toBe("k".repeat(4096));
+    expect(expected).toHaveLength(4096);
+    expect(done.ok && done.value).toBe(expected);
   });
 
   it("keeps a 4 KiB value whose command prints diagnostics past the old combined limit", async () => {
+    const expected = "cred4k-".repeat(585) + "k";
     const done = await resolveCredential(
       command(
-        "process.stdout.write('k'.repeat(4096)); process.stderr.write('d'.repeat(20000))",
+        `process.stdout.write(${JSON.stringify(expected)}); process.stderr.write('diag20k-'.repeat(2500))`,
       ),
       "ref",
       process.env,
     );
-    expect(done.ok && done.value).toBe("k".repeat(4096));
+    expect(done.ok && done.value).toBe(expected);
   });
 
   it("refuses a value with a malformed byte, which decodes to U+FFFD", async () => {
@@ -136,7 +139,7 @@ describe("resolving a credential reference", () => {
       [REFUSE, "the credential command exited 1"],
       ["process.stdout.write('\\n')", "printed no value"],
       ["process.stdout.write('one\\ntwo')", "line break inside it"],
-      ["process.stdout.write('x'.repeat(4097))", "over 4 KiB"],
+      ["process.stdout.write('over4k-'.repeat(585) + 'xx')", "over 4 KiB"],
       ["process.stdout.write('short')", "under 8 characters"],
       [
         "process.stdout.write('half-printed-secret-line-one\\nhalf-printed-secret-line-two'); process.stderr.write('refused half-printed-secret-line-two\\n'); process.exit(1)",
