@@ -132,6 +132,10 @@ function considerComment<T extends { body?: string | null | undefined }>(
   // not establish the initial selection or an ordering watermark that hides
   // a later affirmative review with findings.
   if (!carries && isSkipOnly(comment)) return;
+  // An unstamped, finding-free comment after a selection is auxiliary: it
+  // reviewed nothing, so it neither replaces the selection nor raises the
+  // ordering watermark that would hide a later finding-bearing summary.
+  if (!carries && reviewedSha === "" && state.selected !== undefined) return;
   // A round number alone never retires findings: a clean replacement of a
   // finding-bearing summary must carry its own reviewed-head stamp.
   if (state.carriesFindings && !carries && reviewedSha === "") return;
