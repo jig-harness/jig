@@ -189,7 +189,7 @@ if (args[0] === "pr" && args[1] === "edit") {
   if (fs.existsSync(F + "/labels-repo.json")) {
     const have = repoLabels().map((l) => l.name);
     const absent = add.find((l) => !have.includes(l));
-    if (absent !== undefined) { process.stderr.write("could not add label: '" + absent + "' not found\\n"); process.exit(1); }
+    if (absent !== undefined) { process.stderr.write("'" + absent + "' not found\\n"); process.exit(1); }
   }
   for (const state of ["open", "merged", "closed"]) {
     const file = F + "/prs-" + state + ".json";

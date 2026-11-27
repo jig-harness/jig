@@ -753,10 +753,12 @@ export async function mergedNotClosed(
 
 /**
  * The refusal `gh pr edit` prints for a label the repository lacks:
- * `could not add label: '<name>' not found`. gh stops at the first such
- * label, so a refusal names one.
+ * `'<name>' not found`, bare, since the edit path propagates the label
+ * lookup's error as it is. The create paths prefix it with
+ * `could not add label: `, which the pattern also reads. gh stops at the
+ * first such label, so a refusal names one.
  */
-const MISSING_LABEL = /could not add label: '(.+)' not found/;
+const MISSING_LABEL = /(?:could not add label: )?'(.+)' not found/;
 
 /** A label write the forge refused because the repository lacks a label it adds: `missing` names it. */
 export interface MissingLabelFailure extends CausedFailure<"missing-label"> {
