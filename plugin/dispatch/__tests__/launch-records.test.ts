@@ -133,6 +133,14 @@ it("reads legacy launch records but rejects invalid account launch ordinals", ()
     );
 });
 
+it("reads a batch's missing-priority policy only as hold or start", () => {
+  const original = record("missing-priority");
+  for (const policy of ["hold", "start"])
+    expect(isLaunchRecord({ ...original, missingPriority: policy })).toBe(true);
+  for (const bad of [null, "", "later", 1])
+    expect(isLaunchRecord({ ...original, missingPriority: bad })).toBe(false);
+});
+
 it("reads host-driver replacement metadata with an advisory start string", () => {
   const original = record("host-driver-replacement");
   const replacement = {

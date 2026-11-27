@@ -209,6 +209,7 @@ import { endOwnTab } from "../../../shared/orca-tabs.ts";
 import { driveExitClosesTab } from "./lib/status/terminal-states.ts";
 import { swallow } from "../../../shared/errors.ts";
 import { ExitError } from "../../../shared/cli.ts";
+import { reuseForgeIdentity } from "../../../shared/outbound/github-budget.ts";
 export {
   roundFingerprint,
   resolveHandoffAt,
@@ -257,6 +258,7 @@ async function closeTabIfDone(code: number): Promise<void> {
 // Bun resolves the entry module's identity, including Windows path aliases.
 // Importing helpers must never start the driver or acquire its locks.
 if (import.meta.main) {
+  reuseForgeIdentity();
   runMain("drive.ts", async () => {
     try {
       let code: number;
