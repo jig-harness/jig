@@ -65,14 +65,14 @@ import {
 import type { RepoTarget } from "./types.ts";
 import { currentMs } from "../../shared/time.ts";
 
-/** The most pull requests a page asks for: the forge charges three points for a page this size. */
+/** The most pull requests a page asks for; the forge reports each page's point cost in `rateLimit`. */
 export const PAGE = 50;
 
 /** Comments, labels and review threads read with each pull request: a pull request with more comments is listed on its own. */
 const ITEMS = 100;
 
-/** The issues read as each pull request's closing references; a partial read remains unknown. */
-const CLOSING = 5;
+/** The issues read as each pull request's closing references in one bounded page; a partial read remains unknown. */
+const CLOSING = 100;
 
 /** The most open pull requests the read takes, as the pull request listing does. */
 const PR_LIMIT = 1000;
@@ -88,6 +88,9 @@ const COMMENTS = `comments(first: ${ITEMS}) {
           nodes { databaseId fullDatabaseId url createdAt updatedAt authorAssociation body author { __typename login } }
         }`;
 
+// A full page is bounded at 25,050 connection nodes:
+// PAGE * (1 + 4 * ITEMS + CLOSING), including the pull requests.
+// The state page omits the comments connection and fits the same bound.
 function repositoryQuery(mode: RepositoryReadMode): string {
   const name =
     mode === "full" ? "DispatchRepository" : "DispatchRepositoryState";

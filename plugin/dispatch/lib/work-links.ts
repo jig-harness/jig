@@ -56,7 +56,7 @@ export interface LinkRules {
 export interface WorkLinks {
   /** The keys a pull request is linked to, in canonical form; `null` when it is not one the read held, so nothing is known of it. */
   itemsOf(pr: number): string[] | null;
-  /** The open pull requests linked to an item, by number. */
+  /** The open pull requests certainly linked to an item, by number, even when another pull request's closing references are incomplete; `null` only when no certain match exists and any closing references are unread. */
   prsOf(key: string): Array<{ number: number; url: string }> | null;
 }
 
@@ -347,8 +347,11 @@ function descriptionKeys(
   return found;
 }
 
-/** The keys one pull request is linked to, each once: its branch's first, then its description's, then the forge's closing references. */
-function itemsOfPr(pr: PrLinkText, rules: LinkRules): string[] | null {
+/** The keys one pull request is certainly linked to, each once: its branch's first, then its description's, then the forge's closing references. */
+function itemsOfPr(
+  pr: PrLinkText,
+  rules: LinkRules,
+): { items: string[]; complete: boolean } {
   const { keys } = rules;
   const found: string[] = [];
   const add = (key: string | null) => {
@@ -361,12 +364,12 @@ function itemsOfPr(pr: PrLinkText, rules: LinkRules): string[] | null {
       sameRepository(rules.issueRepository, rules.repository));
   if (ownIssues) for (const key of closingKeys(pr.body, keys)) add(key);
   if (keys.sharesPullRequestNumbers && rules.issueRepository !== null) {
-    if (pr.closing === null) return null;
+    if (pr.closing === null) return { items: found, complete: false };
     for (const ref of pr.closing)
       if (sameRepository(ref.repository, rules.issueRepository))
         add(keys.normalize(String(ref.number)));
   }
-  return found;
+  return { items: found, complete: true };
 }
 
 /** The links between one repository's open pull requests (`prs`, every one the read held) and its items. */
@@ -376,15 +379,12 @@ export function workLinks(
 ): WorkLinks {
   const items = new Map<number, string[]>();
   const reverse = new Map<string, Array<{ number: number; url: string }>>();
-  let unknownReverse = false;
+  let incompleteClosingReferences = false;
   for (const pr of [...prs].sort((a, b) => a.number - b.number)) {
-    const keys = itemsOfPr(pr, rules);
-    if (keys === null) {
-      unknownReverse = true;
-      continue;
-    }
-    items.set(pr.number, keys);
-    for (const key of keys) {
+    const linkedItems = itemsOfPr(pr, rules);
+    if (!linkedItems.complete) incompleteClosingReferences = true;
+    else items.set(pr.number, linkedItems.items);
+    for (const key of linkedItems.items) {
       const linked = reverse.get(key) ?? [];
       if (!linked.some((l) => l.number === pr.number))
         linked.push({ number: pr.number, url: pr.url });
@@ -393,9 +393,13 @@ export function workLinks(
   }
   return {
     itemsOf: (pr) => items.get(pr) ?? null,
-    prsOf: (key) =>
-      unknownReverse
-        ? null
-        : [...(reverse.get(rules.keys.normalize(key) ?? key) ?? [])],
+    prsOf: (key) => {
+      const linked = reverse.get(rules.keys.normalize(key) ?? key) ?? [];
+      return linked.length > 0
+        ? [...linked]
+        : incompleteClosingReferences
+          ? null
+          : [];
+    },
   };
 }
