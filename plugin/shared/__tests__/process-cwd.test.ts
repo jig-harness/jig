@@ -3,8 +3,8 @@
  * Errors that name a process which ended are accepted, and so is one whose
  * working directory its owner cannot read because it holds privileges its
  * owner lacks or runs in a nested PID namespace (a container's); any other
- * error, an ordinary host process whose directory cannot be read included,
- * makes the listing no answer.
+ * error, an ordinary process of the probe's own PID namespace whose
+ * directory cannot be read included, makes the listing no answer.
  */
 import { describe, expect, test } from "bun:test";
 import {
@@ -191,7 +191,7 @@ describe("cwdHolders", () => {
     ["a single pid on NStgid", "42"],
     ["no NStgid line", undefined],
   ])(
-    "is no answer for a denied or unread process of the host's PID namespace: %s",
+    "is no answer for a denied or unread process of the probe's own PID namespace: %s",
     (_label, nstgid) => {
       const unknown = {
         unknown: "process 42's working directory cannot be read",

@@ -8,16 +8,21 @@
  * (a service manager, say) or runs in a nested PID namespace (a container
  * whose runtime started it as root and dropped to the owner's uid), which
  * no session started in a worktree does. Any other error, a process of the
- * host's own PID namespace whose directory cannot be read for another
+ * probe's own PID namespace whose directory cannot be read for another
  * reason included, means a process in the tree could have been missed.
  *
- * The nested-namespace boundary: a container's processes live in a mount
- * namespace of their own, so a working directory read from one names a path
- * inside the container and could not be compared with a host tree anyway.
- * A sandbox an agent starts itself (an unprivileged user namespace, as
- * bubblewrap makes) stays readable by its owner and is listed like any other
- * process, and the agent that started it runs in the host's namespace with
- * its own working directory. A container sharing the host's PID namespace
+ * The nested-namespace boundary: `NStgid:` lists a process's pid in each
+ * PID namespace from the probe's own down to the process's, so more than
+ * one pid means a namespace nested under the probe's. A container's
+ * processes also live in a mount namespace of their own, outside what the
+ * probe can inspect, and no session a host starts runs only there: a
+ * sandbox an agent starts itself (an unprivileged user namespace, as
+ * bubblewrap makes) stays readable by its owner and is listed like any
+ * other process, and the agent that started it runs in the probe's
+ * namespace with its own working directory. The rule does not see a
+ * detached container that bind-mounts a tree at the same path and works in
+ * it with its directory hidden: the probe accepts that process and reports
+ * no holder for it. A container sharing the probe's PID namespace
  * (`--pid=host`) shows one pid and is still no answer.
  */
 import type { RunResult } from "./orca-workspace/runner.ts";
@@ -203,7 +208,7 @@ function sortCwdErrors(
  * Why the process whose `/proc/<pid>/status` read gave `status` may still be
  * in the tree; `null` when it ended, holds permitted capabilities its owner
  * lacks (a non-zero `CapPrm`), or runs in a nested PID namespace (more than
- * one pid on `NStgid:`, a container's). A process of the host's own PID
+ * one pid on `NStgid:`, a container's). A process of the probe's own PID
  * namespace (one pid on `NStgid:`, or no such line) with no permitted
  * capabilities is the reason.
  */
@@ -214,9 +219,7 @@ function deniedReason(pid: string, status: RunResult): string | null {
       : `process ${pid}'s working directory and status cannot be read`;
   const permitted = /^CapPrm:\s*([0-9a-f]+)$/m.exec(status.stdout)?.[1];
   if (permitted !== undefined && /[1-9a-f]/.test(permitted)) return null;
-  const nested = /^NStgid:[ \t]*(\d+(?:[ \t]+\d+)+)[ \t]*$/m.test(
-    status.stdout,
-  );
+  const nested = /^NStgid:[ \t]*\d+(?:[ \t]+\d+)+[ \t]*$/m.test(status.stdout);
   return nested ? null : `process ${pid}'s working directory cannot be read`;
 }
 
