@@ -98,7 +98,7 @@ export function offeredField(selected: readonly string[] | undefined): {
 
 /** What a follow-up's launch record keeps of the routine classes its prompt offered. */
 export interface RoutineFields {
-  /** Its prompt offered the routine question tags, so its question's class is read from its tag. Absent on a record written before passes tagged their questions. */
+  /** Its prompt offered the routine question tags, so its question's class is read from its tag. Absent when its prompt offered no tags, so its question has no class to read. */
   routineTags?: boolean;
   /** The classes its prompt offered (`dispatch.followup_routine` when the record was written), kept only when the repository left one out; absent, every class. A tag of a class not offered is a person's question. */
   routineClasses?: string[];

@@ -111,6 +111,7 @@ export function routineRerun(
     record: outcome.record,
     standing: {
       question,
+      // A record with no routine tags names no class and keeps no selection, and `dispatch.followup_routine` is not read here: its run again carries every class's standing answer.
       classes:
         routine === undefined ? ROUTINE_QUESTIONS.map((q) => q.id) : [routine],
     },

@@ -951,7 +951,7 @@ within the same budget, with the class's standing answer in its prompt:
 | `drafted-items` | whether to file the follow-up items the pass drafted itself | file them as drafted |
 
 A repository chooses which of these classes its follow-ups settle unattended
-with `dispatch.followup_routine` (all three by default): a class it leaves
+with `dispatch.followup_routine` (every class by default): a class it leaves
 out is not offered to the pass, and a question of that class is a person's
 like any other, so a repository whose filing goes to a shared tracker can
 turn `drafted-items` off.
