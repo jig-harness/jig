@@ -1865,7 +1865,7 @@ cannot supply its Bun configuration or preloads, and name the checkout with
 - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
 - name: Check what the dispatcher reads
   env:
-    JIG_VERSION: "0.316.0" # a plugin version that includes `dispatch check`, which the dispatch hosts run
+    JIG_VERSION: "X.Y.Z" # replace with a plugin version that includes `dispatch check`, the one the dispatch hosts run
   run: |
     git clone --quiet --depth 1 --branch "v$JIG_VERSION" https://github.com/jig-harness/jig "$RUNNER_TEMP/jig"
     cd "$RUNNER_TEMP/jig"
