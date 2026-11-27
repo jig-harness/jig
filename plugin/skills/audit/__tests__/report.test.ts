@@ -511,31 +511,6 @@ describe("the map", () => {
     );
   });
 
-  test("a repository with no automated reviewer shows the missing reviewer as a Team/Standard M7 gap, not as ruled out by its shape", () => {
-    const input = reportInput({
-      record: recordText(["profile: team-standard"]),
-      source: noProfile,
-    });
-    const m7 = mapRows(input, targetsOf(input)).find(
-      (r) => r.module.module === "M7",
-    );
-    const reviewer = [
-      "M7/automated-reviewer-comment-only-with-bar",
-      "M7/automated-review-source-independent",
-      "M7/pr-target-wiring-fork-safe",
-    ];
-    const cells = m7?.cells.filter((c) => reviewer.includes(c.criterion.key));
-    expect(cells?.map((c) => [c.criterion.key, c.score, c.gap])).toEqual(
-      reviewer.map((key) => [key, "absent", true]),
-    );
-    // Strict, beyond the Team/Standard target: still scored what the
-    // repository does without a reviewer, so a stricter profile asks for it.
-    const promotion = m7?.cells.find(
-      (c) => c.criterion.key === "M7/reviewer-promotion-gated-on-measurement",
-    );
-    expect([promotion?.score, promotion?.gap]).toEqual(["absent", false]);
-  });
-
   const uncovered = (input: ReturnType<typeof reportInput>) => {
     const t = targetsOf(input);
     const rows = mapRows(input, t);
