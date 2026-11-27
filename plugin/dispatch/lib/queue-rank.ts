@@ -69,9 +69,37 @@ export function rankQueue<T extends QueueItem>(items: readonly T[]): T[] {
   );
 }
 
+/** Each ranking key as a reason names it. */
+export const QUEUE_KEY_WORDS: Record<QueueKey, string> = {
+  priority: "priorities",
+  unblocks: "counts of items they unblock",
+  epicOrder: "places in their epic's order",
+  size: "sizes",
+  createdAt: "creation times",
+};
+
+/** The first ranking key on which `a` and `b` differ, or `null` when they tie on every one. */
+export function queueDifference(a: QueueItem, b: QueueItem): QueueKey | null {
+  return firstDiffering(rankDeltas(a, b));
+}
+
 /** A tie under the queue's rules, before the stable identifier fallback. */
-export function compareQueue(a: QueueItem, b: QueueItem): number {
-  const values = {
+function compareQueue(a: QueueItem, b: QueueItem): number {
+  const values = rankDeltas(a, b);
+  const key = firstDiffering(values);
+  return key === null ? 0 : values[key];
+}
+
+type QueueKey = (typeof QUEUE_ORDER)[number];
+
+function firstDiffering(values: Record<QueueKey, number>): QueueKey | null {
+  for (const key of QUEUE_ORDER)
+    if (values[key] && Number.isFinite(values[key])) return key;
+  return null;
+}
+
+function rankDeltas(a: QueueItem, b: QueueItem): Record<QueueKey, number> {
+  return {
     priority: (a.issue.priority || 5) - (b.issue.priority || 5),
     unblocks: b.unblocks - a.unblocks,
     epicOrder:
@@ -82,9 +110,6 @@ export function compareQueue(a: QueueItem, b: QueueItem): number {
       (SIZE[b.issue.size?.toLowerCase() ?? ""] ?? 5),
     createdAt: parseMs(a.issue.createdAt) - parseMs(b.issue.createdAt),
   };
-  for (const key of QUEUE_ORDER)
-    if (values[key] && Number.isFinite(values[key])) return values[key];
-  return 0;
 }
 
 /** Whether a walk met the item already, or a person holds it. */

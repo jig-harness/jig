@@ -660,6 +660,11 @@ export const MIGRATIONS: readonly Migration[] = [
     additive: true,
     sql: "CREATE INDEX need_leaves_identity ON need_leaves (repo, target, cause, at_ms);",
   },
+  {
+    // Why the tick refused a steward record and the facts it read then, as JSON (`refuseStewardRecord`): the next digest lists a refused order while those facts hold. `NULL` on a record judged before it was kept.
+    additive: true,
+    sql: "ALTER TABLE steward_records ADD COLUMN refusal TEXT;",
+  },
 ];
 
 /** The schema version this plugin writes. */
