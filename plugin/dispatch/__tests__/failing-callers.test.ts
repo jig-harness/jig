@@ -55,7 +55,7 @@ test("a caller whose failures are waits, absences or the system's own faults is 
   ).toEqual([]);
 });
 
-test("a caller with any success, too few calls, or a tick or pass caller is not one", () => {
+test("a caller with too few failing calls, or a tick or pass caller, is not one", () => {
   expect(
     failingCallers(
       report(
@@ -94,14 +94,47 @@ test("one host need per caller and system keeps its age and withdraws when the f
   expect(failingCallerNeeds([], later, at)).toEqual([]);
 });
 
-test("a caller with one credential that worked is not one, whatever its other credential met", () => {
+test("a credential that worked does not hide the same caller's credentials that never did", () => {
   expect(
     failingCallers(
       report(
         row({
           credential: "github:a",
           requests: 20,
-          failures: { invalid: 20 },
+          failures: { unauthorized: 20 },
+        }),
+        row({
+          credential: "github:b",
+          requests: 15,
+          failures: { unauthorized: 15 },
+        }),
+        row({ credential: "github:ok", requests: 300, failures: {} }),
+        row({
+          credential: "github:mixed",
+          requests: 100,
+          failures: { invalid: 10 },
+        }),
+      ),
+    ),
+  ).toEqual([
+    {
+      caller: "skill:example.ts",
+      system: "github",
+      requests: 35,
+      credentials: 2,
+      classes: ["unauthorized"],
+    },
+  ]);
+});
+
+test("a caller whose only failures sit under credentials that also succeeded is not one", () => {
+  expect(
+    failingCallers(
+      report(
+        row({
+          credential: "github:a",
+          requests: 40,
+          failures: { invalid: 30 },
         }),
         row({ credential: "github:b", requests: 30, failures: {} }),
       ),

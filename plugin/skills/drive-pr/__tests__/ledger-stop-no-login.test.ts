@@ -64,12 +64,12 @@ describe("--doctor's recovery of leftover driver records with a forge client tha
   it("asks for the login once and reads no comment, leaving every record for a later run", async () => {
     const s = await stage(4);
     const r = await doctor(s);
-    expectSpawnExit(r, 0);
+    expectSpawnExit(r, 4);
     const calls = s.forge.calls();
     expect(userCalls(calls)).toHaveLength(1);
     expect(commentReads(calls)).toHaveLength(0);
     for (const pr of s.prs) expect(driverRecordRow(s.leaf, pr)).not.toBeNull();
-    expect(r.stderr).toContain("names no login");
+    expect(r.stderr.match(/names no login/g)).toHaveLength(1);
   });
 
   it("asks for the login once for all its records when it has one", async () => {
