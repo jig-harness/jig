@@ -309,9 +309,18 @@ function driveReserve(
   // when that downstream drive asks for it.
   // A wave lasts as long as the longest run in it, so the pickup's own run
   // time bounds the credit when it exceeds every repository's.
+  // A predecessor in flight can run longer than both: its own run time
+  // lengthens the wave too.
   const waveMs = Math.max(
     state.measured.runMs,
     state.measured.candidateRunMs ?? 0,
+    ...(state.demand.unestimated ?? []).map((entry) => entry.runMs),
+  );
+  // A pickup's runs are sequential, so however many slots are free it
+  // finishes at most one run per its own run time before the drive arrives.
+  const ownRunMs = state.measured.candidateRunMs ?? state.measured.runMs;
+  const sequentialCap = Math.floor(
+    state.measured.kinds.drive.timeToValidationMs / ownRunMs,
   );
   const completedBeforeDrive =
     state.measured.concurrency *
@@ -324,7 +333,7 @@ function driveReserve(
     state.demand.atLock + state.demand.toArrive + state.admittedRuns;
   const pickupCompletedBeforeDrive = Math.max(
     0,
-    Math.min(ownRuns, completedBeforeDrive - predecessorRuns),
+    Math.min(ownRuns, sequentialCap, completedBeforeDrive - predecessorRuns),
   );
   const stillRunning = Math.max(0, ownRuns - pickupCompletedBeforeDrive);
   // Only work at the lock, and passes in flight with an arrival estimate,
