@@ -116,9 +116,11 @@ when resolution fails, so a dangling link fails rather than reading as
 absent; it refuses unknown keys; and it refuses a resolved target that Git
 tracks inside a working tree, so a committed profile is never read. It opens
 the resolved target first and reads only from that open file. It then
-compares the open file's device and inode with the resolved path's, and runs
-the Git check on that same path, so a link or parent directory swapped
-between check and open is either the file that was checked or a refusal.
+runs the Git check on the resolved path and compares the open file's device
+and inode with the resolved path's both before and after that check, so a
+link or parent directory swapped at any point up to the end of the Git check
+is a refusal, and a swap after it cannot change what is read, since every
+byte comes from the already-open file.
 
 ### 2. One schedule and time-zone primitive (ruling 2A-i)
 
