@@ -439,10 +439,47 @@ export function requiredCiStartedAt(
   return latest;
 }
 
+const isCompletedSkip = (run: CheckRunLite): boolean =>
+  run.status === "completed" && run.conclusion === "skipped";
+
+/**
+ * The runs the precondition judges on a pull request the hold was never
+ * added to: each required check's completed skips newer than its newest run
+ * that is not a skip are set aside, so that run is the one judged. A label
+ * event's run on a workflow that skips the required job on it, the drive's
+ * own state-label writes among them, then cannot leave the hold waiting for a
+ * run no event will start. With no hold ever added, no skip on the head is a
+ * held run, and the precondition certifies completion, never success: the
+ * hold's witness after the release still needs a newer run that succeeded.
+ * A queued or running run stays the newest, so it is still waited for. A
+ * cancelled run before the skips keeps them, so the head stays incomplete and
+ * the cancelled-run recovery reruns it. A check with only skips keeps them
+ * too, and is not complete.
+ */
+function pastCompletedSkips(
+  runs: readonly CheckRunLite[],
+  required: readonly string[],
+  head: string,
+): readonly CheckRunLite[] {
+  const setAside = new Set<number>();
+  for (const name of required) {
+    const ofCheck = runs
+      .filter((run) => run.name === name && run.headSha === head)
+      .sort((a, b) => a.id - b.id);
+    const judged = ofCheck.findLast((run) => !isCompletedSkip(run));
+    if (judged === undefined || judged.conclusion === "cancelled") continue;
+    for (const run of ofCheck)
+      if (run.id > judged.id && isCompletedSkip(run)) setAside.add(run.id);
+  }
+  return runs.filter((run) => !setAside.has(run.id));
+}
+
 /**
  * Evidence required before adding or re-adding the hold: the PR-open run of
  * every required check has completed, or, after a release, the run the
- * unlabel triggered has.
+ * unlabel triggered has. Only before the hold is first added does it look
+ * past a newer completed skip (`pastCompletedSkips`); after a release, the
+ * newest run is judged.
  */
 export function completedHoldPrecondition(
   runs: readonly CheckRunLite[],
@@ -453,7 +490,12 @@ export function completedHoldPrecondition(
   strictAfter = false,
 ): boolean {
   if (required.length === 0) return false;
-  if (latest === null) return completedRequiredCi(runs, required, head);
+  if (latest === null)
+    return completedRequiredCi(
+      pastCompletedSkips(runs, required, head),
+      required,
+      head,
+    );
   if (latest.event !== "unlabeled") return false;
   return completedRequiredCi(
     runs,

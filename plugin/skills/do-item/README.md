@@ -53,7 +53,9 @@ Neither claims or implements the work.
 
 The issue form posts completed findings with the `## Scout Findings (<hash>)`
 heading a pickup reads, so a later pickup reuses them while their hash matches
-or they are under 24 hours old. The text form prints its findings without
+or they are under 24 hours old, and only when the comment's author is one the
+tracker vouches for as able to write to the repository or as a workspace
+member; a findings comment from anyone else is ignored. The text form prints its findings without
 contacting the tracker. A route without scouts is reported without an empty
 comment, and partial findings from a failed scout are reported without being
 published as reusable findings. The issue form also runs a footprint scout,

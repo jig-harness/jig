@@ -6,8 +6,9 @@
  */
 
 import { isRecord } from "../../../../../shared/guards.ts";
-import { ShapeError } from "./linear-shapes.ts";
-import type { CommentFact, TrackerUser } from "./port.ts";
+import { record, ShapeError, str } from "./linear-shapes.ts";
+import type { CommentFact, IssueComment, TrackerUser } from "./port.ts";
+import { UNKNOWN_ASSOCIATION } from "./comment-port.ts";
 import { parseMs } from "../../../../../shared/time.ts";
 
 /**
@@ -31,8 +32,19 @@ export function trustedUser(u: unknown): boolean {
   return isRecord(u) && typeof u.id === "string" && u.guest === false;
 }
 
+/**
+ * What Linear vouches for about a comment's author, in GitHub's association
+ * words: a non-guest workspace member is a `MEMBER`, a guest a `GUEST`, and a
+ * comment with no user (an integration, a deleted account) or an unreadable
+ * guest flag is `UNKNOWN`.
+ */
+export function associationOf(u: unknown): string {
+  if (trustedUser(u)) return "MEMBER";
+  return isRecord(u) && u.guest === true ? "GUEST" : UNKNOWN_ASSOCIATION;
+}
+
 /** The user a comment names, or `null` for one an integration wrote or whose account is gone. */
-function authorOf(u: unknown): TrackerUser | null {
+export function authorOf(u: unknown): TrackerUser | null {
   if (!isRecord(u) || typeof u.id !== "string" || u.id === "") return null;
   return {
     id: u.id,
@@ -68,4 +80,20 @@ export function commentFacts(nodes: unknown[], key: string): CommentFact[] {
       parseMs(a.createdAt) - parseMs(b.createdAt) ||
       (a.id ?? "").localeCompare(b.id ?? ""),
   );
+}
+
+/** Comment node `c`, the `i`th of `key`'s list, as pickup reads it: its author and what Linear vouches for about them with it. */
+export function listedComment(
+  c: unknown,
+  key: string,
+  i: number,
+): IssueComment {
+  const n = record(c, `comments of ${key}[${i}]`);
+  const author = authorOf(n.user);
+  return {
+    body: str(n.body, `comments of ${key}[${i}].body`),
+    ...(typeof n.createdAt === "string" ? { createdAt: n.createdAt } : {}),
+    ...(author === null ? {} : { author: author.name }),
+    authorAssociation: associationOf(n.user),
+  };
 }

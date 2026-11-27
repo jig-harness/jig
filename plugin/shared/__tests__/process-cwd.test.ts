@@ -6,7 +6,14 @@
  * be read included, makes the listing no answer.
  */
 import { describe, expect, test } from "bun:test";
-import { cwdHolders, parseCwdListing, type ProbeRun } from "../process-cwd.ts";
+import {
+  cwdHolders,
+  holdersIn,
+  parseCwdListing,
+  scanCwds,
+  type AsyncProbeRun,
+  type ProbeRun,
+} from "../process-cwd.ts";
 import type { RunResult } from "../orca-workspace/runner.ts";
 
 const TOP = "/w/holder";
@@ -170,5 +177,147 @@ describe("cwdHolders", () => {
     expect(cwdHolders(runner(result(0, "")).run, TOP)).toEqual({
       unknown: "the process listing failed (exit 0): no output",
     });
+  });
+});
+
+describe("scanCwds and holdersIn", () => {
+  const trees = ["/w/holder", "/w/other", "/w/holder-2", "/w/caf\u00e9"];
+  const cases: [string, RunResult, Record<string, RunResult>][] = [
+    [
+      "a clean /proc listing",
+      result(0, "/proc/1\t/\n/proc/2\t/w/holder/a\n/proc/3\t/w/other\n"),
+      {},
+    ],
+    [
+      "an lsof listing with escaped names and a partial one",
+      result(0, "p10\nfcwd\nn/w/caf\\xc3\\xa9/x\np11\nfcwd\nn/w/holder\n"),
+      {},
+    ],
+    ["a partial lsof name", result(0, "p7\nfcwd\nn/ -- work/holder\n"), {}],
+    [
+      "a denied process with privileges its owner lacks",
+      result(1, "/proc/1\t/\n", "find: '/proc/42/cwd': Permission denied\n"),
+      { "42": statusFile("0000000800000000") },
+    ],
+    [
+      "a denied ordinary process",
+      result(1, "/proc/1\t/\n", "find: '/proc/42/cwd': Permission denied\n"),
+      { "42": statusFile("0000000000000000") },
+    ],
+    [
+      "an unreadable directory whose status cannot be read",
+      result(0, "/proc/1\t/\n/proc/9\t\n"),
+      { "9": result(1, "", "cat: /proc/9/status: Permission denied") },
+    ],
+    [
+      "an error that is no answer",
+      result(1, "/proc/1\t/\n", "find: boom\n"),
+      {},
+    ],
+    ["a failed listing", result(2, "", "lsof: not found\n"), {}],
+    [
+      "a partial lsof name beside a denied ordinary process",
+      result(
+        1,
+        "p7\nfcwd\nn/ -- work/holder\n",
+        "find: '/proc/42/cwd': Permission denied\n",
+      ),
+      { "42": statusFile("0000000000000000") },
+    ],
+  ];
+
+  test.each(cases)(
+    "gives every tree the answer its own probe gave: %s",
+    async (_name, listing, statuses) => {
+      const { run } = runner(listing, statuses);
+      const scan = await scanCwds(async (argv, cwd) => run(argv, cwd));
+      for (const tree of trees)
+        expect(holdersIn(scan, tree)).toEqual(cwdHolders(run, tree));
+    },
+  );
+
+  test("starts no status read once its signal fires, and hands each read the time left", async () => {
+    const abort = new AbortController();
+    const limits: (number | undefined)[] = [];
+    const reads: string[][] = [];
+    const probe: AsyncProbeRun = async (argv, _cwd, limit) => {
+      limits.push(limit);
+      reads.push(argv);
+      if (argv[0] === "sh") {
+        abort.abort();
+        return result(
+          1,
+          "/proc/1\t/\n",
+          "find: '/proc/42/cwd': Permission denied\n",
+        );
+      }
+      return statusFile("0000000000000000");
+    };
+    const scan = await scanCwds(probe, {
+      signal: abort.signal,
+      deadlineMs: 5_000,
+    });
+    expect(scan).toEqual({ unknown: "the process scan was stopped" });
+    expect(reads).toHaveLength(1);
+    expect(limits[0]).toBeGreaterThanOrEqual(1);
+    expect(limits[0]).toBeLessThanOrEqual(5);
+  });
+
+  test("stops waiting for a read in flight when the signal fires", async () => {
+    const abort = new AbortController();
+    const scan = scanCwds(() => new Promise<never>(() => undefined), {
+      signal: abort.signal,
+    });
+    abort.abort();
+    expect(await scan).toEqual({ unknown: "the process scan was stopped" });
+  });
+
+  test("a clean listing that finishes past the deadline is no answer", async () => {
+    const scan = await scanCwds(
+      async () => {
+        await Bun.sleep(1_100);
+        return result(0, "/proc/1\t/\n");
+      },
+      { deadlineMs: 1_000 },
+    );
+    expect(scan).toEqual({ unknown: "the process scan ran past its deadline" });
+  });
+
+  test("starts nothing once the deadline is spent", async () => {
+    let calls = 0;
+    const scan = await scanCwds(
+      async () => {
+        calls++;
+        return result(0, "/proc/1\t/\n");
+      },
+      { deadlineMs: 0 },
+    );
+    expect(scan).toEqual({ unknown: "the process scan ran past its deadline" });
+    expect(calls).toBe(0);
+  });
+
+  test("asks the host once however many trees it is asked about", async () => {
+    const { run, calls } = runner(
+      result(
+        1,
+        "/proc/1\t/\n/proc/2\t/w/t5/a\n",
+        "find: '/proc/42/cwd': Permission denied\n",
+      ),
+      { "42": statusFile("0000000800000000") },
+    );
+    const probe: AsyncProbeRun = async (argv, cwd) => run(argv, cwd);
+    const scan = await scanCwds(probe);
+    const answers = Array.from({ length: 50 }, (_, i) =>
+      holdersIn(scan, `/w/t${i}`),
+    );
+    expect(answers[5]).toEqual({ pids: ["2"] });
+    expect(
+      answers.filter((a) => "pids" in a && a.pids.length > 0),
+    ).toHaveLength(1);
+    // The listing, and the one denied process's status; never one per tree.
+    expect(calls).toEqual([
+      ["sh", "-c", expect.any(String)],
+      ["cat", "/proc/42/status"],
+    ]);
   });
 });

@@ -299,24 +299,46 @@ describe("GitHub adapter: reading an issue", () => {
               body: "later",
               createdAt: "2026-02-02T00:00:00Z",
               authorAssociation: "NONE",
+              author: { login: "passer-by", id: "U_2" },
             },
             {
               id: "C1",
               body: "first",
               createdAt: "2026-02-01T00:00:00Z",
               authorAssociation: "MEMBER",
+              author: { login: "maintainer", id: "U_1" },
+            },
+            {
+              id: "C3",
+              body: "ghost",
+              createdAt: "2026-02-03T00:00:00Z",
             },
           ]),
         },
       },
     }));
     expect(await t.listComments("#1")).toEqual([
-      { body: "first", createdAt: "2026-02-01T00:00:00Z" },
-      { body: "later", createdAt: "2026-02-02T00:00:00Z" },
+      {
+        body: "first",
+        createdAt: "2026-02-01T00:00:00Z",
+        author: "maintainer",
+        authorAssociation: "MEMBER",
+      },
+      {
+        body: "later",
+        createdAt: "2026-02-02T00:00:00Z",
+        author: "passer-by",
+        authorAssociation: "NONE",
+      },
+      {
+        body: "ghost",
+        createdAt: "2026-02-03T00:00:00Z",
+        authorAssociation: "UNKNOWN",
+      },
     ]);
     const facts = await t.issueComments("#1");
     expect(facts.uuid).toBe("I_1");
-    expect(facts.comments.map((c) => c.trusted)).toEqual([false, true]);
+    expect(facts.comments.map((c) => c.trusted)).toEqual([false, true, false]);
   });
 
   it("names each comment's author, its link and its last edit, in the one comments request", async () => {

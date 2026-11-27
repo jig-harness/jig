@@ -22,9 +22,13 @@ import { parseArgs } from "../scripts/lib/cli.ts";
 import { parseNewIssue, parsePatch, UsageError } from "../scripts/tracker.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import {
+  gitCleanEnv,
+  linearApiStub,
+  OVERLAY,
+  SCRIPTS,
+} from "./scripts-harness.ts";
 
-const SCRIPTS = join(import.meta.dir, "..", "scripts");
-const OVERLAY = join(import.meta.dir, "fixtures", "overlay.yaml");
 const ROUTING = parseAgentRouting(
   loadYaml(readFileSync(OVERLAY, "utf8")) as Record<string, unknown>,
 );
@@ -37,51 +41,6 @@ const determineAgents = (labels: string[], title: string, catalog: unknown) =>
     catalog === null ? null : parseCatalog(catalog),
     ROUTING,
   );
-
-// Every spawn goes through this env: git hook variables scrubbed, the
-// fixture overlay as the consumer configuration, and no Linear API key, so
-// the tracker uses the `linear` client the test puts on PATH.
-function gitCleanEnv(): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(process.env)) {
-    if (k.startsWith("GIT_") || v === undefined) continue;
-    if (k === "LINEAR_API_KEY" || k === "LINEAR_API_TOKEN") continue;
-    env[k] = v;
-  }
-  env.JIG_OVERLAY = OVERLAY;
-  return env;
-}
-
-/**
- * A fake `linear` client answering `linear api <document> --variables-json
- * <json>`. Each case names the GraphQL operation and the exact variables it
- * expects; any other invocation exits 3, so a request-shape regression turns
- * the suite red instead of the stub answering regardless.
- */
-function linearApiStub(
-  cases: Array<{ operation: string; variables: string; payload: string }>,
-): string {
-  const branches = cases
-    .map(
-      (
-        c,
-        i,
-      ) => `if [ "$1" = api ] && [ "$3" = --variables-json ] && [ '${c.variables}' = "$4" ]; then
-  case "$2" in
-    *"${c.operation}("*) cat <<'JSON_EOF_${i}'
-${c.payload}
-JSON_EOF_${i}
-      exit 0 ;;
-  esac
-fi`,
-    )
-    .join("\n");
-  return `#!/bin/sh
-${branches}
-echo "unexpected linear invocation: $*" >&2
-exit 3
-`;
-}
 
 const CATALOG = {
   areas: {
@@ -1024,14 +983,14 @@ describe("list_comments.ts", () => {
   it("follows every page and returns the comments oldest first", () => {
     const r = run(
       comments(
-        '[{"id":"c2","body":"second","createdAt":"2026-09-02T00:00:00.000Z"}]',
+        '[{"id":"c2","body":"second","createdAt":"2026-09-02T00:00:00.000Z","user":{"id":"u2","name":"outsider","guest":true}}]',
         '{"hasNextPage":true,"endCursor":"cur-1"}',
       ),
       [
         {
           variables: '{"id":"ENG-1","after":"cur-1"}',
           payload: comments(
-            '[{"id":"c1","body":"## Scout Findings (abc1234)","createdAt":"2026-09-01T00:00:00.000Z","user":{"id":"u","guest":false}}]',
+            '[{"id":"c1","body":"## Scout Findings (abc1234)","createdAt":"2026-09-01T00:00:00.000Z","user":{"id":"u","name":"maintainer","guest":false}}]',
           ),
         },
       ],
@@ -1042,8 +1001,15 @@ describe("list_comments.ts", () => {
         {
           body: "## Scout Findings (abc1234)",
           createdAt: "2026-09-01T00:00:00.000Z",
+          author: "maintainer",
+          authorAssociation: "MEMBER",
         },
-        { body: "second", createdAt: "2026-09-02T00:00:00.000Z" },
+        {
+          body: "second",
+          createdAt: "2026-09-02T00:00:00.000Z",
+          author: "outsider",
+          authorAssociation: "GUEST",
+        },
       ],
     });
   });
@@ -1070,20 +1036,36 @@ describe("list_comments.ts", () => {
     });
   });
 
-  it("its output feeds directly into select_scout_finding.ts", () => {
-    const listRun = run(
-      comments(
-        '[{"id":"c1","body":"## Scout Findings (abc1234)","createdAt":"2026-09-01T00:00:00.000Z"}]',
-      ),
-    );
-    expect(listRun.status).toBe(0);
-    const select = spawnSync(
+  const selectFrom = (listed: string) =>
+    spawnSync(
       process.execPath,
       [join(SCRIPTS, "select_scout_finding.ts"), "--current-hash", "abc1234"],
-      { encoding: "utf8", input: listRun.stdout, env: gitCleanEnv() },
+      { encoding: "utf8", input: listed, env: gitCleanEnv() },
     );
+  const findings = (user: string) =>
+    comments(
+      `[{"id":"c1","body":"## Scout Findings (abc1234)","createdAt":"2026-09-01T00:00:00.000Z","user":${user}}]`,
+    );
+
+  it("its output feeds directly into select_scout_finding.ts", () => {
+    const listRun = run(findings('{"id":"u","name":"m","guest":false}'));
+    expect(listRun.status).toBe(0);
+    const select = selectFrom(listRun.stdout);
     expect(select.status).toBe(0);
     expect(JSON.parse(select.stdout)).toMatchObject({ action: "reuse" });
+  });
+
+  it("a findings comment from a guest, or from no user, is not reused", () => {
+    for (const user of ['{"id":"u","name":"g","guest":true}', "null"]) {
+      const listRun = run(findings(user));
+      expect(listRun.status).toBe(0);
+      const select = selectFrom(listRun.stdout);
+      expect(select.status).toBe(0);
+      expect(JSON.parse(select.stdout)).toMatchObject({
+        action: "run",
+        untrusted: [0],
+      });
+    }
   });
 });
 
@@ -1542,7 +1524,7 @@ describe("select_scout_finding.ts (CLI entrypoint)", () => {
   it("accepts its documented invocation with no positional argument", () => {
     const r = run(
       ["--current-hash", "abc1234"],
-      '[{"body":"## Scout Findings (abc1234)","createdAt":"2026-09-01T00:00:00.000Z"}]',
+      '[{"body":"## Scout Findings (abc1234)","createdAt":"2026-09-01T00:00:00.000Z","authorAssociation":"COLLABORATOR"}]',
     );
     expect({ status: r.status, stderr: r.stderr }).toEqual({
       status: 0,
