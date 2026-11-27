@@ -47,10 +47,11 @@ import {
 } from "../pr-markers.ts";
 import { failureText } from "../text.ts";
 import {
+  createsSettled,
   createWaits,
   type LabelCreate,
   labelCreator,
-  missingIn,
+  missingOf,
 } from "./label-create.ts";
 import type {
   DrivenPr,
@@ -303,12 +304,15 @@ export async function writeLabels(
 ): Promise<LabelWrite[]> {
   const out: LabelWrite[] = [];
   const creator = labelCreator(slug, mode.create, mode.book);
-  const attempt = async (change: LabelChange): Promise<string | null> => {
+  const attempt = async (
+    change: LabelChange,
+  ): Promise<{ why: string; missing: string[] } | null> => {
     try {
       const edited = await edit(slug, change.pr, change.add, change.remove);
-      return edited.ok ? null : edited.failure.reason;
+      if (edited.ok) return null;
+      return { why: edited.failure.reason, missing: missingOf(edited.failure) };
     } catch (error) {
-      return failureText(error);
+      return { why: failureText(error), missing: [] };
     }
   };
   for (const change of [...changes].sort((a, b) => a.pr - b.pr)) {
@@ -328,8 +332,8 @@ export async function writeLabels(
       continue;
     }
     const of = { key, kind: "label" as const, target: base.target };
-    let why = await attempt(change);
-    const missing = why === null ? [] : missingIn(why, change.add);
+    let refusal = await attempt(change);
+    const missing = refusal?.missing ?? [];
     if (
       creator !== null &&
       missing.length > 0 &&
@@ -345,13 +349,15 @@ export async function writeLabels(
         });
         continue;
       }
-      why = await attempt(change);
+      refusal = await attempt(change);
     }
-    if (why === null) {
+    if (refusal === null) {
       out.push({ ...base, outcome: "written", detail: describe(change) });
       mode.book?.ran(of, null);
+      createsSettled(slug, change.add, mode.book);
       continue;
     }
+    const why = refusal.why;
     out.push({
       ...base,
       outcome: "failed",

@@ -205,11 +205,12 @@ if (args[0] === "label" && args[1] === "list")
   out(repoLabels().map(({ name, description, color }) => ({ name, description, color })));
 const flag = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 if (args[0] === "label" && args[1] === "create") {
-  // One label added to labels-repo.json; refused while label-create-fail exists.
+  // One label added to labels-repo.json; refused while label-create-fail exists; while label-create-raced exists, another writer creates it first and this create is refused as gh refuses a label the repository already has.
   if (fs.existsSync(F + "/label-create-fail")) { process.stderr.write("gh: Resource not accessible by integration (HTTP 403)\\n"); process.exit(1); }
   const have = repoLabels();
   have.push({ name: args[2], description: flag("--description") ?? "", color: flag("--color") ?? "ededed" });
   fs.writeFileSync(F + "/labels-repo.json", JSON.stringify(have));
+  if (fs.existsSync(F + "/label-create-raced")) { process.stderr.write('label with name "' + args[2] + '" already exists; use \`--force\` to update its color and description\\n'); process.exit(1); }
   out("");
 }
 if (args[0] === "label" && args[1] === "edit") {

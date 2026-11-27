@@ -3,7 +3,10 @@
  * release that adds a label reaches a host before its repositories have
  * it, and every write that adds it is refused. The tick creates the label
  * as `jig dispatch labels` does (its name under the repository's prefix,
- * its color and description from this release) and writes again.
+ * its color and description from this release) and writes again. The
+ * forge classes the refusal (`missing-label` from `editLabels`), so the
+ * tick never reads it from the refusal's text; a create the forge answers
+ * with `exists` (another writer created the label first) counts as made.
  *
  * When the forge refuses the create (the signed-in account may not create
  * labels), the refusal is one row of the failure ledger for the
@@ -14,16 +17,16 @@
  * off they wait without asking the forge.
  */
 import type { ActionBook } from "../failures.ts";
-import { createLabel } from "../forge.ts";
+import { createLabel, type LabelEditFailure } from "../forge.ts";
 import type { LabelSpec } from "../labels.ts";
 import { failureText } from "../text.ts";
 
 /** The failure ledger's key of one label's create, a row for the repository. */
 export const createKey = (name: string): string => `label create ${name}`;
 
-/** The labels a write added that the forge's refusal names as not found, as `gh pr edit` names a label the repository lacks. */
-export function missingIn(reason: string, add: readonly string[]): string[] {
-  return add.filter((name) => reason.includes(`'${name}' not found`));
+/** The labels a refused write added that the repository lacks, as the forge classed the refusal (`missing-label`); none for any other refusal. */
+export function missingOf(failure: LabelEditFailure): string[] {
+  return failure.code === "missing-label" ? failure.missing : [];
 }
 
 /** How a tick creates the dispatch labels its writes miss. */
@@ -44,6 +47,19 @@ export function createWaits(
     if (waits !== null) return `'${name}' could not be created: ${waits}`;
   }
   return null;
+}
+
+/** A write that added these labels succeeded, so each exists: the row of a create that failed for one goes (a person created the label meanwhile). */
+export function createsSettled(
+  slug: string,
+  add: readonly string[],
+  book: ActionBook | null | undefined,
+): void {
+  for (const name of add) {
+    const key = createKey(name);
+    if (book?.standing(key) === true)
+      book.ran({ key, kind: "label", target: slug }, null);
+  }
 }
 
 /** One shell word, in single quotes. */
@@ -75,7 +91,8 @@ export function labelCreator(
     let why: string;
     try {
       const created = await write(slug, spec);
-      if (created.ok) {
+      // A label another writer created first (another host, a person running `jig dispatch labels`) is there to write.
+      if (created.ok || created.failure.code === "exists") {
         book?.ran(of, null);
         return null;
       }

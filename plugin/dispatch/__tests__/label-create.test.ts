@@ -176,4 +176,42 @@ describe("jig dispatch creates a dispatch label a write misses", () => {
     );
     expect(failing).toMatchObject([{ target: SLUG, outcome: "sent" }]);
   }, 180_000);
+
+  it("writes the label when another writer created it first, and books no failure on its create", async () => {
+    const w = fixture();
+    writeFileSync(join(w.dir, "label-create-raced"), "");
+    writes(w);
+    const r = await tick(w);
+    expect(repo(r)?.labels?.writes).toMatchObject([
+      { target: "PR #7", add: ["jig:converged"], outcome: "written" },
+      { target: "PR #8", add: ["jig:converged"], outcome: "written" },
+    ]);
+    expect(writes(w).filter((c) => c.startsWith("label create "))).toHaveLength(
+      1,
+    );
+    expect(rows(w)).toEqual([]);
+  }, 60_000);
+
+  it("clears a refused create's row once a person created the label and the write succeeds", async () => {
+    const w = fixture();
+    writeFileSync(join(w.dir, "label-create-fail"), "");
+    await tick(w);
+    expect(rows(w).map((row) => row.key)).toEqual([
+      "label create jig:converged",
+    ]);
+    const have = JSON.parse(
+      readFileSync(join(w.dir, "labels-repo.json"), "utf8"),
+    ) as unknown[];
+    writeFileSync(
+      join(w.dir, "labels-repo.json"),
+      JSON.stringify([...have, "jig:converged"]),
+    );
+    waited(w);
+    const r = await tick(w);
+    expect(repo(r)?.labels?.writes).toMatchObject([
+      { target: "PR #7", outcome: "written" },
+      { target: "PR #8", outcome: "written" },
+    ]);
+    expect(rows(w)).toEqual([]);
+  }, 120_000);
 });
