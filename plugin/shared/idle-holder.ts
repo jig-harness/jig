@@ -105,15 +105,39 @@ export interface HolderCheck {
   drivers: TreeDrivers;
 }
 
+/**
+ * What a busy reason is about: `changes` for a change in the working tree or
+ * index (one a detach at the same commit leaves where it is), `unpushed` for
+ * commits counted as missing from the remote, `other` for everything else,
+ * a probe that could not answer included.
+ */
+export type HolderReasonKind = "changes" | "unpushed" | "other";
+
 export type HolderVerdict =
   /** Nothing keeps the tree busy; `head` is the commit it is at. */
   | { idle: true; head: string }
   /**
-   * What keeps it busy, one clause each. `timedOut` when a probe was cut
-   * short by the time it was given: the reasons may then be the caller's
-   * clock rather than the tree, and the check is worth running again.
+   * What keeps it busy, one clause each, and each clause's kind at the same
+   * index. `head` is the commit it is at when git could read it. `timedOut`
+   * when a probe was cut short by the time it was given: the reasons may then
+   * be the caller's clock rather than the tree, and the check is worth
+   * running again.
    */
-  | { idle: false; reasons: string[]; timedOut: boolean };
+  | {
+      idle: false;
+      reasons: string[];
+      kinds: HolderReasonKind[];
+      head?: string;
+      timedOut: boolean;
+    };
+
+/** One busy reason and its kind. */
+interface Reason {
+  text: string;
+  kind: HolderReasonKind;
+}
+
+const other = (text: string): Reason => ({ text, kind: "other" });
 
 /** The deadline of one probe. */
 const PROBE_TIMEOUT_MS = 30_000;
@@ -379,11 +403,13 @@ function unpushed(
   git: (args: string[]) => RunResult,
   remote: string,
   branch: string,
-): string | null {
+): Reason | null {
   const ref = `refs/remotes/${remote}/${branch}`;
   const exists = git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
   if (exists.status !== 0 && exists.status !== 1)
-    return `whether ${remote}/${branch} exists cannot be read: ${output(exists)}`;
+    return other(
+      `whether ${remote}/${branch} exists cannot be read: ${output(exists)}`,
+    );
   const onRemote = exists.status === 0;
   if (!onRemote) {
     // The other tracking branches vouch for the commits only as the remote has them now.
@@ -397,7 +423,9 @@ function unpushed(
       `+refs/heads/*:refs/remotes/${remote}/*`,
     ]);
     if (refreshed.status !== 0)
-      return `${remote}'s branches cannot be refreshed to tell whether they hold its commits: ${output(refreshed)}`;
+      return other(
+        `${remote}'s branches cannot be refreshed to tell whether they hold its commits: ${output(refreshed)}`,
+      );
   }
   const counted = git(
     onRemote
@@ -406,15 +434,26 @@ function unpushed(
   );
   const count = Number(counted.stdout.trim());
   if (counted.status !== 0 || !Number.isSafeInteger(count))
-    return `its commits cannot be compared with ${remote}: ${output(counted)}`;
+    return other(
+      `its commits cannot be compared with ${remote}: ${output(counted)}`,
+    );
   if (count === 0) return null;
-  if (onRemote) return `${count} commit(s) not on ${remote}/${branch}`;
+  if (onRemote)
+    return {
+      text: `${count} commit(s) not on ${remote}/${branch}`,
+      kind: "unpushed",
+    };
   const left = unmerged(git, remote);
   if ("unreadable" in left)
-    return `${count} commit(s) on no ${remote} branch, and ${remote} has no ${branch}; whether the base branch holds their change cannot be told: ${left.unreadable}`;
+    return other(
+      `${count} commit(s) on no ${remote} branch, and ${remote} has no ${branch}; whether the base branch holds their change cannot be told: ${left.unreadable}`,
+    );
   const { base, commits } = left;
   if (commits.length === 0) return null;
-  return `${commits.length} commit(s) on no ${remote} branch whose change ${base} lacks, and ${remote} has no ${branch}: ${named(commits)}`;
+  return {
+    text: `${commits.length} commit(s) on no ${remote} branch whose change ${base} lacks, and ${remote} has no ${branch}: ${named(commits)}`,
+    kind: "unpushed",
+  };
 }
 
 /** Which operation markers the git directory `admin` holds, or a reason they cannot be read. */
@@ -473,13 +512,13 @@ function otherBranch(git: Git, branch: string): string | null {
 }
 
 /** Why git reports changes there, or `null`. */
-function changes(git: Git): string | null {
+function changes(git: Git): Reason | null {
   const status = git([...CHANGES_STATUS_ARGS]);
   if (status.status !== 0)
-    return `git status cannot read it: ${output(status)}`;
+    return other(`git status cannot read it: ${output(status)}`);
   return status.stdout === ""
     ? null
-    : "it has uncommitted or untracked changes";
+    : { text: "it has uncommitted or untracked changes", kind: "changes" };
 }
 
 /**
@@ -489,7 +528,7 @@ function changes(git: Git): string | null {
  * populated submodule, active or not, nested ones too, is then read through
  * `submodule foreach`.
  */
-function hiddenChanges(git: Git): string | null {
+function hiddenChanges(git: Git): Reason | null {
   const reads = [
     ["ls-files", "-v", "-z"],
     ["submodule", "foreach", "--quiet", "--recursive", "git ls-files -v -z"],
@@ -497,9 +536,12 @@ function hiddenChanges(git: Git): string | null {
   for (const args of reads) {
     const flags = git(args);
     if (flags.status !== 0)
-      return `its index flags cannot be read: ${output(flags)}`;
+      return other(`its index flags cannot be read: ${output(flags)}`);
     if (hidesIndexChanges(flags.stdout))
-      return "assume-unchanged or skip-worktree flags hide possible changes from git status";
+      return {
+        text: "assume-unchanged or skip-worktree flags hide possible changes from git status",
+        kind: "changes",
+      };
   }
   return null;
 }
@@ -549,26 +591,29 @@ function gitReasons(
   run: ProbeRun,
   tree: Located,
   check: HolderCheck,
-): string[] {
+): Reason[] {
+  const texts = (found: string | null): Reason | null =>
+    found === null ? null : other(found);
   return [
     tree.admin === tree.commonDir
-      ? "it is the clone's main checkout, which is never detached"
+      ? other("it is the clone's main checkout, which is never detached")
       : null,
-    otherBranch(git, check.branch),
+    texts(otherBranch(git, check.branch)),
     changes(git),
     hiddenChanges(git),
-    unfinished(run, tree.admin),
+    texts(unfinished(run, tree.admin)),
     unpushed(git, check.remote, check.branch),
-  ].filter((reason): reason is string => reason !== null);
+  ].filter((reason): reason is Reason => reason !== null);
 }
 
 /**
  * Whether the worktree at `check.path` is idle and may be detached from
- * `check.branch`; what keeps it busy when it is not. It changes the working
- * tree and index not at all: the caller refreshes `<remote>/<branch>` first,
- * and only when the remote lacks that branch does the check refresh the
- * remote's other tracking branches, which then vouch for the commits. Once
- * the caller's time limit has passed, the runner's error is thrown.
+ * `check.branch`; what keeps it busy when it is not, each reason with its
+ * kind. It changes the working tree and index not at all: the caller
+ * refreshes `<remote>/<branch>` first, and only when the remote lacks that
+ * branch does the check refresh the remote's other tracking branches, which
+ * then vouch for the commits. Once the caller's time limit has passed, the
+ * runner's error is thrown.
  */
 export function holderVerdict(ctx: Context, check: HolderCheck): HolderVerdict {
   const { run, timedOut } = prober(ctx);
@@ -576,13 +621,26 @@ export function holderVerdict(ctx: Context, check: HolderCheck): HolderVerdict {
     run(["git", "-c", "core.fsmonitor=false", "-C", check.path, ...args]);
   const tree = locate(git);
   if ("unreadable" in tree)
-    return { idle: false, reasons: [tree.unreadable], timedOut: timedOut() };
-  const reasons = [
+    return {
+      idle: false,
+      reasons: [tree.unreadable],
+      kinds: ["other"],
+      timedOut: timedOut(),
+    };
+  const found = [
     ...gitReasons(git, run, tree, check),
-    ...driven(check.drivers, { path: tree.top, commonDir: tree.commonDir }),
-    ...working(run, tree.top),
+    ...driven(check.drivers, { path: tree.top, commonDir: tree.commonDir }).map(
+      other,
+    ),
+    ...working(run, tree.top).map(other),
   ];
-  return reasons.length === 0
+  return found.length === 0
     ? { idle: true, head: tree.head }
-    : { idle: false, reasons, timedOut: timedOut() };
+    : {
+        idle: false,
+        reasons: found.map((r) => r.text),
+        kinds: found.map((r) => r.kind),
+        head: tree.head,
+        timedOut: timedOut(),
+      };
 }

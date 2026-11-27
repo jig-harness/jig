@@ -540,11 +540,12 @@ export interface BusyHolder {
   reasons: string[];
 }
 
-/** An idle checkout the runtime does not list that held a launch's branch, detached at its commit by the open; its branch is kept. */
+/** A checkout the runtime does not list that held a launch's branch, detached at its commit by the open; its branch is kept, its unpushed commits first on a rescue branch of the clone where the host lets the open rescue them (`rescue`). */
 export interface DetachedCheckout {
   path: string;
   branch: string;
   head: string;
+  rescue?: { branch: string; clone: string };
 }
 
 /** What `--apply` did with one planned launch. */

@@ -30,6 +30,7 @@
  * retried once, under its own record and token, never as a fresh launch.
  * The tick writes nothing to the tracker: `do-item`'s claim does.
  */
+import { leftBehind } from "./followup-lane.ts";
 import { renderBranchName } from "../../../skills/drive-pr/scripts/lib/pr-policy.ts";
 import { carried, returnCarried } from "../station-answer-store.ts";
 import type { IssueKeys } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
@@ -337,6 +338,9 @@ async function launchOne(
   );
   if ("outcome" in opened) return opened.outcome;
   const { workspace } = opened;
+  // A wait after the open still names the checkout it detached.
+  const waitsAfterOpen = (why: string) =>
+    leftBehind(waits(action, why, slots.account.name), opened.detached);
   const busy = await leftBehindBusy(
     state,
     repo,
@@ -344,14 +348,13 @@ async function launchOne(
     action.target,
     workspace.path,
   );
-  if (busy !== null) return waits(action, busy, slots.account.name);
+  if (busy !== null) return waitsAfterOpen(busy);
   const after = await changed(state, repo, ctx, action.target, served);
-  if ("why" in after) return waits(action, after.why, slots.account.name);
+  if ("why" in after) return waitsAfterOpen(after.why);
   const afterBatch = await checkBatch();
-  if (afterBatch !== null) return waits(action, afterBatch, slots.account.name);
+  if (afterBatch !== null) return waitsAfterOpen(afterBatch);
   const beforeRoute = outOfTime(state);
-  if (beforeRoute !== null)
-    return waits(action, beforeRoute, slots.account.name);
+  if (beforeRoute !== null) return waitsAfterOpen(beforeRoute);
   const vendor = admittedVendor(slots.account);
   const route = await pickupRoute(
     after.issue,
@@ -361,8 +364,7 @@ async function launchOne(
   );
   // Deriving the route runs a child for up to the runtime timeout.
   const pastDeadline = outOfTime(state);
-  if (pastDeadline !== null)
-    return waits(action, pastDeadline, slots.account.name);
+  if (pastDeadline !== null) return waitsAfterOpen(pastDeadline);
   const record: LaunchRecord = {
     version: 1,
     id,
@@ -398,7 +400,10 @@ async function launchOne(
     ...carried(repo.slug, action.target, id),
   };
   const launched = headless(await startOrReturn(state, record, slots), record);
-  return { ...launched, detail: `${launched.detail}; ${route.detail}` };
+  return leftBehind(
+    { ...launched, detail: `${launched.detail}; ${route.detail}` },
+    opened.detached,
+  );
 }
 
 /** Start the record; a launch that did not start hands the answer it was given back to the next one. */

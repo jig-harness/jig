@@ -74,7 +74,7 @@ describe("served items blocked by open work", () => {
     const cases: [PoolIssue | null, string][] = [
       [issue("#2", [], "sam"), "assigned to sam"],
       [started("#2"), "in In Progress"],
-      [issue("#2", ["epic"], null), "an epic; assign it to start it"],
+      [issue("#2", ["epic"], null), "epics are worked through their children"],
       [issue("#2", ["hitl"], null), "needs a person to start"],
       [issue("#2", ["jig:hold"], null), "needs a person to start"],
       [issue("#2", ["repo:other"], null), "another repository's"],

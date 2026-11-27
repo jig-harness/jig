@@ -23,6 +23,7 @@ import {
 } from "./final-regate.ts";
 
 import { sleep } from "./../cli.ts";
+import { sayWaiting } from "./wait-line.ts";
 
 import {
   CHECK_RUNS_UNREADABLE_EXIT,
@@ -679,8 +680,10 @@ async function waitForReplacement(
     );
     return 4;
   }
-  console.error(
+  sayWaiting(
+    context,
     `review converged; waiting for a run to replace the cancelled check(s) (current verdict '${finalVerdict}')`,
+    `replacement ${reviewedHead} ${finalVerdict}`,
   );
   context.finalCiWait.remember(reviewedHead, finalCiSignals, true);
   await sleep(FINAL_CI_POLL_SECONDS);
