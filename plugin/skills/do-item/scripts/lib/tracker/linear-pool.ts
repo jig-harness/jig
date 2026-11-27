@@ -53,6 +53,7 @@ export const poolFields = (extra: string) => `
   state { id name type }
   assignee { id name }
   labels(first: 100) { pageInfo { hasNextPage } nodes { name } }
+  allChildren: children(first: 1) { nodes { id } }
   children(first: 1, filter: { state: { type: { nin: ${JSON.stringify(CLOSED_STATE_TYPES)} } } }) {
     pageInfo { hasNextPage }
     nodes { id }
@@ -96,6 +97,12 @@ export function parsePoolIssue(raw: unknown): WithEstimate<CorePoolIssue> {
     typeof children.pageInfo.hasNextPage !== "boolean"
   )
     throw new ShapeError(`${where}.children: unreadable`);
+  // This is a fresh tracker read, so missing child-presence data is not a
+  // compatible legacy row: accepting it could turn a closed-child epic into
+  // a leaf and let a pickup claim it.
+  const allChildren = record(n.allChildren, `${where}.allChildren`).nodes;
+  if (!Array.isArray(allChildren))
+    throw new ShapeError(`${where}.allChildren: unreadable`);
   const state = record(n.state, `${where}.state`);
   const assignee =
     n.assignee === null ? null : record(n.assignee, `${where}.assignee`);
@@ -120,6 +127,7 @@ export function parsePoolIssue(raw: unknown): WithEstimate<CorePoolIssue> {
             name: str(assignee.name, `${where}.assignee.name`),
           },
     labels: labels.names,
+    ...(allChildren.length > 0 ? { hasChildren: true } : {}),
     hasOpenChildren: children.nodes.length > 0 || children.pageInfo.hasNextPage,
     truncated: labels.truncated ? ["labels"] : [],
   };

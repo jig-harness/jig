@@ -147,6 +147,8 @@ const event = s.union([
     probe: s.optional(s.unknown()),
     // A stall's shared finish: `{ state, reason }`, read through `stopFinish`.
     finish: s.optional(s.unknown()),
+    // A stall's passes' tally: read through `stopReasons`.
+    reasons: s.optional(s.unknown()),
   }),
 ]);
 const ciAction = s.object({

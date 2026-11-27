@@ -18,6 +18,7 @@ import { launchOf } from "../../../../../shared/launched-session.ts";
 import { CHECK_RUNS_UNREADABLE_EXIT } from "./settings.ts";
 import { driverRuntime } from "./runtime.ts";
 import { incompletePassExit } from "./incomplete-pass.ts";
+import { restartAfterPendingTasks } from "./pending-background.ts";
 import { measureStop } from "./stop-measure.ts";
 import { recordProbeStop } from "./../status/probe-stop.ts";
 
@@ -124,9 +125,17 @@ export async function runReviewPassPhase(
     launchOf(process.env) ?? "",
     round,
   );
+  const disposition = passExitDisposition(passRes.code);
+  // What a pass that exited 0 left running is stopped, or witnessed gone,
+  // before any verdict from its finish record releases the drive's locks.
+  const pending =
+    disposition.kind === "ok"
+      ? await restartAfterPendingTasks(context, round, baseEnv, passHandle?.pid)
+      : null;
+  if (typeof pending === "number") return pending;
   if (hasCheckRunsUnreadableFinish(finish, passRes.timedOut))
     return await stopOnPassListing(context, finish, round);
-  const disposition = passExitDisposition(passRes.code);
+  if (pending !== null) return pending;
   // A pass that completed has acted on what it was carried. Until one does (a
   // quota wall retried, say), every pass is told again. Whether it pushed what
   // it inherited is not taken on its word: the next gate measures the tree

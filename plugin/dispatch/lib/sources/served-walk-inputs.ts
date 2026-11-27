@@ -30,10 +30,7 @@ export function personRoots(
     factory?.identity === identity
       ? factory.roots
       : view.open().map((held) => held.issue);
-  return [
-    ...assigned,
-    ...progress.filter((issue) => issue.isEpic && issue.hasOpenChildren),
-  ];
+  return [...assigned, ...progress.filter((issue) => issue.hasOpenChildren)];
 }
 
 /** A queue's already-read relations are reused by the metadata and blocker reads. */

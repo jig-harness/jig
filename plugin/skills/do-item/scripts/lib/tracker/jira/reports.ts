@@ -94,7 +94,7 @@ export function reportOperations(
   client: Client,
   stores: Pick<JiraFacetStores, "read">,
 ): ReportOps {
-  const { model, project, settings } = client;
+  const { model, project } = client;
   const open = openClause(model.stateNames("blocked"));
   const ownKey = new RegExp(`^${project}-\\d+$`);
 
@@ -207,21 +207,17 @@ export function reportOperations(
     });
   }
 
-  /** The keys among `keys` with at least one open child. */
-  async function withOpenChildren(
-    keys: string[],
-    signal?: AbortSignal,
-  ): Promise<Set<string>> {
-    const out = new Set<string>();
+  /** Read child presence and open child presence in one search per batch. */
+  async function childPresence(keys: string[], signal?: AbortSignal) {
+    const all = new Set<string>();
+    const opened = new Set<string>();
     for (let i = 0; i < keys.length; i += BATCH) {
       const batch = keys.slice(i, i + BATCH);
       const found = await searchPages(
         client.transport,
-        `parent in ${keyList(batch)} AND ${open}${ORDER}`,
-        Object.keys(settings.statesByType).length === 0
-          ? ["parent"]
-          : ["parent", "status", "issuetype"],
-        `open children of ${batch.join(", ")}`,
+        `parent in ${keyList(batch)}${ORDER}`,
+        ["parent", "status", "issuetype"],
+        `children of ${batch.join(", ")}`,
         signal,
       );
       for (const child of found) {
@@ -229,19 +225,17 @@ export function reportOperations(
           child.fields,
           `issue ${String(child.key)}.fields`,
         );
-        if (
-          Object.keys(settings.statesByType).length > 0 &&
-          !isOpenChild(fields, String(child.key))
-        )
+        if (fields.parent === null || typeof fields.parent !== "object")
           continue;
-        if (fields.parent !== null && typeof fields.parent === "object")
-          out.add(String((fields.parent as Record<string, unknown>).key));
+        const parent = String((fields.parent as Record<string, unknown>).key);
+        all.add(parent);
+        if (isOpenChild(fields, String(child.key))) opened.add(parent);
       }
     }
-    return out;
+    return { all, opened };
   }
 
-  /** Check a child against its own type after a union status query. */
+  /** Check a child against its own workflow. */
   function isOpenChild(fields: Record<string, unknown>, key: string): boolean {
     const status = record(fields.status, `issue ${key}.status`);
     const category = record(
@@ -265,7 +259,11 @@ export function reportOperations(
     return !["completed", "canceled", "duplicate"].includes(read.state.type);
   }
 
-  function poolOf(issue: JiraIssue, hasOpenChildren: boolean): CorePoolIssue {
+  function poolOf(
+    issue: JiraIssue,
+    hasOpenChildren: boolean,
+    hasChildren: boolean,
+  ): CorePoolIssue {
     const { state } = model.read(issue);
     return {
       identifier: issue.key,
@@ -285,6 +283,7 @@ export function reportOperations(
             },
       labels: issue.labels,
       hasOpenChildren,
+      ...(hasChildren ? { hasChildren: true } : {}),
       ...stores.read(issue),
       truncated: [],
     };
@@ -294,11 +293,13 @@ export function reportOperations(
     issues: JiraIssue[],
     signal?: AbortSignal,
   ): Promise<CorePoolIssue[]> {
-    const parents = await withOpenChildren(
+    const parents = await childPresence(
       issues.map((i) => i.key),
       signal,
     );
-    return issues.map((issue) => poolOf(issue, parents.has(issue.key)));
+    return issues.map((issue) =>
+      poolOf(issue, parents.opened.has(issue.key), parents.all.has(issue.key)),
+    );
   }
 
   /**
@@ -393,6 +394,7 @@ export function reportOperations(
               model.read(stateInputOf(child)).state.type,
             ),
         ),
+        children.length > 0,
       );
     }),
     async issuesByKeys(keys) {
