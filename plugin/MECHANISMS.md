@@ -285,11 +285,13 @@ development and shipped as a version.
   Every other worktree is reported. It also removes its own receipts past their
   retention. State: one receipt per run under `~/.local/state/jig/gc/<date>/`. Refuses: an
   unreadable process identity or forge answer keeps the resource, and an
-  abandoned admission token blocks collection rather than being taken over.
+  admission token that may still be held blocks collection.
   Each admission token holds its creator's
   [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
-  (`shared/liveness.ts`), and the refusal names a stale one's creator and why
-  it counts as gone, for a person to remove.
+  (`shared/liveness.ts`): a collector removes the token when its record names
+  this host and the host proves its process gone, and otherwise the refusal
+  names the creator and why it counts as gone, and `jig doctor gc` and the
+  dispatch dashboard raise one host need for a person to inspect it.
 - **Reasoned.** None. Sessions only take part as owners: a scratch creator
   holds shared admission while it creates its folder (`shared/gc-lock.ts`).
 - **If it fails.** Exit 1 and a receipt that records the failure.
