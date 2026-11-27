@@ -38,6 +38,7 @@ import {
   effectiveClaims,
   ledgerFromState,
   ledgerOfStoppedDriver,
+  LEDGER_VERSION,
   newerClaim,
   parseLedger,
   seedFromLedger,
@@ -343,11 +344,18 @@ async function mirrorUnlocked(
       },
     );
     // A shape-only upgrade remains readable by the prior ledger reader. Keep
-    // that version when updating its existing record, so one upgraded writer
-    // does not make the shared handoff unavailable to older hosts.
+    // that version when updating its existing record, unless a parked managed
+    // user needs the v3 login grammar that the older reader cannot parse.
     return existingVersion === undefined
       ? ledger
-      : { ...ledger, ledgerVersion: existingVersion };
+      : {
+          ...ledger,
+          ledgerVersion:
+            existingVersion < LEDGER_VERSION &&
+            ledger.parked.some((park) => park.person?.includes("_") === true)
+              ? LEDGER_VERSION
+              : existingVersion,
+        };
   });
   if (result.kind !== "written") {
     console.error(`ledger: not written — ${result.reason}.`);
