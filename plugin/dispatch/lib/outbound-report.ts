@@ -3,9 +3,13 @@ import type {
   BudgetRecord,
   BudgetWindow,
 } from "../../shared/outbound/budget.ts";
-import type { LedgerReport, LedgerRow } from "../../shared/outbound/ledger.ts";
+import {
+  ledgerReport,
+  type LedgerReport,
+  type LedgerRow,
+} from "../../shared/outbound/ledger.ts";
 import { GITHUB_WINDOW_NAMES } from "../../shared/outbound/github-budget.ts";
-import { isoFromMs } from "../../shared/time.ts";
+import { currentMs, isoFromMs } from "../../shared/time.ts";
 import type { LineNeed } from "./dashboard-contract.ts";
 
 const HOUR = 3_600_000;
@@ -454,14 +458,27 @@ export function failingCallerNeeds(
   });
 }
 
-/** What a tick reads of the ledger beside its spending: the quotas it empties and the callers whose calls all failed. */
+/** How far back the ledger is read for the callers whose calls all fail. */
+const FAILING_CALLER_WINDOW_MS = 3 * 3_600_000;
+
+/**
+ * What a tick reads of the ledger beside its spending: the quotas it empties
+ * and the callers whose calls all failed. The ledger's rows are hourly and a
+ * read starts at the hour it falls in, so the callers are read over three
+ * hours, which hold at least two whole ones: a caller running every five
+ * minutes shows its calls on both sides of an hour. A window the ledger does
+ * not give leaves that finding out, which keeps the needs of the tick before.
+ */
 export function ledgerFindings(
   report: LedgerReport,
-  now: number,
-): { quotaRisks: QuotaRisk[]; failingCallers: FailingCaller[] } {
+  startedMs: number,
+): { quotaRisks: QuotaRisk[]; failingCallers?: FailingCaller[] } {
+  const wide = ledgerReport({ since: startedMs - FAILING_CALLER_WINDOW_MS });
   return {
-    quotaRisks: quotaRisks(report, now),
-    failingCallers: failingCallers(report),
+    quotaRisks: quotaRisks(report, currentMs()),
+    ...(wide.unavailable === true
+      ? {}
+      : { failingCallers: failingCallers(wide) }),
   };
 }
 
