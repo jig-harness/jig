@@ -12,7 +12,7 @@ import {
   type FixtureRegistryPage,
   type FixtureScope,
 } from "../../shared/test-fixture-registry.ts";
-import type { Proof, Receipt, Resource } from "../types.ts";
+import type { KindFailure, Proof, Receipt, Resource } from "../types.ts";
 import { recordFixtureFailure } from "./fixture-scratch.ts";
 
 /**
@@ -26,18 +26,33 @@ const KEPT_NAMED = 20;
 const BATCH_PREFIX = "fixture-registrations:";
 const MALFORMED_PREFIX = "fixture-registration:";
 
-export function verifyFixtureRetirement(receipt: Receipt) {
-  if (
-    receipt.resources.some(
-      (line) =>
-        line.kind === "scratch" &&
-        line.resource.startsWith(BATCH_PREFIX) &&
-        retiredCount(line.details) > 0,
-    )
-  )
-    return null;
-  return fixtureCapacityFailure(
-    "The scheduled run did not retire any fixture registrations in its page.",
+/**
+ * What a scheduled run owes the fixture registry, which only the scratch kind
+ * reads: over its limit, it fails that kind alone and every other kind keeps
+ * what it collected. A collecting run that retired registrations in its page
+ * owes nothing yet, and a report-only run retires none.
+ */
+export function verifyFixtureRegistry(collecting: boolean) {
+  return (receipt: Receipt): KindFailure | null => {
+    const planned = receipt.kinds.some((kind) => kind.name === "scratch");
+    if (collecting && planned && retiredAny(receipt)) return null;
+    const failure = fixtureCapacityFailure(
+      !collecting
+        ? "The scheduled run is report-only."
+        : planned
+          ? "The scheduled run did not retire any fixture registrations in its page."
+          : "The scheduled run has no scratch collection plan.",
+    );
+    return failure === null ? null : { kind: "scratch", failure };
+  };
+}
+
+function retiredAny(receipt: Receipt): boolean {
+  return receipt.resources.some(
+    (line) =>
+      line.kind === "scratch" &&
+      line.resource.startsWith(BATCH_PREFIX) &&
+      retiredCount(line.details) > 0,
   );
 }
 

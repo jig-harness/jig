@@ -404,6 +404,16 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.311.3] - 2026-11-27
+
+### Fixed
+
+- A fixture registry over its limit no longer stops the scheduled `jig gc` run
+  before any kind runs. It fails the scratch kind alone: the receipt marks
+  `scratch` as `failed` (every other kind as `run`), the run's exit and the
+  dashboard's state-storage need name the scratch kind, and the worktrees and
+  the other kinds still collect on the collecting run, worktrees first.
+
 ## [0.311.2] - 2026-11-26
 
 ### Fixed
@@ -11199,7 +11209,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.311.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.311.3...HEAD
+[0.311.3]: https://github.com/jig-harness/jig/compare/v0.311.2...v0.311.3
 [0.311.2]: https://github.com/jig-harness/jig/compare/v0.311.1...v0.311.2
 [0.311.1]: https://github.com/jig-harness/jig/compare/v0.311.0...v0.311.1
 [0.311.0]: https://github.com/jig-harness/jig/compare/v0.310.0...v0.311.0
