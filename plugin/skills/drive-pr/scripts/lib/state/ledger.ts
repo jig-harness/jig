@@ -75,7 +75,7 @@ import {
   isOptionalEvents,
   lastStopEvent,
   redactedFinish,
-  stopFinishSummary,
+  stopSummaries,
   withOlderFinishesCut,
 } from "./events.ts";
 import { probeStopOf } from "../status/probe-stop.ts";
@@ -393,8 +393,7 @@ function ledgerBody(l: Ledger, parkedList: boolean, writer: Writer): string {
   ];
   if (d.personStop !== undefined)
     lines.push("", stopSummary(d.personStop, d.state));
-  const held = stopFinishSummary(l.events, d);
-  if (held !== null) lines.push("", summaryText(held));
+  for (const s of stopSummaries(l.events, d)) lines.push("", summaryText(s));
   lines.push(...ciEventLines(l.ciActions));
   if (parkedList && l.parked.length > 0) {
     lines.push("", "Parked, awaiting a person:");

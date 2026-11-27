@@ -20,6 +20,7 @@ import { loopEconomy } from "./reports.ts";
 import { runConflictPhase } from "./conflict.ts";
 
 import { driverRuntime } from "./runtime.ts";
+import { nextWaitPoll } from "./wait-line.ts";
 
 import {
   CHECK_RUNS_UNREADABLE_EXIT,
@@ -128,6 +129,9 @@ async function gateRoundStatus(
     return outcome;
   }
   driverRuntime.forgeLimitWaits = 0;
+  // Every gated round is a poll: one that does not reach the converged CI
+  // wait ends it, so the wait's line prints again when it resumes.
+  nextWaitPoll(context);
 
   switch (code) {
     case 3: {
