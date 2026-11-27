@@ -15,11 +15,13 @@ import {
   evaluateFinalCi,
 } from "./convergence-ci.ts";
 import { pendingRetryDisposition } from "./ci-recovery.ts";
+import { nextWaitPoll } from "./wait-line.ts";
 
 export async function runConvergencePhase(
   context: DriveRoundContext,
   status: Record<string, unknown>,
 ): Promise<number | "continue"> {
+  nextWaitPoll(context);
   const prepareConvergenceWorktreeResult = await prepareConvergenceWorktree(
     status,
     context,
