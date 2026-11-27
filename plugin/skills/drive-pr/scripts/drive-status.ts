@@ -1224,6 +1224,11 @@ async function main(): Promise<number> {
    * is the correct outcome — a human decides when that one closes.
    */
   const sweepBotsOnly = botsOnly || process.env.DRIVE_PR_TARGET !== undefined;
+  // A driver already resolved and exported DRIVE_PR_POLICY_BASE for this round;
+  // capture that before the poll loop so standalone probes refresh every pass.
+  const driverSuppliedPolicy =
+    (process.env.DRIVE_PR_TARGET ?? "").trim() !== "" &&
+    Object.hasOwn(process.env, "DRIVE_PR_POLICY_BASE");
   /**
    * Reconciliation is SETTLED for this invocation — the sweep succeeded, the
    * PR positively read finished, or the caller forbade it. Suppresses the
@@ -1541,10 +1546,11 @@ async function main(): Promise<number> {
         "poll budget was spent before status evaluation",
       );
 
-    // Resolve policy in the driven clone.  A pass may be launched from a
-    // dispatcher directory, while its skip proof is deliberately evaluated
-    // against DRIVE_PR_WORKTREE.
-    await exportPolicyBase(pr, process.env.DRIVE_PR_WORKTREE);
+    // Standalone probes resolve policy in the driven clone (evaluated against
+    // DRIVE_PR_WORKTREE when launched from another directory). Under a driver
+    // that already exported DRIVE_PR_POLICY_BASE, keep the driver's snapshot.
+    if (!driverSuppliedPolicy)
+      await exportPolicyBase(pr, process.env.DRIVE_PR_WORKTREE);
     const code = await evaluate(ctx, report);
     firstEvaluationDone = true;
     if (report.state === "POLL_BUDGET_SPENT")
