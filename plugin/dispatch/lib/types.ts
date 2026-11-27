@@ -396,6 +396,7 @@ export interface Unplaced {
 /** What a notification is about. */
 export type NotifyCause =
   | "double-claim"
+  | "busy-holder"
   | "stalled"
   | "waiting"
   | "parked"

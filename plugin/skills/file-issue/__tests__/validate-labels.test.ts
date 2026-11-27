@@ -9,7 +9,11 @@ import {
   type Taxonomy,
 } from "../scripts/lib/taxonomy.ts";
 import { validateLabels } from "../scripts/lib/validate.ts";
-import { type Deps, main } from "../scripts/validate-labels.ts";
+import {
+  type Deps,
+  main,
+  placementMayChangeInvalidity,
+} from "../scripts/validate-labels.ts";
 
 const script = join(import.meta.dir, "..", "scripts", "validate-labels.ts");
 const fixture = join(
@@ -727,6 +731,25 @@ describe("--check-tracker", () => {
     readStdin: async () => "",
   });
 
+  test("keeps placement available when an epic type can satisfy the draft's label rules", () => {
+    const initial = validateLabels(["roadmap"], taxonomy, {
+      type: "feature",
+      priority: 3,
+      size: "small",
+    });
+    expect(initial.valid).toBe(false);
+    expect(placementMayChangeInvalidity(initial, taxonomy)).toBe(true);
+  });
+
+  test("does not treat an absent category as a rule an epic could satisfy", () => {
+    const initial = validateLabels([...base, "roadmap"], taxonomy);
+    expect(initial.valid).toBe(false);
+    expect(placementMayChangeInvalidity(initial, taxonomy)).toBe(true);
+
+    const withoutCategory = validateLabels(base, taxonomy);
+    expect(placementMayChangeInvalidity(withoutCategory, taxonomy)).toBe(false);
+  });
+
   test("passes when every label names exactly one tracker label", async () => {
     const { code } = await capture(
       ["--check-tracker", "--taxonomy", fixture, ...base],
@@ -782,6 +805,108 @@ describe("--check-tracker", () => {
     expect(JSON.parse(out).errors).toEqual([
       "more than one tracker label named: app, area:api (rename or merge them in the tracker so each name is one label)",
     ]);
+  });
+
+  test("an invalid label set is exit 3 without reading the tracker's labels", async () => {
+    let opened = 0;
+    const deps: Deps = {
+      openTracker: () => ({
+        listLabels: async () => {
+          opened++;
+          throw new Error("labels: alpha repeated across pages");
+        },
+      }),
+      readStdin: async () => "",
+    };
+    const { code, out } = await capture(
+      ["--check-tracker", "--json", "--taxonomy", fixture, ...base, "website"],
+      deps,
+    );
+    expect(code).toBe(3);
+    expect(JSON.parse(out).errors).toEqual([
+      "more than one label of group 'repo': app, website (pick one)",
+    ]);
+    expect(opened).toBe(0);
+  });
+
+  const draftWithoutTracker = async (labels: string[]) => {
+    let opened = 0;
+    const result = await capture(
+      ["--check-tracker", "--json", "--taxonomy", fixture],
+      {
+        openTracker: () => {
+          opened++;
+          throw new Error("Jira configuration is unavailable");
+        },
+        readStdin: async () =>
+          JSON.stringify({
+            title: "Draft",
+            description: "",
+            type: "bug",
+            priority: 3,
+            labels,
+          }),
+      },
+    );
+    return { ...result, opened: () => opened };
+  };
+
+  test("a draft's unrecoverable taxonomy errors are returned before opening its tracker", async () => {
+    const { code, out, opened } = await draftWithoutTracker([
+      "app",
+      "website",
+      "unknown",
+    ]);
+    expect(code).toBe(3);
+    expect(JSON.parse(out).errors).toEqual([
+      "unknown label: unknown (not in the taxonomy)",
+      "no size (one of: xs, small, medium, large, xl)",
+      "more than one label of group 'repo': app, website (pick one)",
+    ]);
+    expect(opened()).toBe(0);
+  });
+
+  test("a draft with an unrelated error does not open the tracker for an epic flag", async () => {
+    const { code, out, opened } = await draftWithoutTracker([
+      "app",
+      "roadmap",
+      "unknown",
+    ]);
+    expect(code).toBe(3);
+    expect(JSON.parse(out).errors).toContain(
+      "unknown label: unknown (not in the taxonomy)",
+    );
+    expect(opened()).toBe(0);
+  });
+
+  test("a draft's facet the screen does not exempt is exit 3 without listing labels; an exempt one still lists them", async () => {
+    let listed = 0;
+    const deps = (nativeType: string): Deps => ({
+      openTracker: () => ({
+        listLabels: async () => {
+          listed++;
+          return [{ name: "app", group: null }];
+        },
+        filedAs: async () => ({ nativeType, labels: ["app"] }),
+        unavailableFacets: async (type, requested) =>
+          type === "Bug" ? requested.filter((facet) => facet === "size") : [],
+      }),
+      readStdin: async () =>
+        JSON.stringify({
+          title: "Draft",
+          description: "",
+          type: "bug",
+          priority: 3,
+          labels: ["app"],
+        }),
+    });
+    const argv = ["--check-tracker", "--json", "--taxonomy", fixture];
+    const task = await capture(argv, deps("Task"));
+    expect(task.code).toBe(3);
+    expect(JSON.parse(task.out).missing).toEqual(["size"]);
+    expect(listed).toBe(0);
+    expect((await capture(argv, deps("Bug"))).code).toBe(0);
+    expect(listed).toBe(1);
   });
 
   test("a tracker that cannot be read is exit 1, not a verdict", async () => {

@@ -16,6 +16,9 @@ import {
 } from "../../shared/records/shared.ts";
 import { lastEnded, type LogRow } from "../../dispatch/lib/log.ts";
 import { statePath } from "../../dispatch/lib/state.ts";
+import { actOfLineNeed } from "../../shared/acts.ts";
+import { busyHolderNeed } from "./line-needs.ts";
+import { personAct } from "./waiting.ts";
 import { type Holder, type Last, personWait, type WaitsOn } from "./answer.ts";
 import { readComments } from "./forge.ts";
 import {
@@ -79,7 +82,17 @@ function stateOf(
       };
 }
 
-function waitsOnOf(state: string, detail: string, ctx: AskContext): WaitsOn {
+function waitsOnOf(
+  state: string,
+  detail: string,
+  ctx: AskContext,
+  pr: number,
+): WaitsOn {
+  const busy = busyHolderNeed(ctx, pr);
+  if (busy !== undefined)
+    return personWait(personAct(busy.cause), busy.reason, {
+      act: actOfLineNeed(busy),
+    });
   if (state === "failed") return personWait("re-run the follow-up", detail);
   if (state === "not claimed" && ctx.dispatches)
     return {
@@ -219,7 +232,7 @@ export async function askFollowup(ctx: AskContext): Promise<StationAnswer> {
       holding === null ? holderOf(marker, ctx) : recordHolder(holding, null),
     state,
     stateDetail: detail,
-    waitsOn: holding === null ? waitsOnOf(state, detail, ctx) : "none",
+    waitsOn: holding === null ? waitsOnOf(state, detail, ctx, pr) : "none",
     last: lastOf(marker, rows),
     entries: [
       ...claimEntries(markers, ctx.name, doc.url, loggedRecords(rows)),

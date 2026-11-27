@@ -399,6 +399,45 @@ describe("a GitHub issue number, which pull requests share", () => {
     expect(links.itemsOf(9)).toBeNull();
     expect(links.prsOf("#12")).toBeNull();
   });
+
+  it("keeps known reverse matches when another closing-reference listing is incomplete", () => {
+    const links = workLinks(
+      [
+        pr({ number: 9, body: "Closes #12", closing: null }),
+        pr({
+          number: 10,
+          closing: [{ number: 13, repository: REPO }],
+        }),
+      ],
+      ISSUES,
+    );
+    expect(links.itemsOf(9)).toBeNull();
+    expect(links.prsOf("#12")).toEqual([
+      { number: 9, url: `https://github.com/${REPO}/pull/9` },
+    ]);
+    expect(links.prsOf("#13")).toEqual([
+      { number: 10, url: `https://github.com/${REPO}/pull/10` },
+    ]);
+    expect(links.prsOf("#14")).toBeNull();
+  });
+
+  it("keeps a known forge match while reporting that another match may be unread", () => {
+    const links = workLinks(
+      [
+        pr({
+          number: 9,
+          closing: [{ number: 12, repository: REPO }],
+          closingComplete: false,
+        }),
+      ],
+      ISSUES,
+    );
+    expect(links.itemsOf(9)).toBeNull();
+    expect(links.prsOfResult?.("#12")).toEqual({
+      prs: [{ number: 9, url: `https://github.com/${REPO}/pull/9` }],
+      complete: false,
+    });
+  });
 });
 
 describe("the reverse map", () => {
