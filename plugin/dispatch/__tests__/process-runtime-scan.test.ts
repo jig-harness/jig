@@ -83,9 +83,15 @@ console.log(JSON.stringify({
       expect(seen.trees).toBe(WORKTREES + 1);
       expect(seen.calls).toBe(1);
       // Each worktree is judged on the one answer: only the one a process works in has a terminal.
-      expect(seen.unverifiable.wt3).toBe(1);
-      expect(seen.unverifiable.wt0).toBe(0);
-      expect(seen.unverifiable.repo).toBe(0);
+      expect(seen.unverifiable).toEqual(
+        Object.fromEntries([
+          ["repo", 0],
+          ...Array.from({ length: WORKTREES }, (_, i) => [
+            `wt${i}`,
+            i === 3 ? 1 : 0,
+          ]),
+        ]),
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

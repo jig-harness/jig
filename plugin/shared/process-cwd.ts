@@ -27,7 +27,16 @@ export type CwdAnswer = { pids: string[] } | { unknown: string };
 export type AsyncProbeRun = (
   argv: string[],
   cwd?: string,
+  /** The seconds this one read may take; the probe's own bound when absent. */
+  timeoutSec?: number,
 ) => Promise<RunResult>;
+
+/** What stops a scan: a signal that ends it and the one deadline all its reads share. */
+export type ScanBounds = {
+  signal?: AbortSignal | undefined;
+  /** The whole scan's allowance in milliseconds, shared by the listing and every status read. */
+  deadlineMs?: number | undefined;
+};
 
 /** Whether `cwd` is `top` or under it. */
 function inside(cwd: string, top: string): boolean {
@@ -231,15 +240,38 @@ export type CwdScan =
   | { entries: CwdEntry[]; blocked: string | null }
   | { unknown: string };
 
-/** Scan once, without blocking the caller; every error is judged as `cwdHolders` judges it, each denied process's status read once. */
-export async function scanCwds(run: AsyncProbeRun): Promise<CwdScan> {
-  const probed = readProbe(await run(["sh", "-c", CWD_PROBE], "/"));
+/** Scan once, without blocking the caller; every error is judged as `cwdHolders` judges it, each denied process's status read once, all reads within one deadline and none started after `bounds.signal` fires. */
+export async function scanCwds(
+  run: AsyncProbeRun,
+  bounds: ScanBounds = {},
+): Promise<CwdScan> {
+  const { signal, deadlineMs } = bounds;
+  const end = deadlineMs === undefined ? null : Date.now() + deadlineMs;
+  const stopped = (): string | null => {
+    if (signal?.aborted) return "the process scan was stopped";
+    return end !== null && Date.now() >= end
+      ? "the process scan ran past its deadline"
+      : null;
+  };
+  /** The seconds left for the next read, rounded up so a read is never given none. */
+  const left = (): number | undefined =>
+    end === null
+      ? undefined
+      : Math.max(1, Math.ceil((end - Date.now()) / 1000));
+  const first = stopped();
+  if (first !== null) return { unknown: first };
+  const probed = readProbe(await run(["sh", "-c", CWD_PROBE], "/", left()));
   if ("unknown" in probed) return probed;
   const entries = parseEntries(probed.listing);
   const unread = entries.filter((e) => e.unread).map((e) => e.pid);
   let blocked: string | null = null;
   for (const pid of new Set([...probed.denied, ...unread])) {
-    blocked = deniedReason(pid, await run(["cat", `/proc/${pid}/status`]));
+    const why = stopped();
+    if (why !== null) return { unknown: why };
+    blocked = deniedReason(
+      pid,
+      await run(["cat", `/proc/${pid}/status`], undefined, left()),
+    );
     if (blocked !== null) break;
   }
   return { entries, blocked };

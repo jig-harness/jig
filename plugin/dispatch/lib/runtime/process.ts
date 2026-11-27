@@ -107,9 +107,9 @@ function activity(records: ReadRecord[], rows: ProcessRow[] | null) {
  * reads some of them as text.
  */
 export function localProbe(timeoutSec: number): AsyncProbeRun {
-  return async (argv, cwd) => {
+  return async (argv, cwd, limitSec) => {
     const result = await run(argv, {
-      timeoutSec,
+      timeoutSec: Math.min(timeoutSec, limitSec ?? timeoutSec),
       env: { ...process.env, LC_ALL: "C", LANGUAGE: "" },
       ...(cwd === undefined ? {} : { cwd }),
     });
@@ -171,7 +171,10 @@ export function processRuntime(
         );
         // One scan answers every worktree: a scan per worktree would block
         // the event loop for as many spawns as the host has worktrees.
-        const scan = await scanCwds(probe);
+        const scan = await scanCwds(probe, {
+          signal,
+          deadlineMs: machine.runtimeTimeoutMs,
+        });
         const workspaces = [];
         for (const tree of worktrees) {
           if (signal?.aborted) return no("the session listing was stopped");

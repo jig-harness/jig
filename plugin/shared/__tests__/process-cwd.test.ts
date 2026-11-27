@@ -236,6 +236,46 @@ describe("scanCwds and holdersIn", () => {
     },
   );
 
+  test("starts no status read once its signal fires, and hands each read the time left", async () => {
+    const abort = new AbortController();
+    const limits: (number | undefined)[] = [];
+    const reads: string[][] = [];
+    const probe: AsyncProbeRun = async (argv, _cwd, limit) => {
+      limits.push(limit);
+      reads.push(argv);
+      if (argv[0] === "sh") {
+        abort.abort();
+        return result(
+          1,
+          "/proc/1\t/\n",
+          "find: '/proc/42/cwd': Permission denied\n",
+        );
+      }
+      return statusFile("0000000000000000");
+    };
+    const scan = await scanCwds(probe, {
+      signal: abort.signal,
+      deadlineMs: 5_000,
+    });
+    expect(scan).toEqual({ unknown: "the process scan was stopped" });
+    expect(reads).toHaveLength(1);
+    expect(limits[0]).toBeGreaterThanOrEqual(1);
+    expect(limits[0]).toBeLessThanOrEqual(5);
+  });
+
+  test("starts nothing once the deadline is spent", async () => {
+    let calls = 0;
+    const scan = await scanCwds(
+      async () => {
+        calls++;
+        return result(0, "/proc/1\t/\n");
+      },
+      { deadlineMs: 0 },
+    );
+    expect(scan).toEqual({ unknown: "the process scan ran past its deadline" });
+    expect(calls).toBe(0);
+  });
+
   test("asks the host once however many trees it is asked about", async () => {
     const { run, calls } = runner(
       result(
