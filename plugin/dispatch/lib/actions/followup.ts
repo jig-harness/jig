@@ -60,7 +60,7 @@ import {
 import { retryable, stuckAction } from "../stuck-launches.ts";
 import { followupUnreportedNeed } from "../followup-unreported.ts";
 import { pullUrl } from "../forge.ts";
-import { offeredField } from "../routine-questions.ts";
+import { narrowedClasses, offeredField } from "../routine-questions.ts";
 import {
   type Dispatched,
   dispatched,
@@ -654,7 +654,14 @@ async function retryMarked(
       safety === null
         ? await accountBlock(state, record)
         : { detail: safety.wait, waitsOn: "admission" as const };
-    const outcome = await replay(state, record, action, blocked);
+    const classes = narrowedClasses(
+      record.routineClasses,
+      ctx.section.followupRoutine,
+    );
+    const { routineClasses: _stored, ...rest } = record;
+    const current: Marked =
+      classes === undefined ? rest : { ...rest, routineClasses: classes };
+    const outcome = await replay(state, current, action, blocked);
     report.launches.push(headless(outcome, record));
   }
   return held;

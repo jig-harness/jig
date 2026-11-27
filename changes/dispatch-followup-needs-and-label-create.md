@@ -29,3 +29,6 @@ release: minor
   tick. If the signed-in account may not create labels, a person is told
   once for the repository, with the command that creates the label, instead
   of once per pull request.
+- A pending follow-up replayed after its marker was posted offers only the
+  routine classes `dispatch.followup_routine` still names on the default
+  branch, so a class turned off in between is not settled unattended.

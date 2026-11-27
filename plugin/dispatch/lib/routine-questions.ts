@@ -96,6 +96,24 @@ export function offeredField(selected: readonly string[] | undefined): {
     : { routineClasses: [...selected] };
 }
 
+/**
+ * The classes a replayed launch may still offer: those its record stored,
+ * left out when the repository's current policy no longer names them, so a
+ * permission withdrawn after the marker was posted is not replayed.
+ */
+export function narrowedClasses(
+  stored: readonly string[] | undefined,
+  current: readonly string[] | undefined,
+): string[] | undefined {
+  if (current === undefined)
+    return stored === undefined ? undefined : [...stored];
+  const kept = ROUTINE_QUESTIONS.map((q) => q.id as string).filter(
+    (id) =>
+      current.includes(id) && (stored === undefined || stored.includes(id)),
+  );
+  return kept.length === ROUTINE_QUESTIONS.length ? undefined : kept;
+}
+
 /** What a follow-up's launch record keeps of the routine classes its prompt offered. */
 export interface RoutineFields {
   /** Its prompt offered the routine question tags, so its question's class is read from its tag. Absent when its prompt offered no tags, so its question has no class to read. */

@@ -6,6 +6,7 @@
  */
 import { describe, expect, it } from "bun:test";
 import {
+  narrowedClasses,
   offeredClasses,
   offeredField,
   ROUTINE_QUESTIONS,
@@ -83,5 +84,25 @@ describe("a follow-up launched with a class left out", () => {
     expect(routineClassOf("[drafted-items] may I file them?")).toBe(
       "drafted-items",
     );
+  });
+});
+
+describe("a replayed follow-up's classes", () => {
+  it("drops a class the repository's current policy no longer names", () => {
+    expect(narrowedClasses(undefined, ["person-owed"])).toEqual([
+      "person-owed",
+    ]);
+    expect(narrowedClasses(["person-owed", "drafted-items"], [])).toEqual([]);
+    expect(
+      narrowedClasses(["person-owed", "drafted-items"], ["person-owed"]),
+    ).toEqual(["person-owed"]);
+  });
+
+  it("keeps the record's classes when the policy names every class, and none is left out", () => {
+    expect(narrowedClasses(undefined, EVERY)).toBeUndefined();
+    expect(narrowedClasses(["person-owed"], EVERY)).toEqual(["person-owed"]);
+    expect(narrowedClasses(["person-owed"], undefined)).toEqual([
+      "person-owed",
+    ]);
   });
 });
