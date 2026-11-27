@@ -660,6 +660,29 @@ describe("Jira pagers", () => {
     expect(tail.map((v) => v.name)).toEqual(["a", "b"]);
   });
 
+  it("refuses a repeated terminal page that leaves a reported total unread", async () => {
+    const ignored: JiraTransport = async () => ({
+      values: ["a", "b"],
+      total: 4,
+    });
+    await expect(
+      offsetPages(
+        ignored,
+        { method: "GET", path: "label" },
+        {
+          items: "values",
+          idOf: () => undefined,
+          where: "labels",
+          strings: true,
+          dropRepeats: true,
+          pageSize: 2,
+        },
+      ),
+    ).rejects.toThrow(
+      "labels: a terminal page leaves items in the reported total unread",
+    );
+  });
+
   it("reads search pages by token and fails a repeated key or a missing isLast", async () => {
     const issue = (key: string) => ({ key, fields: {} });
     const search = (pages: unknown[]) =>

@@ -401,6 +401,10 @@ async function checkTracker(
   taxonomy: Taxonomy,
   initial: Validation,
 ): Promise<Validation> {
+  // Placement can only exempt a missing facet. Other taxonomy errors already
+  // decide the result, so a tracker configuration failure must not hide them.
+  if (!initial.valid && initial.errors.length > initial.missing.length)
+    return initial;
   const tracker = openLabelTracker(deps);
   const result = await validateFiling(tracker, issue, taxonomy, initial);
   if (!result.valid) return result;

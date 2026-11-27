@@ -785,11 +785,11 @@ describe("--check-tracker", () => {
   });
 
   test("an invalid label set is exit 3 without reading the tracker's labels", async () => {
-    let listed = 0;
+    let opened = 0;
     const deps: Deps = {
       openTracker: () => ({
         listLabels: async () => {
-          listed++;
+          opened++;
           throw new Error("labels: alpha repeated across pages");
         },
       }),
@@ -803,7 +803,35 @@ describe("--check-tracker", () => {
     expect(JSON.parse(out).errors).toEqual([
       "more than one label of group 'repo': app, website (pick one)",
     ]);
-    expect(listed).toBe(0);
+    expect(opened).toBe(0);
+  });
+
+  test("a draft's unrecoverable taxonomy errors are returned before opening its tracker", async () => {
+    let opened = 0;
+    const { code, out } = await capture(
+      ["--check-tracker", "--json", "--taxonomy", fixture],
+      {
+        openTracker: () => {
+          opened++;
+          throw new Error("Jira configuration is unavailable");
+        },
+        readStdin: async () =>
+          JSON.stringify({
+            title: "Draft",
+            description: "",
+            type: "bug",
+            priority: 3,
+            labels: ["app", "website", "unknown"],
+          }),
+      },
+    );
+    expect(code).toBe(3);
+    expect(JSON.parse(out).errors).toEqual([
+      "unknown label: unknown (not in the taxonomy)",
+      "no size (one of: xs, small, medium, large, xl)",
+      "more than one label of group 'repo': app, website (pick one)",
+    ]);
+    expect(opened).toBe(0);
   });
 
   test("a draft's facet the screen does not exempt is exit 3 without listing labels; an exempt one still lists them", async () => {

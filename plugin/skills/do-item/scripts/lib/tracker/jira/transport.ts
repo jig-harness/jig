@@ -817,6 +817,20 @@ function checkProgress(read: number, added: number, where: string): void {
     throw shape(where, "a page before the end holds only items read before");
 }
 
+/** Refuses a repeated terminal page that leaves the reported total unread. */
+function checkTerminalProgress(
+  page: Record<string, unknown>,
+  added: number,
+  out: readonly Record<string, unknown>[],
+  where: string,
+): void {
+  if (added === 0 && typeof page.total === "number" && out.length < page.total)
+    throw shape(
+      where,
+      "a terminal page leaves items in the reported total unread",
+    );
+}
+
 /**
  * Every item of an offset-paged listing. The end is `isLast: true`, else
  * `startAt + items.length >= total`; a page with neither, an item seen on
@@ -840,8 +854,15 @@ export async function offsetPages(
     const items = offsetItems(page, opts);
     const added = keepItems(items, opts, keep, out);
     const next = startAt + items.length;
-    if (lastOffsetPage(page as Record<string, unknown>, next, opts.where))
+    if (lastOffsetPage(page as Record<string, unknown>, next, opts.where)) {
+      checkTerminalProgress(
+        page as Record<string, unknown>,
+        added,
+        out,
+        opts.where,
+      );
       return out;
+    }
     checkProgress(items.length, added, opts.where);
     startAt = next;
   }
