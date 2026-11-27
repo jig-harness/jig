@@ -113,7 +113,6 @@ export async function runReviewPassPhase(
     round,
     prepared,
     baseEnv,
-    passDeadlineSec,
   );
   if (typeof dispatchReviewPassResult !== "object")
     return dispatchReviewPassResult;

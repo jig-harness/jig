@@ -138,7 +138,11 @@ function isKindRecord(value: unknown): boolean {
     isMapping(value) &&
     isKnownKind(value.name) &&
     typeof value.declaration === "string" &&
-    (value.repository === undefined || typeof value.repository === "string")
+    (value.repository === undefined || typeof value.repository === "string") &&
+    (value.status === undefined ||
+      value.status === "run" ||
+      value.status === "failed") &&
+    (value.reason === undefined || typeof value.reason === "string")
   );
 }
 function isResourceRecord(value: unknown): boolean {
@@ -164,7 +168,8 @@ function isFailureRecord(value: unknown): boolean {
     value === undefined ||
     (isMapping(value) &&
       typeof value.code === "string" &&
-      typeof value.reason === "string")
+      typeof value.reason === "string" &&
+      (value.kind === undefined || isKnownKind(value.kind)))
   );
 }
 function isReceipt(value: unknown): value is Receipt {

@@ -1,9 +1,11 @@
 /** A local session runtime whose runs are witnessed by process identity. */
 import { resolve } from "node:path";
 import {
-  cwdHolders,
   detachedCarriers,
-  type ProbeRun,
+  holdersIn,
+  scanCwds,
+  type AsyncProbeRun,
+  type CwdScan,
 } from "../../../shared/process-cwd.ts";
 import { HOOK_WORKTREE_ENV, realPath } from "../../../shared/worktree-hooks.ts";
 import {
@@ -16,10 +18,6 @@ import {
   type ProcessRow,
 } from "../../../shared/process-table.ts";
 import { parseGitWorktreeList } from "../../../shared/orca-workspace/git.ts";
-import {
-  localContext,
-  withLimit,
-} from "../../../shared/orca-workspace/runner.ts";
 import { run } from "../../../shared/proc.ts";
 import { readLaunches, type ReadRecord } from "../launches.ts";
 import { failureText } from "../text.ts";
@@ -115,11 +113,16 @@ function activity(records: ReadRecord[], rows: ProcessRow[] | null) {
  * process with a terminal, or one that did not keep the environment it
  * started with, still counts. A listing that does not read counts as one.
  */
-function unaccounted(run: ProbeRun, tree: string, known: Set<number>): number {
-  const holders = cwdHolders(run, tree);
+async function unaccounted(
+  run: AsyncProbeRun,
+  scan: CwdScan,
+  tree: string,
+  known: Set<number>,
+): Promise<number> {
+  const holders = holdersIn(scan, tree);
   if ("unknown" in holders) return 1;
   const unknown = holders.pids.filter((pid) => !known.has(Number(pid)));
-  const prepared = detachedCarriers(
+  const prepared = await detachedCarriers(
     run,
     unknown,
     `${HOOK_WORKTREE_ENV}=${realPath(tree)}`,
@@ -127,11 +130,43 @@ function unaccounted(run: ProbeRun, tree: string, known: Set<number>): number {
   return unknown.filter((pid) => !prepared.has(pid)).length;
 }
 
-export function processRuntime(machine: {
-  process?: ProcessSettings;
-  runtimeTimeoutMs: number;
-  workspaceTimeoutMs: number;
-}): SessionRuntime {
+/**
+ * The probe the cwd scan runs on this host, without blocking the event loop
+ * every repository's observe shares. Messages stay untranslated: the scan
+ * reads some of them as text.
+ */
+export function localProbe(timeoutSec: number): AsyncProbeRun {
+  return async (argv, cwd, limitSec) => {
+    const result = await run(argv, {
+      timeoutSec: Math.min(timeoutSec, limitSec ?? timeoutSec),
+      env: { ...process.env, LC_ALL: "C", LANGUAGE: "" },
+      ...(cwd === undefined ? {} : { cwd }),
+    });
+    // A probe a signal ended part way through printed a part of the listing.
+    const killed =
+      result.spawnFailed ||
+      result.timedOut ||
+      result.bufferExceeded ||
+      result.signal !== undefined;
+    return {
+      status: killed ? -1 : result.code,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    };
+  };
+}
+
+/** `probe` is the process scan, replaceable where a test counts it. */
+export function processRuntime(
+  machine: {
+    process?: ProcessSettings;
+    runtimeTimeoutMs: number;
+    workspaceTimeoutMs: number;
+  },
+  probe: AsyncProbeRun = localProbe(
+    Math.max(1, Math.ceil(machine.runtimeTimeoutMs / 1000)),
+  ),
+): SessionRuntime {
   const timeoutSec = Math.max(1, Math.ceil(machine.runtimeTimeoutMs / 1000));
   return {
     name: "process",
@@ -163,10 +198,12 @@ export function processRuntime(machine: {
           ({ record }) =>
             record.runtime === "process" && record.repo === repo.slug,
         );
-        const ctx = withLimit(
-          localContext(() => undefined),
-          machine.runtimeTimeoutMs,
-        );
+        // One scan answers every worktree: a scan per worktree would block
+        // the event loop for as many spawns as the host has worktrees.
+        const scan = await scanCwds(probe, {
+          signal,
+          deadlineMs: machine.runtimeTimeoutMs,
+        });
         const workspaces = [];
         for (const tree of worktrees) {
           if (signal?.aborted) return no("the session listing was stopped");
@@ -176,11 +213,7 @@ export function processRuntime(machine: {
               resolve(record.workspace.path) === resolve(tree.path),
           );
           const act = activity(inTree, rows);
-          const unknown = unaccounted(
-            (argv, cwd) => ctx.run(argv, cwd === undefined ? {} : { cwd }),
-            tree.path,
-            act.known,
-          );
+          const unknown = await unaccounted(probe, scan, tree.path, act.known);
           const branch = tree.branch ?? "";
           const comment = inTree
             .map(({ record }) => record.mark ?? "")

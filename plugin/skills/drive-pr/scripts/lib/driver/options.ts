@@ -23,6 +23,8 @@ interface DriverOptions {
   windowReopened: boolean;
   /** `--rearm-budget`: this launch re-arms a stopped drive; a spent round budget is extended once (`rearm-budget.ts`). */
   rearmBudget: boolean;
+  /** `--past-ceiling`: a person's override of a spent round ceiling; implies a re-arm (`circuit-breaker.ts`). */
+  pastCeiling: boolean;
 }
 
 function flagValue(argv: string[], index: number): string {
@@ -45,6 +47,7 @@ const DRIVER_FLAGS = new Set([
   "--take-over",
   "--window-reopened",
   "--rearm-budget",
+  "--past-ceiling",
   "--bots-only",
   "--no-head-sync",
   "--timeout",
@@ -101,6 +104,9 @@ function parseFlag(
     case "--rearm-budget":
       options.rearmBudget = true;
       return index;
+    case "--past-ceiling":
+      options.pastCeiling = true;
+      return index;
     case "--bots-only":
       options.botsOnly = true;
       options.forward.push(flag);
@@ -137,6 +143,7 @@ export function parseDriverOptions(argv: string[]): DriverOptions {
     takeOver: false,
     windowReopened: false,
     rearmBudget: false,
+    pastCeiling: false,
   };
   let sawDdash = false;
   for (let index = 0; index < argv.length; index++) {

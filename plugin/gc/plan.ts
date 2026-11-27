@@ -315,7 +315,13 @@ export async function collectionPlan(options: {
     kinds.push(...planned.value);
   }
   if (!selected) kinds.push(...machineKinds(machine));
-  return ok(
-    kinds.filter((kind) => !options.kind || kind.name === options.kind),
+  // Worktrees run first, so what a later kind's failure or time cannot
+  // reach, the worktrees' collection has already done.
+  const wanted = kinds.filter(
+    (kind) => !options.kind || kind.name === options.kind,
   );
+  return ok([
+    ...wanted.filter((kind) => kind.name === "worktrees"),
+    ...wanted.filter((kind) => kind.name !== "worktrees"),
+  ]);
 }

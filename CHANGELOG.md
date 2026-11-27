@@ -404,6 +404,37 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.312.1] - 2026-11-27
+
+### Fixed
+
+- With `runtime: process`, a dispatch tick no longer scans the host's processes once per worktree, each scan a blocking spawn on the event loop every repository's observe shares. Listing a repository's sessions scans once, without blocking, and every worktree is judged on that one answer, so a small repository's runtime phase no longer waits behind other repositories' scans. The holders found and the handling of an incomplete scan are unchanged. To see the effect, read the `runtime` figure of each repository's `took` line in `jig receipts dispatch <date>` before and after the upgrade. **Consumer action:** none.
+
+## [0.312.0] - 2026-11-27
+
+### Added
+
+- drive-pr enforces a round ceiling: `drive.max_total_rounds` (default 8, at most 50) caps the review rounds of one pull request across every launch, re-arm and takeover, and `--rearm-budget` never grants past it. A drive that reaches it, or the optional wall-clock cap `drive.max_wall_clock_hours`, parks for a person with a `round-ceiling` decision that states the rounds, the elapsed time and why re-arming is refused. Answering it with "Allow one more budget", or arming with `--past-ceiling`, raises the ceiling by one round budget. See the [configuration reference](plugin/CONFIGURATION.md) and drive-pr's [README](plugin/skills/drive-pr/README.md).
+- drive-pr stops a diverging drive: when two rounds in a row raise at least as many findings as they fix, with findings still open, the drive parks with a `divergence-stop` decision listing the counts of each round.
+
+### Changed
+
+- A drive's effective round budget is now the smaller of `drive.max_rounds` and the round ceiling, so with the defaults a drive stops after 8 rounds rather than 10. A repository that wants longer drives raises `drive.max_total_rounds`.
+
+### Fixed
+
+- An answered non-blocking `winddown-deferred` summary finding stays answered: drive-pr no longer asks it again every few rounds. A reviewer that reports the same finding as blocking is still asked.
+
+## [0.311.3] - 2026-11-27
+
+### Fixed
+
+- A fixture registry over its limit no longer stops the scheduled `jig gc` run
+  before any kind runs. It fails the scratch kind alone: the receipt marks
+  `scratch` as `failed` (every other kind as `run`), the run's exit and the
+  dashboard's state-storage need name the scratch kind, and the worktrees and
+  the other kinds still collect on the collecting run, worktrees first.
+
 ## [0.311.2] - 2026-11-26
 
 ### Fixed
@@ -11199,7 +11230,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.311.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.312.1...HEAD
+[0.312.1]: https://github.com/jig-harness/jig/compare/v0.312.0...v0.312.1
+[0.312.0]: https://github.com/jig-harness/jig/compare/v0.311.3...v0.312.0
+[0.311.3]: https://github.com/jig-harness/jig/compare/v0.311.2...v0.311.3
 [0.311.2]: https://github.com/jig-harness/jig/compare/v0.311.1...v0.311.2
 [0.311.1]: https://github.com/jig-harness/jig/compare/v0.311.0...v0.311.1
 [0.311.0]: https://github.com/jig-harness/jig/compare/v0.310.0...v0.311.0
