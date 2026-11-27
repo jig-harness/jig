@@ -10,9 +10,11 @@ release: minor
   never shipped. A headless pass has no next turn, so such a process (the
   gates run in the background, say) reports to nobody. The driver gives every
   pass a token in its environment, finds a live process still carrying it or
-  still in the pass's process group when the pass exits, stops it, and starts
-  the pass again in the same tree with a notice saying what happened and what
-  the tree holds. These restarts share the `drive.pass_deadline_retries`
+  still in the pass's process group when the pass exits, and stops it. When
+  the pass left work in the tree, the driver starts the pass again in the
+  same tree with a notice saying what happened and what the tree holds. A
+  process that cannot be stopped ends the drive with `INDETERMINATE`, with
+  its locks kept. These restarts share the `drive.pass_deadline_retries`
   budget with restarts after a pass deadline, and the drive's ledger records
   them as `restart` events with the cause `background-pending`. The
   environment check needs `/proc` (Linux). On other POSIX hosts the driver

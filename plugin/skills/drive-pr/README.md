@@ -688,13 +688,17 @@ with `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`. A pass can still leave a
 process running when it exits (a command sent to the background in the
 shell, or a Codex background terminal), and nothing would ever report that
 process's result. The driver gives each pass a token in its environment.
-When the pass exits, the driver looks for a live process that still carries
-the token or is still in the pass's process group. It stops that process and
-starts the pass again in the same tree, with a notice saying what it
-stopped and what the tree holds. These restarts come out of the same
-`drive.pass_deadline_retries` budget as restarts after a deadline. Once the
-budget is spent, the driver still stops the process, then goes on as for
-any finished pass. The environment check needs `/proc` (Linux). On other
+When the pass exits, the driver waits a moment, then looks for a live process
+that still carries the token or is still in the pass's process group, and
+stops it. If the pass left work in the tree (uncommitted edits, unpushed
+commits, an unfinished git operation), the driver starts the pass again in
+the same tree, with a notice saying what it stopped and what the tree holds.
+These restarts come out of the same `drive.pass_deadline_retries` budget as
+restarts after a deadline. A pass that left no work, or one past the budget,
+counts as a finished pass. If the process cannot be stopped, the drive keeps
+its locks and stops with
+[`INDETERMINATE`](../../protocol/drive-exits.md), for a person to stop the
+process and re-arm. The environment check needs `/proc` (Linux). On other
 POSIX hosts the driver sees only the pass's process group, and on Windows
 it sees nothing. A successful pass that leaves
 uncommitted edits and this tree's unverified holds from the current round

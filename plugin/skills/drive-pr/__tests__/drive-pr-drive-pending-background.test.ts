@@ -18,14 +18,20 @@ const work = { threads: [{ id: "PRRT_a", path: "a.ts", bot: true }] };
 const NOTICE = "RESTARTED AFTER A PASS LEFT A BACKGROUND TASK";
 
 /**
- * A pass script that counts its runs in `<name>-count`. A run below `leave`
- * holds a fix of the current round, leaves it uncommitted and starts a
- * `sleep` in the background (in a session of its own when `ownSession`, as an
- * agent's shell is), writing its pid to `<name>-pid-<run>`, then exits 0. A
+ * A pass script that counts its runs in `<name>-count`. A run up to `leave`
+ * (with `work`) holds a fix of the current round and leaves it uncommitted,
+ * and starts a `sleep` in the background (in a session of its own when
+ * `ownSession`, as an agent's shell is), writing its pid to
+ * `<name>-pid-<run>`, then exits 0. A
  * later run reports whether it was given the restart notice and leaves a
  * clean tree.
  */
-function passScript(name: string, leave: number, ownSession: boolean): string {
+function passScript(
+  name: string,
+  leave: number,
+  ownSession: boolean,
+  work = true,
+): string {
   const script = join(tmpRoot, `${name}-999.ts`);
   const module = (m: string) =>
     JSON.stringify(pathToFileURL(join(SCRIPTS, "lib/state", `${m}.ts`)).href);
@@ -43,10 +49,14 @@ function passScript(name: string, leave: number, ownSession: boolean): string {
       "writeFileSync(counter, String(count));",
       `if ((process.env.DRIVE_PR_PASS_NOTICE ?? "").startsWith(${JSON.stringify(NOTICE)})) console.error("pass for 999: RESTART_" + "NOTICE_" + count);`,
       `if (count <= ${leave}) {`,
-      '  const store = await openStore("999");',
-      "  const actor = await resolveActor();",
-      '  await store.update(s => ({ ...s, held: [{ key: "PRRT_a", kind: "thread", outcome: "accepted", commentUrl: "https://github.com/example/project/pull/999#discussion_r1", actor, round: s.rounds }] }));',
-      '  writeFileSync("unfinished.txt", "promised fix");',
+      ...(work
+        ? [
+            '  const store = await openStore("999");',
+            "  const actor = await resolveActor();",
+            '  await store.update(s => ({ ...s, held: [{ key: "PRRT_a", kind: "thread", outcome: "accepted", commentUrl: "https://github.com/example/project/pull/999#discussion_r1", actor, round: s.rounds }] }));',
+            '  writeFileSync("unfinished.txt", "promised fix");',
+          ]
+        : []),
       '  const pidFile = base + "-pid-" + count;',
       `  spawn("sh", ["-c", 'echo $$ > "$0"; exec sleep 60', pidFile], { detached: ${ownSession}, stdio: "ignore" }).unref();`,
       "  const until = Date.now() + 10_000;",
@@ -121,5 +131,21 @@ describe("a successful pass that left a background task running", () => {
     expect(r.stderr).not.toContain("RESTART_NOTICE_3");
     expect(await backgroundGone(name, 1)).toBe(true);
     expect(await backgroundGone(name, 2)).toBe(true);
+  }, 120_000);
+
+  it("is not restarted when it left no work in the tree, and its task is still stopped", async () => {
+    const name = "pending-bg-no-work";
+    const script = passScript(name, 1, false, false);
+    const r = await runDrive(
+      work,
+      ["--no-head-sync", "--max-rounds", "1", "--", process.execPath, script],
+      trackedTree(name),
+    );
+    expectSpawnExit({ ...r, stdout: null }, 6);
+    expect(r.stderr).toContain("still running in the background");
+    expect(r.stderr).toContain("Stopped them.");
+    expect(r.stderr).toContain("left no work in the tree");
+    expect(r.stderr).not.toContain("pass restart 1");
+    expect(await backgroundGone(name, 1)).toBe(true);
   }, 120_000);
 });

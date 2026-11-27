@@ -2,28 +2,31 @@
  * A pass that ended its turn with a background task still running.
  *
  * A headless pass has no next turn, so a task it started in the background
- * (the gates, most often) reports to nobody: the pass exits `0` with its
- * promised fixes unshipped, and the drive used to stop over them
- * (`WORKTREE_UNCLEAN`, exit `12`) although the pass only needed to wait. The
- * driver gives every review pass a token in its environment
- * (`PASS_TOKEN_VARIABLE`), which every process the pass starts inherits, a
- * shell that left the pass's process group or session included. When the pass
- * exits `0`, a live process still carrying the token, or still in the pass's
- * process group, is such a task. The driver stops it, witnessed, and restarts
- * the pass in the same tree, telling it what happened, within the restarts the
- * drive already has for a pass killed at its deadline
- * (`drive.pass_deadline_retries`, one count for both causes).
+ * (the gates, most often) reports to nobody, and the pass exits `0` with its
+ * promised fixes unshipped although it only needed to wait. The driver gives
+ * every review pass a token in its environment (`PASS_TOKEN_VARIABLE`), which
+ * every process the pass starts inherits, a shell that left the pass's
+ * process group or session included. When the pass exits `0`, a live process
+ * still carrying the token, or still in the pass's process group, after a
+ * short grace for one already on its way out, is such a task. The driver
+ * stops it, witnessed. When the pass left work in the tree (uncommitted
+ * edits, unpushed commits, an open git operation), the driver restarts the
+ * pass in the same tree and tells it what happened, within the restarts the
+ * drive has for a pass killed at its deadline (`drive.pass_deadline_retries`,
+ * one count for both causes). A pass that left nothing to finish, or one past
+ * the budget, is taken as a completed pass.
  *
  * The token is read from `/proc/<pid>/environ`, so the environment scan is
  * Linux's; another POSIX host finds only the pass's own process group, and a
- * Windows host finds nothing and drives on as before.
+ * Windows host finds nothing.
  */
 import { randomUUID } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 
-import { swallow } from "../../../../../shared/errors.ts";
+import { errnoCode, swallow } from "../../../../../shared/errors.ts";
 import { processTable } from "../../../../../shared/process-table.ts";
-import { KILL_ESCALATE_MS, parseProcStat, procRoot } from "./../proc.ts";
+import { currentMs } from "../../../../../shared/time.ts";
+import { KILL_ESCALATE_MS } from "./../proc.ts";
 import type { DriveRoundContext } from "./round-context.ts";
 import {
   admitPassRestart,
@@ -32,7 +35,6 @@ import {
   type PassLeftovers,
   passLeftovers,
 } from "./restart.ts";
-import { WORKTREE_UNCLEAN_EXIT } from "./settings.ts";
 import { measureStop } from "./stop-measure.ts";
 import { driverRuntime } from "./runtime.ts";
 
@@ -51,24 +53,14 @@ export interface PendingTask {
   command: string;
 }
 
+/** The processes a scan found, or why it could not look. */
+export type PendingScan = { tasks: PendingTask[] } | { unknown: string };
+
 /** How much of a task's command line the driver prints. */
 const COMMAND_CHARS = 160;
 
-/** A process's command line from `/proc`, shortened; `''` when unreadable. */
-function procCommand(dir: string): string {
-  try {
-    const text = readFileSync(`${dir}/cmdline`, "utf8")
-      .split("\0")
-      .filter((part) => part !== "")
-      .join(" ");
-    return text.length > COMMAND_CHARS
-      ? `${text.slice(0, COMMAND_CHARS - 1)}…`
-      : text;
-  } catch (err) {
-    swallow(err, "a pending task's command line could not be read");
-    return "";
-  }
-}
+/** `/proc`, or the fixture tree a test points `DRIVE_PR_PROC_ROOT` at. */
+const procRoot = (): string => process.env.DRIVE_PR_PROC_ROOT ?? "/proc";
 
 /** A file under `/proc/<pid>/`; `null` when it cannot be read. */
 function procFile(dir: string, file: string): string | null {
@@ -83,16 +75,45 @@ function procFile(dir: string, file: string): string | null {
 }
 
 /**
+ * `/proc/<pid>/stat`'s state and process group. The command name in
+ * parentheses may hold spaces and parentheses, so fields are read after the
+ * last `)`.
+ */
+function statOf(text: string): { state: string; pgrp: number } | null {
+  const close = text.lastIndexOf(")");
+  if (close === -1) return null;
+  const fields = text
+    .slice(close + 1)
+    .trim()
+    .split(/\s+/);
+  const pgrp = Number.parseInt(fields[2] ?? "", 10);
+  return fields[0] === undefined || !Number.isFinite(pgrp)
+    ? null
+    : { state: fields[0], pgrp };
+}
+
+/**
  * Whether the live process at `dir` carries `entry` in its environment or
  * is in process group `pgid`; a zombie or an unreadable process does not.
  */
 function carries(dir: string, entry: string | null, pgid?: number): boolean {
   const text = procFile(dir, "stat");
-  const stat = text === null ? null : parseProcStat(text);
+  const stat = text === null ? null : statOf(text);
   if (stat === null || stat.state === "Z") return false;
   if (pgid !== undefined && stat.pgrp === pgid) return true;
   if (entry === null) return false;
   return (procFile(dir, "environ") ?? "").split("\0").includes(entry);
+}
+
+/** A process's command line from `/proc`, shortened. */
+function procCommand(dir: string): string {
+  const text = (procFile(dir, "cmdline") ?? "")
+    .split("\0")
+    .filter((part) => part !== "")
+    .join(" ");
+  return text.length > COMMAND_CHARS
+    ? `${text.slice(0, COMMAND_CHARS - 1)}…`
+    : text;
 }
 
 /**
@@ -124,20 +145,21 @@ export function pendingTasksLinux(
 
 /**
  * The live processes a pass left running: by token and process group where
- * `/proc` answers, by process group alone on another POSIX host; `null` where
- * neither can be told (Windows, or a process listing that failed).
+ * `/proc` answers, by process group alone on another POSIX host.
  */
 export async function pendingTasks(
   token: string,
   pgid: number | undefined,
-): Promise<PendingTask[] | null> {
-  if (process.platform === "win32") return null;
+): Promise<PendingScan> {
   const viaProc = pendingTasksLinux(token, pgid);
-  if (viaProc !== null) return viaProc;
-  if (pgid === undefined) return null;
+  if (viaProc !== null) return { tasks: viaProc };
+  if (pgid === undefined)
+    return {
+      unknown: "/proc cannot be read and the pass had no process group",
+    };
   const rows = await processTable();
-  if (rows === null) return null;
-  return rows
+  if (rows === null) return { unknown: "the process listing (ps) failed" };
+  const tasks = rows
     .filter(
       (row) =>
         row.pgid === pgid &&
@@ -148,6 +170,7 @@ export async function pendingTasks(
       pid: row.pid,
       command: row.args.slice(0, COMMAND_CHARS),
     }));
+  return { tasks };
 }
 
 const sleep = (ms: number): Promise<void> =>
@@ -158,47 +181,90 @@ const KILL_WITNESS_MS = 10_000;
 const POLL_MS = 100;
 
 /**
+ * Scan until none is left or `waitMs` passes: the tasks still running at the
+ * end, or why a scan could not look.
+ */
+async function waitForTasks(
+  token: string,
+  pgid: number | undefined,
+  waitMs: number,
+): Promise<PendingScan> {
+  const until = currentMs() + waitMs;
+  for (;;) {
+    const scan = await pendingTasks(token, pgid);
+    if ("unknown" in scan || scan.tasks.length === 0) return scan;
+    if (currentMs() >= until) return scan;
+    await sleep(POLL_MS);
+  }
+}
+
+/** Send `sig` to `pid`; the reason when it was refused, `null` when sent or gone. */
+function signalOf(pid: number, sig: NodeJS.Signals): string | null {
+  try {
+    process.kill(pid, sig);
+    return null;
+  } catch (err) {
+    const code = errnoCode(err);
+    return code === "ESRCH"
+      ? null
+      : `${sig} to ${pid} was refused (${code ?? String(err)})`;
+  }
+}
+
+/**
  * Stop what the pass left running: SIGTERM, then SIGKILL after the driver's
  * usual grace, each to every process found carrying the token or in the
- * group at that moment, and to the group itself. Resolves `true` only once a
- * scan finds none left; `false` when one outlived the wait or a scan could
- * not answer, which the caller treats as still running.
+ * group at that moment, and to the group itself. `null` once a scan finds
+ * none left; otherwise why they could not be witnessed gone, which the caller
+ * treats as still running.
  */
 export async function stopPendingTasks(
   token: string,
   pgid: number | undefined,
-): Promise<boolean> {
-  const signal = (tasks: PendingTask[], sig: NodeJS.Signals): void => {
-    if (pgid !== undefined)
-      try {
-        process.kill(-pgid, sig);
-      } catch {
-        // The group is gone, or was never one: the scan answers either way.
-      }
-    for (const task of tasks)
-      try {
-        process.kill(task.pid, sig);
-      } catch {
-        // Gone since the scan.
-      }
-  };
-  for (const [sig, waitMs] of [
-    ["SIGTERM", KILL_ESCALATE_MS],
-    ["SIGKILL", KILL_WITNESS_MS],
-  ] as const) {
-    const found = await pendingTasks(token, pgid);
-    if (found === null) return false;
-    if (found.length === 0) return true;
-    signal(found, sig);
-    const until = Date.now() + waitMs;
-    while (Date.now() < until) {
-      await sleep(POLL_MS);
-      const left = await pendingTasks(token, pgid);
-      if (left === null) return false;
-      if (left.length === 0) return true;
-    }
+): Promise<string | null> {
+  const refused: string[] = [];
+  for (const [sig, waitMs] of STOP_STEPS) {
+    const left = await signalAndWait(token, pgid, sig, waitMs, refused);
+    if (left !== RUNNING) return left;
   }
-  return (await pendingTasks(token, pgid))?.length === 0;
+  return refused.length > 0
+    ? refused.join("; ")
+    : "they outlived SIGKILL and the wait after it";
+}
+
+/** The signals a stop sends, each with how long it waits after it. */
+const STOP_STEPS = [
+  ["SIGTERM", KILL_ESCALATE_MS],
+  ["SIGKILL", KILL_WITNESS_MS],
+] as const;
+
+/** `signalAndWait`'s answer while a task still runs. */
+const RUNNING = Symbol("running");
+
+/**
+ * Send `sig` to the group and to every task a scan finds, adding any refusal
+ * to `refused`, then wait `waitMs` for them to go: `null` when none is left,
+ * `RUNNING` when one is, or why a scan could not look.
+ */
+async function signalAndWait(
+  token: string,
+  pgid: number | undefined,
+  sig: NodeJS.Signals,
+  waitMs: number,
+  refused: string[],
+): Promise<string | null | typeof RUNNING> {
+  const found = await pendingTasks(token, pgid);
+  if ("unknown" in found) return found.unknown;
+  if (found.tasks.length === 0) return null;
+  // The group itself first: it reaches a member started since the scan.
+  if (pgid !== undefined) signalOf(-pgid, sig);
+  for (const task of found.tasks) {
+    const why = signalOf(task.pid, sig);
+    if (why !== null) refused.push(why);
+  }
+  const left = await waitForTasks(token, pgid, waitMs);
+  if ("unknown" in left) return left.unknown;
+  return left.tasks.length === 0 ? null : RUNNING;
 }
 
 /** The tasks as lines for the driver log and the pass notice. */
@@ -230,13 +296,17 @@ export function backgroundNotice(
   ].join("\n");
 }
 
+/** The exit for a stop a person settles (`INDETERMINATE`). */
+const PERSON_STOP_EXIT = 1;
+
 /**
- * After a pass that exited `0` with `passEnv`: when it left a task running, stop the task
- * and restart the pass within the drive's restart budget (`"continue"`).
- * `null` when it left none, when none can be told, or when the budget is
- * spent: the drive then goes on as for any completed pass. An exit when the
- * task could not be witnessed gone (the locks stay held) or a directive
- * arrived while the pass ran.
+ * After a pass that exited `0` with `passEnv`: stop any task it left running
+ * and, when it left work in the tree, restart the pass within the drive's
+ * restart budget (`"continue"`). `null` when it left no task, when none can
+ * be told, when it left no work, or when the budget is spent: the drive then
+ * goes on as for any completed pass. An exit when a task could not be
+ * witnessed gone (the locks stay held) or a directive arrived while the pass
+ * ran.
  */
 export async function restartAfterPendingTasks(
   context: DriveRoundContext,
@@ -244,26 +314,53 @@ export async function restartAfterPendingTasks(
   passEnv: NodeJS.ProcessEnv,
   pgid: number | undefined,
 ): Promise<number | "continue" | null> {
+  if (process.platform === "win32") return null;
   const token = passEnv[PASS_TOKEN_VARIABLE] ?? "";
-  const tasks = await pendingTasks(token, pgid);
-  if (tasks === null || tasks.length === 0) return null;
+  // A process on its way out (a helper closing after its input ended) is
+  // given the driver's kill grace before it counts as left running.
+  const scan = await waitForTasks(token, pgid, KILL_ESCALATE_MS);
+  if ("unknown" in scan) {
+    console.error(
+      `could not look for processes the pass on round ${round} left running: ${scan.unknown}.`,
+    );
+    return null;
+  }
+  const { tasks } = scan;
+  if (tasks.length === 0) return null;
   console.error(
     `pass on round ${round} exited 0 with ${tasks.length} process(es) it started still running in the background; a headless pass has no next turn to receive their result:`,
   );
   for (const line of describeTasks(tasks)) console.error(line);
-  if (!(await stopPendingTasks(token, pgid))) {
+  const unstopped = await stopPendingTasks(token, pgid);
+  if (unstopped !== null) {
     console.error(
-      "  They could NOT be witnessed gone. NOT releasing this drive's locks: a live task under a released lock could go on writing the tree. Stop them, then re-arm.",
+      `  They could NOT be witnessed gone (${unstopped}). NOT releasing this drive's locks: a live task under a released lock could go on writing the tree. Stop them, then re-arm.`,
     );
     context.held.length = 0;
     driverRuntime.stopLeftWork = await measureStop();
-    return WORKTREE_UNCLEAN_EXIT;
+    return PERSON_STOP_EXIT;
   }
   console.error("  Stopped them.");
   const mailbox = await context.mailboxCheckpoint();
   if (typeof mailbox === "number") return mailbox;
   const leftovers = await passLeftovers();
   for (const line of describeLeftovers(leftovers)) console.error(`  ${line}`);
+  if (inheritedHeadOf(leftovers) === "") {
+    console.error(
+      "  The pass left no work in the tree: taking it as a completed pass.",
+    );
+    return null;
+  }
+  return await admitRestart(context, round, tasks, leftovers);
+}
+
+/** Restart the pass within the budget, or `null` when it cannot be. */
+async function admitRestart(
+  context: DriveRoundContext,
+  round: number,
+  tasks: PendingTask[],
+  leftovers: PassLeftovers,
+): Promise<"continue" | null> {
   const restart = await admitPassRestart(
     context.pr,
     context.deadlineRetryBudget,

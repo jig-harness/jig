@@ -135,11 +135,10 @@ export async function runReviewPassPhase(
   if (disposition.kind === "ok") {
     // A task the pass left running in the background reports to nobody:
     // restart the pass rather than stop over the fixes it never shipped.
-    const env = prepared?.env ?? baseEnv;
     const pending = await restartAfterPendingTasks(
       context,
       round,
-      env,
+      baseEnv,
       passHandle?.pid,
     );
     if (pending !== null) return pending;
