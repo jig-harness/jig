@@ -397,6 +397,12 @@ async function run(argv: string[], deps: Deps): Promise<number> {
       );
     }
     result = await validateFiling(tracker, issue, taxonomy, result);
+    // An invalid set is already the verdict: reading the tracker's labels
+    // could only hide it behind a failure of that read.
+    if (!result.valid) {
+      print(result, options.json);
+      return 3;
+    }
     const { missing, ambiguous } = await unresolvedInTracker(
       result.labels,
       tracker,

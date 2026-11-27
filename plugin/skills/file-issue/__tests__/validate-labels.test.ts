@@ -784,6 +784,58 @@ describe("--check-tracker", () => {
     ]);
   });
 
+  test("an invalid label set is exit 3 without reading the tracker's labels", async () => {
+    let listed = 0;
+    const deps: Deps = {
+      openTracker: () => ({
+        listLabels: async () => {
+          listed++;
+          throw new Error("labels: alpha repeated across pages");
+        },
+      }),
+      readStdin: async () => "",
+    };
+    const { code, out } = await capture(
+      ["--check-tracker", "--json", "--taxonomy", fixture, ...base, "website"],
+      deps,
+    );
+    expect(code).toBe(3);
+    expect(JSON.parse(out).errors).toEqual([
+      "more than one label of group 'repo': app, website (pick one)",
+    ]);
+    expect(listed).toBe(0);
+  });
+
+  test("a draft's facet the screen does not exempt is exit 3 without listing labels; an exempt one still lists them", async () => {
+    let listed = 0;
+    const deps = (nativeType: string): Deps => ({
+      openTracker: () => ({
+        listLabels: async () => {
+          listed++;
+          return [{ name: "app", group: null }];
+        },
+        filedAs: async () => ({ nativeType, labels: ["app"] }),
+        unavailableFacets: async (type, requested) =>
+          type === "Bug" ? requested.filter((facet) => facet === "size") : [],
+      }),
+      readStdin: async () =>
+        JSON.stringify({
+          title: "Draft",
+          description: "",
+          type: "bug",
+          priority: 3,
+          labels: ["app"],
+        }),
+    });
+    const argv = ["--check-tracker", "--json", "--taxonomy", fixture];
+    const task = await capture(argv, deps("Task"));
+    expect(task.code).toBe(3);
+    expect(JSON.parse(task.out).missing).toEqual(["size"]);
+    expect(listed).toBe(0);
+    expect((await capture(argv, deps("Bug"))).code).toBe(0);
+    expect(listed).toBe(1);
+  });
+
   test("a tracker that cannot be read is exit 1, not a verdict", async () => {
     const { code, out } = await capture(
       ["--check-tracker", "--taxonomy", fixture, ...base],

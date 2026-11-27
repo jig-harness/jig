@@ -78,7 +78,7 @@ export const JIRA_ACCOUNT_SCOPE_HELP =
 
 export const JIRA_TIMEOUT_MS = 30_000;
 
-/** The page size every listing asks for. */
+/** The page size a listing asks for unless its call names another. */
 export const PAGE = 100;
 
 export interface JiraRequest {
@@ -716,6 +716,16 @@ export interface OffsetOptions {
   signal?: AbortSignal | undefined;
   /** The items are strings (label names), each read as `{name}`. */
   strings?: boolean;
+  /** Items per page, `PAGE` when unset. */
+  pageSize?: number;
+  /**
+   * Keep the first of an item seen again on a later page instead of failing
+   * the read. Only for a listing the server pages without a snapshot and
+   * whose items are their own identity, such as the site's label names: a
+   * name added while the read pages shifts every later offset by one, so the
+   * next page opens with the name the last one closed on.
+   */
+  dropRepeats?: boolean;
 }
 
 /** Remembers the ids a read has seen, refusing one seen before. */
@@ -760,10 +770,29 @@ function lastOffsetPage(
   return false;
 }
 
+/** Whether an item belongs in the read: false for a repeat it may drop. */
+function repeatFilter(opts: OffsetOptions): (id: unknown) => boolean {
+  if (opts.dropRepeats !== true) {
+    const guard = idGuard(opts.where);
+    return (id) => {
+      guard(id);
+      return true;
+    };
+  }
+  const seen = new Set<unknown>();
+  return (id) => {
+    if (id === undefined) return true;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  };
+}
+
 /**
  * Every item of an offset-paged listing. The end is `isLast: true`, else
  * `startAt + items.length >= total`; a page with neither, an item seen on
- * an earlier page, or an empty page before the end fails the read.
+ * an earlier page (unless `dropRepeats`), or an empty page before the end
+ * fails the read.
  */
 export async function offsetPages(
   transport: JiraTransport,
@@ -771,16 +800,16 @@ export async function offsetPages(
   opts: OffsetOptions,
 ): Promise<Record<string, unknown>[]> {
   const out: Record<string, unknown>[] = [];
-  const guard = idGuard(opts.where);
+  const keep = repeatFilter(opts);
+  const maxResults = opts.pageSize ?? PAGE;
   for (let startAt = 0; ; ) {
     admitCommentPage();
-    const query = { ...request.query, startAt, maxResults: PAGE };
+    const query = { ...request.query, startAt, maxResults };
     const page = await transport({ ...request, query }, opts.signal);
     const items = offsetItems(page, opts);
-    for (const item of items) {
-      guard(opts.strings === true ? item.name : opts.idOf(item));
-      out.push(item);
-    }
+    for (const item of items)
+      if (keep(opts.strings === true ? item.name : opts.idOf(item)))
+        out.push(item);
     const next = startAt + items.length;
     if (lastOffsetPage(page as Record<string, unknown>, next, opts.where))
       return out;
