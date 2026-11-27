@@ -12,16 +12,17 @@ import { TAKEN_OVER_EXIT } from "./settings.ts";
 const TAKEOVER_POLL_MS = 60_000;
 
 /** A listing the check could not use, and why. */
-type Unread = { unread: string };
+type Unread = { unread: string; expected?: boolean };
 
 async function checkForNewerClaim(
   pr: string,
   readSnapshot = readLedgerSnapshot,
 ): Promise<number | null | Unread> {
   const driver = ledgerDriverFromEnv();
-  if (driver === null) return { unread: "this driver writes no ledger" };
+  if (driver === null)
+    return { unread: "this driver writes no ledger", expected: true };
   if (driver.floor === null)
-    return { unread: "this driver has no ledger floor" };
+    return { unread: "this driver has no ledger floor", expected: true };
   const snapshot = await readSnapshot(pr, driver.login);
   if (typeof snapshot === "string") return { unread: snapshot };
   const claim = newerClaim(
@@ -65,7 +66,7 @@ export function roundBoundaryTakeoverCheck(
     if (typeof result === "object" && result !== null) {
       // A lapse must be retried at the next boundary. Before a pass or
       // ledger write, the separate fresh guards still apply.
-      if (result.unread !== rejected)
+      if (result.unread !== rejected && !result.expected)
         console.error(
           `drive.ts: the round-boundary takeover check rejected PR #${pr}'s ledger listing: ${result.unread}; it reads the listing again at each round checkpoint until one reads.`,
         );

@@ -361,8 +361,9 @@ spend a repair or certify convergence. The wait uses
 stops with [`INDETERMINATE`](../../protocol/drive-exits.md) if no completed replacement appears.
 Once each failing check's repair budget is spent, the drive starts one
 `ci-diagnose` session on that head (§ 0); it stops with
-[`CI_REPAIR_SPENT`](../../protocol/drive-exits.md) when that session could not complete the repair, with its
-diagnosis and tracker issue in the handoff. With repairs disabled (`0`), it stops with [`INDETERMINATE`](../../protocol/drive-exits.md)
+[`CI_REPAIR_SPENT`](../../protocol/drive-exits.md) when that session could not complete the repair; the handoff
+carries the diagnosis and the tracker issue or park its receipt names, and
+neither when the receipt was missing or invalid or the session stood down. With repairs disabled (`0`), it stops with [`INDETERMINATE`](../../protocol/drive-exits.md)
 after any enabled retry. A different check or head has a fresh repair budget.
 
 **Held and advisory failures spend no automatic repair pass.** While the live

@@ -13,6 +13,7 @@ import type { DriveState } from "../state/schema.ts";
 import { diagnosisDetail, latestDiagnosedPark } from "../state/ci-actions.ts";
 import {
   lastStopEvent,
+  type StallReasons,
   stallReasonsLine,
   stopInstant,
   stopReasons,
@@ -99,6 +100,23 @@ function forgeLimitStop(
   return `PR #${pr} stopped on the forge's rate limit for its credential, which resets ${until}${reason} (exit ${code})`;
 }
 
+/** The longest a reason is kept in a stall's stop line, so three of them and the missing-pass count fit the closing report's 600 characters. */
+const STALL_LINE_REASON_MAX = 120;
+
+/** The tally with each reason cut to its share of the stop line. */
+function fitStallReasons(reasons: StallReasons): StallReasons {
+  return {
+    ...reasons,
+    last: reasons.last.map((f) => ({
+      ...f,
+      reason:
+        f.reason.length > STALL_LINE_REASON_MAX
+          ? `${f.reason.slice(0, STALL_LINE_REASON_MAX - 1)}…`
+          : f.reason,
+    })),
+  };
+}
+
 /**
  * The line for a stall: the state every stalled pass ended on when they
  * agree, else how they finished as the stop recorded it; `null` when the
@@ -117,7 +135,7 @@ function stallStop(
     driverRuntime.stallReasons ?? stopReasons(state?.events, code);
   return reasons === null
     ? null
-    : `PR #${pr}'s drive stalled, its passes changing nothing: ${redactReportText(stallReasonsLine(reasons))} (exit ${code})`;
+    : `PR #${pr}'s drive stalled, its passes changing nothing: ${redactReportText(stallReasonsLine(fitStallReasons(reasons)))} (exit ${code})`;
 }
 
 /**
