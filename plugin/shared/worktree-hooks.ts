@@ -41,10 +41,10 @@ export type Hook = "create" | "remove";
 /**
  * The variable every hook run carries, naming the worktree it runs for (its
  * real path). A process the hook leaves running, a build tool's daemon say,
- * inherits it, even once it has left the hook's process group: it is how
- * the process runtime tells the dispatcher's own preparation of a worktree
- * from a session someone else started there
- * (`dispatch/lib/runtime/process.ts`).
+ * keeps it while it keeps the environment it started with, even once it has
+ * left the hook's process group: with its lack of a terminal, it is how the
+ * process runtime tells the dispatcher's own preparation of a worktree from
+ * a session someone else started there (`dispatch/lib/runtime/process.ts`).
  */
 export const HOOK_WORKTREE_ENV = "JIG_HOOK_WORKTREE";
 

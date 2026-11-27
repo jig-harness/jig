@@ -2,7 +2,7 @@
 import { resolve } from "node:path";
 import {
   cwdHolders,
-  environHolds,
+  detachedCarriers,
   type ProbeRun,
 } from "../../../shared/process-cwd.ts";
 import { HOOK_WORKTREE_ENV, realPath } from "../../../shared/worktree-hooks.ts";
@@ -109,20 +109,22 @@ function activity(records: ReadRecord[], rows: ProcessRow[] | null) {
 /**
  * How many of the processes working in `tree` the runtime cannot account
  * for: every one but a run's recorded processes and their descendants
- * (`known`), and those a worktree hook run for this tree left behind (their
- * environment names it under `HOOK_WORKTREE_ENV`): the dispatcher's own
- * preparation of the tree, never a person's or another agent's session.
- * A listing that does not read counts as one.
+ * (`known`), and those a worktree hook run for this tree left behind: a
+ * process with no controlling terminal whose environment names the tree
+ * under `HOOK_WORKTREE_ENV`, the dispatcher's own preparation of it. A
+ * process with a terminal, or one that did not keep the environment it
+ * started with, still counts. A listing that does not read counts as one.
  */
 function unaccounted(run: ProbeRun, tree: string, known: Set<number>): number {
   const holders = cwdHolders(run, tree);
   if ("unknown" in holders) return 1;
-  const prepared = realPath(tree);
-  return holders.pids.filter(
-    (pid) =>
-      !known.has(Number(pid)) &&
-      !environHolds(run, pid, HOOK_WORKTREE_ENV, prepared),
-  ).length;
+  const unknown = holders.pids.filter((pid) => !known.has(Number(pid)));
+  const prepared = detachedCarriers(
+    run,
+    unknown,
+    `${HOOK_WORKTREE_ENV}=${realPath(tree)}`,
+  );
+  return unknown.filter((pid) => !prepared.has(pid)).length;
 }
 
 export function processRuntime(machine: {

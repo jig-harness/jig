@@ -424,15 +424,21 @@ dispatcher's own preparation of the worktree, not a session someone else
 started there, and it must not hold the pickup it was prepared for.
 
 Every hook run carries `JIG_HOOK_WORKTREE`, the real path of the worktree it
-runs for, in its environment, and every process it starts inherits it, a
-daemon that left the hook's process group or session included.
-`sessions(repo)` leaves out of a worktree's unreportable terminals each
-process whose environment, read from `/proc/<pid>/environ`, names that
-worktree so. A process without it, one naming another worktree, and one
-whose environment cannot be read still count, so a person's shell, an
-editor or an agent started by hand still holds the target. On a host without
-`/proc` nothing is left out, and the count is what it was. The Orca
-runtime's count is Orca's and does not change.
+runs for, in its environment. A process the hook starts that keeps the
+environment it started with carries it too, a daemon that left the hook's
+process group or session included. `sessions(repo)` leaves out of a
+worktree's unreportable terminals each process that has no controlling
+terminal and whose environment, read from `/proc/<pid>/environ` in one probe
+per worktree, names that worktree so. The hook starts in a session of its
+own, without a terminal, so what it leaves has none; a shell a person types
+into has one, even when a server the hook started (a terminal multiplexer)
+spawned it with the hook's environment. Every other process still counts: a
+person's shell, an editor, an agent started by hand, a process naming
+another worktree, and one that rebuilt its environment or whose environment
+cannot be read. On a host without `/proc` nothing is left out, and the count
+is what it was. The Orca runtime's count is Orca's and does not change. A
+pass's environment can never carry the variable: `process.env_keep` refuses
+it.
 
 The other ways considered, and why they were not taken:
 
@@ -442,9 +448,10 @@ The other ways considered, and why they were not taken:
   service of its own, but a tick run by hand from a person's terminal shares
   that terminal's group, and the person's shell in the worktree would be
   left out: the one process the check exists for.
-- **Processes without a controlling terminal.** The runtime's own headless
-  runs have none, and neither has a headless agent a person started by
-  hand, which would be missed.
+- **Processes without a controlling terminal, by that alone.** The
+  runtime's own headless runs have none, and neither has a headless agent a
+  person started by hand, which would be missed. Here the missing terminal
+  only narrows the mark: a process needs both.
 - **Ending what a successful hook leaves.** It changes what a create hook
   may leave running (a daemon the repository wants kept warm), misses a
   daemon that left the hook's group, and a list of known daemons per tool

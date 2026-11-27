@@ -162,6 +162,7 @@ describe.skipIf(process.platform !== "linux")(
       const record = readRecord(String(started?.record), dispatchState(w));
       const path = realpathSync(record?.workspace?.path ?? "");
       // The daemon outlived the hook and works in the new worktree.
+      await waitFor("the daemon's pid", () => daemonPids().length === 1);
       const [daemon] = daemonPids();
       expect(daemon).toBeNumber();
       expect(readlinkSync(`/proc/${daemon}/cwd`)).toBe(path);

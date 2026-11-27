@@ -177,21 +177,43 @@ export function cwdHolders(run: ProbeRun, top: string): CwdAnswer {
 }
 
 /**
- * Whether the environment of process `pid` holds the entry `name=value`, as
- * `/proc/<pid>/environ` tells it: the environment the process started with,
- * which a daemon keeps when it leaves its process group or session. An
- * environment that cannot be read (a host without `/proc`, a process that
- * ended or one its owner may not inspect) holds nothing.
+ * Prints each pid among its arguments, after the first, whose environment
+ * holds the first argument as a whole entry and whose controlling terminal
+ * (field 7 of `/proc/<pid>/stat`) is none; prints nothing on a host without
+ * `/proc`. Run as `sh -c <probe> sh <entry> <pid>...`.
  */
-export function environHolds(
+const DETACHED_CARRIER_PROBE = `[ -e /proc/self/environ ] || exit 0
+entry=$1
+shift
+for p do
+  tr '\\0' '\\n' < "/proc/$p/environ" 2>/dev/null | grep -qxF -e "$entry" || continue
+  tty=$(awk '{ s = $0; sub(/.*\\) /, "", s); split(s, f, " "); print f[5] }' "/proc/$p/stat" 2>/dev/null)
+  [ "$tty" = 0 ] && printf '%s\\n' "$p"
+done
+exit 0`;
+
+/**
+ * The pids among `pids` that were started with the environment entry
+ * `entry` (`NAME=value`) and have no controlling terminal, read from `/proc`
+ * in one probe: a daemon keeps the environment it started with when it
+ * leaves its process group or session, while a shell a person types into
+ * has a terminal. A process whose environment or status cannot be read (a
+ * host without `/proc`, a process that ended or one its owner may not
+ * inspect) is not among them, and neither is any when the probe fails.
+ */
+export function detachedCarriers(
   run: ProbeRun,
-  pid: string,
-  name: string,
-  value: string,
-): boolean {
-  if (!/^\d+$/.test(pid)) return false;
-  const read = run(["cat", `/proc/${pid}/environ`]);
-  return (
-    read.status === 0 && read.stdout.split("\0").includes(`${name}=${value}`)
+  pids: string[],
+  entry: string,
+): Set<string> {
+  const numeric = pids.filter((pid) => /^\d+$/.test(pid));
+  if (numeric.length === 0) return new Set();
+  const read = run(
+    ["sh", "-c", DETACHED_CARRIER_PROBE, "sh", entry, ...numeric],
+    "/",
+  );
+  if (read.status !== 0) return new Set();
+  return new Set(
+    read.stdout.split("\n").filter((pid) => numeric.includes(pid)),
   );
 }
