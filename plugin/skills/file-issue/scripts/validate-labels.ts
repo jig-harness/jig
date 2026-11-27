@@ -378,6 +378,30 @@ async function validateFiling(
   }
 }
 
+/** Whether a planned native type could turn this invalid draft into a valid epic. */
+export function placementMayChangeInvalidity(
+  initial: Validation,
+  taxonomy: Taxonomy,
+): boolean {
+  const epic = parseTrackerLabels(readConfig()).epic;
+  return (
+    taxonomy.groups.some(
+      (group) =>
+        initial.missing.includes(group.id) &&
+        group.notRequiredOn.includes(epic),
+    ) ||
+    taxonomy.categories.some(
+      (category) =>
+        initial.parsed.categories[category.id]?.length !== 0 &&
+        category.requires.includes(epic),
+    ) ||
+    taxonomy.flags.some(
+      (flag) =>
+        initial.parsed.flags.includes(flag.id) && flag.requires.includes(epic),
+    )
+  );
+}
+
 /** The tracker the check reads, or the stop that says it could not be opened. */
 function openLabelTracker(deps: Deps): LabelTracker {
   try {
@@ -402,8 +426,13 @@ async function checkTracker(
   initial: Validation,
 ): Promise<Validation> {
   // Placement can only exempt a missing facet. Other taxonomy errors already
-  // decide the result, so a tracker configuration failure must not hide them.
-  if (!initial.valid && initial.errors.length > initial.missing.length)
+  // decide the result, except where its native epic type can satisfy a label
+  // rule. In that case validateFiling must get the chance to revalidate it.
+  if (
+    !initial.valid &&
+    initial.errors.length > initial.missing.length &&
+    !placementMayChangeInvalidity(initial, taxonomy)
+  )
     return initial;
   const tracker = openLabelTracker(deps);
   const result = await validateFiling(tracker, issue, taxonomy, initial);

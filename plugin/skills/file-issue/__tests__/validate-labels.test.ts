@@ -9,7 +9,11 @@ import {
   type Taxonomy,
 } from "../scripts/lib/taxonomy.ts";
 import { validateLabels } from "../scripts/lib/validate.ts";
-import { type Deps, main } from "../scripts/validate-labels.ts";
+import {
+  type Deps,
+  main,
+  placementMayChangeInvalidity,
+} from "../scripts/validate-labels.ts";
 
 const script = join(import.meta.dir, "..", "scripts", "validate-labels.ts");
 const fixture = join(
@@ -725,6 +729,16 @@ describe("--check-tracker", () => {
       listLabels: async () => names.map((name) => ({ name, group: null })),
     }),
     readStdin: async () => "",
+  });
+
+  test("keeps placement available when an epic type can satisfy the draft's label rules", () => {
+    const initial = validateLabels(["roadmap"], taxonomy, {
+      type: "feature",
+      priority: 3,
+      size: "small",
+    });
+    expect(initial.valid).toBe(false);
+    expect(placementMayChangeInvalidity(initial, taxonomy)).toBe(true);
   });
 
   test("passes when every label names exactly one tracker label", async () => {

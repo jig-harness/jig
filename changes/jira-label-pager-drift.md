@@ -17,5 +17,7 @@ release: patch
 - `validate-labels.ts --check-tracker` reports a label set the taxonomy
   refuses with exit 3 and its taxonomy errors, without reading the tracker's
   labels first, so a failed label read (exit 1) no longer hides the real
-  verdict. A draft whose only gap is a facet its Jira screen does not offer
-  is still exempted before that verdict. **Consumer action:** none.
+  verdict. A draft whose planned native type makes it an epic is revalidated
+  before that early verdict, so the epic's label rules can satisfy it; a
+  draft whose only gap is a facet its Jira screen does not offer is still
+  exempted. **Consumer action:** none.
