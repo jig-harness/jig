@@ -14,6 +14,7 @@ import { retainedSlug } from "../../plugin/dispatch/lib/line-unread.ts";
 import { noLinkText } from "./links.ts";
 import { trackerOf } from "./tracker-name.ts";
 import { type Role, roleOf } from "./status.ts";
+import { parseMs } from "../../plugin/shared/time.ts";
 
 /** The server's clock and the host's zone. */
 export interface Clock {
@@ -778,7 +779,7 @@ function trackerKeptNote(
   if (kept === undefined) return null;
   if (kept.readAt === null)
     return `No tick has read its tracker with a credential, so it shows no item cards or needs about items (${kept.reason}).`;
-  const read = Date.parse(kept.readAt);
+  const read = parseMs(kept.readAt);
   return `Its item cards and the needs about items are as of the ${stamp(read, hostDay(nowMs, timeZone), timeZone)} reading, ${ago(read, nowMs)} ago (${kept.reason}).`;
 }
 
