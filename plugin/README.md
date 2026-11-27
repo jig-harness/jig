@@ -591,9 +591,10 @@ with its callers; a logged-in client's calls are labelled as that client's
 own login.
 
 A `calls-failing` need names a caller outside the tick and its passes (a
-skill a timer or a person runs) whose calls to one system, over the ledger's
-last hours, were all refused as `unauthorized` or `invalid` under credentials
-that never succeeded, at least 20 in all. A wait, an absence or a fault of
+skill a timer or a person runs) with credentials whose every call to one
+system, over the ledger's last hours, was refused as `unauthorized` or
+`invalid`, at least 20 calls in all. Each such credential is judged by its own
+calls: another credential of the same caller that works does not hide it. A wait, an absence or a fault of
 the system's own never counts. It appears once per caller and system, keeps its age while the
 failures continue and clears after the ledger holds none, which is up to two
 hours after they stop. A caller that starts each run with a credential of its
