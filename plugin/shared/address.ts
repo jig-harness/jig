@@ -13,7 +13,8 @@
  * - **The key** is the piece of work: a pull request's number for `drive`
  *   and `followup`, the tracker's item key for `pickup`. Some shells give `#`
  *   a meaning of their own, so the key is also taken as a second argument
- *   (`drive@jig 456`).
+ *   (`drive@jig 456`). A station whose work is the repository itself
+ *   (`steward`) takes no key: its address is `steward@owner/name`.
  *
  * Parsing is pure and returns an `Outcome`: a malformed address, an unknown
  * station, a repository that names none or two, and a key not in its
@@ -25,8 +26,8 @@
  */
 import { failed, ok, type Outcome } from "./outcome.ts";
 
-/** What a station's key names: a tracker item, or a pull request by its number. */
-export type StationKey = "item" | "pull-request";
+/** What a station's key names: a tracker item, a pull request by its number, or nothing past the repository (`none`). */
+export type StationKey = "item" | "pull-request" | "none";
 
 /** One station: what its key names, and what holding it means. */
 export interface StationSpec {
@@ -55,6 +56,11 @@ export const STATIONS = {
     meaning:
       "The follow-up of a merged pull request: the pass, a dispatcher's tick or a person's run, that settles what the merge still owes",
   },
+  steward: {
+    key: "none",
+    meaning:
+      "The steward of a repository: held by the judgment pass its owner host's dispatcher started for it, one at a time",
+  },
 } as const satisfies Record<string, StationSpec>;
 export type Station = keyof typeof STATIONS;
 
@@ -65,7 +71,7 @@ export interface Address {
   station: Station;
   /** `owner/name`. */
   repo: string;
-  /** A pull request's number in decimal, or the tracker's canonical item key. */
+  /** A pull request's number in decimal, the tracker's canonical item key, or empty for a station that takes no key. */
   key: string;
 }
 
@@ -143,6 +149,13 @@ export function parseAddress(
     );
   if (inline !== null && second !== undefined)
     return malformed(input, "it names its key twice");
+  if (STATIONS[station].key === "none")
+    return inline === null && second === undefined
+      ? ok({ station, repo, key: "" })
+      : malformed(
+          input,
+          `a ${station} address names its repository and no key (${station}@owner/name)`,
+        );
   const key = (inline ?? second ?? "").trim();
   if (key === "") return malformed(input, "it names no key");
   if (!RAW_KEY.test(key))
@@ -196,13 +209,15 @@ export function resolveRepository(
 /**
  * A key in its station's form: a pull request's number for `drive` and
  * `followup` (`456` or `#456`), the tracker's form for `pickup`, which
- * `tracker` checks (`null` when the tracker's form is not known here).
+ * `tracker` checks (`null` when the tracker's form is not known here), and
+ * empty for a station that takes none.
  */
 export function checkKey(
   station: Station,
   key: string,
   tracker: TrackerKeyForm | null,
 ): Outcome<string, "malformed-key"> {
+  if (STATIONS[station].key === "none") return ok("");
   if (STATIONS[station].key === "pull-request") {
     const m = PR_NUMBER.exec(key);
     return m !== null && Number.isSafeInteger(Number(m[1]))
@@ -228,6 +243,8 @@ export function checkKey(
 
 /** An address as every answer prints it: the repository in full, a pull request's key after `#`, an item key as the tracker writes it. */
 export function formatAddress(address: Address): string {
+  if (STATIONS[address.station].key === "none")
+    return `${address.station}@${address.repo}`;
   const key = address.key.startsWith("#") ? address.key.slice(1) : address.key;
   return `${address.station}@${address.repo}#${key}`;
 }

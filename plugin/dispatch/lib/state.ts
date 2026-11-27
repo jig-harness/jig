@@ -637,6 +637,15 @@ export const MIGRATIONS: readonly Migration[] = [
     WHERE outcome IN ('held', 'refused');
   `,
   },
+  {
+    // A person's request for one steward pass of a repository (`steward-requests.ts`): `jig send steward@… start` writes it, the tick takes it.
+    additive: true,
+    sql: `CREATE TABLE steward_requests (
+      repo TEXT PRIMARY KEY,
+      requested_by TEXT NOT NULL,
+      requested_at TEXT NOT NULL
+    );`,
+  },
 ];
 
 /** The schema version this plugin writes. */

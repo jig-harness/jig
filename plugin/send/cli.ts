@@ -66,6 +66,7 @@ import {
 } from "../dispatch/lib/pickup-condition.ts";
 import { planLabel } from "./lib/labels.ts";
 import { planMailbox } from "./lib/mailbox.ts";
+import { planStewardStart } from "./lib/steward-start.ts";
 import {
   NEXT_TICK,
   type Plan,
@@ -92,7 +93,7 @@ export const sendCommand = command(
   object({
     words: multiple(
       argument(string({ metavar: "WORD" }), {
-        description: message`The address (station@owner/name#key, or the address and its key as two words: drive@jig 456), then the verb and its arguments. The verbs: assign (pickup); drive, rearm, answer <key> <text>, answer --all --approve, pause, resume <hold-push|pause|stop>, stop, hold-push (drive); answer <key> --approve|--choose <option> (drive, followup, pickup); hold, release (drive, followup, pickup).`,
+        description: message`The address (station@owner/name#key, or the address and its key as two words: drive@jig 456; a steward address names its repository alone: steward@owner/name), then the verb and its arguments. The verbs: assign (pickup); drive, rearm, answer <key> <text>, answer --all --approve, pause, resume <hold-push|pause|stop>, stop, hold-push (drive); answer <key> --approve|--choose <option> (drive, followup, pickup); hold, release (drive, followup, pickup); start (steward).`,
       }),
     ),
     approve: option("--approve", {
@@ -136,7 +137,7 @@ export const sendCommand = command(
   }),
   {
     brief: message`Tell a station of the line what to do: write the one record its reader acts on.`,
-    description: message`Checks the request against the station's records first, as jig ask reads them, prints the repository, the login it writes as, the record and its reader, then writes the record: a tracker assignment, a dispatch label, an answer comment, or a directive in a drive's mailbox on this machine.`,
+    description: message`Checks the request against the station's records first, as jig ask reads them, prints the repository, the login it writes as, the record and its reader, then writes the record: a tracker assignment, a dispatch label, an answer comment, a directive in a drive's mailbox on this machine, or a request for a steward pass on the dispatcher host that owns the repository.`,
   },
 );
 
@@ -259,6 +260,13 @@ async function planFor(
         dryRun,
         as,
       });
+    case "start":
+      return planStewardStart(
+        ctx,
+        resolved.machine.ok ? resolved.machine.value : null,
+        resolved.choices.known,
+        { login: login.value, writesAs },
+      );
     default:
       return planMailbox(ctx, request, login.value, writesAs);
   }

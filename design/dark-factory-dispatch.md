@@ -1957,7 +1957,24 @@ one of them. A tick that starts no pass says why on its
 receipt and in the line the dashboard reads: the backlog was empty, its
 members were all judged, or the hourly budget was spent.
 
-A person's on-demand start of a pass through `jig send` is not built.
+A person starts a pass on demand with `jig send steward@owner/name
+start`, for judgment now: after settling a parked item by hand, or when
+they doubt the backlog. A steward address names the repository alone
+([`jig send`](../plugin/protocol/addresses.md)). The send runs on the host
+that owns the repository and keeps the request in that host's state
+database; the host's next tick starts one pass for it whatever the backlog
+holds, empty or judged. The request is held to the same rules as a
+triggered pass: the repository's steward stage and owner, the host's budget
+of three passes in a rolling hour, and one pass holding a repository at a
+time. The send refuses a request one of them refuses already, naming the
+rule; the tick checks them again, and a request a rule refuses then is
+taken, the rule named on its receipt and in the line the dashboard reads.
+A request the tick cannot act on yet, for a read that failed or an account
+with no free slot, waits for the next tick. A requested pass reads the same
+digest a triggered one does, and the tick records the request in the
+outcome log, a `steward-requested` row naming the pass it started or a
+`steward-request-refused` row naming the rule, so the log tells requested
+passes from triggered ones.
 
 ### What it never does
 
@@ -2797,7 +2814,7 @@ the machine file alone decides what that tick starts: Jig's Orca plugin,
 when an agent waits, blocks or finishes or a workspace is removed
 ([Waking the dispatcher](orca-integration.md)); and `jig send`, once it
 has written a record the tick reads (`assign`, `drive`, `hold`, `release`,
-`answer`), where the machine file lists the repository with the stage the
+`answer`, `start`), where the machine file lists the repository with the stage the
 tick acts under ([`jig send`](../plugin/protocol/addresses.md)). Both follow one rule: one
 tick at a time for a repository, no sooner than a minute after the last
 one started, a request made inside that minute taken by one trailing

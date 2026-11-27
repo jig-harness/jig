@@ -37,6 +37,7 @@ export type LabelVerb =
 /** One request, its arguments parsed. */
 export type Request =
   | { verb: "assign" }
+  | { verb: "start" }
   | { verb: LabelVerb }
   | AnswerRequest
   | { verb: Exclude<MailboxVerb, "resume"> }

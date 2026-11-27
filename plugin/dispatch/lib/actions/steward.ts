@@ -35,6 +35,16 @@ import {
   type StewardDigest,
 } from "../steward.ts";
 import {
+  countedRuns,
+  pendingStewardRequest,
+  requestRow,
+  STEWARD_RULES,
+  type StewardRequest,
+  type StewardRule,
+  stewardHeld,
+  takeStewardRequest,
+} from "../steward-requests.ts";
+import {
   type Backlog,
   type BacklogInput,
   judgedMembers,
@@ -66,9 +76,11 @@ import { currentIso, currentMs } from "../../../shared/time.ts";
 
 /**
  * Start the steward when the judgment backlog holds a member no earlier pass
- * saw: at once, within the host's hourly budget, while no other pass holds
- * the repository. An empty or already judged backlog starts nothing, and the
- * receipt says which.
+ * saw, or a person requested a pass (`steward-requests.ts`): at once, within
+ * the host's hourly budget, while no other pass holds the repository. An
+ * empty or already judged backlog starts nothing unless a pass was
+ * requested, and the receipt says which. A request either rule refuses is
+ * taken with the rule named, on the receipt and in the outcome log.
  */
 export async function applySteward(
   state: ApplyState,
@@ -86,38 +98,22 @@ export async function applySteward(
   if (!opened.stages.has("steward") || !config?.enabled)
     return skip("steward is disabled on this host");
   await replayPending(state, repo.slug, report);
-  if (
-    state.records.some(
-      (r) =>
-        r.record.repo === repo.slug &&
-        r.record.action === "steward" &&
-        holds(r.state),
-    )
-  )
-    return skip("a steward pass already holds this repository");
+  const request = pendingStewardRequest(stateDb(state.root), repo.slug);
+  if (stewardHeld(state.records, repo.slug))
+    return request === null
+      ? skip(STEWARD_RULES.held)
+      : refuseRequest(state, request, report, "held");
   if (!forge.ok || report.records.some((r) => !r.ok))
     return skip("the digest's records did not all read");
-  const released = new Set(
-    state.records
-      .filter(
-        (r) =>
-          r.record.action === "steward" &&
-          r.state.kind === "ended" &&
-          (r.state.exit.startup === "sign-in" ||
-            r.state.exit.startup === "breaker"),
-      )
-      .map((r) => r.record.id),
-  );
   if (
     stewardBudgetSpent(
-      stewardRuns(null, state.root).filter((run) => !released.has(run.id)),
+      countedRuns(state.records, stewardRuns(null, state.root)),
       currentMs(),
     )
   ) {
-    report.steward = {
-      status: "the host's hourly steward budget is spent",
-      trigger: "budget",
-    };
+    if (request !== null)
+      return refuseRequest(state, request, report, "budget");
+    report.steward = { status: STEWARD_RULES.budget, trigger: "budget" };
     return;
   }
   const judged = judgedMembers(
@@ -131,10 +127,11 @@ export async function applySteward(
   if (!found.ok) return skip(found.failure.reason);
   const backlog = found.value.backlog;
   const trigger = stewardTrigger(backlog.members, judged);
-  if (trigger.kind !== "due") {
+  if (trigger.kind !== "due" && request === null) {
     report.steward = notStarted(trigger);
     return;
   }
+  const counts = countsOf(trigger);
   const read = await readDigest(state, observation, backlog, found.value.queue);
   if (!read.ok) return skip(read.failure.reason);
   const digest = read.value;
@@ -143,7 +140,7 @@ export async function applySteward(
     stage: "steward",
     target: "the steward",
     record: "runtime",
-    reason: `${trigger.unjudged} of the judgment backlog's ${trigger.members} members wait on the steward's judgment`,
+    reason: `${request === null ? "" : `${request.by} requested a steward pass; `}${counts.unjudged} of the judgment backlog's ${counts.members} members wait on the steward's judgment`,
     evidence: { hash },
   };
   const admitted = await admitAccount(
@@ -220,12 +217,44 @@ export async function applySteward(
   };
   const launch = await startKept(state, record, slots, digest);
   report.launches.push(launch);
-  report.steward = stewardStatus(
-    launch,
-    state.records.some((r) => r.record.id === record.id),
-    trigger,
-    hash,
+  const kept = state.records.some((r) => r.record.id === record.id);
+  report.steward = stewardStatus(launch, kept, counts, hash, request);
+  if (kept && request !== null)
+    takeStewardRequest(
+      request,
+      requestRow(request, repo.slug, { started: record.id }),
+      state.root,
+    );
+}
+
+/** How many members the judgment backlog holds, and how many no pass has judged. */
+function countsOf(trigger: StewardTrigger): BacklogCounts {
+  if (trigger.kind === "due") return trigger;
+  if (trigger.kind === "judged")
+    return { members: trigger.members, unjudged: 0 };
+  return { members: 0, unjudged: 0 };
+}
+
+type BacklogCounts = { members: number; unjudged: number };
+
+/** Take a requested pass a rule refused, saying which on the receipt and in the outcome log. */
+function refuseRequest(
+  state: ApplyState,
+  request: StewardRequest,
+  report: RepoReport,
+  rule: StewardRule,
+): void {
+  const reason = STEWARD_RULES[rule];
+  takeStewardRequest(
+    request,
+    requestRow(request, report.slug ?? request.repo, { rule, reason }),
+    state.root,
   );
+  report.steward = {
+    status: `${request.by}'s request refused: ${reason}`,
+    trigger: rule,
+    requestedBy: request.by,
+  };
 }
 
 /**
@@ -236,19 +265,23 @@ export async function applySteward(
 function stewardStatus(
   launch: LaunchOutcome,
   kept: boolean,
-  trigger: Extract<StewardTrigger, { kind: "due" }>,
+  counts: BacklogCounts,
   hash: string,
+  request: StewardRequest | null,
 ): NonNullable<RepoReport["steward"]> {
-  if (!kept) return { status: `not started: ${launch.detail}`, hash };
+  const by = request === null ? {} : { requestedBy: request.by };
+  if (!kept) return { status: `not started: ${launch.detail}`, hash, ...by };
   if (launch.outcome !== "launched" && launch.outcome !== "retried")
     return {
       status: `launch pending, a later tick retries it: ${launch.detail}`,
       hash,
+      ...by,
     };
   return {
-    status: `started for ${trigger.unjudged} unjudged of ${trigger.members} in the judgment backlog`,
+    status: `started ${request === null ? "" : `on ${request.by}'s request, `}for ${counts.unjudged} unjudged of ${counts.members} in the judgment backlog`,
     hash,
     trigger: "started",
+    ...by,
   };
 }
 

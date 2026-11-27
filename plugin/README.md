@@ -870,7 +870,8 @@ machine file) inspects what the rules leave stopped, under the owner host's
 account and load admission. It starts when the repository's
 [judgment backlog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) holds work no earlier pass
 judged, at once rather than on a cadence, and an empty or already judged
-backlog starts none. It can propose a transient-stop retry, a missing issue
+backlog starts none, unless a person asked for a pass with `jig send
+steward@owner/name start` ([below](#telling-a-station-what-to-do)). It can propose a transient-stop retry, a missing issue
 facet, queue tie order, the act and ask for a need nothing has framed, and
 the cause of a pickup's or a follow-up's run that left no closing report
 (above), read from the excerpt of its transcript as evidence. It can also propose one fixed resume of
@@ -1930,6 +1931,7 @@ jig send <station>@<owner>/<name>#<key> <verb> [arguments] [--dry-run] [--as <lo
 | `answer <key> <text>`, `answer <key> --approve`, `answer <key> --choose <option>`, `answer --all --approve` | `drive` | a comment on the pull request whose first line is `answer <key>: <text>`, or `answer <key>: approve [<digest>]` and `answer <key>: choose <option> [<digest>]` for a structured answer, one comment per item for `--all` | the re-arm, which hands the answer to the drive's passes as your verdict |
 | `answer <key> --approve`, `answer <key> --choose <option>` | `followup`, `pickup`, `drive` | for a need's decision other than a park's (a follow-up's, a pickup's, or the dispatcher's own framing), the same structured comment on the pull request, or on the item: the forge issue where the items are the forge's issues, else the item on its tracker, written as the user the tracker's credential acts as here | the dispatcher's next tick on the host that owns the repository, which carries out the option once (see [Every need is a decision](#every-need-is-a-decision)) |
 | the [mailbox directives](protocol/mailbox.md#the-inbox), with the target argument for `resume` | `drive` | a directive in the mailbox of the working tree that holds the drive on this machine | the driver, at the checkpoints the [mailbox chapter](protocol/mailbox.md) names |
+| `start` | `steward` | a request for one steward pass, kept in the state database of the host that owns the repository | that host's next tick, which starts the pass whatever the judgment backlog holds, or refuses it under the rule that applies |
 
 **It checks before it writes.** It reads the address first, through `jig
 ask`'s readers, and refuses (exit `1`) a request the station cannot take:
@@ -1956,6 +1958,17 @@ ask`'s readers, and refuses (exit `1`) a request the station cannot take:
   (the repository names no factory identity, or this machine cannot tell
   whether it owns the repository), the comment carries the record the tick
   counts it by, and the plan says so;
+- `start` on a host that does not own the repository or does not run its
+  steward (`steward.enabled` and the `steward` stage), while a steward pass
+  holds the repository, or while the host's budget of three steward passes
+  in a rolling hour is spent; the refusal names the rule. The tick checks
+  the last two again before it starts the pass, and a request either
+  refuses then is dropped, the rule named on the tick's receipt, in the
+  dashboard's line for the repository and in the outcome log (an `event:
+  steward-request-refused` row; a started one is `event:
+  steward-requested`). A second `start` while one is pending leaves the
+  first standing. A steward address names the repository alone
+  (`steward@owner/name`), and `jig ask` does not take it;
 - a mailbox directive already in force, a `resume` with nothing to withdraw,
   a drive no driver on this machine holds, and a drive another host holds,
   which it names: a directive reaches a driver on this machine only, so
@@ -2065,8 +2078,8 @@ carries the repository's prefix. A machine whose
 [dispatch file](CONFIGURATION.md#the-machines-dispatch-file) says
 `send: false` refuses every send. A session the line started (a dispatched
 launch, or a drive's pass) runs with `JIG_LAUNCH` set, and there `send`
-refuses `assign`, `drive`, `rearm`, `withdraw-rearm`, `hold`, `release` and
-`answer`, which are a
+refuses `assign`, `drive`, `rearm`, `withdraw-rearm`, `hold`, `release`,
+`answer` and `start`, which are a
 person's commands; the mailbox verbs are not refused by it. That stops a
 skill's mistake; a session holding its person's credentials could still
 clear the variable or call the forge itself, as it could before.
@@ -2083,11 +2096,12 @@ generation that holds the drive when it is sent. A `resume` needs only the
 tree, so it also clears a directive a driver left behind.
 
 **It wakes the tick that reads its record.** After `assign`, `drive`, `rearm`,
-`withdraw-rearm`, `hold`, `release` or `answer`, when this machine's
+`withdraw-rearm`, `hold`, `release`, `answer` or `start`, when this machine's
 [dispatch file](CONFIGURATION.md#the-machines-dispatch-file) lists the
 repository with the stage the tick acts under (`pickup` for `assign` and
 pickup holds and releases,
-`followup` for a follow-up's `hold` and `release`, `rearm` for the rest),
+`followup` for a follow-up's `hold` and `release`, `steward` for `start`,
+`rearm` for the rest),
 `send` wakes that repository's tick: a [waiter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) in the background runs `jig
 dispatch --apply --repo <path>` the way the installed timer does, when idle
 and no sooner than a minute after the last tick it started, rather than
@@ -2121,7 +2135,8 @@ reused worktree, or a newer stopped drive, raises a need after the dispatcher
 has observed the same problem for 30 minutes. Re-send an older request with
 `jig send` to bind it to a stop after the tick removes its unbound label.
 
-`release` undoes a `hold`, and `hold` a `release`. A `drive` label can be
+`release` undoes a `hold`, and `hold` a `release`. A `start` is not taken
+back: the tick takes it once it starts the pass or a rule refuses it. A `drive` label can be
 removed by hand until the tick has armed the drive. `resume` withdraws a
 directive. An assignment can be undone on
 the tracker until the tick starts the pick-up. An `answer` the re-arm has
