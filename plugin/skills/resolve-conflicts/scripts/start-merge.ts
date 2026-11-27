@@ -26,7 +26,7 @@
  * step failed (the report names it); 2 usage, or not inside a git work tree.
  * `--json` prints the report on stdout; the prose goes to stderr either way.
  */
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { fail, runMain } from "../../../shared/cli.ts";
 import { readRemoteName } from "../../../shared/consumer.ts";
 import { resolvePr } from "../../drive-pr/scripts/lib/proc.ts";
@@ -306,7 +306,10 @@ function mergeWithBase(
     gitPath(root, "MERGE_MSG"),
     preparedMessage(root, ref, base, landing, mergeBase),
   );
-  writeFileSync(gitPath(root, MERGE_BASE_RECORD), `${mergeBase} ${theirs}\n`);
+  writeFileSync(
+    gitPath(root, MERGE_BASE_RECORD),
+    `${mergeBase} ${theirs} ${head}\n`,
+  );
   const conflicts = unmerged(root);
   if (r.code === 1 || conflicts.length > 0)
     return report({
@@ -322,6 +325,8 @@ function mergeWithBase(
     { ...process.env, GIT_MERGE_AUTOEDIT: "no" },
     MERGE_TIMEOUT_MS,
   );
+  if (commit.code === 0)
+    rmSync(gitPath(root, MERGE_BASE_RECORD), { force: true });
   return commit.code === 0
     ? report({ ...fields, outcome: "merged", reason: `merged ${ref}` })
     : report({

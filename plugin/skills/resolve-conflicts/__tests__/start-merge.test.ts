@@ -188,6 +188,21 @@ describe("a pull request whose base was squash-merged", () => {
     expect(s.git("status", "--porcelain")).toBe("");
   });
 
+  it("ignores the record of an aborted merge when an ordinary merge of the same commit follows", () => {
+    const { landed, tip } = stackedOnSquashed({ 18: "feature 18" });
+    retargetedAfter(landed, tip);
+    startMerge(9);
+    s.git("merge", "--abort");
+
+    expect(s.gitTry("merge", "--no-edit", "origin/main").code).toBe(1);
+    const map = s.script("conflict-map.ts", ["--json"]);
+    expectSpawnExit({ ...map, exitCode: map.code }, 0);
+
+    const ordinary = s.git("merge-base", "HEAD", "MERGE_HEAD").trim();
+    expect(ordinary).not.toBe(tip);
+    expect(s.snapshot().operation).toMatchObject({ base: ordinary });
+  });
+
   it("concludes a conflict beside an echo in another file through record and check", () => {
     s.commit("Add the files", { "f.txt": file(), "e.txt": "echo\n" });
     s.git("checkout", "-q", "-b", "stack");

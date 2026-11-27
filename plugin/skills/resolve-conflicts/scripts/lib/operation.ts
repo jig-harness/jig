@@ -9,7 +9,7 @@
  * being replayed. This module states the role of each side explicitly so a
  * resolver never has to remember which way round it is.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { consumerRoot, readRemoteName } from "../../../../shared/consumer.ts";
 import { detachedTreeRecordSync } from "../../../../shared/driven-tree.ts";
@@ -98,19 +98,35 @@ export const MERGE_BASE_RECORD = "JIG_MERGE_BASE";
 
 /**
  * The merge base `start-merge.ts` chose for the open merge, read from its own
- * record (`<base> <MERGE_HEAD>`, never from the editable merge message), while
- * the record names the merge's current `MERGE_HEAD` and the base is an
- * ancestor of `head`; null when there is none.
+ * record (`<base> <MERGE_HEAD> <HEAD>`, never from the editable merge
+ * message). The record belongs to this merge only while it names the merge's
+ * current `MERGE_HEAD` and the `HEAD` the merge started on, the base is an
+ * ancestor of `head`, and it was written no earlier than git's own
+ * `MERGE_HEAD` (an aborted merge leaves the record behind, and a later
+ * ordinary merge of the same commit writes a newer `MERGE_HEAD`); null when
+ * there is none.
  */
 export function recordedMergeBase(root: string, head: string): string | null {
-  const parts = read(gitPath(root, MERGE_BASE_RECORD))?.trim().split(" ");
+  const recordPath = gitPath(root, MERGE_BASE_RECORD);
+  const parts = read(recordPath)?.split(" ");
   const mergeHead = resolveCommit(root, "MERGE_HEAD");
   const recorded = parts?.[0];
-  return recorded !== undefined &&
-    /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(recorded) &&
-    mergeHead !== null &&
-    parts?.[1] === mergeHead &&
-    gitRaw(root, ["merge-base", "--is-ancestor", recorded, head]).code === 0
+  if (
+    recorded === undefined ||
+    !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(recorded) ||
+    mergeHead === null ||
+    parts?.[1] !== mergeHead ||
+    parts?.[2] !== head
+  )
+    return null;
+  const written = statSync(recordPath, { throwIfNoEntry: false });
+  const started = statSync(gitPath(root, "MERGE_HEAD"), {
+    throwIfNoEntry: false,
+  });
+  if (written === undefined || started === undefined) return null;
+  if (written.mtimeMs < started.mtimeMs) return null;
+  return gitRaw(root, ["merge-base", "--is-ancestor", recorded, head]).code ===
+    0
     ? recorded
     : null;
 }
