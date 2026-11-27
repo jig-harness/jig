@@ -93,3 +93,18 @@ test("one host need per caller and system keeps its age and withdraws when the f
   expect(later[0]?.since).toBe(first[0]?.since);
   expect(failingCallerNeeds([], later, at)).toEqual([]);
 });
+
+test("a caller with one credential that worked is not one, whatever its other credential met", () => {
+  expect(
+    failingCallers(
+      report(
+        row({
+          credential: "github:a",
+          requests: 20,
+          failures: { invalid: 20 },
+        }),
+        row({ credential: "github:b", requests: 30, failures: {} }),
+      ),
+    ),
+  ).toEqual([]);
+});

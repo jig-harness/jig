@@ -393,23 +393,28 @@ function outsideCalls(report: LedgerReport): CredentialCalls[] {
  * as many.
  */
 export function failingCallers(report: LedgerReport): FailingCaller[] {
-  const callers = new Map<string, FailingCaller>();
+  const byCaller = new Map<string, CredentialCalls[]>();
   for (const at of outsideCalls(report)) {
-    if (at.failed === 0 || at.failed < at.requests) continue;
     const key = `${at.caller}\0${at.system}`;
-    const known = callers.get(key) ?? {
-      caller: at.caller,
-      system: at.system,
-      requests: 0,
-      credentials: 0,
-      classes: [],
-    };
-    known.requests += at.requests;
-    known.credentials += 1;
-    known.classes = [...new Set([...known.classes, ...at.classes])].sort();
-    callers.set(key, known);
+    byCaller.set(key, [...(byCaller.get(key) ?? []), at]);
   }
-  return [...callers.values()]
+  const callers: FailingCaller[] = [];
+  for (const groups of byCaller.values()) {
+    // One credential that worked is the caller's success: its other
+    // credentials' failures say nothing of whether the caller can call.
+    if (groups.some((at) => at.failed === 0 || at.failed < at.requests))
+      continue;
+    const [first] = groups;
+    if (first === undefined) continue;
+    callers.push({
+      caller: first.caller,
+      system: first.system,
+      requests: groups.reduce((sum, at) => sum + at.requests, 0),
+      credentials: groups.length,
+      classes: [...new Set(groups.flatMap((at) => [...at.classes]))].sort(),
+    });
+  }
+  return callers
     .filter((c) => c.requests >= FAILING_CALLER_MIN_REQUESTS)
     .sort((a, z) =>
       `${a.system} ${a.caller}`.localeCompare(`${z.system} ${z.caller}`),

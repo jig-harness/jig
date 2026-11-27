@@ -89,7 +89,11 @@ import {
   setDispatcherShare,
 } from "../shared/outbound/budget.ts";
 import { ledgerReport, withCaller } from "../shared/outbound/ledger.ts";
-import { ledgerFindings, systemSpending } from "./lib/outbound-report.ts";
+import {
+  failingCallers,
+  ledgerFindings,
+  systemSpending,
+} from "./lib/outbound-report.ts";
 import { accountsReport } from "./lib/account-report.ts";
 import { hostCodexOptIn } from "./lib/accounts.ts";
 import { defectOf, logDefect } from "./lib/defect.ts";
@@ -646,6 +650,9 @@ async function boundedAct(
   }
 }
 
+/** How far back the ledger is read for the callers whose calls all fail. */
+const FINDINGS_WINDOW_MS = 3 * 3_600_000;
+
 /** The closing steps: the records of repositories not read settled, the outcome log copied, the exit decided, the line written. */
 async function closeTick(
   started: StartedTick,
@@ -698,7 +705,20 @@ async function closeTick(
     currentMs(),
   );
   if (costs.unavailable === true) receipt.outboundUnavailable = true;
-  else Object.assign(receipt, ledgerFindings(costs, currentMs()));
+  else {
+    // The ledger's rows are hourly and a read starts at the hour it falls in,
+    // so a window of three hours holds at least two whole ones: a caller
+    // running every five minutes shows its calls on both sides of an hour.
+    const findings = ledgerReport({
+      since: context.startedMs - FINDINGS_WINDOW_MS,
+    });
+    if (findings.unavailable === true) receipt.outboundUnavailable = true;
+    else
+      Object.assign(receipt, {
+        ...ledgerFindings(costs, currentMs()),
+        failingCallers: failingCallers(findings),
+      });
+  }
   // The dashboard's copy is written here, so it carries the phases timed so far; the receipt file adds `close`.
   receipt.phasesMs = { ...timer.ms };
   writeTickLine(receipt, {
