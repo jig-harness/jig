@@ -112,7 +112,11 @@ import { isoOf, parseMs } from "../../shared/time.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
 export type LaunchAction =
-  "rearm" | "takeover" | "pickup" | "followup" | "steward";
+  | "rearm"
+  | "takeover"
+  | "pickup"
+  | "followup"
+  | "steward";
 
 export { isDrive, isInteractive } from "./launch-kind.ts";
 

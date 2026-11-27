@@ -222,7 +222,9 @@ function driversPart(
   records: ReadRecord[],
   drivers: HostDrivers | undefined,
 ):
-  { drivers: LineDriver[] } | { driversUnread: string } | Record<never, never> {
+  | { drivers: LineDriver[] }
+  | { driversUnread: string }
+  | Record<never, never> {
   if (drivers === undefined) return {};
   if (!drivers.ok) return { driversUnread: drivers.failure.reason };
   return {
