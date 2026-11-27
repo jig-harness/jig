@@ -1553,7 +1553,11 @@ depends on to completion **within the turn**, and do not stop until
 
 The driver sets `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` for spawned passes.
 Claude Code removes background tool parameters and auto-backgrounding under
-this setting; other runtimes follow the foreground rule below. If a pass
+this setting; other runtimes follow the foreground rule below. A process a
+pass leaves running when it exits (a shell `&`, a background terminal) is
+found by the `$DRIVE_PR_PASS_TOKEN` it inherits, stopped, and the pass is
+restarted with a notice that starts `RESTARTED AFTER A PASS LEFT A
+BACKGROUND TASK`, within `drive.pass_deadline_retries`. If a pass
 exits `0` with uncommitted edits and this tree's unverified holds from the
 current round, the driver stops as [`WORKTREE_UNCLEAN`](../../protocol/drive-exits.md), naming the
 unfinished held fixes. This stop does not claim convergence.

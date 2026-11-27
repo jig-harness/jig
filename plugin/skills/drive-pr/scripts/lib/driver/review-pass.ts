@@ -18,6 +18,10 @@ import { launchOf } from "../../../../../shared/launched-session.ts";
 import { CHECK_RUNS_UNREADABLE_EXIT } from "./settings.ts";
 import { driverRuntime } from "./runtime.ts";
 import { incompletePassExit } from "./incomplete-pass.ts";
+import {
+  PASS_TOKEN_VARIABLE,
+  restartAfterPendingTasks,
+} from "./pending-background.ts";
 import { measureStop } from "./stop-measure.ts";
 import { recordProbeStop } from "./../status/probe-stop.ts";
 
@@ -132,6 +136,15 @@ export async function runReviewPassPhase(
   // it inherited is not taken on its word: the next gate measures the tree
   // again (`unpushed.ts`) and hands on any commit it left unpushed.
   if (disposition.kind === "ok") {
+    // A task the pass left running in the background reports to nobody:
+    // restart the pass rather than stop over the fixes it never shipped.
+    const pending = await restartAfterPendingTasks(
+      context,
+      round,
+      (prepared?.env ?? baseEnv)[PASS_TOKEN_VARIABLE] ?? "",
+      passHandle?.pid,
+    );
+    if (pending !== null) return pending;
     const incomplete = await incompletePassExit(context.pr);
     if (incomplete !== null) return incomplete;
     context.settleWorktree = false;

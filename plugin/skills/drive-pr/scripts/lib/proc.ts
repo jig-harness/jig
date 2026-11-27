@@ -522,7 +522,7 @@ function groupGone(pgid: number): boolean {
  * instead of the real kernel-maintained one, the same convention the quota
  * adapters use for their own state directories.
  */
-function procRoot(): string {
+export function procRoot(): string {
   return process.env.DRIVE_PR_PROC_ROOT ?? "/proc";
 }
 
@@ -535,7 +535,9 @@ function procRoot(): string {
  * first — which is the same defensive parse the kernel's own documentation
  * recommends for this exact reason.
  */
-function parseProcStat(text: string): { state: string; pgrp: number } | null {
+export function parseProcStat(
+  text: string,
+): { state: string; pgrp: number } | null {
   const closeParen = text.lastIndexOf(")");
   if (closeParen === -1) return null;
   const fields = text
