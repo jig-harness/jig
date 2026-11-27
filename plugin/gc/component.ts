@@ -15,6 +15,7 @@ import { scheduledStatus } from "../runtime/job-status.ts";
 import { type GcArguments, gcCommand, gcMain, showReceipts } from "./cli.ts";
 import { gcConfiguration } from "./config.ts";
 import {
+  admissionTokenCheck,
   fixtureRegistryCheck,
   stateInodeCheck,
 } from "../shared/fixture-health.ts";
@@ -92,6 +93,7 @@ export const gcComponent: Component<GcArguments> = {
     machineFileCheck(),
     fixtureRegistryCheck(),
     stateInodeCheck(),
+    admissionTokenCheck(),
   ],
   receipts: showReceipts,
 };
