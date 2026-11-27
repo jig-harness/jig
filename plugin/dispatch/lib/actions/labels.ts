@@ -295,6 +295,46 @@ async function waitsFor(
   return (await mode.current?.(change)) ?? null;
 }
 
+type Refusal = { why: string; missing: string[] } | null;
+
+/**
+ * Write once, then, while the forge names labels the repository lacks and the
+ * tick may create them, create those and write again. A single edit can name
+ * its missing labels one at a time, so retry no more often than the labels it
+ * adds, keeping creation de-duplication and the tick's deadline and freshness
+ * guard between remote calls. `early` is the outcome that ends the change.
+ */
+async function retryMissing(
+  change: LabelChange,
+  key: string,
+  mode: WriteMode,
+  creator: ReturnType<typeof labelCreator>,
+  attempt: (change: LabelChange) => Promise<Refusal>,
+): Promise<{
+  refusal: Refusal;
+  early: { outcome: "failed" | "waits"; detail: string } | null;
+}> {
+  let refusal = await attempt(change);
+  for (
+    let retries = 0;
+    creator !== null && retries < change.add.length;
+    retries++
+  ) {
+    const missing = refusal?.missing ?? [];
+    if (missing.length === 0 || !missing.every(creator.knows)) break;
+    const uncreated = await creator.ensure(missing);
+    if (uncreated !== null) {
+      const detail = `${describe(change)} was refused, and a later tick tries again: ${uncreated}`;
+      return { refusal: null, early: { outcome: "failed", detail } };
+    }
+    const wait = await waitsFor(change, key, mode);
+    if (wait !== null)
+      return { refusal: null, early: { outcome: "waits", detail: wait } };
+    refusal = await attempt(change);
+  }
+  return { refusal, early: null };
+}
+
 /** Write each change in one call, in pull request order; each outcome goes into the receipt. */
 export async function writeLabels(
   slug: string,
@@ -304,9 +344,7 @@ export async function writeLabels(
 ): Promise<LabelWrite[]> {
   const out: LabelWrite[] = [];
   const creator = labelCreator(slug, mode.create, mode.book);
-  const attempt = async (
-    change: LabelChange,
-  ): Promise<{ why: string; missing: string[] } | null> => {
+  const attempt = async (change: LabelChange): Promise<Refusal> => {
     try {
       const edited = await edit(slug, change.pr, change.add, change.remove);
       if (edited.ok) return null;
@@ -332,39 +370,12 @@ export async function writeLabels(
       continue;
     }
     const of = { key, kind: "label" as const, target: base.target };
-    let refusal = await attempt(change);
-    let emitted = false;
-    // A single edit can name its missing labels one at a time.  Retry no more
-    // often than the labels this edit adds, preserving creation de-duplication
-    // and the tick's deadline/freshness guard between remote calls.
-    for (
-      let retries = 0;
-      creator !== null && retries < change.add.length;
-      retries++
-    ) {
-      const missing = refusal?.missing ?? [];
-      if (missing.length === 0 || !missing.every(creator.knows)) break;
-      const uncreated = await creator.ensure(missing);
-      if (uncreated !== null) {
-        out.push({
-          ...base,
-          outcome: "failed",
-          detail: `${describe(change)} was refused, and a later tick tries again: ${uncreated}`,
-        });
-        emitted = true;
-        refusal = null;
-        break;
-      }
-      const retryWait = await waitsFor(change, key, mode);
-      if (retryWait !== null) {
-        out.push({ ...base, outcome: "waits", detail: retryWait });
-        emitted = true;
-        refusal = null;
-        break;
-      }
-      refusal = await attempt(change);
+    const retried = await retryMissing(change, key, mode, creator, attempt);
+    if (retried.early !== null) {
+      out.push({ ...base, ...retried.early });
+      continue;
     }
-    if (emitted) continue;
+    const refusal = retried.refusal;
     if (refusal === null) {
       out.push({ ...base, outcome: "written", detail: describe(change) });
       mode.book?.ran(of, null);
