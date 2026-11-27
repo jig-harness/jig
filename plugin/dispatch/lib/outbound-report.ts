@@ -415,7 +415,9 @@ export function failingCallers(report: LedgerReport): FailingCaller[] {
       system: first.system,
       requests: groups.reduce((sum, at) => sum + at.requests, 0),
       credentials: groups.length,
-      classes: [...new Set(groups.flatMap((at) => [...at.classes]))].sort(),
+      classes: [...new Set(groups.flatMap((at) => [...at.classes]))].sort(
+        (a, z) => a.localeCompare(z),
+      ),
     });
   }
   return callers
