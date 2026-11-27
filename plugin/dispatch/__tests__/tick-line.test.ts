@@ -104,6 +104,28 @@ function storedLine(
   }
 }
 
+/** The need rows of the outcome log, in the order they were written. */
+function needRows(w: World): Array<{
+  event: string;
+  target: string;
+  reason: string;
+  at: string;
+  release?: string;
+}> {
+  const db = database(w);
+  try {
+    return (
+      db
+        .query(
+          "SELECT row FROM log WHERE json_extract(row, '$.event') IN ('need-opened', 'need-closed') ORDER BY seq",
+        )
+        .all() as Array<{ row: string }>
+    ).map((r) => JSON.parse(r.row));
+  } finally {
+    db.close();
+  }
+}
+
 async function tick(
   w: World,
   exit = 0,
@@ -356,6 +378,26 @@ describe("the line a tick leaves", () => {
     expect(JSON.parse(asked.stdout).settled).toContainEqual(
       expect.objectContaining({ targets: ["PR #7"], by: "facts" }),
     );
+    // One tick's absence leaves the need open in the log; a second closes it.
+    expect(needRows(w)).toEqual([
+      expect.objectContaining({ event: "need-opened", target: "PR #7" }),
+    ]);
+    await tick(w);
+    const rows = needRows(w);
+    expect(rows.map((r) => r.event)).toEqual(["need-opened", "need-closed"]);
+    expect(rows[1]).toMatchObject({
+      target: "PR #7",
+      reason: expect.stringContaining("its facts changed"),
+    });
+    expect(rows[1]?.at).toBe(
+      storedLine(w)?.line.settled?.find((e) => e.targets[0] === "PR #7")?.at,
+    );
+    // Every row names the release that wrote it.
+    expect(rows.every((r) => typeof r.release === "string")).toBe(true);
+    expect(storedLine(w)?.receipt.release).toBe(rows[0]?.release);
+    // A need that does not return stays closed: no further rows.
+    await tick(w);
+    expect(needRows(w)).toHaveLength(2);
   });
 
   it("names the parked drive's workspace without a running session in the JSON line", async () => {

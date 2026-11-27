@@ -637,6 +637,24 @@ export const MIGRATIONS: readonly Migration[] = [
     WHERE outcome IN ('held', 'refused');
   `,
   },
+  {
+    // The needs the log holds open (`need-rows.ts`): a need's open row is written when it first appears, its close row once it has been absent from two ticks' lines. The log's rows name the release that wrote them, a column the dashboard counts by.
+    additive: true,
+    sql: `
+  CREATE TABLE need_open (
+    repo TEXT NOT NULL,
+    target TEXT NOT NULL,
+    cause TEXT NOT NULL,
+    covers TEXT NOT NULL,
+    opened_key TEXT NOT NULL,
+    opened_at TEXT NOT NULL,
+    absent_at TEXT,
+    PRIMARY KEY (repo, target, cause)
+  );
+  ALTER TABLE log ADD COLUMN release TEXT;
+  CREATE INDEX log_release ON log (release) WHERE release IS NOT NULL;
+  `,
+  },
 ];
 
 /** The schema version this plugin writes. */

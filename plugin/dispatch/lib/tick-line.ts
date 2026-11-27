@@ -31,6 +31,7 @@ import {
   pruneLeaves,
   readSettled,
 } from "./need-leaves.ts";
+import { recordNeedRows } from "./need-rows.ts";
 import {
   driversOf,
   type HostDriver,
@@ -77,7 +78,7 @@ import { failureText } from "./text.ts";
 import { tickHealthOf, withTick } from "./tick-health.ts";
 import { readStateStorage, stateStorageNeeds } from "./state-storage-need.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
-import type { TickReceipt } from "../receipts.ts";
+import { receiptJson, type TickReceipt } from "../receipts.ts";
 import type { ClaimedItem, DrivenPr, RepoReport, WantedItem } from "./types.ts";
 import { type PrLinkText, workLinks } from "./work-links.ts";
 import type { IssueKeys } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
@@ -275,6 +276,7 @@ function writeWithParks(
       );
     }
     pruneLeaves(db, nowMs);
+    recordNeedRows(db, line.needs, line.finishedAt);
     writeLine(
       {
         ...line,
@@ -597,7 +599,7 @@ function writeKept(
       writeWithParks(
         withLoad({ ...line, ticks }, receipt),
         parked,
-        receiptText ?? JSON.stringify(receipt, null, 2),
+        receiptText ?? receiptJson(receipt),
         before?.needs ?? null,
         leaveEvidence(reports, tick.inputs, parked, receipt.apply),
       );

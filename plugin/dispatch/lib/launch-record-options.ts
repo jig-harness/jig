@@ -166,3 +166,34 @@ function optionalBooleans(
     (key) => value[key] === undefined || typeof value[key] === "boolean",
   );
 }
+
+export function isWorkspace(value: unknown): boolean {
+  return (
+    value === null ||
+    (isMapping(value) &&
+      typeof value.id === "string" &&
+      typeof value.path === "string" &&
+      (value.branch === undefined || typeof value.branch === "string"))
+  );
+}
+
+export function hasStrings(
+  value: Record<string, unknown>,
+  keys: string[],
+): boolean {
+  return keys.every((k) => typeof value[k] === "string");
+}
+
+/** What a record names: a pull request for a drive or a follow-up, an item for a pickup. */
+export function namesTarget(value: Record<string, unknown>): boolean {
+  if (value.action === "steward")
+    return value.pr === null && value.item === null;
+  if (value.action === "pickup")
+    return typeof value.item === "string" && value.item !== "";
+  return (
+    (value.action === "rearm" ||
+      value.action === "takeover" ||
+      value.action === "followup") &&
+    typeof value.pr === "number"
+  );
+}

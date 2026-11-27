@@ -54,10 +54,16 @@ import {
 } from "../../shared/agent-harness/index.ts";
 import { ordinalAnchors } from "./account-ordinal.ts";
 import { relaunchAnchors } from "./pickup-relaunch.ts";
-import { optionalLaunchFields } from "./launch-record-options.ts";
+import {
+  hasStrings,
+  isWorkspace,
+  namesTarget,
+  optionalLaunchFields,
+} from "./launch-record-options.ts";
 import { readNext, type NextOwner } from "./next-owner.ts";
 import { type FramedResult, framedOf } from "./framed-result.ts";
 import { type KeptReport, readKeptReport } from "./closing-report-store.ts";
+import { releaseOf } from "./release.ts";
 import { readRoundSessions, type RoundSession } from "./round-sessions.ts";
 import {
   type PickupRefusal,
@@ -145,6 +151,8 @@ export interface LaunchRecord {
   relaunchLockWait?: true;
   version: 1;
   id: string;
+  /** The plugin release that launched it (`release.ts`), stamped when the record is first written; absent on a record written before releases were named. */
+  release?: string;
   token: string;
   runtime?: "process";
   action: LaunchAction;
@@ -371,21 +379,27 @@ export function newToken(): string {
  */
 export function writeRecord(record: LaunchRecord, root = stateRoot()): void {
   const { samples: _samples, episodes: _episodes, ...tick } = record;
-  stateDb(root)
-    .query(
-      `INSERT INTO launches (id, repo, action, pr, item, created_at, record)
+  const db = stateDb(root);
+  // The release in effect at launch is the one that first writes the record; a rewrite by another release keeps it.
+  const first =
+    db.query("SELECT 1 FROM launches WHERE id = ?").get(record.id) === null;
+  if (first && tick.release === undefined) {
+    const release = releaseOf();
+    if (release !== undefined) tick.release = release;
+  }
+  db.query(
+    `INSERT INTO launches (id, repo, action, pr, item, created_at, record)
        VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (id) DO UPDATE SET record = excluded.record`,
-    )
-    .run(
-      record.id,
-      record.repo,
-      record.action,
-      record.pr,
-      record.item,
-      record.createdAt,
-      JSON.stringify(tick),
-    );
+  ).run(
+    record.id,
+    record.repo,
+    record.action,
+    record.pr,
+    record.item,
+    record.createdAt,
+    JSON.stringify(tick),
+  );
 }
 
 /** A column's JSON, `undefined` when the column is empty, `null` when it does not parse. */
@@ -397,34 +411,6 @@ function parseJson(text: string | null, what: string): unknown {
     swallow(error, `${what} does not read`);
     return null;
   }
-}
-
-function isWorkspace(value: unknown): boolean {
-  return (
-    value === null ||
-    (isMapping(value) &&
-      typeof value.id === "string" &&
-      typeof value.path === "string" &&
-      (value.branch === undefined || typeof value.branch === "string"))
-  );
-}
-
-function hasStrings(value: Record<string, unknown>, keys: string[]): boolean {
-  return keys.every((k) => typeof value[k] === "string");
-}
-
-/** What a record names: a pull request for a drive or a follow-up, an item for a pickup. */
-function namesTarget(value: Record<string, unknown>): boolean {
-  if (value.action === "steward")
-    return value.pr === null && value.item === null;
-  if (value.action === "pickup")
-    return typeof value.item === "string" && value.item !== "";
-  return (
-    (value.action === "rearm" ||
-      value.action === "takeover" ||
-      value.action === "followup") &&
-    typeof value.pr === "number"
-  );
 }
 
 /** Whether a parsed value reads as a launch record (the tick's part, as stored). */
