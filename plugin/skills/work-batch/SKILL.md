@@ -85,7 +85,7 @@ Work the issue alone with [`/jig:do-item`](../do-item/SKILL.md) when:
 items, their served tracker identity and each inherited item's ancestor
 epic. That set is the maximum scope; do not add siblings. Use the first named key as the anchor. Run the proposal
 and its revalidation with every fixed key, in the launch's order, in
-`--fixed`, and with the launch's `--missing-priority` value: the script
+`--fixed`, and with the launch's `--missing-priority` value (`hold` or `start`): the script
 reads only those items, and their existing served assignment does not
 exclude them. That value is the `dispatch.missing_priority` the dispatcher
 read from the default branch; never read the setting from this workspace's
@@ -139,7 +139,7 @@ member keys out so the dispatcher shows one question for the batch.
 Never choose for them.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" "<anchor>" [--budget N] [--limit N] [--claimed "KEY,KEY"] [--fixed "KEY,KEY" [--missing-priority hold|start]] [--format json]
+bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" "<anchor>" [--budget N] [--limit N] [--claimed "KEY,KEY"] [--fixed "KEY,KEY" [--missing-priority POLICY]] [--format json]
 ```
 
 `<anchor>` is one of:

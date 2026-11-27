@@ -66,7 +66,11 @@ function propose(policy?: string) {
   expectSpawnExit(result, 0, "candidates.ts");
   return JSON.parse(result.stdout.toString()) as {
     candidates: unknown[];
-    alone?: { claim: string | null; heldForPriority: string[] };
+    alone?: {
+      missingPriority: string;
+      claim: string | null;
+      heldForPriority: string[];
+    };
   };
 }
 
