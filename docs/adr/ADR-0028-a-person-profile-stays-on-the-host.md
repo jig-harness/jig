@@ -122,6 +122,14 @@ link or parent directory swapped at any point up to the end of the Git check
 is a refusal, and a swap after it cannot change what is read, since every
 byte comes from the already-open file.
 
+The invariant is what is read, not where the path points: every byte comes
+from one open file, and the Git check and the identity comparisons are
+refusals about that file's identity, not guards on the path. The reader
+does not defend against a process that can write the profile's own
+directory or a parent of it. Such a process can already replace the profile
+with any content, so a swap race gives it nothing the write access did not.
+The profile directory is owner-only on the host.
+
 ### 2. One schedule and time-zone primitive (ruling 2A-i)
 
 The weekly-window parser in `plugin/shared/off-hours.ts` will be promoted to
