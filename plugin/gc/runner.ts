@@ -215,7 +215,8 @@ function failKind(receipt: Receipt, { kind, failure }: KindFailure): void {
   if (!named)
     receipt.kinds.push({
       name: kind,
-      declaration: "none: no repository declares this kind",
+      declaration:
+        "none: the plan names no repository for this kind (undeclared, disabled on the machine, or not selected by this run)",
       status: "failed",
       reason: failure.reason,
     });
