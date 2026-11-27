@@ -404,6 +404,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.312.1] - 2026-11-27
+
+### Fixed
+
+- With `runtime: process`, a dispatch tick no longer scans the host's processes once per worktree, each scan a blocking spawn on the event loop every repository's observe shares. Listing a repository's sessions scans once, without blocking, and every worktree is judged on that one answer, so a small repository's runtime phase no longer waits behind other repositories' scans. The holders found and the handling of an incomplete scan are unchanged. To see the effect, read the `runtime` figure of each repository's `took` line in `jig receipts dispatch <date>` before and after the upgrade. **Consumer action:** none.
+
 ## [0.312.0] - 2026-11-27
 
 ### Added
@@ -11224,7 +11230,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.312.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.312.1...HEAD
+[0.312.1]: https://github.com/jig-harness/jig/compare/v0.312.0...v0.312.1
 [0.312.0]: https://github.com/jig-harness/jig/compare/v0.311.3...v0.312.0
 [0.311.3]: https://github.com/jig-harness/jig/compare/v0.311.2...v0.311.3
 [0.311.2]: https://github.com/jig-harness/jig/compare/v0.311.1...v0.311.2
