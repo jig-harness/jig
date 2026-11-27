@@ -25,9 +25,9 @@ const ANY_LOGIN = new RegExp(`^${GITHUB_LOGIN_SOURCE}${BOT_SUFFIX_SOURCE}$`);
 /**
  * Whether `value` is a bare GitHub login: no `@`, whitespace, slash or other
  * character a login cannot hold. An App's `[bot]` suffix is accepted only
- * with `bot: true`, where the caller takes bot accounts; owners and people a
- * forge user stands for leave it out. Compare logins without case
- * (`uniqueLogins`).
+ * with `bot: true`, for a caller that takes bot accounts; a caller that
+ * reads only a person's or an owner's login leaves it out. Compare logins
+ * without case (`uniqueLogins`).
  */
 export function isGithubLogin(
   value: unknown,
