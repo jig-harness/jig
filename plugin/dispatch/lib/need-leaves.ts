@@ -78,29 +78,35 @@ export interface LeaveEvidence {
   open: ReadonlyMap<string, readonly number[] | null>;
 }
 
+/** What identifies a need across ticks. */
+export type NeedIdentity = Pick<
+  LineNeed,
+  "repo" | "target" | "cause" | "covers"
+>;
+
 const keyOf = (n: Pick<LineNeed, "repo" | "target" | "cause">): string =>
   `${n.repo}\u0000${n.target}\u0000${n.cause}`;
 
 /** The items a need is about: its target, and for a group of releases every item it lists. */
-const itemsOf = (n: LineNeed): string[] => [n.target, ...(n.covers ?? [])];
+const itemsOf = (n: NeedIdentity): string[] => [n.target, ...(n.covers ?? [])];
+
+/** Whether `later` is `earlier` still: the same repository, target and cause, or (a group of releases whose target moved on) the same cause listing an item it did before. */
+export function continues(earlier: NeedIdentity, later: NeedIdentity): boolean {
+  if (keyOf(earlier) === keyOf(later)) return true;
+  return (
+    later.repo === earlier.repo &&
+    later.cause === earlier.cause &&
+    (earlier.covers ?? []).length > 0 &&
+    itemsOf(later).some((item) => itemsOf(earlier).includes(item))
+  );
+}
 
 /** The needs of `before` that `after` no longer holds. A group of releases whose target moved on but still lists an item it did before is the same need. */
 export function leftNeeds(
   before: readonly LineNeed[],
   after: readonly LineNeed[],
 ): LineNeed[] {
-  const kept = new Set(after.map(keyOf));
-  return before.filter(
-    (n) =>
-      !kept.has(keyOf(n)) &&
-      !after.some(
-        (a) =>
-          a.repo === n.repo &&
-          a.cause === n.cause &&
-          (n.covers ?? []).length > 0 &&
-          itemsOf(a).some((item) => itemsOf(n).includes(item)),
-      ),
-  );
+  return before.filter((n) => !after.some((a) => continues(n, a)));
 }
 
 /** The question or act a need carried, in the words it carries. */

@@ -404,6 +404,21 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.314.0] - 2026-11-27
+
+The dispatcher's outcome log now records a need's life, and every record names the release that ran it.
+
+The dispatch dashboard serves a scoreboard by release and the live checks.
+
+### Added
+
+- The outcome log gets a `need-opened` row when a need first appears on the line and a `need-closed` row when it has left, written whatever the notify stage did. A need absent from a single tick (a read that failed, a forge that did not answer) stays open: it closes only when it is absent from two ticks in a row, timed at the first, and its close row says how long it was open and how it left. The log's text copy and `jig dispatch log --jsonl` print the rows. **Consumer action:** none.
+- Every tick receipt, launch record and outcome log row carries a `release` field, the plugin version that wrote it. A run counts under the release in effect when it was launched: its ended row names the launch record's release, not the release installed when it ended. Records written before the field read without it. The log table gets a `release` column for counting by release. **Consumer action:** none.
+- `jig upgrade --scheduled` appends each upgrade that updated the plugin or failed to `~/.local/state/jig/upgrade/history.jsonl`, one line each. The upgrade never rewrites or prunes the file, so the releases a machine ran, and when each began, stay readable after the receipts that held them expire. **Consumer action:** none.
+- `GET /scoreboard` gives six numbers for each release that ran something in the last 7 or 30 days: merged pull requests, answers per merge, median need age, session-hours not converged, idle slot-hours and median rounds. A record counts under the release it names; records that name none count under `null`. It also names an end cause that no run had in the 14 days before, once three runs under one release ended with it.
+- `GET /checks` serves the live-check report, and answers `checks-unavailable` while this release has none.
+- Both only read, and answer under the dashboard's token and host checks.
+
 ## [0.313.4] - 2026-11-27
 
 ### Fixed
@@ -11362,7 +11377,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.313.4...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.314.0...HEAD
+[0.314.0]: https://github.com/jig-harness/jig/compare/v0.313.4...v0.314.0
 [0.313.4]: https://github.com/jig-harness/jig/compare/v0.313.3...v0.313.4
 [0.313.3]: https://github.com/jig-harness/jig/compare/v0.313.2...v0.313.3
 [0.313.2]: https://github.com/jig-harness/jig/compare/v0.313.1...v0.313.2
