@@ -7,7 +7,7 @@
  *     bun tracker.ts children <issue-key>
  *     bun tracker.ts transition <issue-key> <canonical-state> [--post-merge]
  *     bun tracker.ts post-merge                   # where the post-merge rule stops
- *     bun tracker.ts claim <issue-key>
+ *     bun tracker.ts claim <issue-key> [--override-blockers <reason>] [--work-batch]
  *     bun tracker.ts comment <issue-key> --body-file body.md
  *     bun tracker.ts states                       # canonical → tracker names
  *     bun tracker.ts issue-states                 # item keys on stdin → open/closed
@@ -60,6 +60,16 @@
  * `"unresolved"` stand it down (exit 4), the last leaving the item for a
  * person. `"marker"` in the JSON says whether the read after the write
  * confirmed it.
+ *
+ * A claim without `--for` or `--factory-ancestor` refuses an item with an
+ * open or unreadable `blocked_by` relation (exit 3, `"why": "blockers"`).
+ * `--override-blockers <reason>`, a person's decision in an interactive
+ * session (`lib/claim-options.ts` refuses it under `JIG_LAUNCH`, with
+ * `--for`, `--factory-ancestor` or `--work-batch`, exit 2), clears that
+ * refusal and a preflight refusal tagged `kind: blockers`, nothing else; the
+ * claim then records the override (`lib/blocker-override.ts`) and prints it
+ * as `"override"` in its JSON. `--work-batch` marks a work-batch member's
+ * claim and changes nothing else.
  *
  * Canonical states: backlog, todo, in_progress, in_review, done, canceled,
  * and where the consumer uses them triage, pr_open, blocked, ops_pending,
@@ -145,6 +155,19 @@ import {
 import { withClaimLock } from "./lib/claim-lock.ts";
 import { claimIssue, claimStillStands } from "./lib/claim.ts";
 import { blockedClaimRefusal } from "./lib/blocked-claim.ts";
+import {
+  type BlockerGate,
+  blockerGate,
+  markerOverride,
+  withOverrideRecorded,
+} from "./lib/blocker-override.ts";
+import {
+  CLAIM_VALUED_OPTION,
+  type ClaimOptions,
+  WORK_BATCH_FLAG,
+  claimOptions,
+  normalizeClaimOptions,
+} from "./lib/claim-options.ts";
 import { getIssue } from "./get_issue.ts";
 import {
   claimPreflightCommand,
@@ -165,7 +188,7 @@ import {
 import { consumerRoot, readOverlay } from "../../../shared/consumer.ts";
 import { syncPlanBlocks } from "./lib/plan-blocks.ts";
 import { executionPlanBlock } from "./select_execution_issue.ts";
-import { runEntry } from "./lib/cli.ts";
+import { runEntry, UsageError } from "./lib/cli.ts";
 import { ATTACHMENT_OPERATIONS } from "./lib/attachment-ops.ts";
 import { footprintOperations } from "./lib/footprint-ops.ts";
 import { ownTrackerConfig } from "./lib/tracker/config.ts";
@@ -192,7 +215,7 @@ import { currentMs, isoFromMs } from "../../../shared/time.ts";
 const USAGE = `usage:
   tracker.ts children <issue-key>
   tracker.ts transition <issue-key> <canonical-state>
-  tracker.ts claim <issue-key>
+  tracker.ts claim <issue-key> [--override-blockers <reason>] [--work-batch]
   tracker.ts comment <issue-key>   (body on stdin)
   tracker.ts states
   tracker.ts issue-states          (item keys on stdin, one per line)
@@ -233,8 +256,7 @@ function usage(message: string): number {
   return 2;
 }
 
-/** Input the caller got wrong: reported as usage (exit 2), not a failure. */
-export class UsageError extends Error {}
+export { UsageError };
 
 /** What a JSON field must hold, and how a usage error names it. */
 interface Kind {
@@ -417,10 +439,13 @@ interface Operation {
  */
 async function claim(
   key: string,
-  person: string | undefined,
-  ancestor: string | undefined,
-  blocking: string | undefined,
-  factoryAncestor: string | undefined,
+  {
+    person,
+    ancestor,
+    blocking,
+    factoryAncestor,
+    overrideBlockers,
+  }: ClaimOptions,
 ): Promise<unknown> {
   const config = ownTrackerConfig();
   const shape = issueKeysOf(config);
@@ -446,18 +471,12 @@ async function claim(
   if (factoryIdentity !== null && !factoryIdentity.ok)
     return unreadablePreflight(normalized, factoryIdentity.failure.reason);
   // Before the lock and before any write: a refusal leaves nothing behind.
-  const command = await claimPreflightCommand(root, overlay);
-  if (!command.ok)
-    return unreadablePreflight(normalized, command.failure.reason);
-  const refusal =
-    command.value === null
-      ? null
-      : await preflightClaim(root, command.value, normalized, () =>
-          getIssue(normalized, tracker, shape),
-        );
-  if (refusal !== null) return refusal;
-  const blocked = await blockedClaimRefusal(tracker, normalized);
-  if (blocked !== null) return blocked;
+  const rules = await startRules(tracker, root, overlay, normalized, shape, {
+    plain: !person && !factoryAncestor,
+    overrideBlockers,
+  });
+  if ("refusal" in rules) return rules.refusal;
+  const override = rules.override;
   const factory = await factoryClaimOptions(
     tracker,
     factoryAncestor,
@@ -505,7 +524,12 @@ async function claim(
       return claimWithMarker(
         tracker,
         normalized,
-        { session: claimSession(), branch: await claimBranch(root), claimant },
+        {
+          session: claimSession(),
+          branch: await claimBranch(root),
+          claimant,
+          ...markerOverride(override),
+        },
         body,
         undefined,
         async (claimed) =>
@@ -517,7 +541,50 @@ async function claim(
     },
   );
   if (result.outcome === "claimed") noteDispatchedClaim(result.issue);
-  return result;
+  return withOverrideRecorded(
+    tracker,
+    result,
+    override,
+    settings.overrideLabel,
+  );
+}
+
+/**
+ * The repository's start rules a claim checks before its lock: the
+ * preflight command, the `blocked` state, then a plain claim's open
+ * blockers, which the person's `--override-blockers` may clear.
+ */
+async function startRules(
+  tracker: ReturnType<typeof openTracker>,
+  root: string,
+  overlay: Record<string, unknown> | null,
+  key: string,
+  shape: ReturnType<typeof issueKeysOf>,
+  options: { plain: boolean; overrideBlockers: string | undefined },
+): Promise<BlockerGate> {
+  const command = await claimPreflightCommand(root, overlay);
+  if (!command.ok)
+    return { refusal: unreadablePreflight(key, command.failure.reason) };
+  const preflight =
+    command.value === null
+      ? null
+      : await preflightClaim(
+          root,
+          command.value,
+          key,
+          () => getIssue(key, tracker, shape),
+          options.overrideBlockers !== undefined,
+        );
+  if (preflight !== null && preflight.outcome !== "overridden")
+    return { refusal: preflight };
+  const blocked = await blockedClaimRefusal(tracker, key);
+  if (blocked !== null) return { refusal: blocked };
+  return blockerGate(tracker, key, {
+    plain: options.plain,
+    reason: options.overrideBlockers,
+    preflight: preflight?.reason ?? null,
+    person: async () => (await tracker.viewer()).name,
+  });
 }
 
 /** Assemble inherited factory authority separately from the write held under the claim lock. */
@@ -674,56 +741,8 @@ const OPERATIONS: Record<string, Operation> = {
   claim: {
     arity: 1,
     takes: "one issue key",
-    run: async ([key], flags) => {
-      const forFlags = [...flags].filter((f) => f.startsWith("--for"));
-      const ancestorFlags = [...flags].filter((f) =>
-        f.startsWith("--ancestor"),
-      );
-      const blockingFlags = [...flags].filter((f) =>
-        f.startsWith("--blocking"),
-      );
-      if (
-        forFlags.some((f) => !f.startsWith("--for=") || f.length === 6) ||
-        ancestorFlags.some(
-          (f) => !f.startsWith("--ancestor=") || f.length === 11,
-        ) ||
-        blockingFlags.some(
-          (f) => !f.startsWith("--blocking=") || f.length === 11,
-        ) ||
-        forFlags.length > 1 ||
-        ancestorFlags.length > 1 ||
-        blockingFlags.length > 1
-      )
-        throw new UsageError(
-          "claim accepts one nonempty --for=PERSON, --ancestor=ISSUE and --blocking=ISSUE",
-        );
-      const factoryFlags = [...flags].filter((f) =>
-        f.startsWith("--factory-ancestor"),
-      );
-      if (
-        factoryFlags.length > 1 ||
-        factoryFlags.some(
-          (f) => !f.startsWith("--factory-ancestor=") || f.length === 19,
-        )
-      )
-        throw new UsageError(
-          "claim accepts one nonempty --factory-ancestor=ISSUE",
-        );
-      const factoryAncestor = factoryFlags[0]?.slice(19);
-      if (
-        factoryAncestor &&
-        (forFlags.length || ancestorFlags.length || blockingFlags.length)
-      )
-        throw new UsageError(
-          "--factory-ancestor cannot be combined with served claim options",
-        );
-      const person = forFlags[0]?.slice(6);
-      const ancestor = ancestorFlags[0]?.slice(11);
-      const blocking = blockingFlags[0]?.slice(11);
-      if ((ancestor || blocking) && !person)
-        throw new UsageError("--ancestor and --blocking require --for");
-      return claim(key as string, person, ancestor, blocking, factoryAncestor);
-    },
+    flags: [WORK_BATCH_FLAG],
+    run: async ([key], flags) => claim(key as string, claimOptions(flags)),
     exitOf: (out) => {
       const result = out as Awaited<ReturnType<typeof claimIssue>>;
       if (result.outcome !== "claimed") console.error(result.reason);
@@ -898,13 +917,7 @@ function operationArguments(op: Operation, name: string, rest: string[]) {
   const unknown = flags.filter(
     (flag) =>
       !allowed.has(flag) &&
-      !(
-        name === "claim" &&
-        (/^--for=.+/.test(flag) ||
-          /^--ancestor=.+/.test(flag) ||
-          /^--blocking=.+/.test(flag) ||
-          /^--factory-ancestor=.+/.test(flag))
-      ),
+      !(name === "claim" && CLAIM_VALUED_OPTION.test(flag)),
   );
   if (unknown.length)
     throw new UsageError(`unknown option: ${unknown.join(", ")}`);
@@ -943,31 +956,6 @@ function reportFailure(error: unknown): number {
   const { code, line } = failureExit(error);
   console.error(line);
   return code;
-}
-
-/** Normalize valued claim options before generic positional/flag validation. */
-function normalizeClaimOptions(rest: string[]): void {
-  for (const flag of [
-    "--for",
-    "--ancestor",
-    "--blocking",
-    "--factory-ancestor",
-  ]) {
-    const index = rest.indexOf(flag);
-    if (index === -1) continue;
-    const value = rest[index + 1];
-    if (!value || value.startsWith("--"))
-      throw new UsageError(`${flag} requires an identity or issue key`);
-    rest.splice(index, 2, `${flag}=${value}`);
-  }
-  for (const flag of [
-    "--for=",
-    "--ancestor=",
-    "--blocking=",
-    "--factory-ancestor=",
-  ])
-    if (rest.filter((v) => v.startsWith(flag)).length > 1)
-      throw new UsageError("duplicate claim option");
 }
 
 export async function main(argv: string[]): Promise<number> {

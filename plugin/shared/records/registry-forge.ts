@@ -299,7 +299,7 @@ export const TRACKER: RecordKind[] = [
     version: 1,
     key: CLAIM_MARKER_KEY,
     meaning:
-      "The token a claim posts on an item before it writes the item, naming the claim's attempt, its session, its branch and the claimant, so another tool sees which session holds the item, and of two hosts claiming it at once the earliest marker wins; beside it, each attempt records once how it ended (claimed, released or unresolved), and a marker whose attempt recorded released or unresolved holds nothing.",
+      "The token a claim posts on an item before it writes the item, naming the claim's attempt, its session, its branch and the claimant, so another tool sees which session holds the item, and of two hosts claiming it at once the earliest marker wins; a claim a person started ahead of the item's open blockers adds an override naming their reason, the person and each blocker's key and state, which never decides who holds the item; beside it, each attempt records once how it ended (claimed, released or unresolved), and a marker whose attempt recorded released or unresolved holds nothing.",
   },
   {
     name: "tracker-related",

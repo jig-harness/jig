@@ -5,6 +5,7 @@ import {
   claimFromRefusal,
 } from "./claim.ts";
 import { blocksWithin } from "./blocker-chain.ts";
+import { blockerHolds } from "./blocker-override.ts";
 import { servedParentHold } from "../../../../dispatch/lib/sources/served-parents.ts";
 import type {
   AssignmentResult,
@@ -63,11 +64,7 @@ async function blockedReason(
 ): Promise<string | null> {
   for (const relation of await tracker.listRelations(key)) {
     if (relation.type !== "blocked_by") continue;
-    const blocker = await tracker.poolIssue(relation.issue);
-    if (
-      !blocker ||
-      !["completed", "canceled", "duplicate"].includes(blocker.state.type)
-    )
+    if (blockerHolds(await tracker.poolIssue(relation.issue)))
       return `waiting on ${relation.issue}`;
   }
   return null;

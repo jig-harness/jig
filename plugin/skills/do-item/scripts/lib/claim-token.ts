@@ -106,7 +106,7 @@ export type TokenTracker = Pick<
 /** What the marker names, beside the time and the attempt this module fills in. */
 export type MarkerFacts = Pick<
   ClaimMarkerFacts,
-  "session" | "branch" | "claimant"
+  "session" | "branch" | "claimant" | "override"
 >;
 
 /** What the claim's JSON says of the marker. */

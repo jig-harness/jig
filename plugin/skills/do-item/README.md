@@ -195,6 +195,28 @@ can (`do_item.claim_marker`, below): set it wherever more than one host
 picks up from one queue. The dispatcher's double-claim watch stays as the
 backstop.
 
+### Starting ahead of open blockers
+
+A claim of the skill's own (without `--for` or `--factory-ancestor`) also
+refuses an item with an open blocker: a `blocked_by` relation to an item
+that is not finished, or one that cannot be read, since an unreadable
+blocker is not known to be finished. Nothing is written. When a person
+knowingly decides to start the work anyway, they say so in an interactive
+session, and the claim runs again with `--override-blockers "<reason>"`.
+That clears the blocker refusal, and a preflight refusal the repository's
+command marks as one for blockers alone, and nothing else. Before it
+writes, the claim prints the open blockers and what starting early risks:
+the work may depend on changes that do not exist yet or may still change,
+may need rework when they land, and may not be safe to merge before them.
+Once the claim lands, a comment on the item records the person, the reason
+and the blockers; the label `do_item.override_label` names is added where
+the repository sets one; the claim marker carries the same facts; and the
+pull request gets a `## Blocker override` section saying what to merge
+after (advice, not a merge gate). The override is a person's decision
+alone: a dispatched or driven session, a served or factory claim and a
+`work-batch` member's claim cannot take it, and the agent never offers it
+on its own judgment or passes it without the person's word.
+
 When a call to the tracker fails, the tracker scripts say how: each
 [failure class](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) has its own exit code, from `5` for
 a spent rate limit (with the time it resets) to `11` for a request the
@@ -216,7 +238,9 @@ from the default branch, but a repository-relative program it names is the
 branch's copy: name an executable trusted independently of the branch when
 the start rule must hold against a branch editing its own scripts.
 Telling the agent to proceed does not clear a refusal: the
-item or the command changes. A dispatched pickup the command refused shows
+item or the command changes. The exception is a refusal for open blockers
+alone, which the command marks with a second output line, `kind: blockers`:
+a person may start ahead of it as the section above says. A dispatched pickup the command refused shows
 in the dispatcher's queue as held, with the reason, until the item changes.
 
 More settings narrow a claim, read from the default branch like the command, so a branch cannot widen its own allowed states or switch off the marker. `do_item.claim_from` names the states work
