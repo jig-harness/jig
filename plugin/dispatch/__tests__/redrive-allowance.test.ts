@@ -13,6 +13,7 @@ import type { SharedClaim } from "../../shared/records/shared.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import type { ReadRecord } from "../lib/launches.ts";
 import { parseMachineConfigText } from "../lib/machine-config.ts";
+import { NOT_SETTLED_DEFAULTS } from "../lib/not-settled-config.ts";
 import {
   type RedriveCounts,
   redriveAllowanceOf,
@@ -210,7 +211,14 @@ function settled(
   claims: SharedClaim[] = [],
 ): DrivenPr | undefined {
   const read = new Map([[7, { ok: true as const, value: claims }]]);
-  return settleOwnDrives([pr], records, read, "this-host", allowance)[0];
+  return settleOwnDrives(
+    [pr],
+    records,
+    read,
+    "this-host",
+    NOT_SETTLED_DEFAULTS,
+    allowance,
+  )[0];
 }
 
 describe("the re-drives allowed per change", () => {
