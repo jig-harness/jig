@@ -107,8 +107,8 @@ Command-line flags, where a script has them, override all three.
 - **Merging.** Sections merge field by field: a user file that sets
   `review.sticky_marker` and a repository file that sets `review.bots` give
   both. Any other value (text, a number, a date, a list, `null`) replaces the
-  lower layer's value whole, so a list is never part one layer's and part
-  another's.
+  lower layer's value whole. The reflection class vocabulary combines
+  entries from the active layers as described under [reflection](#reflection).
 - **Environment variables.** Two underscores separate the levels and the
   names are read in lower case: `JIG__ISSUE_TRACKER__TEAM=ENG` sets
   `issue_tracker.team`. `true`, `false`, `null`, decimal numbers (`400`,
@@ -1361,9 +1361,35 @@ reflection:
 | `reflection.notion.database` | a Notion database id, or a link to it | **Required** with `store: notion` | reflect, review-reflections, dispatch | The database `notion-store.ts init` created. The integration's secret is read from the `NOTION_TOKEN` environment variable, never from a file |
 | `reflection.github.repository` | `owner/name` | **Required** with `store: github` | reflect, review-reflections, dispatch | The repository whose issues hold the reflections, often a private one kept for them. Requests go through `gh`, signed in as it is; the account needs write access, and the repository a `jig-reflection` label (`check` names the command that creates it) |
 | `reflection.journal` | file path | `<git-dir>/jig/reflection-journal.jsonl` | reflect, resolve-review-comments | The worktree's journal; a path git would track, or a file it already tracks, is refused. Parking still uses it when the section says `enabled: false` |
+| `reflection.classes` | list of class entries | empty | reflect | Class names to reuse, each with a `slug`, a `shape` and an optional non-empty text `source` |
+| `reflection.classes_from` | local YAML or JSON file path | unset | reflect | A top-level list of class entries. Paths expand `~` to the home directory and resolve relative to the repository root |
 | `reflection.escalate_after` | whole number, at least 1 | `3` | reflect, review-reflections | The recurrence count at which a class is escalated to one tracker issue |
 | `reflection.timeout_sec` | whole number of seconds, at most 86400 | `120` | reflect, review-reflections, dispatch | The deadline for one store operation; `list` and `diagnose` get five times as long |
 | `reflection.mode` | `quick`, `comprehensive` | `quick` | reflect | The reflection's default depth: what went wrong only, or also what worked and what could improve |
+
+Seed classes to share a vocabulary across repositories or to reuse a class
+before the first finding is stored. Each entry's `slug` uses lowercase
+letters and digits in hyphen-separated groups. Its `shape` is a non-empty
+description on one line and `source` can name the reference it came from.
+
+```yaml
+reflection:
+  classes_from: ~/.jig/reflection-classes.yaml
+  classes:
+    - slug: missing-guard
+      shape: A required check is absent from a reusable workflow.
+      source: Team reflection register
+```
+
+`reflect gather` combines vocabularies from the user, repository and
+environment layers. For duplicate slugs, the higher layer supplies the whole
+entry. Within a layer, an inline entry takes precedence over the file.
+Missing or unreadable files produce a warning and gathering continues.
+Malformed entries and invalid YAML or JSON are configuration errors.
+A seed's shape supplies the example, and the store still supplies the
+finding count. When a store read fails, `store_error` reports the failure
+and any available seeds appear with zero findings. Escalation and review
+count actual findings.
 
 Escalation reads `issue_tracker.labels.pattern_prefix` (a class's issue is
 labelled `<prefix><class>` and carries an owner marker, a
@@ -2891,6 +2917,10 @@ reflection:
   github:
     repository: example/reflections      # owner/name
   journal: .scratch/reflection-journal.jsonl
+  classes:
+    - slug: missing-guard
+      shape: A required check is absent from a reusable workflow.
+  classes_from: ~/.jig/reflection-classes.yaml
   escalate_after: 3
   timeout_sec: 120
   mode: quick

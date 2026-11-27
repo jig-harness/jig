@@ -1,0 +1,170 @@
+/** Configured reflection-class vocabularies, read only by `gather`. */
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  openSync,
+  readFileSync,
+} from "node:fs";
+import {
+  isMapping,
+  type ConfigLayer,
+} from "../../../../shared/config-layers.ts";
+import { load } from "../../../../shared/yaml.ts";
+import { isClassName } from "./events.ts";
+import { SettingError } from "./setting-error.ts";
+
+export interface SeededClass {
+  slug: string;
+  shape: string;
+  source?: string;
+}
+
+export type ClassSeedSource =
+  | { kind: "file"; path: string }
+  | { kind: "inline"; classes: SeededClass[] };
+
+const LINE_BREAK = /[\r\n\u2028\u2029]/;
+const URL = /^\s*[A-Za-z][A-Za-z0-9+.-]*:\/\//;
+
+/** A configured list's entries, named by the field that supplied it. */
+export function classEntries(value: unknown, field: string): SeededClass[] {
+  if (!Array.isArray(value))
+    throw new SettingError(`${field} must be a list of class entries`);
+  return value.map((entry, index) => {
+    const at = `${field}[${index}]`;
+    if (!isMapping(entry))
+      throw new SettingError(`${at} must be a mapping with slug and shape`);
+    if (
+      Object.keys(entry).some(
+        (key) => key !== "slug" && key !== "shape" && key !== "source",
+      )
+    )
+      throw new SettingError(`${at} accepts only slug, shape and source`);
+    if (!isClassName(entry.slug))
+      throw new SettingError(`${at}.slug must be a kebab-case class slug`);
+    if (
+      typeof entry.shape !== "string" ||
+      entry.shape.trim() === "" ||
+      LINE_BREAK.test(entry.shape)
+    )
+      throw new SettingError(
+        `${at}.shape must be a non-empty one-line description`,
+      );
+    if (
+      entry.source !== undefined &&
+      (typeof entry.source !== "string" || entry.source.trim() === "")
+    )
+      throw new SettingError(`${at}.source must be non-empty text`);
+    return entry.source === undefined
+      ? { slug: entry.slug, shape: entry.shape }
+      : { slug: entry.slug, shape: entry.shape, source: entry.source };
+  });
+}
+
+/** A local class-vocabulary path, before it is expanded for this machine. */
+export function classFilePath(value: unknown): string {
+  if (typeof value !== "string" || value.trim() === "" || URL.test(value))
+    throw new SettingError("reflection.classes_from must be a local path");
+  return value;
+}
+
+/**
+ * Each active layer contributes its file first, then its inline entries.
+ * That makes an inline entry the deliberate override for its vocabulary
+ * file; later (higher-precedence) layers override both by slug.
+ */
+export function classSeedSources(
+  layers: readonly ConfigLayer[],
+  expandPath: (path: string) => string,
+): ClassSeedSource[] {
+  const sources: ClassSeedSource[] = [];
+  for (const layer of layers) {
+    const reflection = layer.values.reflection;
+    if (!isMapping(reflection)) continue;
+    try {
+      if (reflection.classes_from !== undefined)
+        sources.push({
+          kind: "file",
+          path: expandPath(classFilePath(reflection.classes_from)),
+        });
+      if (reflection.classes !== undefined)
+        sources.push({
+          kind: "inline",
+          classes: classEntries(reflection.classes, "reflection.classes"),
+        });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new SettingError(`${reason}: ${layer.source}`, { cause: error });
+    }
+  }
+  return sources;
+}
+
+/** Open without blocking on a pipe, then check the file actually opened. */
+function readClassFile(path: string): string {
+  const fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+  try {
+    if (!fstatSync(fd).isFile())
+      throw new SettingError("is not a regular file");
+    return readFileSync(fd, "utf8");
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** A parser error can contain source text, including inside its cause chain. */
+function parseLocation(error: unknown): string {
+  if (!(error instanceof Error) || !("mark" in error) || !isMapping(error.mark))
+    return "";
+  const { line, column } = error.mark;
+  return typeof line === "number" && typeof column === "number"
+    ? ` at line ${line + 1}, column ${column + 1}`
+    : "";
+}
+
+export interface LoadedClassSeeds {
+  classes: SeededClass[];
+  warnings: string[];
+}
+
+/**
+ * Read the configured vocabulary files and overlay every source by slug.
+ * Only file-system failures are warnings: malformed content is configuration
+ * the person can fix, not an unavailable source to silently ignore.
+ */
+export function loadClassSeeds(
+  sources: readonly ClassSeedSource[],
+): LoadedClassSeeds {
+  const classes = new Map<string, SeededClass>();
+  const warnings: string[] = [];
+  const add = (entries: readonly SeededClass[]) => {
+    for (const entry of entries) classes.set(entry.slug, entry);
+  };
+  for (const source of sources) {
+    if (source.kind === "inline") {
+      add(source.classes);
+      continue;
+    }
+    let text: string;
+    try {
+      text = readClassFile(source.path);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      warnings.push(
+        `reflection.classes_from ${source.path} could not be read (${reason}); continuing without it`,
+      );
+      continue;
+    }
+    let parsed: unknown;
+    try {
+      parsed = load(text);
+    } catch (error) {
+      throw new SettingError(
+        `reflection.classes_from ${source.path} could not be parsed as YAML or JSON${parseLocation(error)}`,
+      );
+    }
+    add(classEntries(parsed, `reflection.classes_from ${source.path}`));
+  }
+  return { classes: [...classes.values()], warnings };
+}

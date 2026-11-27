@@ -9,18 +9,21 @@ import { homedir } from "node:os";
 import { isAbsolute, join, type posix, resolve } from "node:path";
 import {
   consumerRoot,
-  readConfig,
+  layeredConfig,
   withSource,
 } from "../../../../shared/consumer.ts";
 import { splitCommandWords } from "../../../../shared/command-words.ts";
 import { DEFAULT_REFLECTION_TIMEOUT_SEC } from "../../../../shared/repo-commands.ts";
 import { isMapping, jigHome } from "../../../../shared/config-layers.ts";
 import { notionId } from "./notion/ids.ts";
-
-/** A `reflection` setting that cannot be used, naming the field. */
-export class SettingError extends Error {
-  override name = "SettingError";
-}
+import {
+  classEntries,
+  classFilePath,
+  classSeedSources,
+  type ClassSeedSource,
+} from "./class-seeds.ts";
+import { SettingError } from "./setting-error.ts";
+export { SettingError } from "./setting-error.ts";
 
 export const STORE_KINDS = [
   "filesystem",
@@ -48,6 +51,8 @@ export interface ReflectionSettings {
   escalateAfter: number;
   timeoutSec: number;
   mode: Mode;
+  /** Ordered configuration sources; their files are read only by gather. */
+  classSeedSources: ClassSeedSource[];
 }
 
 /**
@@ -111,6 +116,8 @@ const KNOWN = [
   "escalate_after",
   "timeout_sec",
   "mode",
+  "classes",
+  "classes_from",
 ];
 
 function oneOf<T extends string>(
@@ -283,6 +290,9 @@ export function parseReflection(
       ? { on: false }
       : { on: false, journal: pathSetting(section.journal, "journal", root) };
   const store = oneOf(section.store, STORE_KINDS, "store", DEFAULTS.store);
+  if (section.classes !== undefined)
+    classEntries(section.classes, "reflection.classes");
+  if (section.classes_from !== undefined) classFilePath(section.classes_from);
   return {
     on: true,
     store,
@@ -303,17 +313,30 @@ export function parseReflection(
       MAX_TIMEOUT_SEC,
     ),
     mode: oneOf(section.mode, MODES, "mode", DEFAULTS.mode),
+    classSeedSources: [],
   };
 }
 
 /** The repository's reflection settings, from every configuration layer. */
 export function reflectionSettings(): Reflection {
-  const values = readConfig();
+  const config = layeredConfig();
+  const { values } = config;
+  let settings: Reflection;
   try {
-    return parseReflection(values.reflection);
+    settings = parseReflection(values.reflection);
   } catch (error) {
     throw withSource(values, "reflection", error);
   }
+  if (!settings.on) return settings;
+  // This validates every active layer, including a lower layer whose list the
+  // normal merged read would replace. The helper includes that layer's source
+  // in its error rather than attributing it to the merged value's source.
+  return {
+    ...settings,
+    classSeedSources: classSeedSources(config.layers, (path) =>
+      expandPath(path),
+    ),
+  };
 }
 
 /**
