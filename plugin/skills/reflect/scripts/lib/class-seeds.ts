@@ -5,8 +5,10 @@ import {
   fstatSync,
   openSync,
   lstatSync,
+  readlinkSync,
   readSync,
 } from "node:fs";
+import { dirname, isAbsolute, join, parse, resolve } from "node:path";
 import {
   formatDisplayValue,
   isMapping,
@@ -30,6 +32,9 @@ const LINE_BREAK = /[\r\n\u2028\u2029]/;
 const URL = /^\s*[A-Za-z][A-Za-z0-9+.-]*:\/\//;
 /** A Windows UNC share (`\\host\x`) or its slash form, which is a network path. */
 const NETWORK_PATH = /^\s*[\\/]{2}/;
+/** The Windows NT forms of a UNC target, as a directory link reports it. */
+const NT_UNC = /^\s*\\\?\?\\UNC\\/i;
+const MAX_LINK_HOPS = 40;
 /** The vocabulary file and entry bounds keep gather's output reviewable. */
 export const MAX_CLASS_FILE_BYTES = 256 * 1024;
 export const MAX_CLASS_ENTRIES = 500;
@@ -130,6 +135,40 @@ function isNetworkLocation(path: string): boolean {
   return URL.test(path) || NETWORK_PATH.test(path);
 }
 
+/** Where the first link among a path's directory components leads, or null. */
+function redirectAtFirstLink(current: string): string | null {
+  const { root } = parse(current);
+  const parts = current
+    .slice(root.length)
+    .split(/[\\/]+/)
+    .filter(Boolean);
+  let prefix = root;
+  for (const [index, part] of parts.slice(0, -1).entries()) {
+    prefix = join(prefix, part);
+    if (!lstatSync(prefix).isSymbolicLink()) continue;
+    const target = readlinkSync(prefix);
+    if (isNetworkLocation(target) || NT_UNC.test(target))
+      throw new SettingError("is not a local path");
+    const next = isAbsolute(target) ? target : join(dirname(prefix), target);
+    return resolve(next, ...parts.slice(index + 1));
+  }
+  return null;
+}
+
+/**
+ * Check each directory component before the system follows it. A link whose
+ * target names a network location is refused where it is met, and a local
+ * link is followed by hand so the components behind it are checked too.
+ * Only a link's own entry is examined, never what lies behind it.
+ */
+function refuseNetworkLinks(path: string): void {
+  let current: string | null = resolve(path);
+  for (let hops = 0; current !== null; hops++) {
+    if (hops > MAX_LINK_HOPS) throw new SettingError("has too many links");
+    current = redirectAtFirstLink(current);
+  }
+}
+
 /** Read at most one byte past the bound: the file may have grown since fstat. */
 function readBounded(fd: number): string {
   const buffer = Buffer.alloc(MAX_CLASS_FILE_BYTES + 1);
@@ -151,6 +190,7 @@ function readBounded(fd: number): string {
  */
 function readClassFile(path: string): string {
   if (isNetworkLocation(path)) throw new SettingError("is not a local path");
+  refuseNetworkLinks(path);
   if (lstatSync(path).isSymbolicLink())
     throw new SettingError("is a link, not a regular file");
   const fd = openSync(

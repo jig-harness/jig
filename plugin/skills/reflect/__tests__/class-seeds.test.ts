@@ -289,6 +289,21 @@ describe("seeded reflection classes", () => {
     expect(result.stdout).not.toContain("linked-seed");
   });
 
+  it("warns without reading when a parent directory is a link to a network location", () => {
+    machine.userConfig(
+      `reflection:\n  path: ${JSON.stringify(machine.store)}\n`,
+    );
+    const repo = machine.repository("web", "git@github.com:example/web.git");
+    symlinkSync("//host/share", join(repo.root, "shared"));
+    repo.write(
+      ".config/jig.yaml",
+      "reflection:\n  classes_from: shared/classes.yaml\n",
+    );
+    const result = repo.script("reflect.ts", ["gather"]);
+    expectExit(result, 0);
+    expect(result.stderr).toContain("is not a local path");
+  });
+
   it("parses a .json vocabulary as JSON and drops a lower layer's seeds on a null section", () => {
     machine.userConfig(
       `reflection:\n  path: ${JSON.stringify(machine.store)}\n  classes:\n    - slug: user-seed\n      shape: user\n`,
