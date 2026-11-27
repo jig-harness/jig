@@ -735,6 +735,31 @@ describe("--check-tracker", () => {
     expect(code).toBe(0);
   });
 
+  test("uses Jira create-screen applicability for a filing draft", async () => {
+    const argv = ["--check-tracker", "--json", "--taxonomy", fixture];
+    const deps = (nativeType: string): Deps => ({
+      openTracker: () => ({
+        ...tracker(["app"]).openTracker(),
+        filedAs: async () => ({ nativeType, labels: ["app"] }),
+        unavailableFacets: async (type, requested) =>
+          type === "Bug" ? requested.filter((facet) => facet === "size") : [],
+      }),
+      readStdin: async () =>
+        JSON.stringify({
+          title: "Draft",
+          description: "",
+          type: "bug",
+          priority: 3,
+          labels: ["app"],
+        }),
+    });
+
+    expect((await capture(argv, deps("Bug"))).code).toBe(0);
+    const task = await capture(argv, deps("Task"));
+    expect(task.code).toBe(3);
+    expect(JSON.parse(task.out).missing).toEqual(["size"]);
+  });
+
   test("fails with exit 3, naming each label the tracker lacks, case included", async () => {
     const { code, out } = await capture(
       ["--check-tracker", "--json", "--taxonomy", fixture, ...base],

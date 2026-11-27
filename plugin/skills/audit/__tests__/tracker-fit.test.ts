@@ -249,7 +249,7 @@ describe("a Jira facet field the create screens of filed issue types lack", () =
         id: "derivation:issue_tracker.facets.size",
         severity: "error",
         message:
-          "size's configured store cannot be used: size is kept in the field 'Story Points' (customfield_10016), which is not on the create screens of Sub-task and Bug in ENG; add it to those screens, or keep size in labels (store: label); filing a Sub-task or a Bug fails",
+          "size's configured store cannot be used: size is kept in the field 'Story Points' (customfield_10016), which is not on the create screens of Sub-task and Bug in ENG; add it to those screens, or keep size in labels (store: label); filing a Sub-task or a Bug with the facet set fails",
       },
     ]);
   });
