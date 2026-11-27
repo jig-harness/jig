@@ -139,7 +139,7 @@ function considerComment<T extends { body?: string | null | undefined }>(
   const candidate = { round, reviewedSha, carries: carriesFindings(body) };
   if (!candidate.carries && considerFindingFree(state, comment, candidate))
     return;
-  if (candidate.carries && cannotSupersede(state, comment, candidate)) {
+  if (candidate.carries && cannotSupersede(state, candidate)) {
     // Work carried by a notice, or by a comment with no stamp, is kept as an
     // unreadable stopper: it neither replaces stamped review evidence nor
     // raises the ordering watermark, and only a later stamped round retires it.
@@ -169,23 +169,21 @@ function considerFindingFree<T extends { body?: string | null | undefined }>(
 }
 
 // Whether a finding-bearing candidate lacks the evidence to supersede the
-// selection: a skip notice never reviews, and an unstamped comment cannot
-// replace a stamped selection.
-function cannotSupersede<T extends { body?: string | null | undefined }>(
+// selection: an unstamped comment cannot replace a stamped selection.
+function cannotSupersede<T>(
   state: Selection<T>,
-  comment: T,
   candidate: Candidate,
 ): boolean {
-  if (isSkipOnly(comment)) return true;
   return (
     candidate.reviewedSha === "" &&
     state.selected !== undefined &&
+    state.carriesFindings &&
     state.reviewedSha !== null &&
     state.reviewedSha !== ""
   );
 }
 
-function advanceSelection<T>(
+function advanceSelection<T extends { body?: string | null | undefined }>(
   state: Selection<T>,
   comment: T,
   candidate: Candidate,
@@ -202,7 +200,8 @@ function advanceSelection<T>(
   // An explicit newer round is the only evidence that can supersede a
   // malformed finding-bearing summary. An unorderable malformed comment
   // remains a stopper until the reviewer repairs its protocol evidence.
-  if (advances && round !== null && reviewedSha !== "")
+  // A skip notice reviews nothing, so it never proves an ordering.
+  if (advances && round !== null && reviewedSha !== "" && !isSkipOnly(comment))
     retireOrderedMalformed(state, round);
   // A newer declared round is the reviewer's explicit replacement boundary.
   if (round !== null)
