@@ -159,7 +159,10 @@ export async function applySteward(
     stage: "steward",
     target: "the steward",
     record: "runtime",
-    reason: `${trigger.unjudged} of the judgment backlog's ${trigger.members} members, or refused orders, wait on the steward's judgment`,
+    reason:
+      trigger.members === 0
+        ? `${trigger.unjudged} refused order(s) wait on the steward's reading`
+        : `${trigger.unjudged} of the judgment backlog's ${trigger.members} members, or refused orders, wait on the steward's judgment`,
     evidence: { hash },
   };
   const admitted = await admitAccount(
