@@ -263,6 +263,26 @@ describe("scanCwds and holdersIn", () => {
     expect(limits[0]).toBeLessThanOrEqual(5);
   });
 
+  test("stops waiting for a read in flight when the signal fires", async () => {
+    const abort = new AbortController();
+    const scan = scanCwds(() => new Promise<never>(() => undefined), {
+      signal: abort.signal,
+    });
+    abort.abort();
+    expect(await scan).toEqual({ unknown: "the process scan was stopped" });
+  });
+
+  test("a clean listing that finishes past the deadline is no answer", async () => {
+    const scan = await scanCwds(
+      async () => {
+        await Bun.sleep(1_100);
+        return result(0, "/proc/1\t/\n");
+      },
+      { deadlineMs: 1_000 },
+    );
+    expect(scan).toEqual({ unknown: "the process scan ran past its deadline" });
+  });
+
   test("starts nothing once the deadline is spent", async () => {
     let calls = 0;
     const scan = await scanCwds(

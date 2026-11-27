@@ -259,9 +259,30 @@ export async function scanCwds(
     end === null
       ? undefined
       : Math.max(1, Math.ceil((end - currentMs()) / 1000));
+  /** One read, given up on the moment `signal` fires: the caller stops waiting for it. */
+  const read = async (
+    argv: string[],
+    cwd: string | undefined,
+  ): Promise<RunResult | null> => {
+    const reading = run(argv, cwd, left());
+    if (signal === undefined) return reading;
+    let onAbort: () => void = () => undefined;
+    const aborted = new Promise<null>((done) => {
+      onAbort = () => done(null);
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    });
+    try {
+      return await Promise.race([reading, aborted]);
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+    }
+  };
   const first = stopped();
   if (first !== null) return { unknown: first };
-  const probed = readProbe(await run(["sh", "-c", CWD_PROBE], "/", left()));
+  const listing = await read(["sh", "-c", CWD_PROBE], "/");
+  if (listing === null) return { unknown: "the process scan was stopped" };
+  const probed = readProbe(listing);
   if ("unknown" in probed) return probed;
   const entries = parseEntries(probed.listing);
   const unread = entries.filter((e) => e.unread).map((e) => e.pid);
@@ -269,12 +290,14 @@ export async function scanCwds(
   for (const pid of new Set([...probed.denied, ...unread])) {
     const why = stopped();
     if (why !== null) return { unknown: why };
-    blocked = deniedReason(
-      pid,
-      await run(["cat", `/proc/${pid}/status`], undefined, left()),
-    );
+    const status = await read(["cat", `/proc/${pid}/status`], undefined);
+    if (status === null) return { unknown: "the process scan was stopped" };
+    blocked = deniedReason(pid, status);
     if (blocked !== null) break;
   }
+  // A read that finished past the allowance is no answer inside it.
+  const last = stopped();
+  if (last !== null) return { unknown: last };
   return { entries, blocked };
 }
 
