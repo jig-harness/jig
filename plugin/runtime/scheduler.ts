@@ -886,19 +886,13 @@ async function rewrite(
       announce,
     );
 }
-/**
- * The concrete job `spec` names, as a confirmed install would write it,
- * with the values of the variables kept from the installed job and those
- * `--env` captured shown as `HIDDEN_VALUE`, and those variables named.
- */
-export function jobPreview(spec: JobSpec, remove: boolean): string {
-  const preview = jobPreviewOutcome(spec, remove);
-  return preview.ok ? preview.value : preview.failure.reason;
-}
 
 /**
- * `jobPreview` as an outcome: a job file the install would refuse is a
- * failure, so a caller's preview exits unsuccessfully.
+ * The concrete job `spec` names, as a confirmed install would write it, with
+ * the values of the variables kept from the installed job and those `--env`
+ * captured shown as `HIDDEN_VALUE`, and those variables named. A job file the
+ * install would refuse is a failure, so a caller's preview exits
+ * unsuccessfully.
  */
 export function jobPreviewOutcome(
   spec: JobSpec,
