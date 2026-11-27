@@ -10,7 +10,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { waitFor } from "../../dispatch/__tests__/launch-fixtures.ts";
-import { writeRecord } from "../../dispatch/lib/launches.ts";
+import { recordExit, writeRecord } from "../../dispatch/lib/launches.ts";
+import { keepStewardRequest } from "../../dispatch/lib/steward-requests.ts";
 import { stateDb } from "../../dispatch/lib/state.ts";
 import { keepStewardRun } from "../../dispatch/lib/steward.ts";
 import { tickWakeDir } from "../../dispatch/lib/wake-tick.ts";
@@ -214,5 +215,70 @@ describe("jig send steward@… start", () => {
       "a steward address takes jig send's start alone",
     );
     expect(requests(w)).toEqual([]);
+  });
+
+  it("settles an already-answered request whose pass ended before the next tick and queues a new request", async () => {
+    const w = world();
+    const kept = keepStewardRequest(REPO, "maintainer", w.state);
+    expect(kept.ok).toBe(true);
+    if (!kept.ok) throw new Error(kept.failure.reason);
+    const launchId = "20261127T100000Z-abcdef34";
+    writeRecord(
+      {
+        version: 1,
+        id: launchId,
+        token: "token",
+        action: "steward",
+        repo: REPO,
+        repoPath: w.repo,
+        pr: null,
+        item: null,
+        account: "a",
+        vendor: "claude",
+        configDir: w.root,
+        wallBackoffMs: 1,
+        replaces: null,
+        facts: "hash",
+        createdAt: "2026-11-27T10:00:00Z",
+        workspace: { id: "ws", path: w.tree },
+        attempts: [
+          { at: "2026-11-27T10:00:01Z", outcome: "sent", detail: "started" },
+        ],
+        agentId: null,
+        model: null,
+        effort: null,
+        released: false,
+        command: null,
+        marker: null,
+        stewardRequest: kept.value.id,
+      },
+      w.state,
+    );
+    recordExit(
+      launchId,
+      { at: "2026-11-27T10:05:00Z", code: 0, signal: null },
+      w.state,
+    );
+    const sent = await w.send([ADDRESS, "start"]);
+    expectSpawnExit(sent, 0);
+    await waitFor("the woken tick", () => w.ticks().length === 1);
+    const standing = stateDb(w.state)
+      .query("SELECT id, requested_by AS by FROM steward_requests")
+      .all() as Array<{ id: string; by: string }>;
+    expect(standing).toHaveLength(1);
+    expect(standing[0]?.id).not.toBe(kept.value.id);
+    const rows = stateDb(w.state)
+      .query("SELECT row FROM log WHERE key = ?")
+      .all(`steward-request ${REPO} ${kept.value.id}`) as Array<{
+      row: string;
+    }>;
+    expect(rows).toHaveLength(1);
+    const first = rows[0];
+    expect(first).toBeDefined();
+    if (first === undefined) throw new Error("expected steward-requested row");
+    expect(JSON.parse(first.row)).toMatchObject({
+      event: "steward-requested",
+      reason: expect.stringContaining(`started steward pass ${launchId}`),
+    });
   });
 });

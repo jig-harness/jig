@@ -35,7 +35,9 @@ import {
   type StewardDigest,
 } from "../steward.ts";
 import {
+  answersStewardRequest,
   countedRuns,
+  pendingForStewardRequest,
   pendingStewardRequest,
   requestRow,
   STEWARD_RULES,
@@ -73,7 +75,7 @@ import {
   accountBlock,
   readRoomMs,
 } from "./launch.ts";
-import { currentIso, currentMs, parseMs } from "../../../shared/time.ts";
+import { currentIso, currentMs } from "../../../shared/time.ts";
 
 /** A refusal no pass was shown is owed one, though no backlog member stands for it. */
 function triggerWithRefusals(
@@ -202,20 +204,17 @@ export async function applySteward(
     facts: hash,
     workspace: openedWorkspace.workspace,
     mark: named.mark,
+    ...(request === null ? {} : { stewardRequest: request.id }),
   });
   const launch = await startKept(state, record, slots, digest);
   report.launches.push(launch);
   const kept = state.records.some((r) => r.record.id === record.id);
   report.steward = stewardStatus(launch, kept, counts, hash, request);
-  // A launch still pending may never have started a pass: the request stays
-  // until the replay settles it (`answerRequest` takes it once the pass is
-  // known to exist; a replay that takes the run back leaves it to start anew).
-  if (kept && started(launch))
-    takeRequestWith(state, repo.slug, request, record.id);
+  // Keep the request while its reservation is pending (even after a runtime
+  // acknowledgment): only wrapper or execution evidence matching `request.id`
+  // settles it (`answerRequest`), so clearing an unclaimed stuck launch leaves
+  // the request to start anew.
 }
-
-const started = (launch: LaunchOutcome): boolean =>
-  launch.outcome === "launched" || launch.outcome === "retried";
 
 /** Why the steward does not run on this repository at all, or `null`. */
 function notRunning(
@@ -229,10 +228,11 @@ function notRunning(
 }
 
 /**
- * Only a launch created after the request, and past pending or accepted by
- * the runtime, answers it (`answerRequest`); a launch still pending may belong to another trigger or
- * hold an acknowledgment nobody claimed yet, so the request waits for it.
- * Whether the request needs no further handling this tick.
+ * Reconcile a pending steward request by its identity: wrapper or execution
+ * evidence on its launch settles it (`answerRequest`), while a still-pending
+ * reservation for that request keeps it waiting (even once the runtime
+ * acknowledged it) so clearing an unclaimed stuck launch leaves the request
+ * to start anew. Whether the request needs no further handling this tick.
  */
 function settleRequest(
   state: ApplyState,
@@ -241,9 +241,15 @@ function settleRequest(
   skip: (status: string) => void,
 ): boolean {
   if (answerRequest(state, slug, request, skip)) return true;
-  if (!pendingLaunch(state, slug)) return false;
+  const pending = state.records.find((r) =>
+    pendingForStewardRequest(r, request),
+  );
+  if (pending === undefined) return false;
+  const ack = pending.record.attempts.some((a) => a.outcome === "sent");
   skip(
-    `${request.by}'s request is kept: a pending steward launch is not settled yet`,
+    ack
+      ? `${request.by}'s request is kept: steward launch ${pending.record.id} is acknowledged and awaiting wrapper claim`
+      : `${request.by}'s request is kept: steward launch ${pending.record.id} is still pending`,
   );
   return true;
 }
@@ -261,25 +267,9 @@ function stewardModel(
     : { vendor, model: runtimeModel(runtime, family) };
 }
 
-/** Takes the request a started pass answers, with the pass named. */
-function takeRequestWith(
-  state: ApplyState,
-  slug: string,
-  request: StewardRequest | null,
-  started: string,
-): void {
-  if (request === null) return;
-  takeStewardRequest(
-    request,
-    requestRow(request, slug, { started }),
-    state.root,
-  );
-}
-
 /**
- * A tick interrupted after it launched the pass and before it took the
- * request: the pass the request asked for already exists, so the request is
- * taken with it. Whether it was.
+ * Settle a request once a steward launch carrying its identity has wrapper or
+ * execution evidence. Whether it was settled.
  */
 function answerRequest(
   state: ApplyState,
@@ -287,17 +277,7 @@ function answerRequest(
   request: StewardRequest,
   skip: (status: string) => void,
 ): boolean {
-  const answered = state.records.find(
-    (r) =>
-      r.record.action === "steward" &&
-      // A launch still pending may never have started a pass, unless the
-      // runtime accepted it: a `sent` attempt is a pass that exists, whatever
-      // the wrapper has claimed yet.
-      (r.state.kind !== "pending" ||
-        r.record.attempts.some((a) => a.outcome === "sent")) &&
-      r.record.repo.toLowerCase() === request.repo &&
-      parseMs(r.record.createdAt) >= parseMs(request.at),
-  );
+  const answered = state.records.find((r) => answersStewardRequest(r, request));
   if (answered === undefined) return false;
   takeStewardRequest(
     request,
@@ -305,7 +285,7 @@ function answerRequest(
     state.root,
   );
   skip(
-    `${request.by}'s request is answered by steward pass ${answered.record.id}, started since it was sent`,
+    `${request.by}'s request is answered by steward pass ${answered.record.id}`,
   );
   return true;
 }
@@ -349,6 +329,7 @@ interface StewardLaunch {
   facts: string;
   workspace: LaunchRecord["workspace"];
   mark: NonNullable<LaunchRecord["mark"]> | null;
+  stewardRequest?: string;
 }
 
 /** The launch record of a headless steward pass on the repository `observation` opened. */
@@ -390,6 +371,9 @@ function stewardRecord(
     headless: true,
     sessionId: sessionIdFor(launch.vendor),
     mark: launch.mark,
+    ...(launch.stewardRequest === undefined
+      ? {}
+      : { stewardRequest: launch.stewardRequest }),
   };
 }
 
@@ -453,16 +437,6 @@ function stewardStatus(
     trigger: "started",
     ...by,
   };
-}
-
-/** Whether a steward launch of `slug` is still pending: it may or may not have started a pass. */
-function pendingLaunch(state: ApplyState, slug: string): boolean {
-  return state.records.some(
-    (r) =>
-      r.record.action === "steward" &&
-      r.record.repo.toLowerCase() === slug.toLowerCase() &&
-      r.state.kind === "pending",
-  );
 }
 
 /** Retry each pending steward launch under its token; one the runtime refused started no pass, so its run is taken back. */

@@ -140,6 +140,7 @@ export interface LaunchRecord {
   stewardResume?: string;
   stewardDecision?: number;
   stewardContext?: string;
+  stewardRequest?: string;
   /** For a stalled pickup's relaunch: the launch record of the pickup it finishes, in that pickup's own tree (`pickup-relaunch.ts`). */
   relaunchOf?: string;
   /** For a stalled pickup's relaunch: the tree's head when it was relaunched; one relaunch per item and head. */
@@ -370,7 +371,6 @@ export function newRecordId(
     .replace(/\.\d+Z$/, "Z");
   return `${stamp}-${crypto.randomUUID().slice(0, 8)}`;
 }
-
 export function newToken(): string {
   return crypto.randomUUID().replace(/-/g, "");
 }

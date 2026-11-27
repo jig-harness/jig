@@ -670,6 +670,7 @@ export const MIGRATIONS: readonly Migration[] = [
     additive: true,
     sql: `CREATE TABLE steward_requests (
       repo TEXT PRIMARY KEY,
+      id TEXT NOT NULL,
       requested_by TEXT NOT NULL,
       requested_at TEXT NOT NULL
     );`,

@@ -54,6 +54,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       "blockingFor",
       "stewardResume",
       "stewardContext",
+      "stewardRequest",
       "relaunchOf",
       "relaunchHead",
       "relaunchFault",

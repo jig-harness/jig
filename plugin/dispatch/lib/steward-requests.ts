@@ -4,10 +4,12 @@
  * host's tick reads it. A request starts a pass whatever the judgment
  * backlog holds, under the rules a pass the backlog starts is held to: one
  * pass holding the repository at a time, and the host's budget of passes in
- * a rolling hour. The tick takes the request once it started the pass or a
- * rule refused it, writing an outcome-log row that names which; a request
- * the tick could not act on yet (a read that failed, no account free) stays
- * for the next tick.
+ * a rolling hour. When the tick reserves a launch for the request, it writes
+ * the request's identity onto the launch record (`stewardRequest`) and keeps
+ * the request through pending runtime acknowledgments, settling it only from
+ * wrapper or execution evidence matching that identity — or taking it with
+ * the rule named when a rule refuses it. A request the tick could not act on
+ * yet (a read that failed, no account free) stays for the next tick.
  */
 import type { Database } from "bun:sqlite";
 import { attempt, type Outcome } from "../../shared/outcome.ts";
@@ -18,8 +20,9 @@ import { stateDb, statePath } from "./state.ts";
 import { inTransaction } from "../../shared/records/db.ts";
 import { stewardBudgetSpent, type StewardRun } from "./steward.ts";
 
-/** One request: the repository, who sent it and when. */
+/** One request: its unique identity, the repository, who sent it and when. */
 export interface StewardRequest {
+  id: string;
   /** `owner/name`, lower-cased as it is kept. */
   repo: string;
   by: string;
@@ -90,13 +93,49 @@ export function stewardRefusal(
   return null;
 }
 
+/**
+ * Whether `read` carries wrapper or execution evidence for `request`: its
+ * launch record names `request.id`, and the wrapper has claimed it or
+ * recorded an exit (neither a pending reservation, even when the runtime
+ * acknowledged it, nor a reservation cancelled before execution).
+ */
+export function answersStewardRequest(
+  read: ReadRecord,
+  request: StewardRequest,
+): boolean {
+  if (
+    read.record.action !== "steward" ||
+    read.record.stewardRequest !== request.id ||
+    read.record.repo.toLowerCase() !== request.repo
+  )
+    return false;
+  if (read.state.kind === "pending") return false;
+  if (read.state.kind === "died" && read.state.process.pid === 0) return false;
+  return true;
+}
+
+/** Whether `read` is a still-pending launch reservation selected for `request`. */
+export function pendingForStewardRequest(
+  read: ReadRecord,
+  request: StewardRequest,
+): boolean {
+  return (
+    read.record.action === "steward" &&
+    read.record.stewardRequest === request.id &&
+    read.record.repo.toLowerCase() === request.repo &&
+    read.state.kind === "pending"
+  );
+}
+
 interface RequestRow {
   repo: string;
+  id: string;
   requested_by: string;
   requested_at: string;
 }
 
 const requestOf = (row: RequestRow): StewardRequest => ({
+  id: row.id,
   repo: row.repo,
   by: row.requested_by,
   at: row.requested_at,
@@ -115,7 +154,7 @@ export function pendingStewardRequest(
   if (table === null) return null;
   const row = db
     .query(
-      "SELECT repo, requested_by, requested_at FROM steward_requests WHERE repo = ?",
+      "SELECT repo, id, requested_by, requested_at FROM steward_requests WHERE repo = ?",
     )
     .get(repo.toLowerCase()) as RequestRow | null;
   return row === null ? null : requestOf(row);
@@ -123,26 +162,40 @@ export function pendingStewardRequest(
 
 /**
  * Keep `by`'s request for a pass of `repo`. A request already pending stands
- * as it is, with its first sender and time: the pass it asks for is one.
+ * as it is, with its first identity, sender and time: the pass it asks for is
+ * one. When `replaceAnswered` is supplied, that already-answered request is
+ * settled in the same transaction before the new request is inserted.
  */
 export function keepStewardRequest(
   repo: string,
   by: string,
   root?: string,
+  replaceAnswered?: { request: StewardRequest; row: LogRow },
 ): Outcome<StewardRequest, "refused"> {
   return attempt(
     "refused",
     `the steward request could not be written to ${statePath(root)}`,
     () => {
       const db = stateDb(root);
-      db.query(
-        "INSERT INTO steward_requests (repo, requested_by, requested_at) VALUES (?, ?, ?) ON CONFLICT (repo) DO NOTHING",
-      ).run(repo.toLowerCase(), by, currentIso());
+      const id = crypto.randomUUID();
+      const at = currentIso();
+      inTransaction(db, () => {
+        if (replaceAnswered !== undefined) {
+          db.query(
+            "DELETE FROM steward_requests WHERE repo = ? AND id = ?",
+          ).run(replaceAnswered.request.repo, replaceAnswered.request.id);
+          insertRow(db, replaceAnswered.row);
+        }
+        db.query(
+          "INSERT INTO steward_requests (repo, id, requested_by, requested_at) VALUES (?, ?, ?, ?) ON CONFLICT (repo) DO NOTHING",
+        ).run(repo.toLowerCase(), id, by, at);
+      });
       return (
         pendingStewardRequest(db, repo) ?? {
+          id,
           repo: repo.toLowerCase(),
           by,
-          at: currentIso(),
+          at,
         }
       );
     },
@@ -151,7 +204,7 @@ export function keepStewardRequest(
 
 /**
  * Take `request` and write `row` with it, in one transaction: only the
- * request the tick read is taken, so one sent since stays for the next tick.
+ * request with that identity is taken, so one sent since stays for the next tick.
  */
 export function takeStewardRequest(
   request: StewardRequest,
@@ -160,9 +213,10 @@ export function takeStewardRequest(
 ): void {
   const db = stateDb(root);
   inTransaction(db, () => {
-    db.query(
-      "DELETE FROM steward_requests WHERE repo = ? AND requested_at = ?",
-    ).run(request.repo, request.at);
+    db.query("DELETE FROM steward_requests WHERE repo = ? AND id = ?").run(
+      request.repo,
+      request.id,
+    );
     insertRow(db, row);
   });
 }
@@ -177,7 +231,7 @@ export function requestRow(
   const started = "started" in acted;
   return {
     kind: "event",
-    key: `steward-request ${slug} ${request.at}`,
+    key: `steward-request ${slug} ${request.id}`,
     at,
     repo: slug,
     stage: "steward",

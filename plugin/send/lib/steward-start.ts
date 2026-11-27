@@ -19,8 +19,10 @@ import type { MachineConfig } from "../../dispatch/lib/machine-config.ts";
 import { readOnlyStateDb, statePath } from "../../dispatch/lib/state.ts";
 import { stewardRuns } from "../../dispatch/lib/steward.ts";
 import {
+  answersStewardRequest,
   keepStewardRequest,
   pendingStewardRequest,
+  requestRow,
   type StewardRequest,
   stewardRefusal,
 } from "../../dispatch/lib/steward-requests.ts";
@@ -47,14 +49,22 @@ function runsSteward(
   );
 }
 
-/** The request already pending for `repo`, or the rule that refuses a pass now; nothing under a root that never dispatched. */
+/** The request already pending for `repo`, an already-answered one awaiting tick cleanup, or the rule that refuses a pass now; nothing under a root that never dispatched. */
 async function standingAt(
   root: string | null,
   repo: string,
 ): Promise<
-  Outcome<{ pending: StewardRequest | null; refusal: string | null }, "refused">
+  Outcome<
+    {
+      pending: StewardRequest | null;
+      answeredBy: { request: StewardRequest; launch: string } | null;
+      refusal: string | null;
+    },
+    "refused"
+  >
 > {
-  if (root === null) return ok({ pending: null, refusal: null });
+  if (root === null)
+    return ok({ pending: null, answeredBy: null, refusal: null });
   const launches = await launchesWhere(
     root,
     (r) => r.record.action === "steward",
@@ -76,8 +86,19 @@ async function standingAt(
       repo,
       currentMs(),
     );
+    const rawPending = pendingStewardRequest(db, repo);
+    const answered =
+      rawPending === null
+        ? undefined
+        : launches.value.records.find((r) =>
+            answersStewardRequest(r, rawPending),
+          );
     return ok({
-      pending: pendingStewardRequest(db, repo),
+      pending: answered === undefined ? rawPending : null,
+      answeredBy:
+        rawPending !== null && answered !== undefined
+          ? { request: rawPending, launch: answered.record.id }
+          : null,
       refusal: refusal?.reason ?? null,
     });
   } finally {
@@ -105,7 +126,7 @@ export async function planStewardStart(
   const root = ctx.dispatcher;
   const standing = await standingAt(root, repo);
   if (!standing.ok) return standing;
-  const { pending, refusal } = standing.value;
+  const { pending, answeredBy, refusal } = standing.value;
   if (refusal !== null)
     return refused(
       `${refusal}, so the dispatcher would refuse the pass; send it again once that has changed`,
@@ -127,7 +148,19 @@ export async function planStewardStart(
     notice:
       "The tick checks the rules again before it starts the pass: when a steward pass holds the repository or the hourly budget is spent by then, it refuses the request and names the rule on its receipt and the dashboard.",
     write: async () => {
-      const kept = keepStewardRequest(repo, writer.login, root ?? undefined);
+      const kept = keepStewardRequest(
+        repo,
+        writer.login,
+        root ?? undefined,
+        answeredBy === null
+          ? undefined
+          : {
+              request: answeredBy.request,
+              row: requestRow(answeredBy.request, repo, {
+                started: answeredBy.launch,
+              }),
+            },
+      );
       return kept.ok ? ok(where) : kept;
     },
   });

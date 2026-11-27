@@ -5,7 +5,7 @@
  * pass started or a rule refused it, with an outcome-log row that says which.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
@@ -15,13 +15,25 @@ import {
   stoppedLedger,
   ledgerComment,
 } from "./fixtures.ts";
-import { account, machineFile, dispatchState } from "./launch-fixtures.ts";
+import {
+  account,
+  claimed,
+  dispatchState,
+  earlierRecord,
+  machineFile,
+  waitFor,
+} from "./launch-fixtures.ts";
 import { withOrigin } from "./pickup-fixtures.ts";
+import { clearMain } from "../clear.ts";
+import { readRecord } from "../lib/launches.ts";
 import { stateDb } from "../lib/state.ts";
 import type { TickReceipt } from "../receipts.ts";
 import type { LineSnapshot } from "../lib/dashboard-contract.ts";
 import { keepStewardRun, readStewardDigest } from "../lib/steward.ts";
-import { keepStewardRequest } from "../lib/steward-requests.ts";
+import {
+  keepStewardRequest,
+  type StewardRequest,
+} from "../lib/steward-requests.ts";
 
 const REPO = "example-org/example-repo";
 
@@ -89,17 +101,26 @@ function lineNotes(w: World): string[] {
   return (JSON.parse(row.line) as LineSnapshot).repos[0]?.notes ?? [];
 }
 
-function request(w: World) {
+function request(w: World): StewardRequest {
   const kept = keepStewardRequest(REPO, "maintainer", dispatchState(w));
   expect(kept.ok).toBe(true);
+  if (!kept.ok) throw new Error(kept.failure.reason);
+  return kept.value;
+}
+
+function isClaimedOrEnded(w: World, id: string): boolean {
+  const row = stateDb(dispatchState(w))
+    .query("SELECT claim, exit FROM launches WHERE id = ?")
+    .get(id) as { claim: string | null; exit: string | null } | null;
+  return row !== null && (row.claim !== null || row.exit !== null);
 }
 
 describe("a requested steward pass", () => {
-  test("starts on the next tick with an empty judgment backlog, reads the same digest, and the log says it was requested", async () => {
+  test("starts on the next tick with an empty judgment backlog, reads the same digest, and settles once wrapper or execution evidence exists", async () => {
     const w = fixture();
     const quiet = await tick(w);
     expect(quiet.repos[0]?.steward?.trigger).toBe("empty");
-    request(w);
+    const req = request(w);
     const receipt = await tick(w);
     expect(stewardLaunches(receipt)).toMatchObject([{ outcome: "launched" }]);
     expect(receipt.repos[0]?.steward).toMatchObject({
@@ -108,14 +129,26 @@ describe("a requested steward pass", () => {
       trigger: "started",
       requestedBy: "maintainer",
     });
-    expect(pendingRequests(w)).toEqual([]);
     const root = dispatchState(w);
     const run = stateDb(root).query("SELECT id FROM steward_runs").get() as {
       id: string;
     };
+    expect(readRecord(run.id, root)?.stewardRequest).toBe(req.id);
+    // Runtime acknowledgment alone leaves the request kept until wrapper or execution evidence is observed.
+    expect(pendingRequests(w)).toEqual([
+      { repo: REPO.toLowerCase(), by: "maintainer" },
+    ]);
+    expect(requestRows(w)).toEqual([]);
     const digest = readStewardDigest(run.id, root);
     expect(digest.ok && digest.value.backlog).toEqual([]);
     expect(digest.ok && digest.value.repo).toBe(REPO);
+    await waitFor("steward wrapper claim", () => isClaimedOrEnded(w, run.id));
+    const settled = await tick(w);
+    expect(stewardLaunches(settled)).toEqual([]);
+    expect(settled.repos[0]?.steward?.status).toContain(
+      `answered by steward pass ${run.id}`,
+    );
+    expect(pendingRequests(w)).toEqual([]);
     expect(requestRows(w)).toEqual([
       expect.objectContaining({
         event: "steward-requested",
@@ -202,5 +235,149 @@ describe("a requested steward pass", () => {
         ),
       }),
     ]);
+  }, 60_000);
+
+  test("keeps the request through an acknowledged-but-unclaimed launch, and fulfills it once that stuck launch is cleared", async () => {
+    const w = fixture();
+    const root = dispatchState(w);
+    writeFileSync(join(w.dir, "orca-terminal-noop"), "");
+    const req = request(w);
+    const first = await tick(w);
+    const firstId = stewardLaunches(first)[0]?.record;
+    expect(stewardLaunches(first)).toMatchObject([{ outcome: "launched" }]);
+    expect(firstId).toBeTruthy();
+    if (!firstId) throw new Error("expected first steward launch id");
+    expect(readRecord(firstId, root)?.stewardRequest).toBe(req.id);
+    expect(pendingRequests(w)).toEqual([
+      { repo: REPO.toLowerCase(), by: "maintainer" },
+    ]);
+    expect(requestRows(w)).toEqual([]);
+
+    // Next tick still sees an acknowledged-but-unclaimed launch: keep the request, start nothing, log nothing.
+    const second = await tick(w);
+    expect(stewardLaunches(second)).toEqual([]);
+    expect(second.repos[0]?.steward?.status).toContain(
+      `steward launch ${firstId} is acknowledged and awaiting wrapper claim`,
+    );
+    expect(pendingRequests(w)).toEqual([
+      { repo: REPO.toLowerCase(), by: "maintainer" },
+    ]);
+    expect(requestRows(w)).toEqual([]);
+
+    // Operator clears the stuck unclaimed launch; the request stands and starts a fresh pass.
+    expect(await clearMain(firstId, root)).toBe(0);
+    unlinkSync(join(w.dir, "orca-terminal-noop"));
+    const third = await tick(w);
+    const secondId = stewardLaunches(third)[0]?.record;
+    expect(stewardLaunches(third)).toMatchObject([{ outcome: "launched" }]);
+    expect(secondId).toBeTruthy();
+    expect(secondId).not.toBe(firstId);
+    if (!secondId) throw new Error("expected second steward launch id");
+    expect(readRecord(secondId, root)?.stewardRequest).toBe(req.id);
+
+    await waitFor("fresh steward wrapper claim", () =>
+      isClaimedOrEnded(w, secondId),
+    );
+    const settled = await tick(w);
+    expect(stewardLaunches(settled)).toEqual([]);
+    expect(pendingRequests(w)).toEqual([]);
+    expect(requestRows(w)).toEqual([
+      expect.objectContaining({
+        event: "steward-requested",
+        class: null,
+        reason: expect.stringContaining(
+          `started steward pass ${secondId}, requested by maintainer`,
+        ),
+      }),
+    ]);
+  }, 60_000);
+
+  test("an unrelated steward launch created after the request never satisfies it as requested", async () => {
+    const w = fixture();
+    const root = dispatchState(w);
+    // First: an unrelated pending-with-sent launch created after the request refuses it as held, never logs steward-requested.
+    const heldReq = request(w);
+    const later = new Date(Date.parse(heldReq.at) + 5_000).toISOString();
+    earlierRecord(w, {
+      id: "20261127T230001Z-aaaaaaaa",
+      action: "steward",
+      account: "a",
+      pr: null,
+      item: null,
+      createdAt: later,
+      attempts: [{ at: later, outcome: "sent", detail: "started" }],
+    });
+    const refused = await tick(w);
+    expect(stewardLaunches(refused)).toEqual([]);
+    expect(refused.repos[0]?.steward).toEqual({
+      status:
+        "maintainer's request refused: a steward pass already holds this repository",
+      trigger: "held",
+      requestedBy: "maintainer",
+    });
+    expect(pendingRequests(w)).toEqual([]);
+    expect(requestRows(w)).toEqual([
+      expect.objectContaining({
+        event: "steward-request-refused",
+        class: "refused",
+      }),
+    ]);
+
+    // End the unrelated launch, then send a new request whose timestamp precedes a second unrelated ended launch:
+    // the tick must start a fresh pass carrying the new request's identity rather than treating the unrelated launch as its answer.
+    claimed(
+      w,
+      "20261127T230001Z-aaaaaaaa",
+      {
+        hostId: "h",
+        host: "h",
+        bootId: "b",
+        pid: 1,
+        start: "s",
+        claimedAt: later,
+      },
+      0,
+    );
+    const freshReq = request(w);
+    const evenLater = new Date(Date.parse(freshReq.at) + 5_000).toISOString();
+    earlierRecord(w, {
+      id: "20261127T230002Z-bbbbbbbb",
+      action: "steward",
+      account: "a",
+      pr: null,
+      item: null,
+      createdAt: evenLater,
+      attempts: [{ at: evenLater, outcome: "sent", detail: "started" }],
+    });
+    claimed(
+      w,
+      "20261127T230002Z-bbbbbbbb",
+      {
+        hostId: "h",
+        host: "h",
+        bootId: "b",
+        pid: 2,
+        start: "s",
+        claimedAt: evenLater,
+      },
+      0,
+    );
+    const launched = await tick(w);
+    const launchedId = stewardLaunches(launched)[0]?.record;
+    expect(stewardLaunches(launched)).toMatchObject([{ outcome: "launched" }]);
+    expect(launchedId).toBeTruthy();
+    if (!launchedId) throw new Error("expected launched steward id");
+    expect(readRecord(launchedId, root)?.stewardRequest).toBe(freshReq.id);
+    await waitFor("fresh launch claim", () => isClaimedOrEnded(w, launchedId));
+    await tick(w);
+    expect(pendingRequests(w)).toEqual([]);
+    expect(requestRows(w)).toContainEqual(
+      expect.objectContaining({
+        event: "steward-requested",
+        reason: expect.stringContaining(
+          `started steward pass ${launchedId}, requested by maintainer`,
+        ),
+      }),
+    );
   }, 60_000);
 });
