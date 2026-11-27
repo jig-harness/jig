@@ -23,6 +23,12 @@ const CWD_PROBE = `if [ -e /proc/self/cwd ]; then exec find /proc -mindepth 2 -m
 
 export type CwdAnswer = { pids: string[] } | { unknown: string };
 
+/** `ProbeRun` that does not block the caller while the probe runs. */
+export type AsyncProbeRun = (
+  argv: string[],
+  cwd?: string,
+) => Promise<RunResult>;
+
 /** Whether `cwd` is `top` or under it. */
 function inside(cwd: string, top: string): boolean {
   return cwd === top || cwd.startsWith(top.endsWith("/") ? top : `${top}/`);
@@ -74,15 +80,6 @@ function unescapeLsof(name: string, caret: boolean): string {
   return new TextDecoder().decode(new Uint8Array(bytes));
 }
 
-/** Whether any reading of lsof's name field is `top` or under it. */
-function insideLsof(name: string, top: string): boolean {
-  return (
-    inside(name, top) ||
-    inside(unescapeLsof(name, false), top) ||
-    inside(unescapeLsof(name, true), top)
-  );
-}
-
 /**
  * Whether lsof gave only part of a name: it prints a filesystem name, ` -- `
  * and the components it could recover, which no path comparison can place.
@@ -91,31 +88,71 @@ function incompleteLsof(name: string): boolean {
   return name.includes(" -- ");
 }
 
-/** The listing's pids working in `top`, the pids whose directory it could not read and the names lsof gave only in part. */
-export function parseCwdListing(
-  listing: string,
-  top: string,
-): { pids: string[]; unread: string[]; partial: string[] } {
-  const pids: string[] = [];
-  const unread: string[] = [];
-  const partial: string[] = [];
+/**
+ * One process's working directory as a listing gave it: the names it may be
+ * read as (`/proc` gives one, lsof's escaped field up to three), `unread`
+ * when the kernel gave none, and `partial` for a name lsof gave only in part.
+ */
+interface CwdEntry {
+  pid: string;
+  names: string[];
+  unread: boolean;
+  partial: boolean;
+}
+
+/** The listing's entries, each name read once however many trees it is later asked about. */
+function parseEntries(listing: string): CwdEntry[] {
+  const entries: CwdEntry[] = [];
   let pid: string | null = null;
   for (const line of listing.split("\n")) {
     const proc = /^\/proc\/(\d+)\t(.*)$/.exec(line);
     if (proc !== null) {
       const [, id, cwd] = proc as unknown as [string, string, string];
-      if (cwd === "") unread.push(id);
-      else if (inside(cwd, top)) pids.push(id);
+      entries.push({
+        pid: id,
+        names: cwd === "" ? [] : [cwd],
+        unread: cwd === "",
+        partial: false,
+      });
       continue;
     }
     if (line.startsWith("p")) pid = line.slice(1);
     else if (line.startsWith("n") && pid !== null) {
       const name = line.slice(1);
-      if (insideLsof(name, top)) pids.push(pid);
-      else if (incompleteLsof(name)) partial.push(name);
+      entries.push({
+        pid,
+        names: [name, unescapeLsof(name, false), unescapeLsof(name, true)],
+        unread: false,
+        partial: incompleteLsof(name),
+      });
     }
   }
+  return entries;
+}
+
+/** The entries' pids working in `top`, the pids whose directory it could not read and the names lsof gave only in part. */
+function readEntries(
+  entries: CwdEntry[],
+  top: string,
+): { pids: string[]; unread: string[]; partial: string[] } {
+  const pids: string[] = [];
+  const unread: string[] = [];
+  const partial: string[] = [];
+  for (const entry of entries) {
+    if (entry.unread) unread.push(entry.pid);
+    else if (entry.names.some((name) => inside(name, top)))
+      pids.push(entry.pid);
+    else if (entry.partial) partial.push(entry.names[0] as string);
+  }
   return { pids: [...new Set(pids)], unread, partial };
+}
+
+/** The listing's pids working in `top`, the pids whose directory it could not read and the names lsof gave only in part. */
+export function parseCwdListing(
+  listing: string,
+  top: string,
+): { pids: string[]; unread: string[]; partial: string[] } {
+  return readEntries(parseEntries(listing), top);
 }
 
 /**
@@ -141,9 +178,8 @@ function sortCwdErrors(
   return { denied };
 }
 
-/** Why the process `pid`, whose working directory its owner cannot read, may still be in the tree; `null` when it ended or holds privileges its owner lacks. */
-function deniedWhy(run: ProbeRun, pid: string): string | null {
-  const status = run(["cat", `/proc/${pid}/status`]);
+/** Why the process whose `/proc/<pid>/status` read gave `status` may still be in the tree; `null` when it ended or holds privileges its owner lacks. */
+function deniedReason(pid: string, status: RunResult): string | null {
   if (status.status !== 0)
     return /No such (?:file or directory|process)/.test(status.stderr)
       ? null
@@ -154,9 +190,10 @@ function deniedWhy(run: ProbeRun, pid: string): string | null {
     : `process ${pid}'s working directory cannot be read`;
 }
 
-/** The pids of this user's processes working in `top`, or why that cannot be told. */
-export function cwdHolders(run: ProbeRun, top: string): CwdAnswer {
-  const listed = run(["sh", "-c", CWD_PROBE], "/");
+/** The probe's listing, or why it is no answer, with the pids its errors say it could not read. */
+function readProbe(
+  listed: RunResult,
+): { unknown: string } | { listing: string; denied: string[] } {
   // An empty listing is no answer: it always holds the probe's own process.
   if ((listed.status !== 0 && listed.status !== 1) || listed.stdout === "")
     return {
@@ -164,14 +201,55 @@ export function cwdHolders(run: ProbeRun, top: string): CwdAnswer {
     };
   const errors = sortCwdErrors(listed.stderr);
   if ("unknown" in errors) return { unknown: errors.unknown };
-  const { pids, unread, partial } = parseCwdListing(listed.stdout, top);
-  if (partial.length > 0)
-    return {
-      unknown: `lsof gave only part of a working directory's name (${partial[0]})`,
-    };
-  for (const pid of new Set([...errors.denied, ...unread])) {
-    const why = deniedWhy(run, pid);
+  return { listing: listed.stdout, denied: errors.denied };
+}
+
+const partialAnswer = (name: string): CwdAnswer => ({
+  unknown: `lsof gave only part of a working directory's name (${name})`,
+});
+
+/** The pids of this user's processes working in `top`, or why that cannot be told. */
+export function cwdHolders(run: ProbeRun, top: string): CwdAnswer {
+  const probed = readProbe(run(["sh", "-c", CWD_PROBE], "/"));
+  if ("unknown" in probed) return probed;
+  const { pids, unread, partial } = parseCwdListing(probed.listing, top);
+  if (partial.length > 0) return partialAnswer(partial[0] as string);
+  for (const pid of new Set([...probed.denied, ...unread])) {
+    const why = deniedReason(pid, run(["cat", `/proc/${pid}/status`]));
     if (why !== null) return { unknown: why };
   }
+  return { pids };
+}
+
+/**
+ * One scan of this user's processes' working directories, read once and
+ * asked about any number of trees with `holdersIn`: the parsed listing and
+ * the first reason a process whose directory could not be read may still be
+ * in a tree, or why the scan is no answer.
+ */
+export type CwdScan =
+  | { entries: CwdEntry[]; blocked: string | null }
+  | { unknown: string };
+
+/** Scan once, without blocking the caller; every error is judged as `cwdHolders` judges it, each denied process's status read once. */
+export async function scanCwds(run: AsyncProbeRun): Promise<CwdScan> {
+  const probed = readProbe(await run(["sh", "-c", CWD_PROBE], "/"));
+  if ("unknown" in probed) return probed;
+  const entries = parseEntries(probed.listing);
+  const unread = entries.filter((e) => e.unread).map((e) => e.pid);
+  let blocked: string | null = null;
+  for (const pid of new Set([...probed.denied, ...unread])) {
+    blocked = deniedReason(pid, await run(["cat", `/proc/${pid}/status`]));
+    if (blocked !== null) break;
+  }
+  return { entries, blocked };
+}
+
+/** What `cwdHolders` answers for `top`, from a scan made once. */
+export function holdersIn(scan: CwdScan, top: string): CwdAnswer {
+  if ("unknown" in scan) return scan;
+  const { pids, partial } = readEntries(scan.entries, top);
+  if (partial.length > 0) return partialAnswer(partial[0] as string);
+  if (scan.blocked !== null) return { unknown: scan.blocked };
   return { pids };
 }
