@@ -82,6 +82,8 @@ export interface ScoreboardAnswer {
   to: string;
   /** The account slots the newest line shows; `null` when none was written. */
   slots: number | null;
+  /** True when the log held more rows than one request reads: the oldest were dropped, so every figure is an estimate. */
+  truncated: boolean;
   /** The newest release first. */
   rows: ScoreboardRow[];
   regressions: Regression[];
@@ -201,9 +203,10 @@ function groupsOf(
   }
   for (const row of inWindow.filter(isAnswered))
     byRelease.get(releaseOf(row))?.push(row);
+  // A release starts with its first run; an answer never moves the start.
   const startsAt = (group: LogRow[]): number =>
     group.reduce(
-      (least, r) => Math.min(least, isEnded(r) ? startOf(r) : parseMs(r.at)),
+      (least, r) => (isEnded(r) ? Math.min(least, startOf(r)) : least),
       Number.POSITIVE_INFINITY,
     );
   return [...byRelease.entries()]
@@ -215,12 +218,46 @@ function groupsOf(
     .sort((a, b) => a.from - b.from);
 }
 
+/** The slot time of all runs, summed over any span in logarithmic time. */
+interface Occupancy {
+  heldIn(from: number, to: number): number;
+}
+
+/** Sorted bounds with running sums of them; `held(t)` is the run time before `t`. */
+function occupancyOf(runs: readonly EndedRow[]): Occupancy {
+  const bounds = (values: number[]) => {
+    const sorted = values.sort((a, b) => a - b);
+    const sums = [0];
+    for (const v of sorted) sums.push((sums[sums.length - 1] ?? 0) + v);
+    return { sorted, sums };
+  };
+  const starts = bounds(runs.map(startOf));
+  const ends = bounds(runs.map((r) => parseMs(r.at)));
+  const upTo = (b: ReturnType<typeof bounds>, t: number): number => {
+    let lo = 0;
+    let hi = b.sorted.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if ((b.sorted[mid] as number) <= t) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+  // Σ clamp(t - start, 0, end - start) over the runs.
+  const held = (t: number): number => {
+    const ns = upTo(starts, t);
+    const ne = upTo(ends, t);
+    return t * ns - (starts.sums[ns] ?? 0) - (t * ne - (ends.sums[ne] ?? 0));
+  };
+  return { heldIn: (from, to) => Math.max(0, held(to) - held(from)) };
+}
+
 /** The row of one release, whose span runs to `spanTo`. */
 function rowOf(
   { release, group, from }: Group,
   spanTo: number,
   slots: number | null,
-  allRuns: readonly EndedRow[],
+  occupancy: Occupancy,
   windowFrom: number,
   windowTo: number,
 ): ScoreboardRow {
@@ -243,10 +280,7 @@ function rowOf(
     );
   // Every run's slot occupancy over the span counts, whichever release ran
   // it; a launch still running has no row yet, so the figure is an estimate.
-  const heldMs = allRuns.reduce(
-    (sum, r) => sum + overlap(startOf(r), parseMs(r.at), from, spanTo),
-    0,
-  );
+  const heldMs = occupancy.heldIn(from, spanTo);
   const finished = runs
     .filter((r) => r.class === "converged" || r.class === "merged")
     .flatMap((r) => (typeof r.rounds === "number" ? [r.rounds] : []));
@@ -277,17 +311,19 @@ export function scoreboardOf(
   fromMs: number,
   toMs: number,
   slots: number | null,
+  truncated = false,
 ): ScoreboardAnswer {
   const groups = groupsOf(rows, fromMs, toMs);
-  const allRuns = rows.filter(isEnded);
+  const occupancy = occupancyOf(rows.filter(isEnded));
   return {
+    truncated,
     window,
     from: isoFromMs(fromMs),
     to: isoFromMs(toMs),
     slots,
     rows: groups
       .map((g, i) =>
-        rowOf(g, groups[i + 1]?.from ?? toMs, slots, allRuns, fromMs, toMs),
+        rowOf(g, groups[i + 1]?.from ?? toMs, slots, occupancy, fromMs, toMs),
       )
       .reverse(),
     regressions: regressionsOf(rows, toMs, fromMs),
@@ -310,21 +346,29 @@ function slotsOf(line: LineSnapshot | null): number | null {
 /** The most rows one request reads, newest first; an older tail is dropped, so the figures are an estimate on a log this busy. */
 const MAX_ROWS = 50_000;
 
-/** The rows a scoreboard reads: every ended row, and the rows of answered parks, from `fromMs` to `toMs`. */
-function scoreboardRows(fromMs: number, toMs: number, root: string): LogRow[] {
+/** The rows a scoreboard reads, and whether the log held more than one request reads. */
+interface ScoreboardRows {
+  rows: LogRow[];
+  truncated: boolean;
+}
+
+/** The rows a scoreboard reads: every ended row, and the rows of answered parks, from `fromMs` to `toMs`; the newest by time when there are too many. */
+function scoreboardRows(
+  fromMs: number,
+  toMs: number,
+  root: string,
+): ScoreboardRows {
   const db = existingStateDb(root);
-  if (db === null) return [];
-  return rowsOf(
-    (
-      db
-        .query(
-          `SELECT row FROM log
-           WHERE at_ms >= ? AND at_ms <= ? AND (kind = 'ended' OR bucket = 'event: park-answered')
-           ORDER BY seq DESC LIMIT ?`,
-        )
-        .all(fromMs, toMs, MAX_ROWS) as Array<{ row: string }>
-    ).reverse(),
-  );
+  if (db === null) return { rows: [], truncated: false };
+  const found = db
+    .query(
+      `SELECT row FROM log
+       WHERE at_ms >= ? AND at_ms <= ? AND (kind = 'ended' OR bucket = 'event: park-answered')
+       ORDER BY at_ms DESC, seq DESC LIMIT ?`,
+    )
+    .all(fromMs, toMs, MAX_ROWS + 1) as Array<{ row: string }>;
+  const truncated = found.length > MAX_ROWS;
+  return { rows: rowsOf(found.slice(0, MAX_ROWS).reverse()), truncated };
 }
 
 /** `GET /scoreboard` over the log under `root`, with `line` for the slots. */
@@ -336,11 +380,10 @@ export function readScoreboard(
 ): ScoreboardAnswer {
   const window = windowOf(params);
   const fromMs = nowMs - WINDOWS[window] * DAY_MS;
-  return scoreboardOf(
-    scoreboardRows(fromMs - ABSENT_DAYS * DAY_MS, nowMs, root),
-    window,
-    fromMs,
+  const { rows, truncated } = scoreboardRows(
+    fromMs - ABSENT_DAYS * DAY_MS,
     nowMs,
-    slotsOf(line),
+    root,
   );
+  return scoreboardOf(rows, window, fromMs, nowMs, slotsOf(line), truncated);
 }

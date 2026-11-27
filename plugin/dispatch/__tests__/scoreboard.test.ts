@@ -178,6 +178,28 @@ describe("the scoreboard read from a state directory", () => {
     expect(board.rows.every((r) => r.idleSlotHours === null)).toBe(true);
   });
 
+  it("starts a release at its first run, not at an earlier answer", () => {
+    const rows = [
+      answered("2026-11-26T09:00:00.000Z", 1, "1.0.0"),
+      ended("2026-11-26T12:00:00.000Z", "merged", 1, { release: "1.0.0" }),
+    ];
+    const board = scoreboardOf(rows, "7d", NOW - 7 * DAY, NOW, null);
+    expect(board.rows[0]?.firstAt).toBe("2026-11-26T11:00:00.000Z");
+    expect(board.truncated).toBe(false);
+  });
+
+  it("sums slot occupancy over overlapping runs the way a direct overlap does", () => {
+    const rows = [
+      ended("2026-11-26T12:00:00.000Z", "merged", 4, { release: "1.0.0" }),
+      ended("2026-11-26T13:00:00.000Z", "merged", 2, { release: "1.0.0" }),
+    ];
+    const board = scoreboardOf(rows, "7d", NOW - 7 * DAY, NOW, 2);
+    const from = Date.parse("2026-11-26T08:00:00.000Z");
+    const held = 4 + 2;
+    const expected = Math.round(((2 * (NOW - from)) / HOUR - held) * 100) / 100;
+    expect(board.rows[0]?.idleSlotHours).toBe(expected);
+  });
+
   it("reads the log, the line's slots and the window from a state directory", () => {
     const root = mkdtempSync(join(tmpdir(), "scoreboard-"));
     roots.push(root);
