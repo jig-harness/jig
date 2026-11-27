@@ -33,19 +33,43 @@ export type QueuedFields = Pick<
     Pick<LineQueued, "stale" | "assignedBy" | "hold" | "pickupHold" | "launch">
   >;
 
-/** Where the line places a tracker item the tick left unplaced: held when a person's hold did it, else refused. */
-export function unplacedQueueFields(u: {
-  target: string;
-  reason: string;
+/**
+ * Whether the tick itself settles this hold: it reads the hold's dependency
+ * every tick and resumes the pickup once the dependency clears, so the
+ * person who placed it has nothing to do while the dependency is open. A
+ * hold with no dependency, one whose stored dependency cannot be read, and
+ * one whose dependency can no longer clear (its pull request closed
+ * unmerged) wait on a person.
+ */
+export function selfChecked(hold: PersonPickupHold): boolean {
+  return (
+    hold.condition !== undefined &&
+    hold.unreadableCondition !== true &&
+    hold.settled === undefined
+  );
+}
+
+/** What an unplaced item says about a hold on it: a hold a person releases carries who and when; one the tick checks itself says only that it does. */
+export interface UnplacedHold {
   pickupHold?: LineQueued["pickupHold"];
-}): QueuedFields {
-  const placed: QueuedFields =
-    u.pickupHold === undefined
-      ? { source: "assigned", group: "never", target: u.target, why: u.reason }
-      : { source: "held", group: "held", target: u.target, why: u.reason };
-  return u.pickupHold === undefined
-    ? placed
-    : { ...placed, pickupHold: u.pickupHold };
+  selfChecked?: true;
+}
+
+/** Where the line places a tracker item the tick left unplaced: held when a hold did it, else refused. Only a hold a person releases carries the person's marker, so only that one is listed among what waits on a person. */
+export function unplacedQueueFields(
+  u: { target: string; reason: string } & UnplacedHold,
+): QueuedFields {
+  if (u.pickupHold !== undefined)
+    return {
+      source: "held",
+      group: "held",
+      target: u.target,
+      why: u.reason,
+      pickupHold: u.pickupHold,
+    };
+  return u.selfChecked === true
+    ? { source: "held", group: "held", target: u.target, why: u.reason }
+    : { source: "assigned", group: "never", target: u.target, why: u.reason };
 }
 
 export function pickupHoldReason(hold: PersonPickupHold): string {

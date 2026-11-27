@@ -194,8 +194,11 @@ the areas.
 
 ## The weekly sweep
 
-Every issue filed through the tracker scripts carries a type, a priority
-and a size: the tracker refuses one without them (an epic needs no size).
+Every issue filed through the tracker scripts carries its applicable
+facets. An epic needs no size. Jira filing allows a
+custom-field facet to be omitted when the selected issue type’s create screen
+lacks that field. Supplying the facet produces a refusal naming the field
+and the issue type.
 An issue filed another way, from an issue form or with the forge's own
 command, can still arrive without them, and an issue with no priority is
 not low priority but unranked, so no pool can work it in order. The pools
@@ -243,8 +246,9 @@ It moves at most 50 issues a run, writes paced at 30 a minute, a `Retry-After` w
 what remains. When more than half of the issues that must carry a facet
 lack it, or a store fails closed, it moves nothing and reports the store
 instead: that is a store that stopped answering, not a pile of bad
-filings. A store that only cannot file some issue types (a Jira field
-missing from their create screens) does not stop it. It prints issue keys, never a title or a body, so a public CI log
+filings. A Jira create-screen gap allows the sweep to continue. The sweep counts and
+passes over missing facets whose fields Jira omits from both the create and
+edit screens. It prints issue keys, never a title or a body, so a public CI log
 holds nothing the tracker does not show.
 
 Schedule it weekly with a tracker credential that may read issues,
