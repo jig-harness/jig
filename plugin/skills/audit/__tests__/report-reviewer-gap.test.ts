@@ -84,9 +84,16 @@ describe("a repository with no automated reviewer, against Team/Standard", () =>
     expect(survey).toContain("`absent`, never");
     expect(survey).toContain("When examined");
     expect(survey).toContain("a draft's unexamined criteria stay as they are");
-    expect(survey).toContain("the audit's `--at` option");
+    expect(survey).toContain(
+      "the audit time when the audited revision is the current tip",
+    );
+    expect(survey).toContain("the `--at` option");
     expect(survey).toContain("clean checkout of an older commit");
-    expect(survey).toContain("targeting any branch");
+    expect(survey).toContain("whichever branch they target");
+    expect(survey).not.toContain("Ignore PRs");
+    expect(survey).not.toContain("targeting any branch, not only");
+    expect(survey).toContain("in the 90 days before the observation time");
+    expect(survey).toContain("opened by `--examine-all`");
     expect(survey).toContain("stop and report the audit incomplete");
     const criteria = readFileSync(
       `${root}criteria/M7-pr-lifecycle-review.yaml`,
