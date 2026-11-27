@@ -7,11 +7,16 @@ import {
   type FinalCiSignals,
   FinalCiWait,
 } from "../scripts/lib/final-ci-wait.ts";
+import {
+  optionalPollPacing,
+  pollDependencies,
+  readStatusPolling,
+} from "../scripts/lib/status/poll-pacing.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 const HEAD = "a".repeat(40);
 type Sig = Omit<FinalCiSignals, "observedAt">;
-function fixture() {
+function fixture(coreReset?: number) {
   let now = 0;
   let readDelay = 0;
   let current: Sig | null = {
@@ -20,7 +25,27 @@ function fixture() {
     unchanged: false,
   };
   let reads = 0;
+  const deferPoll =
+    coreReset === undefined
+      ? undefined
+      : optionalPollPacing(readStatusPolling({}), "drive final CI", {
+          ...pollDependencies(
+            {
+              now: () => now,
+              sleep: async () => {
+                throw new Error("optional polls must not sleep");
+              },
+            },
+            () => ({
+              core: { remaining: 100, limit: 5000, resetAt: coreReset },
+              graphql: { remaining: 4500, limit: 5000, resetAt: coreReset },
+              observedAt: now,
+            }),
+          ),
+          record: () => undefined,
+        });
   const gate = new FinalCiWait("123", 300_000, {
+    ...(deferPoll === undefined ? {} : { deferPoll }),
     now: () => now,
     signals: async () => {
       reads += 1;
@@ -62,6 +87,19 @@ describe("final CI keep-waiting gate", () => {
     expect(f.reads()).toBe(7);
     f.time(300_000);
     expect(await f.gate.skip(1, 180)).toBeNull();
+  });
+
+  it("defers repeated signal reads under low REST quota until fresh evidence is due", async () => {
+    const f = fixture(100_000);
+    await f.arm();
+    expect(await f.gate.skip(1, 180, 60_000)).toBe("witness");
+    f.time(20_000);
+    expect(await f.gate.skip(1, 180, 60_000)).toBe("witness");
+    f.time(50_000);
+    expect(await f.gate.skip(1, 180, 60_000)).toBe("witness");
+    expect(f.reads()).toBe(2);
+    f.time(60_000);
+    expect(await f.gate.skip(1, 180, 60_000)).toBeNull();
   });
 
   it("forces fresh evidence at the elapsed witness deadline despite backoff", async () => {

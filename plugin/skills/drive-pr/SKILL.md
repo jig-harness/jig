@@ -1920,6 +1920,13 @@ disables the failed-check retry. A spent CI-repair budget stops with
 re-run, and stops with [`CI_INFRA_PERSISTED`](../../protocol/drive-exits.md) past its own bounds. See
 § Terminal states.
 
+The waiting status probe and the driver's optional final-CI and takeover
+polls share the GitHub quota policy in
+[configuration](../../CONFIGURATION.md#drive). The tighter of REST core and
+GraphQL sets the delay within the waiting reader's deadline. The limiting
+window appears in the outbound ledger. Local controls and the fresh reads
+required for a verdict or pass continue on their existing schedule.
+
 ### 1. Gate
 
 **exact** — Run the gate first and obey its result; the script owns liveness and convergence.
