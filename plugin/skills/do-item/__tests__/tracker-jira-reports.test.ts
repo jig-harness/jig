@@ -830,13 +830,16 @@ describe("Jira adapter: assignments", () => {
     );
   });
 
-  it("throws when the issue is no longer the account's or holds no such change", async () => {
+  it("throws when the issue is no longer assigned to the account", async () => {
     await expect(
       jira(assigned(MEMBER, { ...MEMBER })).t.assignedBy(
         "ENG-42",
         "factory@example.com",
       ),
     ).rejects.toThrow("no longer assigned");
+  });
+
+  it("explains how to start pickup for a Jira issue created with an assignee", async () => {
     const { t } = jira(
       routes({
         "GET issue/ENG-1": issue({ key: "ENG-1", assignee: FACTORY }),
@@ -849,7 +852,9 @@ describe("Jira adapter: assignments", () => {
         },
       }),
     );
-    await expect(t.assignedBy("ENG-1")).rejects.toThrow("holds no assignment");
+    await expect(t.assignedBy("ENG-1")).rejects.toThrow(
+      "Jira omits assignments made at issue creation. To start a pickup, have a trusted person unassign the issue and assign it again.",
+    );
   });
 
   it("gives the dispatcher a trusted pickup for a member's assignment and none for an app's", async () => {
