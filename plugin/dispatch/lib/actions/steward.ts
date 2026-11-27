@@ -65,6 +65,27 @@ import {
 } from "./launch.ts";
 import { currentIso, currentMs } from "../../../shared/time.ts";
 
+/** A refusal no pass was shown is owed one, though no backlog member stands for it. */
+function triggerWithRefusals(
+  base: StewardTrigger,
+  owed: number,
+): StewardTrigger {
+  if (base.kind === "due" || owed === 0) return base;
+  return {
+    kind: "due",
+    members: base.kind === "empty" ? 0 : base.members,
+    unjudged: owed,
+  };
+}
+
+function triggerReason(
+  trigger: Extract<StewardTrigger, { kind: "due" }>,
+): string {
+  return trigger.members === 0
+    ? `${trigger.unjudged} refused order(s) wait on the steward's reading`
+    : `${trigger.unjudged} of the judgment backlog's ${trigger.members} members, or refused orders, wait on the steward's judgment`;
+}
+
 /**
  * Start the steward when the judgment backlog holds a member no earlier pass
  * saw: at once, within the host's hourly budget, while no other pass holds
@@ -131,22 +152,15 @@ export async function applySteward(
   const found = await backlogOf(state, observation, station, judged);
   if (!found.ok) return skip(found.failure.reason);
   const backlog = found.value.backlog;
-  const owed = unshownRefusals(
-    repo.slug,
-    observation.tracked.pickups,
-    undefined,
-    state.root,
+  const trigger = triggerWithRefusals(
+    stewardTrigger(backlog.members, judged),
+    unshownRefusals(
+      repo.slug,
+      observation.tracked.pickups,
+      undefined,
+      state.root,
+    ),
   );
-  const base = stewardTrigger(backlog.members, judged);
-  // A refusal no pass was shown is owed one, though no backlog member stands for it.
-  const trigger: StewardTrigger =
-    base.kind !== "due" && owed > 0
-      ? {
-          kind: "due",
-          members: base.kind === "empty" ? 0 : base.members,
-          unjudged: owed,
-        }
-      : base;
   if (trigger.kind !== "due") {
     report.steward = notStarted(trigger);
     return;
@@ -159,10 +173,7 @@ export async function applySteward(
     stage: "steward",
     target: "the steward",
     record: "runtime",
-    reason:
-      trigger.members === 0
-        ? `${trigger.unjudged} refused order(s) wait on the steward's reading`
-        : `${trigger.unjudged} of the judgment backlog's ${trigger.members} members, or refused orders, wait on the steward's judgment`,
+    reason: triggerReason(trigger),
     evidence: { hash },
   };
   const admitted = await admitAccount(
