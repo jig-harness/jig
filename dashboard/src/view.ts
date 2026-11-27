@@ -777,9 +777,9 @@ function trackerKeptNote(
 ): string | null {
   const kept = r.trackerKept;
   if (kept === undefined) return null;
-  if (kept.readAt === null)
+  const read = kept.readAt === null ? Number.NaN : parseMs(kept.readAt);
+  if (!Number.isFinite(read))
     return `No tick has read its tracker with a credential, so it shows no item cards or needs about items (${kept.reason}).`;
-  const read = parseMs(kept.readAt);
   return `Its item cards and the needs about items are as of the ${stamp(read, hostDay(nowMs, timeZone), timeZone)} reading, ${ago(read, nowMs)} ago (${kept.reason}).`;
 }
 
