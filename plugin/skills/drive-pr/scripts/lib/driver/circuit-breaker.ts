@@ -24,6 +24,7 @@ import {
 } from "../circuit-settings.ts";
 import {
   type CircuitBreakerState,
+  byCodeUnit,
   DIVERGENCE_ROUNDS,
   divergenceStops,
   findingMovement,
@@ -103,7 +104,7 @@ function overrideAnswerIdentity(verdicts: readonly PendingVerdict[]): string {
   return verdicts
     .filter(answerRaisesCeiling)
     .flatMap((v) => v.answers.map((a) => `${v.key}|${a.url}|${a.at}`))
-    .sort()
+    .sort(byCodeUnit)
     .join(",");
 }
 

@@ -27,6 +27,11 @@
 import { parseMs } from "../../../../../shared/time.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 
+/** Code-unit order: the same on every host, unlike a locale collation. */
+export function byCodeUnit(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 /** The diverging rounds in a row that stop a drive. */
 export const DIVERGENCE_ROUNDS = 2;
 
@@ -264,7 +269,7 @@ export function openFindingKeys(
   if (!Array.isArray(threads) || !Array.isArray(summary)) return null;
   const keys = [...threads, ...summary];
   if (!keys.every((k) => typeof k === "string")) return null;
-  return [...new Set(keys as string[])].sort();
+  return [...new Set(keys as string[])].sort(byCodeUnit);
 }
 
 /**
