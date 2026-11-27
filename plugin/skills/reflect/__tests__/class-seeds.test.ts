@@ -1,6 +1,6 @@
 /** Seeded reflection-class vocabularies, loaded only by gather. */
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { finding, Machine, type Repo } from "./scratch.ts";
@@ -270,6 +270,23 @@ describe("seeded reflection classes", () => {
       expectExit(result, 1);
       expect(result.stderr).toContain(message);
     }
+  });
+
+  it("warns and continues when the vocabulary path is a link", () => {
+    machine.userConfig(
+      `reflection:\n  path: ${JSON.stringify(machine.store)}\n`,
+    );
+    const repo = machine.repository("web", "git@github.com:example/web.git");
+    repo.write("real.yaml", "- slug: linked-seed\n  shape: via a link\n");
+    symlinkSync(join(repo.root, "real.yaml"), join(repo.root, "classes.yaml"));
+    repo.write(
+      ".config/jig.yaml",
+      "reflection:\n  classes_from: classes.yaml\n",
+    );
+    const result = repo.script("reflect.ts", ["gather"]);
+    expectExit(result, 0);
+    expect(result.stderr).toContain("is a link, not a regular file");
+    expect(result.stdout).not.toContain("linked-seed");
   });
 
   it("parses a .json vocabulary as JSON and drops a lower layer's seeds on a null section", () => {

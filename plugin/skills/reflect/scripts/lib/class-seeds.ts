@@ -4,8 +4,8 @@ import {
   constants,
   fstatSync,
   openSync,
+  lstatSync,
   readSync,
-  realpathSync,
 } from "node:fs";
 import {
   formatDisplayValue,
@@ -144,18 +144,20 @@ function readBounded(fd: number): string {
 }
 
 /**
- * Open without blocking on a pipe, then check the file actually opened.
- * The path is refused when it, after expansion or after resolving links,
- * names a network location.
+ * Open without blocking on a pipe and without following a link, then check
+ * the file actually opened. A path that names a network location, or whose
+ * last component is a link, is refused before the system resolves it, so the
+ * read never contacts a location it has not been shown to be local.
  */
 function readClassFile(path: string): string {
   if (isNetworkLocation(path)) throw new SettingError("is not a local path");
-  const resolved = realpathSync(path);
-  if (isNetworkLocation(resolved))
-    throw new SettingError("resolves to a network location");
+  if (lstatSync(path).isSymbolicLink())
+    throw new SettingError("is a link, not a regular file");
   const fd = openSync(
-    resolved,
-    constants.O_RDONLY | (constants.O_NONBLOCK ?? 0),
+    path,
+    constants.O_RDONLY |
+      (constants.O_NONBLOCK ?? 0) |
+      (constants.O_NOFOLLOW ?? 0),
   );
   try {
     const stat = fstatSync(fd);
