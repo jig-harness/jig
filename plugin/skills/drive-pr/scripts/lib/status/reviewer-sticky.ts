@@ -177,17 +177,12 @@ export function reviewerStickyBody(
   // A structural marker may follow a heading, but quoted and code examples
   // are not reviewer evidence. Requiring byte zero rejected valid configured
   // summaries; accepting every trimmed line lets an example replace one.
-  let fence: Fence = null;
-  let prev = "";
   let quotedFence: { character: "`" | "~"; length: number } | null = null;
   const structural: string[] = [];
-  for (const line of body.split(/\r?\n/)) {
+  for (const { line, step, fence } of fencedLines(body)) {
     // Fenced blocks are structural only at Markdown's permitted indentation.
     // Remember their delimiter length: three backticks inside a four-backtick
     // block are content, not its closing fence.
-    const step = fenceStep(line, fence, paragraphBefore(prev, fence));
-    prev = line;
-    fence = step.fence;
     if (step.delimiter || fence !== null || step.columns >= 4) continue;
     // Finding-count declarations are intentionally rendered as blockquotes by
     // the reviewer. Only the declaration's recognised prefix survives, and
@@ -245,6 +240,18 @@ export function reviewerStickyBody(
       .some((line) => line.trimStart().startsWith(summaryMarker))
     ? structuralBody
     : null;
+}
+
+/** Each line of a body with its fence step; `fence` is the state after the line. */
+function* fencedLines(body: string) {
+  let fence: Fence = null;
+  let prev = "";
+  for (const line of body.split(/\r?\n/)) {
+    const step = fenceStep(line, fence, paragraphBefore(prev, fence));
+    prev = line;
+    fence = step.fence;
+    yield { line, step, fence };
+  }
 }
 
 /** Whether the previous line was paragraph text a following line could continue. */
@@ -356,16 +363,11 @@ export function structuralSkipNotices(body: string, marker: string): string {
   const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const opener = new RegExp(`^ {0,3}<!--\\s*${escaped}\\s*-->\\s*$`);
   const closer = new RegExp(`^ {0,3}<!--\\s*/\\s*${escaped}\\s*-->\\s*$`);
-  let fence: Fence = null;
-  let prev = "";
   let open = false;
   const kept: string[] = [];
-  for (const line of body.split(/\r?\n/)) {
+  for (const { line, step, fence } of fencedLines(body)) {
     // A fence delimiter is never skip-notice payload. Treat opener and
     // closer symmetrically so neither can leak into the decoder.
-    const step = fenceStep(line, fence, paragraphBefore(prev, fence));
-    prev = line;
-    fence = step.fence;
     if (step.delimiter) continue;
     if (fence !== null || step.columns >= 4 || /^ {0,3}>/.test(line)) {
       // The skip notice intentionally retains its blockquoted prose, but a
