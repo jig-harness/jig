@@ -167,16 +167,20 @@ function verifiedLocalPath(path: string): string {
     if (part === ".." || pending.length === 0) continue;
     if (!lstatSync(resolved).isSymbolicLink()) continue;
     if (++hops > MAX_LINK_HOPS) throw new SettingError("has too many links");
-    const target = localLinkTarget(resolved);
-    if (isAbsolute(target)) {
-      resolved = parse(target).root;
-      pending.unshift(...componentsBehindRoot(target));
-    } else {
-      resolved = dirname(resolved);
-      pending.unshift(...components(target));
-    }
+    resolved = followLink(resolved, pending);
   }
   return resolved;
+}
+
+/** Queue the components behind a local link; return where they resolve from. */
+function followLink(link: string, pending: string[]): string {
+  const target = localLinkTarget(link);
+  if (isAbsolute(target)) {
+    pending.unshift(...componentsBehindRoot(target));
+    return parse(target).root;
+  }
+  pending.unshift(...components(target));
+  return dirname(link);
 }
 
 /** A link's target, refused when it names a network location. */
@@ -242,6 +246,32 @@ export interface LoadedClassSeeds {
   warnings: string[];
 }
 
+function readSeedFile(path: string): { text: string } | { warning: string } {
+  try {
+    return { text: readClassFile(path) };
+  } catch (error) {
+    // Only a filesystem failure or the explicit refusals above are expected.
+    const code = (error as { code?: unknown } | null)?.code;
+    if (!(error instanceof SettingError) && typeof code !== "string")
+      throw error;
+    const reason = error instanceof Error ? error.message : String(error);
+    return {
+      warning: `reflection.classes_from ${formatDisplayValue(path)} could not be read (${formatDisplayValue(reason)}); continuing without it`,
+    };
+  }
+}
+
+function parseSeedFile(path: string, text: string): unknown {
+  const json = /\.json$/i.test(path);
+  try {
+    return json ? JSON.parse(text) : load(text);
+  } catch (error) {
+    throw new SettingError(
+      `reflection.classes_from ${formatDisplayValue(path)} could not be parsed as ${json ? "JSON" : "YAML"}${parseLocation(error)}`,
+    );
+  }
+}
+
 /**
  * Read the configured vocabulary files and overlay every source by slug.
  * Only file-system failures are warnings: malformed content is configuration
@@ -261,28 +291,12 @@ export function loadClassSeeds(
       add(source.classes);
       continue;
     }
-    let text: string;
-    try {
-      text = readClassFile(source.path);
-    } catch (error) {
-      // Only a filesystem failure or the explicit refusals above are expected.
-      const code = (error as { code?: unknown } | null)?.code;
-      if (!(error instanceof SettingError) && typeof code !== "string")
-        throw error;
-      const reason = error instanceof Error ? error.message : String(error);
-      warnings.push(
-        `reflection.classes_from ${shown(source.path)} could not be read (${formatDisplayValue(reason)}); continuing without it`,
-      );
+    const read = readSeedFile(source.path);
+    if ("warning" in read) {
+      warnings.push(read.warning);
       continue;
     }
-    let parsed: unknown;
-    try {
-      parsed = /\.json$/i.test(source.path) ? JSON.parse(text) : load(text);
-    } catch (error) {
-      throw new SettingError(
-        `reflection.classes_from ${shown(source.path)} could not be parsed as ${/\.json$/i.test(source.path) ? "JSON" : "YAML"}${parseLocation(error)}`,
-      );
-    }
+    const parsed = parseSeedFile(source.path, read.text);
     add(classEntries(parsed, `reflection.classes_from ${shown(source.path)}`));
   }
   return { classes: [...classes.values()], warnings };

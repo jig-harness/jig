@@ -67,7 +67,7 @@ import {
 import {
   MODES,
   type ReflectionSettings,
-  reflectionSettings,
+  whenReflectionOn,
 } from "./lib/settings.ts";
 import { failureOf, orExit, Store, storeState } from "./lib/store-client.ts";
 import { readHotspotReport, recordHotspots } from "./lib/hotspots.ts";
@@ -406,12 +406,9 @@ const OPERATIONS: Record<
 
 export async function main(argv: string[]): Promise<number> {
   const { operation, args } = chooseOperation(argv, OPERATIONS, USAGE);
-  const settings = reflectionSettings();
-  if (!settings.on) {
-    print({ on: false });
-    return 0;
-  }
-  return operation.run(settings, journalPath(settings.journal), args);
+  return whenReflectionOn((settings) =>
+    operation.run(settings, journalPath(settings.journal), args),
+  );
 }
 
 if (import.meta.main) runMain("reflect.ts", () => main(process.argv.slice(2)));

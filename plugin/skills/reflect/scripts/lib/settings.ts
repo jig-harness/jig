@@ -346,3 +346,15 @@ export function reflectionSwitch(): boolean | Error {
     return error instanceof Error ? error : new Error(String(error));
   }
 }
+
+/** Run `run` with the reflection settings, or report `{on: false}` and stop. */
+export async function whenReflectionOn(
+  run: (settings: ReflectionSettings) => number | Promise<number>,
+): Promise<number> {
+  const settings = reflectionSettings();
+  if (!settings.on) {
+    console.log(JSON.stringify({ on: false }, null, 2));
+    return 0;
+  }
+  return run(settings);
+}
