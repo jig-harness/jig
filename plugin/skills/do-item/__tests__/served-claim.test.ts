@@ -93,8 +93,8 @@ function world(inherited = false) {
           : key === "#2"
             ? { identifier: "#3" }
             : null,
-      labels: key === "#1" && held ? ["hitl:legal"] : ["epic"],
-      isEpic: !(key === "#1" && held),
+      labels: key === "#1" ? (held ? ["hitl:legal"] : []) : ["epic"],
+      isEpic: key !== "#1",
       state: {
         name: key === "#1" && writes.includes("start") ? "In Progress" : "Todo",
         type:
@@ -130,6 +130,39 @@ function world(inherited = false) {
     },
   };
 }
+test("refuses to claim a served epic before writing", async () => {
+  const w = world();
+  const read = w.tracker.poolIssue;
+  w.tracker.poolIssue = async (key) => {
+    const item = await read(key);
+    return item === null ? null : { ...item, isEpic: true };
+  };
+  expect(
+    await claimServedIssue(w.tracker, "#1", { person: "dana" }),
+  ).toMatchObject({
+    outcome: "refused",
+    why: "epic",
+  });
+  expect(w.writes).toEqual([]);
+});
+test("inherits the writer's assignment through unmarked parents", async () => {
+  const w = world(true);
+  const full = w.tracker.getIssue;
+  const pool = w.tracker.poolIssue;
+  w.tracker.getIssue = async (key) => {
+    const item = await full(key);
+    return item === null ? null : { ...item, labels: [], isEpic: false };
+  };
+  w.tracker.poolIssue = async (key) => {
+    const item = await pool(key);
+    return item === null ? null : { ...item, hasOpenChildren: key !== "#1" };
+  };
+  expect(
+    await claimServedIssue(w.tracker, "#1", { person: "dana", ancestor: "#3" }),
+  ).toMatchObject({ outcome: "claimed" });
+  expect(w.writes).toEqual(["assign", "start"]);
+});
+
 test("keeps the served person as the only assignee", async () => {
   const w = world();
   expect(

@@ -416,6 +416,7 @@ describe("the facets on Linear and Jira, with today's behaviour", () => {
             state: { id: "s", name: "Todo", type: "unstarted" },
             assignee: null,
             labels: page([{ name: "large" }, { name: "bug" }]),
+            allChildren: { nodes: [] },
             children: page([]),
           },
         };

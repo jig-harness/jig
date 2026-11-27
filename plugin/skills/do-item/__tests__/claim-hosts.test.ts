@@ -696,6 +696,7 @@ function item() {
         name: at.state,
         type: at.state === "Todo" ? "unstarted" : "started",
       },
+      assignee: at.assignees[0] ?? null,
       nativeType: null,
     }),
     transition: async () => {
@@ -818,6 +819,7 @@ describe("two hosts racing for one item", () => {
           },
           assignee: s.item.assignee,
           labels: { pageInfo: { hasNextPage: false }, nodes: [] },
+          allChildren: { nodes: [] },
           children: { pageInfo: { hasNextPage: false }, nodes: [] },
         },
       };

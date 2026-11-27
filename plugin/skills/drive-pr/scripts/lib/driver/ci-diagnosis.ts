@@ -214,19 +214,35 @@ async function reportOutcome(
   );
 }
 
+/** Records a diagnosis outcome on the drive's CI actions; `false` when it could not. */
+type RecordOutcome = (
+  pr: string,
+  head: string,
+  detail: string,
+) => Promise<boolean>;
+
 async function stopWithDiagnosis(
   pr: string,
   head: string,
   detail: string,
+  record: RecordOutcome = reportOutcome,
 ): Promise<number> {
-  return (await reportOutcome(pr, head, detail)) ? CI_REPAIR_SPENT_EXIT : 1;
+  return (await record(pr, head, detail)) ? CI_REPAIR_SPENT_EXIT : 1;
 }
 
+/**
+ * The stop a head already diagnosed owes before another repair, or `null`
+ * when a repair may run on it. `readState` reads the drive state
+ * (`drive-state.ts get` by default) and `record` keeps the outcome.
+ */
 export async function diagnosedHeadStop(
-  context: DriveRoundContext,
+  context: Pick<DriveRoundContext, "pr">,
   head: string,
+  readState: (pr: string) => Promise<DriveState | null> = (p) =>
+    readDriveState(p, true),
+  record: RecordOutcome = reportOutcome,
 ): Promise<number | null> {
-  const prior = await readDriveState(context.pr, true);
+  const prior = await readState(context.pr);
   if (prior === null) return 1;
   const previous = lastDiagnosisAt(prior.ciActions ?? [], head);
   if (
@@ -239,13 +255,14 @@ export async function diagnosedHeadStop(
       context.pr,
       head,
       "The diagnosing repair was interrupted before it recorded its report.",
+      record,
     );
   const recorded = previous.detail.slice(diagnosisPrefix(head).length);
   // A diagnosis that handed the head to a person ends with that park: once
   // an answer has removed it, the repair they decided is owed on this head.
   const { key } = splitParkTag(recorded);
   if (key !== null && !prior.parked.some((p) => p.key === key)) return null;
-  return await stopWithDiagnosis(context.pr, head, recorded);
+  return await stopWithDiagnosis(context.pr, head, recorded, record);
 }
 
 /**

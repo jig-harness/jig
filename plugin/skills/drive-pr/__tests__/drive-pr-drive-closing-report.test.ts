@@ -61,6 +61,17 @@ function written(file: string) {
  * can observe, run to its stall stop.
  */
 async function stallEndingEvery(state: string, reason: string) {
+  return await stallEndingWith(() => ({ state, reason }));
+}
+
+/**
+ * A dispatched drive whose passes change nothing the drive can observe, run
+ * to its stall stop: the pass of each round records the finish `byRound`
+ * gives it, or none for `null`.
+ */
+async function stallEndingWith(
+  byRound: (round: number) => { state: string; reason: string } | null,
+) {
   const { file, env } = dispatched();
   const { dir, stateDir } = writeFixture(
     {
@@ -70,6 +81,9 @@ async function stallEndingEvery(state: string, reason: string) {
     },
     scratchClean.dir,
   );
+  const finishes = Object.fromEntries(
+    Array.from({ length: 10 }, (_, i) => [i + 1, byRound(i + 1)]),
+  );
   const recorder = join(dir, "record-finish.ts");
   writeFileSync(
     recorder,
@@ -77,14 +91,17 @@ async function stallEndingEvery(state: string, reason: string) {
       `import { recordRoundFinish } from ${JSON.stringify(join(SCRIPTS, "lib", "state", "round-finish.ts"))};`,
       `import { resolveStateDir } from ${JSON.stringify(join(SCRIPTS, "lib", "state", "store.ts"))};`,
       `import { currentIso } from ${JSON.stringify(join(SCRIPTS, "..", "..", "..", "shared", "time.ts"))};`,
-      "const stateDir = process.env.DRIVE_PR_STATE_DIR || (await resolveStateDir());",
-      'recordRoundFinish(stateDir, "999", {',
-      "  round: Number(process.env.DRIVE_PR_ROUND),",
-      `  state: ${JSON.stringify(state)},`,
-      `  reason: ${JSON.stringify(reason)},`,
-      '  head: "a".repeat(40),',
-      "  at: currentIso(),",
-      "});",
+      `const finish = (${JSON.stringify(finishes)})[process.env.DRIVE_PR_ROUND ?? ""] ?? null;`,
+      "if (finish !== null) {",
+      "  const stateDir = process.env.DRIVE_PR_STATE_DIR || (await resolveStateDir());",
+      '  recordRoundFinish(stateDir, "999", {',
+      "    round: Number(process.env.DRIVE_PR_ROUND),",
+      "    state: finish.state,",
+      "    reason: finish.reason,",
+      '    head: "a".repeat(40),',
+      "    at: currentIso(),",
+      "  });",
+      "}",
     ].join("\n"),
   );
   const pass = [
@@ -280,6 +297,33 @@ describe("drive.ts's closing report", () => {
     expect(state.events.findLast((e) => e.kind === "stop")).toMatchObject({
       cause: "14",
       finish: { state: "PUSH_FAILED", reason },
+    });
+  }, 120_000);
+
+  it("at a stall whose passes ended differently, names each reason recorded and counts the pass that recorded none", async () => {
+    const { r, report, stateDir } = await stallEndingWith((round) =>
+      round === 2
+        ? null
+        : round === 1
+          ? { state: "CI_HOLD_WAIT", reason: "the CI hold is not ready" }
+          : {
+              state: "HEAD_NOT_SYNCED",
+              reason: "the head moved under the pass",
+            },
+    );
+    const line =
+      "round 1 CI_HOLD_WAIT: the CI hold is not ready; round 3 HEAD_NOT_SYNCED: the head moved under the pass; 1 of 3 passes recorded no reason";
+    expect(r.stderr).toContain(`How those passes finished: ${line}`);
+    expect(r.stderr).not.toContain("Every one of those passes ended");
+    expect(report.concluded).toStartWith(
+      `PR #999's drive stalled, its passes changing nothing: ${line} (exit 14)`,
+    );
+    const state = readState(stateDir, "999") as {
+      events: { kind: string; cause: string; reasons?: unknown }[];
+    };
+    expect(state.events.findLast((e) => e.kind === "stop")).toMatchObject({
+      cause: "14",
+      reasons: { missing: 1, passes: 3 },
     });
   }, 120_000);
 
