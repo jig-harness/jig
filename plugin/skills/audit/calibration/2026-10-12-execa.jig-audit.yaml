@@ -392,13 +392,11 @@ criteria:
     score: absent
     evidence: "No CODEOWNERS, no change-area catalog, and no paths: filters in .github/workflows/main.yml. Review routing is by maintainer habit (gh pr list --limit 100 --json reviews)."
   M7/automated-reviewer-comment-only-with-bar:   # standard, requires convention
-    # At least one automated reviewer reviews pull requests, each runs comment-only, and a pre-committed precision bar for ever flipping one (or a lens) to blocking is written down.
-    # Scored from this record's existing evidence: having no automated reviewer is a gap any repository can close, not a shape.
+    # At least one automated reviewer reviews pull requests, each runs comment-only until it clears a pre-committed precision bar for flipping it (or a lens) to blocking, and that bar is written down.
     score: absent
     evidence: "No automated reviewer is wired: no review-bot configuration in git ls-files, no reviewer job in .github/workflows/main.yml, and all review authors across the last 100 merged PRs are humans. A reviewer vendor appears only as a sponsor logo (readme.md:26), which is not a reviewer. Adding one is M7's Standard step."
   M7/automated-review-source-independent:   # standard, requires mechanical
     # The repository runs an automated reviewer, and every one that bears a secret or affects the merge gets its runtime, prompts, and active policy from a pinned external source, separately hosted service, or target base branch — never the PR head it reviews.
-    # Scored from this record's existing evidence: having no automated reviewer is a gap any repository can close, not a shape.
     score: absent
     evidence: "No automated reviewer runs (see automated-reviewer-comment-only-with-bar), so no reviewer's runtime or policy is sourced from outside the PR head. The only secret, CODECOV_TOKEN (main.yml:42), feeds a coverage upload under the plain pull_request trigger."
   M7/comment-resolution-loop-gated:   # standard, requires mechanical
@@ -427,9 +425,8 @@ criteria:
     evidence: "No PR lifecycle written anywhere, so no post-merge stage: git ls-files | grep -iE 'CONTRIBUTING|PULL_REQUEST_TEMPLATE|AGENTS|CLAUDE' finds nothing, and .github/ holds only workflows/main.yml, codecov.yml and security.md."
   M7/pr-target-wiring-fork-safe:   # standard, requires mechanical
     # No secret-bearing reviewer workflow checks out and runs untrusted fork code, and a lint enforces it.
-    # Scored from this record's existing evidence: a lint nobody runs is a gap any repository with CI can close, not a shape.
     score: absent
-    evidence: "No lint over the workflows for privileged triggers: main.yml runs only lint, link check, type and unit steps, and no other workflow exists. Today no workflow uses one (grep -r pull_request_target finds nothing; main.yml triggers only on push/pull_request), but nothing keeps a secret-bearing reviewer workflow, which M7 Standard asks for, off fork code."
+    evidence: "No lint over the workflows for privileged triggers: main.yml, the only workflow, runs the cache, the checkout, setup-node, npm install, the lychee link check, lint, type, unit and the codecov upload. No workflow uses one today (grep -r pull_request_target finds nothing; main.yml triggers only on push/pull_request), but nothing would keep a reviewer workflow that bears a secret off fork code, should one be added."
   M7/human-ready-and-merge-enforced:   # strict, requires mechanical
     # Merging is mechanically reserved to humans — branch protection requires a human actor and green required checks. (Who may mark Ready is a convention, scored under hitl-registry-published: GitHub and GitLab let any writer take the draft-to-Ready transition.)
     score: convention
@@ -448,7 +445,6 @@ criteria:
     evidence: "No human-only decision registry and no hitl label. Forge labels are the near-default set plus 2 Issuehunt labels (gh api repos/sindresorhus/execa/labels)."
   M7/reviewer-promotion-gated-on-measurement:   # strict, requires mechanical
     # The repository runs an automated reviewer, and promoting it or a lens from comment-only to blocking is gated on measured precision (from the M8 corpus / parity report), not a hunch.
-    # Scored from this record's existing evidence: having no automated reviewer is a gap any repository can close, not a shape.
     score: absent
     evidence: "No automated reviewer runs, so there is no promotion gate and no precision measurement: all review is by human maintainers, and no parity report or review corpus exists in git ls-files."
   M7/review-gates-self-tested:   # strict, requires mechanical

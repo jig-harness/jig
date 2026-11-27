@@ -21,7 +21,6 @@ const cell = (key: string) => m7?.cells.find((c) => c.criterion.key === key);
 const REVIEWER = [
   "M7/automated-reviewer-comment-only-with-bar",
   "M7/automated-review-source-independent",
-  "M7/pr-target-wiring-fork-safe",
 ];
 
 describe("a repository with no automated reviewer, against Team/Standard", () => {
@@ -30,6 +29,11 @@ describe("a repository with no automated reviewer, against Team/Standard", () =>
       REVIEWER.map((key) => [key, cell(key)?.score, cell(key)?.gap]),
     ).toEqual(REVIEWER.map((key) => [key, "absent", true]));
     expect(m7?.naReason).toBeFalsy();
+  });
+
+  test("the fork-safety lint is a gap while no lint runs, though no workflow uses a privileged trigger", () => {
+    const lint = cell("M7/pr-target-wiring-fork-safe");
+    expect([lint?.score, lint?.gap]).toEqual(["absent", true]);
   });
 
   test("the Strict promotion criterion is scored absent too, beyond the target", () => {

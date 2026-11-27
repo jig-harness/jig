@@ -43,8 +43,8 @@ criteria:
     requires: convention
     statement: >-
       At least one automated reviewer reviews pull requests, each runs
-      comment-only, and a pre-committed precision bar for ever flipping one
-      (or a lens) to blocking is written down.
+      comment-only until it clears a pre-committed precision bar for flipping
+      it (or a lens) to blocking, and that bar is written down.
     observe:
       - "an automated reviewer's configuration or workflow wiring is present and it reviewed recent pull requests (a badge or sponsor mention is not a reviewer; with none, this is absent)"
       - "the review config sets a comment-only posture for new reviewers/lenses"
