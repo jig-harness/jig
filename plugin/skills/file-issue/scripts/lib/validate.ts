@@ -236,27 +236,31 @@ function facetErrors(
   parsed: ParsedLabels,
   taxonomy: Taxonomy,
   present: ReadonlySet<string>,
+  unavailable: readonly string[],
 ): { errors: string[]; missing: string[] } {
   const found = { errors: [] as string[], missing: [] as string[] };
   const group = taxonomy.groups.find((g) => g.id === SIZE_GROUP);
   listFacet(found, "type", facets.type ?? null, {
     labels: parsed.types,
     values: taxonomy.types,
-    required: true,
+    required: !unavailable.includes("type"),
   });
   if (group !== undefined)
     listFacet(found, "size", facets.size ?? null, {
       labels: of(parsed.groups, SIZE_GROUP),
       values: group.labels,
-      required: groupRequired(group, present),
+      required: groupRequired(group, present) && !unavailable.includes("size"),
     });
   const priority = facets.priority ?? 0;
-  if (priority === 0) {
+  if (priority === 0 && !unavailable.includes("priority")) {
     found.missing.push("priority");
     found.errors.push(
       "no priority (1 urgent, 2 high, 3 medium or 4 low): an issue without one is unranked, not low",
     );
-  } else if (!Number.isInteger(priority) || priority < 1 || priority > 4)
+  } else if (
+    priority !== 0 &&
+    (!Number.isInteger(priority) || priority < 1 || priority > 4)
+  )
     found.errors.push(`priority ${priority} is not 1 (urgent) to 4 (low)`);
   const { errors, missing } = found;
   return { errors, missing };
@@ -336,6 +340,7 @@ export function validateLabels(
   taxonomy: Taxonomy,
   facets?: IssueFacetInput,
   typed?: IssueTypeInput,
+  unavailable: readonly string[] = [],
 ): Validation {
   const errors: string[] = [];
   if (input.some((l) => !l.trim()))
@@ -361,7 +366,7 @@ export function validateLabels(
       errors.push(
         `unknown label${parsed.unknown.length > 1 ? "s" : ""}: ${parsed.unknown.join(", ")} (not in the taxonomy)`,
       );
-    const checked = facetErrors(facets, parsed, taxonomy, present);
+    const checked = facetErrors(facets, parsed, taxonomy, present, unavailable);
     errors.push(...checked.errors);
     missing.push(...checked.missing);
   }

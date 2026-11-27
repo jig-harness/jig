@@ -211,6 +211,10 @@ export interface JiraFacetStores {
     patch: IssuePatch,
     signal?: AbortSignal,
   ): Promise<FacetWrite>;
+  /** The fields absent from the screens through which a missing facet could be set. */
+  unavailableFacets: NonNullable<
+    import("../port.ts").Tracker["unavailableFacets"]
+  >;
   /** Each named store's health, for `facetStores()`. */
   report(options?: FacetReadOptions): Promise<CoreFacetReport>;
 }
@@ -266,7 +270,7 @@ function lackingHealth(
     fails: `filing ${listed(
       [...lacking, ...restricted].map((n) => `${article(n)} ${n}`),
       "or",
-    )} fails`,
+    )} with the facet set fails`,
   };
 }
 
@@ -651,7 +655,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
       fails: `filing ${listed(
         [...restricted.keys()].map((n) => `${article(n)} ${n}`),
         "or",
-      )} fails`,
+      )} with the facet set fails`,
     };
   }
 
@@ -856,6 +860,37 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
       }
       const written = await fieldWrites(issue, createScreen(issueType));
       return { issueType, fields: written, add, remove: [] };
+    },
+
+    async unavailableFacets(nativeType, candidates, key, signal) {
+      const relevant = fields.filter((field) =>
+        candidates.includes(field.facet),
+      );
+      if (nativeType === null || relevant.length === 0) return [];
+      const create = await createScreen(nativeType, signal)();
+      // An existing issue's type need not be in the create metadata; its
+      // edit screen still decides. A draft has no edit screen to ask.
+      if (create === null && key === undefined) return [];
+      let edit: Promise<FieldMeta> | undefined;
+      const unavailable: Facet[] = [];
+      for (const slot of relevant) {
+        const field = await fieldOf(slot, signal);
+        if (create?.screen.has(field.id) === true) continue;
+        if (key !== undefined) {
+          edit ??= client.editMeta(key, signal);
+          const screen = await edit;
+          // Edit metadata is filtered by the caller's permissions: a screen
+          // with no summary is not a screen's answer, so nothing is exempt.
+          if (!screen.has("summary"))
+            throw new TrackerRequestError(
+              "unresolved",
+              `the edit screen of ${key} lists no summary, so it may be filtered by the caller's permissions and cannot show whether ${field.name} is absent from it`,
+            );
+          if (screen.has(field.id)) continue;
+        }
+        unavailable.push(slot.facet);
+      }
+      return unavailable;
     },
 
     async update(issue, patch, signal) {
