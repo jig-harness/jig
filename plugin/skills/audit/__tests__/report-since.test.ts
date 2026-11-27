@@ -31,7 +31,7 @@ describe("the Markdown copy, since the last audit", () => {
       reportInput({ prior: priorRecord(), source: noProfile }),
     );
     expect(none).toContain(
-      "Compared with the audit of 2026-07-19 (plugin 0.14.0): 82 still open, 36 unchanged and met.",
+      "Compared with the audit of 2026-07-19 (plugin 0.14.0): 86 still open, 32 unchanged and met.",
     );
     expect(none).not.toContain("Still open");
     expect(none).not.toContain("beyond the target");

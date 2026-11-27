@@ -42,9 +42,11 @@ criteria:
     level: standard
     requires: convention
     statement: >-
-      Any automated reviewer runs comment-only, and a pre-committed precision
-      bar for ever flipping it (or a lens) to blocking is written down.
+      At least one automated reviewer reviews pull requests, each runs
+      comment-only, and a pre-committed precision bar for ever flipping one
+      (or a lens) to blocking is written down.
     observe:
+      - "an automated reviewer's configuration or workflow wiring is present and it reviewed recent pull requests (a badge or sponsor mention is not a reviewer; with none, this is absent)"
       - "the review config sets a comment-only posture for new reviewers/lenses"
       - "a precision bar (and who measures it) is recorded, not implied"
 
@@ -52,10 +54,12 @@ criteria:
     level: standard
     requires: mechanical
     statement: >-
-      A secret-bearing or merge-relevant automated reviewer gets its runtime,
-      prompts, and active policy from a pinned external source, separately
-      hosted service, or target base branch — never the PR head it reviews.
+      The repository runs an automated reviewer, and every one that bears a
+      secret or affects the merge gets its runtime, prompts, and active
+      policy from a pinned external source, separately hosted service, or
+      target base branch — never the PR head it reviews.
     observe:
+      - "an automated reviewer is wired (with none, there is no reviewer whose source is independent: absent)"
       - "review wiring identifies a trusted runtime and policy source outside the PR head"
       - "proposed reviewer changes can only affect a separate unprivileged shadow run, not their own authoritative review"
 
@@ -214,9 +218,11 @@ criteria:
     level: strict
     requires: mechanical
     statement: >-
-      Promoting a reviewer or lens from comment-only to blocking is gated on
-      measured precision (from the M8 corpus / parity report), not a hunch.
+      The repository runs an automated reviewer, and promoting it or a lens
+      from comment-only to blocking is gated on measured precision (from the
+      M8 corpus / parity report), not a hunch.
     observe:
+      - "an automated reviewer is wired (with none, there is no promotion to gate: absent)"
       - "a lens flipped to blocking carries a recorded precision measurement clearing the bar"
       - "the measurement source (M8 parity report) is wired, not aspirational"
 

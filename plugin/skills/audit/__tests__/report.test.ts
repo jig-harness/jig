@@ -511,6 +511,31 @@ describe("the map", () => {
     );
   });
 
+  test("a repository with no automated reviewer shows the missing reviewer as a Team/Standard M7 gap, not as ruled out by its shape", () => {
+    const input = reportInput({
+      record: recordText(["profile: team-standard"]),
+      source: noProfile,
+    });
+    const m7 = mapRows(input, targetsOf(input)).find(
+      (r) => r.module.module === "M7",
+    );
+    const reviewer = [
+      "M7/automated-reviewer-comment-only-with-bar",
+      "M7/automated-review-source-independent",
+      "M7/pr-target-wiring-fork-safe",
+    ];
+    const cells = m7?.cells.filter((c) => reviewer.includes(c.criterion.key));
+    expect(cells?.map((c) => [c.criterion.key, c.score, c.gap])).toEqual(
+      reviewer.map((key) => [key, "absent", true]),
+    );
+    // Strict, beyond the Team/Standard target: still scored what the
+    // repository does without a reviewer, so a stricter profile asks for it.
+    const promotion = m7?.cells.find(
+      (c) => c.criterion.key === "M7/reviewer-promotion-gated-on-measurement",
+    );
+    expect([promotion?.score, promotion?.gap]).toEqual(["absent", false]);
+  });
+
   const uncovered = (input: ReturnType<typeof reportInput>) => {
     const t = targetsOf(input);
     const rows = mapRows(input, t);
@@ -1122,13 +1147,13 @@ describe("the sheet", () => {
       renderReportHtml(reportInput({ prior: priorRecord() })),
     );
     expect(suggested).toContain(
-      `<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-added-by-jig">Added by Jig <b>${addedAfter("0.14.0").length}</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>78</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li></ul>`,
+      `<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-added-by-jig">Added by Jig <b>${addedAfter("0.14.0").length}</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>82</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>32</b></span></li></ul>`,
     );
     expect(suggested).toMatch(
       /<details class="later sm" id="since-within" open data-fold><summary><span class="later-h">Still open within the target<\/span> <span class="later-n">\(4\)<\/span><\/summary><table class="chgt chg-t">.*?<tbody><tr><td><span class="pw mw"><a class="mchip" href="#d-M0".*?<code>universal-instruction-file<\/code>.*?<td><span class="bd bd-open">Still open<\/span><\/td><\/tr>/,
     );
     expect(suggested).toMatch(
-      /<details class="later sm" id="since-beyond" open data-fold><summary><span class="later-h">Still open beyond the target<\/span> <span class="later-n">\(78\)<\/span><\/summary><p class="intro">Not met at either audit, and not needed for Solo\/Lite: its target does not reach them.<\/p><table class="chgt chg-t">.*?<span class="bd bd-beyond">Still open<\/span>/,
+      /<details class="later sm" id="since-beyond" open data-fold><summary><span class="later-h">Still open beyond the target<\/span> <span class="later-n">\(82\)<\/span><\/summary><p class="intro">Not met at either audit, and not needed for Solo\/Lite: its target does not reach them.<\/p><table class="chgt chg-t">.*?<span class="bd bd-beyond">Still open<\/span>/,
     );
     const declared = since(
       renderReportHtml(
@@ -1143,7 +1168,7 @@ describe("the sheet", () => {
       ),
     );
     expect(declared).toContain(
-      '<li><span class="bd bd-open">Still open within the target <b>34</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>48</b></span></li>',
+      '<li><span class="bd bd-open">Still open within the target <b>37</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>49</b></span></li>',
     );
     // Without a profile, every criterion still open is counted together and none is listed.
     const none = since(
@@ -1152,7 +1177,7 @@ describe("the sheet", () => {
       ),
     );
     expect(none).toContain(
-      '<li><span class="bd bd-open">Still open <b>82</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li>',
+      '<li><span class="bd bd-open">Still open <b>86</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>32</b></span></li>',
     );
     expect(none).not.toContain("Still open within");
     expect(none).not.toContain("Still open beyond");

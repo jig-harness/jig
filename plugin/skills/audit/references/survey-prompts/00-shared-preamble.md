@@ -35,7 +35,8 @@
 >
 > A score is one of `absent`, `convention`, `advisory`, `mechanical` or
 > `expected-absent` (the repository's shape rules the practice out for good;
-> a practice waiting on another one that is not there yet is `absent`, though
+> a practice not adopted yet, such as an automated reviewer, or one waiting
+> on another that is not there yet, is `absent`, though
 > the part that does exist still scores: a check run only by hand or by a
 > local hook while there is no CI is `advisory`). The
 > evidence is one line with file paths, and never begins with `probe: `.

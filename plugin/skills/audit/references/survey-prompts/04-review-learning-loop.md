@@ -5,6 +5,10 @@ Your modules (the answers you return): M7, M8, M9 and M11.
 Survey how code review and continuous improvement work.
 
 1. Reviewers in play: humans, bot reviewers (CodeRabbit/Greptile/Copilot/custom), their roles and posture (blocking vs comment-only), and any layering rationale. Count a bot only if its config or workflow wiring is present — a badge or sponsor mention is not a reviewer.
+   With no automated reviewer, M7's reviewer criteria score `absent`, never
+   `expected-absent`: any repository can add one. Say where you looked (the
+   review configuration, the workflow wiring, who reviewed recent pull
+   requests).
    For every secret-bearing or merge-relevant automated reviewer, verify that
    its runtime, prompts, and active policy come from a pinned external source,
    a separately hosted service, or the target base branch — never the PR head

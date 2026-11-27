@@ -1,4 +1,4 @@
-Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 78 beyond it, not needed for this profile; 36 unchanged and met.
+Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 82 beyond it, not needed for this profile; 32 unchanged and met.
 
 ### What changed (139)
 
@@ -153,4 +153,4 @@ Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/
 | M0 Instruction architecture | `glossary-exists` | absent → absent | still open |
 | M1 Gates enforcement ladder | `ci-runs-gates-on-pr` | advisory → advisory | still open |
 
-The 78 still open beyond the target are in Module detail, marked not needed for this profile.
+The 82 still open beyond the target are in Module detail, marked not needed for this profile.
