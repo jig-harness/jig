@@ -765,7 +765,9 @@ development and shipped as a version.
   else failed, exits 9, the `unauthorized` class's status, with its own
   row in the failure ledger told at once (`dispatch/lib/no-credential.ts`,
   `dispatch/lib/line-keyless.ts`); `jig budget` and `jig doctor` name the
-  missing key with its callers. A person fixes
+  missing key with its callers, and the dispatch dashboard and
+  `jig ask --waiting` name the kept reading's time and the reason for each
+  such repository (`dispatch/lib/line-unread.ts`). A person fixes
   credentials or configuration; a missing adapter is a Jig change.
 
 ### Pickup: claim, routing, pull-request plan, intent chain

@@ -7,7 +7,10 @@ import { uniqueLogins } from "../../shared/forge-logins.ts";
  * is as fresh as that tick, whose time it prints. Where the newest read of a
  * repository was refused, the line holds what an earlier reading found, or
  * nothing of it, and the answer says so (`incomplete`): an empty list then
- * does not mean nothing waits.
+ * does not mean nothing waits. Where the newest tick had no credential for a
+ * repository's tracker, the line keeps its tracker part from the last reading
+ * that had one, and the answer names that reading and what was missing
+ * (`trackerKept`).
  */
 import { formatAddress, type Station } from "../../shared/address.ts";
 import type {
@@ -21,6 +24,8 @@ import { readLine } from "../../dispatch/lib/line-store.ts";
 import { SETTLED_WINDOW_MS } from "../../dispatch/lib/need-leaves.ts";
 import { currentMs, parseMs } from "../../shared/time.ts";
 import {
+  type KeptTrackerRepo,
+  keptTrackerRepos,
   type RefusedRepo,
   refusedRepos,
 } from "../../dispatch/lib/line-unread.ts";
@@ -89,6 +94,8 @@ export interface WaitingAnswer {
   unread: string | null;
   /** The repositories whose newest read was refused, so what waits on them is as of the reading named or unknown; empty when the line read every one, and when there is no line. */
   incomplete: RefusedRepo[];
+  /** The repositories whose tracker the newest tick could not ask for want of a credential, so their item cards and the needs about items are as of the reading named, or none; empty when every tracker was asked, and when there is no line. */
+  trackerKept: KeptTrackerRepo[];
 }
 
 /** The station a need is about. */
@@ -191,6 +198,7 @@ export function waitingAnswer(
       waiting: [],
       unread: found,
       incomplete: [],
+      trackerKept: [],
     };
   return {
     v: ANSWER_VERSION,
@@ -204,6 +212,7 @@ export function waitingAnswer(
       ),
     unread: null,
     incomplete: refusedRepos(found),
+    trackerKept: keptTrackerRepos(found),
   };
 }
 

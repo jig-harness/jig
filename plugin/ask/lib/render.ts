@@ -179,11 +179,14 @@ export function renderAnswer(a: AskAnswer): string {
 export function renderWaiting(w: WaitingAnswer): string {
   if (w.tick === null) return w.unread ?? "there is no line to read";
   const head = `waiting on a person, as the tick ${w.tick.runId} found it at ${w.tick.finishedAt}:`;
-  const unread = incompleteLines(w.incomplete);
+  const unread = [
+    ...incompleteLines(w.incomplete),
+    ...trackerKeptLines(w.trackerKept),
+  ];
   if (w.waiting.length === 0)
     return [
       head,
-      unread.length === 0 ? "  nothing" : "  none in what was read",
+      w.incomplete.length === 0 ? "  nothing" : "  none in what was read",
       ...unread,
     ].join("\n");
   return [
@@ -235,6 +238,23 @@ function incompleteLines(incomplete: WaitingAnswer["incomplete"]): string[] {
     ...incomplete.map((r) =>
       printable(
         `  ${r.repo}: ${r.readAt === null ? "never read" : `as read at ${r.readAt}`}; ${r.refused}`,
+      ),
+    ),
+  ];
+}
+
+/** The repositories whose tracker part is from an earlier reading, after what the line found. */
+function trackerKeptLines(kept: WaitingAnswer["trackerKept"]): string[] {
+  if (kept.length === 0) return [];
+  const count =
+    kept.length === 1
+      ? "1 repository's tracker"
+      : `${kept.length} repositories' trackers`;
+  return [
+    `the tracker part is kept: the newest tick had no credential for ${count}, so ${kept.length === 1 ? "its" : "their"} item cards and the needs about items are as of the reading named, or none:`,
+    ...kept.map((r) =>
+      printable(
+        `  ${r.repo}: ${r.readAt === null ? "never read with a credential" : `as read at ${r.readAt}${r.runId === null ? "" : ` (tick ${r.runId})`}`}; ${r.reason}`,
       ),
     ),
   ];

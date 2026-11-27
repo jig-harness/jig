@@ -109,7 +109,10 @@ pick-up's or a follow-up's thread is `--thread` on its own address. Write a
   is non-null or `tick` is null, relay why the line is unavailable, and
   offer to ask about one address instead. When `incomplete` lists
   repositories, the newest tick could not read them: what waits there is
-  as of the reading each names, or unknown; say so.
+  as of the reading each names, or unknown; say so. When `trackerKept`
+  lists repositories, the newest tick had no credential for their tracker:
+  their item cards and the needs about items are as of the reading each
+  names (`readAt`, `null` when none had one), for the `reason` it gives.
 - **What was settled recently.** `jig ask --settled` lists what left the
   line in the last day, with who settled each (a person's login, a rule of the
   tick, the steward, or no one because its facts changed) and how; an answer
@@ -162,6 +165,8 @@ every time, from one `jig ask --waiting`:
 
 **Not read:** <each repository `incomplete` lists: as read at <its readAt> | never read; why it was refused>
 
+**Tracker kept:** <each repository `trackerKept` lists: its items as read at <its readAt> | never read with a credential; its reason>
+
 **Not listed:** drives that are running or that settle by themselves. Name a pull request or an item for its status card.
 ```
 
@@ -169,7 +174,8 @@ One repository block per repository the answer lists, in its order, and
 one line per entry, in its order. First check `unread` and `tick`: when
 `unread` is non-null or `tick` is null, relay the unavailable-line reason
 in place of the card, and ask which pull request or item to look at.
-Put the **Not read** line only when `incomplete` lists a repository.
+Put the **Not read** line only when `incomplete` lists a repository, and
+the **Tracker kept** line only when `trackerKept` lists one.
 Only with a read tick, an empty waiting list and an empty `incomplete`, put `Nothing
 waits on a person.` in place of the blocks; with an empty waiting list and
 repositories not read, put `Nothing waits on a person in what was read.`

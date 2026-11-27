@@ -1866,7 +1866,14 @@ answer lists the repository in `incomplete` (`repo`, `refused` and `readAt`,
 the start of the tick its entries are from, `null` when no tick has read it),
 and in text as a `the line is incomplete:` block. Its entries are then as of
 that reading, and an empty `waiting` with a non-empty `incomplete` does not
-mean nothing waits.
+mean nothing waits. When the newest tick had no credential for a
+repository's tracker, the line keeps that repository's item cards and the
+needs about items from the last reading that had one, and the answer lists
+it in `trackerKept` (`repo`, `readAt`, `runId` and `reason`; `readAt` is
+`null` when no tick has read its tracker with a credential), and in text as
+a `the tracker part is kept:` block. The dispatch dashboard marks the same
+repository `tracker kept` in its list of repositories, with that reading's
+time and the reason.
 
 **`--settled`** lists what left the line in the last 24 hours and how, the
 list the dashboard shows as Settled recently, from the newest tick's line and
