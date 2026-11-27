@@ -385,7 +385,7 @@ export async function attachCiHold(
 ): Promise<void> {
   const state = unreleasedHold(stateDir, pr);
   if (state === null) return;
-  const scripts = fileURLToPath(new URL(".", import.meta.url));
+  const scripts = fileURLToPath(new URL("..", import.meta.url));
   doctor.ciHold = await ciHoldDoctor(stateDir, pr, state, lock, scripts, ask);
   doctor.reason += `; ${doctor.ciHold.reason}`;
   if (doctor.ciHold.recovery !== null) doctor.recovery = doctor.ciHold.recovery;

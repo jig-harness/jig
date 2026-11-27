@@ -1098,14 +1098,17 @@ async function listDrives(
   // plain `--json` stay lock rows only (`listStateOnlyRows` says why).
   // One question of the forge client, shared by the whole run.
   const ask = askedOnce();
-  const rows = doctorMode
-    ? await doctorRows(stateDir, lockRows, onlyPr, ask)
-    : lockRows;
-  // Classified in every mode: `--json` always carries the verdict, and the
-  // human listing's "stalled" annotation reads the same `.doctor` field.
-  const repository = await driveRepository();
-  const doctored = (
-    await attachDoctorVerdicts(
+  // A run the client's missing login refuses prints that refusal's one line
+  // and nothing else, so its diagnostics wait until the answer is known.
+  const held: unknown[][] = [];
+  const writeError = console.error;
+  if (doctorMode) console.error = (...args: unknown[]) => void held.push(args);
+  let doctored: Awaited<ReturnType<typeof attachDoctorVerdicts>>;
+  try {
+    const rows = doctorMode
+      ? await doctorRows(stateDir, lockRows, onlyPr, ask)
+      : lockRows;
+    doctored = await attachDoctorVerdicts(
       stateDir,
       onlyPr === ""
         ? rows
@@ -1113,12 +1116,18 @@ async function listDrives(
       SELF,
       doctorMode,
       ask,
-    )
-  ).map((row) => ({ ...row, repository }));
+    );
+  } finally {
+    console.error = writeError;
+  }
   if (doctorMode && ask.refused()) return refuseNoLogin();
-  if (json) console.log(JSON.stringify({ stateDir, rows: doctored }, null, 2));
-  else if (doctorMode) printDoctor(stateDir, doctored, repository);
-  else printHuman(stateDir, doctored, repository);
+  for (const args of held) console.error(...args);
+  const repository = await driveRepository();
+  const withRepository = doctored.map((row) => ({ ...row, repository }));
+  if (json)
+    console.log(JSON.stringify({ stateDir, rows: withRepository }, null, 2));
+  else if (doctorMode) printDoctor(stateDir, withRepository, repository);
+  else printHuman(stateDir, withRepository, repository);
   return 0;
 }
 
