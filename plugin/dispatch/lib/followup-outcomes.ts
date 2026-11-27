@@ -25,7 +25,11 @@ import { failureFields } from "../../shared/errors.ts";
 import { log } from "../../shared/log.ts";
 import type { TickOutcome } from "../../shared/records/followup-values.ts";
 import type { ReadRecord } from "./launches.ts";
-import { routineClassOf, routineQuestion } from "./routine-questions.ts";
+import {
+  offeredClasses,
+  routineClassOf,
+  routineQuestion,
+} from "./routine-questions.ts";
 import { questionOf } from "./session.ts";
 import { stateDb } from "./state.ts";
 import {
@@ -153,7 +157,7 @@ export function askedBy(r: ReadRecord): Asked {
   return {
     question,
     ...(r.record.routineTags === true
-      ? { routine: routineClassOf(question) }
+      ? { routine: routineClassOf(question, offeredClasses(r.record)) }
       : {}),
     rerun: isRerun(r.record),
     ...(r.result === "parked" ? { parked: true } : {}),

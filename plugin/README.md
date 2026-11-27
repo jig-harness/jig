@@ -950,6 +950,12 @@ within the same budget, with the class's standing answer in its prompt:
 | `person-owed` | who takes, authorizes or scopes a step only a person can: a live check, a rollout to another repository, an organization's setting, an operational action, a failed release gate | take none of it; report it as owed and file one item for it in this repository's tracker |
 | `drafted-items` | whether to file the follow-up items the pass drafted itself | file them as drafted |
 
+A repository chooses which of these classes its follow-ups settle unattended
+with `dispatch.followup_routine` (all three by default): a class it leaves
+out is not offered to the pass, and a question of that class is a person's
+like any other, so a repository whose filing goes to a shared tracker can
+turn `drafted-items` off.
+
 Each answer ends with finishing the other arms and recording done. A step
 only a person can take is no reason to stop in the first place: the pass
 reports it as owed, files it, and counts the arm settled; unlike a death's run again, it has no 6-hour age limit. A follow-up

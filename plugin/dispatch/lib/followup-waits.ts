@@ -62,7 +62,7 @@
  */
 import { stateRoot } from "../receipts.ts";
 import { type ReadRecord, readEnded, readRecord } from "./launches.ts";
-import { routineClassOf } from "./routine-questions.ts";
+import { offeredClasses, routineClassOf } from "./routine-questions.ts";
 import { unwrittenResult } from "./session-startup.ts";
 import { questionOf } from "./session.ts";
 import type { SharedContext } from "./shared-launches.ts";
@@ -173,7 +173,7 @@ function questionWait(r: ReadRecord): string | null {
     return null;
   const question = questionOf(r.state) ?? r.report?.report.question ?? null;
   if (question === null || !RATE_LIMIT.test(question)) return null;
-  if (routineClassOf(question) !== null) return null;
+  if (routineClassOf(question, offeredClasses(r.record)) !== null) return null;
   const ended = parseMs(r.state.exit.at);
   return Number.isFinite(ended) ? isoFromMs(ended + QUESTION_WAIT_MS) : null;
 }

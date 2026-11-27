@@ -58,6 +58,7 @@ import {
   writeRecord,
 } from "../launches.ts";
 import { retryable, stuckAction } from "../stuck-launches.ts";
+import { offeredField } from "../routine-questions.ts";
 import {
   type Dispatched,
   dispatched,
@@ -331,6 +332,7 @@ function newFollowupRecord(
     marker: null,
     sessionId: sessionIdFor(admittedVendor(slots.account)),
     routineTags: true,
+    ...offeredField(ctx.section.followupRoutine),
     followupWithinMs: ctx.section.followupWithinMs,
     // `failures.rerun_died` as it is now; only `0`, which turns the run again off, is kept.
     ...(failureSettings(state.machine).rerunDied === 0 ? { rerunDied: 0 } : {}),
