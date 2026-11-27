@@ -36,6 +36,7 @@
 import { jiraAttachments } from "./attachments.ts";
 import type {
   CanonicalState,
+  IssueComment,
   IssuePatch,
   IssueRelation,
   IssueSummary,
@@ -54,6 +55,7 @@ import {
   requireTitle,
 } from "../requests.ts";
 import { markdownToAdf } from "./adf.ts";
+import { commentAssociation, commentAuthor } from "./comments.ts";
 import { assignerOperations } from "./assigner.ts";
 import { stateChangeOperations } from "./state-change.ts";
 import {
@@ -438,10 +440,38 @@ export function jiraTracker(client: Client): Tracker {
     },
 
     async listComments(key, signal) {
-      return (await client.comments(key, signal)).map((c) => ({
-        body: c.body,
-        createdAt: c.createdAt,
-      }));
+      const out: IssueComment[] = [];
+      // One lookup per author per listing, a failed one included, so an
+      // endpoint that is down is asked once, not once per comment.
+      const lookups = new Map<string, Promise<boolean | null>>();
+      for (const c of await client.comments(key, signal)) {
+        const author = commentAuthor(c.author);
+        // Keyed by what `trusted` reads, so display metadata or property
+        // order never splits one account into two lookups.
+        const who = c.author as Record<string, unknown> | null;
+        const id =
+          author === null
+            ? null
+            : JSON.stringify([who?.accountId, who?.accountType, who?.guest]);
+        let lookup = id === null ? undefined : lookups.get(id);
+        if (lookup === undefined) {
+          // An unavailable or refused lookup leaves this author unvouched
+          // for (untrusted, the safe reading); the comments themselves were
+          // read. A cancellation travels.
+          lookup = client.trusted(c.author, signal).catch(() => {
+            signal?.throwIfAborted();
+            return null;
+          });
+          if (id !== null) lookups.set(id, lookup);
+        }
+        out.push({
+          body: c.body,
+          createdAt: c.createdAt,
+          ...(author === null ? {} : { author: author.name }),
+          authorAssociation: commentAssociation(c.author, await lookup),
+        });
+      }
+      return out;
     },
 
     async listChildren(key) {

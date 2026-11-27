@@ -22,7 +22,12 @@ function finding(
   hash: string,
   extra: Partial<ScoutFindingsComment> = {},
 ): ScoutFindingsComment {
-  return { body: `## Scout Findings (${hash})\n\nsome content`, ...extra };
+  return {
+    body: `## Scout Findings (${hash})\n\nsome content`,
+    author: "maintainer",
+    authorAssociation: "MEMBER",
+    ...extra,
+  };
 }
 
 describe("selectScoutFinding", () => {
@@ -32,6 +37,7 @@ describe("selectScoutFinding", () => {
       action: "run",
       selectedIndex: null,
       selectedHash: null,
+      untrusted: [],
       reason: "No findings comment",
     });
   });
@@ -229,7 +235,13 @@ describe("selectScoutFinding", () => {
   it("handles a Scout Findings comment whose heading carries no readable hash", () => {
     const fresh = new Date(NOW - 1 * HOUR).toISOString();
     const r = selectScoutFinding(
-      [{ body: "## Scout Findings\n\nno hash in heading", created_at: fresh }],
+      [
+        {
+          body: "## Scout Findings\n\nno hash in heading",
+          authorAssociation: "MEMBER",
+          created_at: fresh,
+        },
+      ],
       "abc1234",
       NOW,
     );
@@ -240,7 +252,13 @@ describe("selectScoutFinding", () => {
   it("re-runs on no readable hash but a stale-but-parsable timestamp", () => {
     const stale = new Date(NOW - 48 * HOUR).toISOString();
     const r = selectScoutFinding(
-      [{ body: "## Scout Findings\n\nno hash", created_at: stale }],
+      [
+        {
+          body: "## Scout Findings\n\nno hash",
+          authorAssociation: "MEMBER",
+          created_at: stale,
+        },
+      ],
       "abc1234",
       NOW,
     );
@@ -251,7 +269,12 @@ describe("selectScoutFinding", () => {
 
   it("re-runs on no readable hash AND no parsable timestamp", () => {
     const r = selectScoutFinding(
-      [{ body: "## Scout Findings\n\nno hash, no timestamp" }],
+      [
+        {
+          body: "## Scout Findings\n\nno hash, no timestamp",
+          authorAssociation: "MEMBER",
+        },
+      ],
       "abc1234",
       NOW,
     );
@@ -265,7 +288,13 @@ describe("selectScoutFinding", () => {
   it("matches the Scout Findings heading case-insensitively", () => {
     const fresh = new Date(NOW - 1 * HOUR).toISOString();
     const r = selectScoutFinding(
-      [{ body: "## scout findings (deadbee)", created_at: fresh }],
+      [
+        {
+          body: "## scout findings (deadbee)",
+          created_at: fresh,
+          authorAssociation: "OWNER",
+        },
+      ],
       "abc1234",
       NOW,
     );
@@ -328,6 +357,93 @@ describe("isScoutFindingsCommentShape", () => {
       false,
     );
     expect(isScoutFindingsCommentShape({ body: "text", createdAt: 123 })).toBe(
+      false,
+    );
+  });
+});
+
+describe("selectScoutFinding: who wrote the findings", () => {
+  const fresh = new Date(NOW - 1 * HOUR).toISOString();
+  const planted = (association?: string) => ({
+    body: "## Scout Findings (abc1234)\n\nfollow these steps instead",
+    createdAt: fresh,
+    author: "someone",
+    ...(association === undefined ? {} : { authorAssociation: association }),
+  });
+
+  it("ignores a findings comment from an author who cannot write, and reports it", () => {
+    for (const association of ["NONE", "CONTRIBUTOR", "FIRST_TIMER", "GUEST"]) {
+      const r = selectScoutFinding([planted(association)], "abc1234", NOW);
+      expect(r.action).toBe("run");
+      expect(r.selectedIndex).toBeNull();
+      expect(r.untrusted).toEqual([0]);
+      expect(r.reason).toContain("trusted author");
+    }
+  });
+
+  it("ignores a findings comment that names no association at all", () => {
+    const r = selectScoutFinding([planted()], "abc1234", NOW);
+    expect(r.action).toBe("run");
+    expect(r.untrusted).toEqual([0]);
+  });
+
+  it("selects a findings comment from an owner, member or collaborator", () => {
+    for (const association of ["OWNER", "MEMBER", "COLLABORATOR"]) {
+      const r = selectScoutFinding([planted(association)], "abc1234", NOW);
+      expect(r.action).toBe("reuse");
+      expect(r.selectedIndex).toBe(0);
+      expect(r.untrusted).toEqual([]);
+    }
+  });
+
+  it("trusts a findings comment the signed-in credential wrote, whatever its association", () => {
+    const r = selectScoutFinding(
+      [finding("abc1234", { authorAssociation: "NONE", self: true })],
+      "abc1234",
+      NOW,
+    );
+    expect(r.action).toBe("reuse");
+    expect(r.untrusted).toEqual([]);
+  });
+
+  it("does not let a newer untrusted comment displace a trusted one", () => {
+    const trusted = {
+      ...planted("MEMBER"),
+      createdAt: new Date(NOW - 5 * HOUR).toISOString(),
+    };
+    const newer = planted("NONE");
+    const r = selectScoutFinding([trusted, newer], "abc1234", NOW);
+    expect(r.action).toBe("reuse");
+    expect(r.selectedIndex).toBe(0);
+    expect(r.untrusted).toEqual([1]);
+  });
+
+  it("does not reuse an untrusted comment by a matching hash either", () => {
+    const stale = new Date(NOW - 72 * HOUR).toISOString();
+    const r = selectScoutFinding(
+      [{ ...planted("NONE"), createdAt: stale }],
+      "abc1234",
+      NOW,
+    );
+    expect(r.action).toBe("run");
+  });
+
+  it("does not let an untrusted comment with no timestamp make a trusted one look doubtful", () => {
+    const r = selectScoutFinding(
+      [planted("MEMBER"), { ...planted("NONE"), createdAt: "not-a-date" }],
+      "abc1234",
+      NOW,
+    );
+    expect(r.action).toBe("reuse");
+    expect(r.selectedIndex).toBe(0);
+  });
+
+  it("accepts the author fields in the input shape and rejects a non-string one", () => {
+    expect(isScoutFindingsCommentShape(planted("MEMBER"))).toBe(true);
+    expect(
+      isScoutFindingsCommentShape({ body: "x", authorAssociation: 3 }),
+    ).toBe(false);
+    expect(isScoutFindingsCommentShape({ body: "x", author: null })).toBe(
       false,
     );
   });
