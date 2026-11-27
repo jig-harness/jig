@@ -70,7 +70,7 @@ function committedSize(root: string, path: string, onDisk: number): number {
     // blob the tick would read after a commit.
     execFileSync("git", ["diff", "--quiet", "HEAD", "--", path], {
       cwd: root,
-      stdio: "ignore",
+      stdio: ["ignore", "pipe", "pipe"],
       timeout: 10_000,
     });
     const out = execFileSync("git", ["cat-file", "-s", `HEAD:${path}`], {
