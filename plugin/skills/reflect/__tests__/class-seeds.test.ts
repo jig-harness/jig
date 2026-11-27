@@ -304,6 +304,45 @@ describe("seeded reflection classes", () => {
     expect(result.stderr).toContain("is not a local path");
   });
 
+  it("refuses a network link hidden behind a link/.. spelling", () => {
+    machine.userConfig(
+      `reflection:\n  path: ${JSON.stringify(machine.store)}\n`,
+    );
+    const repo = machine.repository("web", "git@github.com:example/web.git");
+    symlinkSync("//host/share", join(repo.root, "shared"));
+    repo.write("classes.yaml", "- slug: hidden\n  shape: not read\n");
+    repo.write(
+      ".config/jig.yaml",
+      `reflection:\n  classes_from: ${JSON.stringify(`${repo.root}/shared/../classes.yaml`)}\n`,
+    );
+    const result = repo.script("reflect.ts", ["gather"]);
+    expectExit(result, 0);
+    expect(result.stderr).toContain("is not a local path");
+    expect(result.stdout).not.toContain("hidden");
+  });
+
+  it("treats a backslash as part of a directory name on POSIX", () => {
+    if (process.platform === "win32") return;
+    machine.userConfig(
+      `reflection:\n  path: ${JSON.stringify(machine.store)}\n`,
+    );
+    const repo = machine.repository("web", "git@github.com:example/web.git");
+    mkdirSync(join(repo.root, "foo", "bar"), { recursive: true });
+    repo.write(
+      "foo/bar/classes.yaml",
+      "- slug: wrong-dir\n  shape: not read\n",
+    );
+    symlinkSync("//host/share", join(repo.root, "foo\\bar"));
+    repo.write(
+      ".config/jig.yaml",
+      `reflection:\n  classes_from: ${JSON.stringify(join(repo.root, "foo\\bar", "classes.yaml"))}\n`,
+    );
+    const result = repo.script("reflect.ts", ["gather"]);
+    expectExit(result, 0);
+    expect(result.stderr).toContain("is not a local path");
+    expect(result.stdout).not.toContain("wrong-dir");
+  });
+
   it("parses a .json vocabulary as JSON and drops a lower layer's seeds on a null section", () => {
     machine.userConfig(
       `reflection:\n  path: ${JSON.stringify(machine.store)}\n  classes:\n    - slug: user-seed\n      shape: user\n`,

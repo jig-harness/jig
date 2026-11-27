@@ -8,7 +8,7 @@ import {
   readlinkSync,
   readSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, parse, resolve } from "node:path";
+import { dirname, isAbsolute, join, parse, sep } from "node:path";
 import {
   formatDisplayValue,
   isMapping,
@@ -135,38 +135,46 @@ function isNetworkLocation(path: string): boolean {
   return URL.test(path) || NETWORK_PATH.test(path);
 }
 
-/** Where the first link among a path's directory components leads, or null. */
-function redirectAtFirstLink(current: string): string | null {
-  const { root } = parse(current);
-  const parts = current
-    .slice(root.length)
-    .split(/[\\/]+/)
-    .filter(Boolean);
-  let prefix = root;
-  for (const [index, part] of parts.slice(0, -1).entries()) {
-    prefix = join(prefix, part);
-    if (!lstatSync(prefix).isSymbolicLink()) continue;
-    const target = readlinkSync(prefix);
-    if (isNetworkLocation(target) || NT_UNC.test(target))
-      throw new SettingError("is not a local path");
-    const next = isAbsolute(target) ? target : join(dirname(prefix), target);
-    return resolve(next, ...parts.slice(index + 1));
-  }
-  return null;
+const COMPONENT_SEPARATOR = sep === "\\" ? /[\\/]+/ : /\/+/;
+
+function components(path: string): string[] {
+  return path.split(COMPONENT_SEPARATOR).filter(Boolean);
 }
 
 /**
- * Check each directory component before the system follows it. A link whose
+ * Resolve a path the way the system would, one component at a time, using
+ * the host's separators. `resolved` only ever holds a path whose own
+ * components are not links, so a `..` steps to its true parent. A link whose
  * target names a network location is refused where it is met, and a local
- * link is followed by hand so the components behind it are checked too.
- * Only a link's own entry is examined, never what lies behind it.
+ * link is followed by hand so the components behind it are checked too. Only
+ * a link's own entry is examined, never what lies behind it. The final
+ * component is returned unfollowed; the caller refuses a link there.
  */
-function refuseNetworkLinks(path: string): void {
-  let current: string | null = resolve(path);
-  for (let hops = 0; current !== null; hops++) {
-    if (hops > MAX_LINK_HOPS) throw new SettingError("has too many links");
-    current = redirectAtFirstLink(current);
+function verifiedLocalPath(path: string): string {
+  if (!isAbsolute(path)) throw new SettingError("is not an absolute path");
+  let resolved = parse(path).root;
+  const pending = components(path);
+  let hops = 0;
+  while (pending.length > 0) {
+    const part = pending.shift() as string;
+    if (part === ".") continue;
+    resolved = part === ".." ? dirname(resolved) : join(resolved, part);
+    if (part === ".." || pending.length === 0) continue;
+    if (!lstatSync(resolved).isSymbolicLink()) continue;
+    if (++hops > MAX_LINK_HOPS) throw new SettingError("has too many links");
+    const target = localLinkTarget(resolved);
+    resolved = isAbsolute(target) ? parse(target).root : dirname(resolved);
+    pending.unshift(...components(target));
   }
+  return resolved;
+}
+
+/** A link's target, refused when it names a network location. */
+function localLinkTarget(link: string): string {
+  const target = readlinkSync(link);
+  if (isNetworkLocation(target) || NT_UNC.test(target))
+    throw new SettingError("is not a local path");
+  return target;
 }
 
 /** Read at most one byte past the bound: the file may have grown since fstat. */
@@ -190,11 +198,11 @@ function readBounded(fd: number): string {
  */
 function readClassFile(path: string): string {
   if (isNetworkLocation(path)) throw new SettingError("is not a local path");
-  refuseNetworkLinks(path);
-  if (lstatSync(path).isSymbolicLink())
+  const verified = verifiedLocalPath(path);
+  if (lstatSync(verified).isSymbolicLink())
     throw new SettingError("is a link, not a regular file");
   const fd = openSync(
-    path,
+    verified,
     constants.O_RDONLY |
       (constants.O_NONBLOCK ?? 0) |
       (constants.O_NOFOLLOW ?? 0),
