@@ -431,6 +431,13 @@ function planRepo(
     undefined,
     new Set(input.claimed.filter((c) => c.served === true).map((c) => c.key)),
     input.partial === true,
+    new Set(
+      plan.quiet
+        .filter(
+          (q) => q.class === "claimed-carried" || q.class === "claimed-pr-open",
+        )
+        .map((q) => q.target),
+    ),
   );
 }
 
