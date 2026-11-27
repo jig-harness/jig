@@ -10,13 +10,19 @@ import { renderReportMarkdown } from "../scripts/report/markdown.ts";
 import { mapRows, targetsOf } from "../scripts/report/model.ts";
 import { noProfile, recordText, reportInput } from "./report-fixtures.ts";
 
+/** The Standard criteria a missing automated reviewer leaves unmet. */
+const REVIEWER = [
+  "M7/automated-reviewer-comment-only-with-bar",
+  "M7/automated-review-source-independent",
+];
+
 const input = reportInput({
   record: recordText(["profile: team-standard"]),
   source: (s) => {
     noProfile(s);
     (s.recommendations as unknown[]).push({
       id: "R9",
-      refs: ["M7/automated-reviewer-comment-only-with-bar"],
+      refs: [...REVIEWER],
       title: "Add an automated pull-request reviewer",
       finding: "No automated reviewer reviews pull requests.",
       action: "Install one comment-only and write down its precision bar.",
@@ -31,12 +37,6 @@ const m7 = mapRows(input, targetsOf(input)).find(
   (r) => r.module.module === "M7",
 );
 const cell = (key: string) => m7?.cells.find((c) => c.criterion.key === key);
-
-/** The Standard criteria a missing automated reviewer leaves unmet. */
-const REVIEWER = [
-  "M7/automated-reviewer-comment-only-with-bar",
-  "M7/automated-review-source-independent",
-];
 
 describe("a repository with no automated reviewer, against Team/Standard", () => {
   test("the missing reviewer is an M7 gap, not ruled out by the shape", () => {
@@ -59,9 +59,13 @@ describe("a repository with no automated reviewer, against Team/Standard", () =>
   test("a recommendation to add a reviewer covers the gap in the rendered report", () => {
     const md = renderReportMarkdown(input);
     expect(md).toContain("Add an automated pull-request reviewer");
-    expect(md).not.toMatch(
-      /automated-reviewer-comment-only-with-bar\*\*: .*a gap no recommendation covers/,
-    );
+    for (const key of REVIEWER) {
+      expect(md).not.toMatch(
+        new RegExp(
+          `${key.split("/")[1]}\\*\\*: .*a gap no recommendation covers`,
+        ),
+      );
+    }
   });
 
   test("the Markdown copy lists the reviewer as needed for the target", () => {

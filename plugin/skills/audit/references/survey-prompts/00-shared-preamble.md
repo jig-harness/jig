@@ -65,8 +65,8 @@ Calibration rules (learned from audit runs):
 - **Configured to do Y needs the line; installed needs the app.** A claim
   that "tool X is configured to do Y" quotes the configuration line that
   does Y, with its path and line number. "Installed" or "running" needs an
-  app installation the host reports, or a workflow that runs the tool, as
-  evidence: a configuration file alone shows intent, and one that already
+  app installation the host reports, a workflow that runs the tool, or
+  host-side evidence of its reviews, as evidence: a configuration file alone shows intent, and one that already
   does Y is not a gap to recommend.
 - **Configured is not installed in every checkout.** A hook manager's
   configuration shows the hooks a checkout gets once the manager is

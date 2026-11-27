@@ -4,7 +4,7 @@ Your modules (the answers you return): M7, M8, M9 and M11.
 
 Survey how code review and continuous improvement work.
 
-1. Reviewers in play: humans, bot reviewers (CodeRabbit/Greptile/Copilot/custom), their roles and posture (blocking vs comment-only), and any layering rationale. Count a bot only if a workflow step invokes it on pull requests, or host-side evidence (check runs, reviews or comments by a named app) shows it active; configuration alone is not enough — a badge or sponsor mention is not a reviewer.
+1. Reviewers in play: humans, bot reviewers (CodeRabbit/Greptile/Copilot/custom), their roles and posture (blocking vs comment-only), and any layering rationale. Count a bot only if a workflow step invokes it on pull requests, or host-side evidence (check runs, reviews or comments by a named app) shows it active. The fit report does not carry recent pull-request activity, so look at it yourself and say which of the three channels you did not check; configuration alone is not enough — a badge or sponsor mention is not a reviewer.
    When examined, with no automated reviewer M7's reviewer criteria score `absent`, never
    `expected-absent` (a draft's unexamined criteria stay as they are): any repository can add one. Say where you looked (the
    review configuration, the workflow wiring, who reviewed recent pull
