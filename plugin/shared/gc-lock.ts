@@ -236,7 +236,7 @@ function admissionRefusal(kind: string, dir: string, names: string[]): string {
 }
 
 /** How long a token that no one can judge may stand before it is a need: a creator on another host holds one only while it creates a scope. */
-const UNPROVEN_TOKEN_GRACE_MS = 10 * 60_000;
+const UNPROVEN_TOKEN_GRACE_MS = 30 * 60_000;
 
 /**
  * Each admission token the collector will not remove and whose holder is not

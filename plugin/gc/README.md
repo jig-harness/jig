@@ -73,7 +73,7 @@ scope again before it removes anything. A token that may still be held always bl
 collection: one that is alive, one with no record, one written before records
 named a host, one from another host, and one whose host's process table
 cannot be read. The refusal names the creator and why it counts as gone.
-Such a token that is known gone, or that has stood for ten minutes with its
+Such a token that is known gone, or that has stood for thirty minutes with its
 holder unknown, is reported by `jig doctor gc` (the `gc:admission-tokens` check) and raises one
 host need in the dispatch dashboard naming the token; a person inspects its
 holder and removes the file only once no process of that holder can still run.

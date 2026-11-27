@@ -70,7 +70,7 @@ const refused = (dir: string, kind = "scratch") =>
     () => "",
     (error: Error) => error.message,
   );
-const aFewMinutesLater = () => Date.now() + 11 * 60_000;
+const aWhileLater = () => Date.now() + 31 * 60_000;
 
 test("a token whose recorded process no longer exists is removed and the page is collected", async () => {
   const dir = root();
@@ -95,13 +95,25 @@ test.skipIf(thisHost().bootId === "")(
   },
 );
 
+test("a token whose pid now belongs to a process that started at another time is removed", async () => {
+  const dir = root();
+  const token = plant(
+    dir,
+    "scratch",
+    `reader-${process.pid}-reused`,
+    encodeIdentity({ ...ownIdentity(), start: "Mon Jan  1 00:00:00 2001" }),
+  );
+  expect(await collected(dir)).toBe(true);
+  expect(existsSync(token)).toBe(false);
+});
+
 test("a token with no record blocks collection, is kept and is reported once it has stood", async () => {
   const dir = root();
   const token = plant(dir, "scratch", "reader-unrecorded", "");
   expect(await refused(dir)).toContain("a creator holds the lock");
   expect(existsSync(token)).toBe(true);
   expect(unprovenAdmissionTokens(dir, Date.now())).toEqual([]);
-  expect(unprovenAdmissionTokens(dir, aFewMinutesLater())).toEqual([
+  expect(unprovenAdmissionTokens(dir, aWhileLater())).toEqual([
     { path: token, why: `${token}: it names no holder to judge` },
   ]);
 });
@@ -112,7 +124,7 @@ test("a token of a live process blocks collection and is never reported", async 
   try {
     expect(await refused(dir)).toContain("a creator holds the lock");
     expect(readdirSync(join(dir, "scratch"))).toHaveLength(1);
-    expect(unprovenAdmissionTokens(dir, aFewMinutesLater())).toEqual([]);
+    expect(unprovenAdmissionTokens(dir, aWhileLater())).toEqual([]);
   } finally {
     release();
   }
@@ -133,7 +145,7 @@ test("a token of another host blocks collection, is kept and is reported", async
   expect(await refused(dir)).toContain("a creator holds the lock");
   expect(existsSync(token)).toBe(true);
   expect(
-    unprovenAdmissionTokens(dir, aFewMinutesLater()).map((t) => t.path),
+    unprovenAdmissionTokens(dir, aWhileLater()).map((t) => t.path),
   ).toEqual([token]);
 });
 
