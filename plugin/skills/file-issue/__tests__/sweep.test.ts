@@ -287,7 +287,7 @@ describe("the weekly sweep", () => {
                   health: {
                     status: "failed" as const,
                     error: "size is not on the create screen of Sub-task",
-                    fails: "filing a Sub-task fails",
+                    fails: "filing a Sub-task with the facet set fails",
                   },
                 }
               : f,
