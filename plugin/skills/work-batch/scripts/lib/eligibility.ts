@@ -329,6 +329,24 @@ export function excludeReason(
   return null;
 }
 
+/**
+ * The first reason other than the size or the missing priority that keeps
+ * `issue` out of a batch, which `excludeReason` hides behind either when
+ * one of them comes first; `null` when only those two do.
+ */
+export function otherExclusion(
+  issue: PoolIssue,
+  policy: BatchPolicy,
+  opts: EligibilityOptions,
+): ExclusionReason | null {
+  for (const check of CHECKS) {
+    if (check === sizeReason || check === priorityReason) continue;
+    const reason = check(issue, policy, opts);
+    if (reason !== null) return reason;
+  }
+  return null;
+}
+
 export interface Excluded {
   identifier: string;
   title: string;
