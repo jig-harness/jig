@@ -49,6 +49,15 @@ export const PICKUP_SUCCESSOR_SCHEMA = `
     WHEN NEW.record IS NOT OLD.record
     BEGIN
       UPDATE launches SET record_reads = 0 WHERE id = NEW.id;
+      DELETE FROM pickup_batch_members WHERE launch = NEW.id;
+      INSERT OR IGNORE INTO pickup_batch_members
+        SELECT NEW.repo, json_extract(member.value, '$.key'), NEW.created_at, NEW.id
+        FROM json_each(
+          CASE WHEN json_valid(NEW.record) THEN NEW.record ELSE '{}' END,
+          '$.batchItems'
+        ) AS member
+        WHERE NEW.action = 'pickup'
+          AND CASE WHEN member.type = 'object' THEN json_type(member.value, '$.key') = 'text' END;
     END;
 
   CREATE TRIGGER pickup_batch_members_delete AFTER DELETE ON launches

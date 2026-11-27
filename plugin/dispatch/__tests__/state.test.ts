@@ -151,6 +151,24 @@ describe("the state database", () => {
     expect(ids).toEqual(["empty", "version-2"]);
   });
 
+  it("rebuilds a pickup's batch membership and clears its marker when the stored record changes", () => {
+    const db = new Database(":memory:");
+    cleanups.push(() => db.close());
+    for (const migration of MIGRATIONS) db.exec(migration.sql);
+    db.query(
+      "INSERT INTO launches (id, repo, action, item, created_at, record, record_reads) VALUES ('b', ?, 'pickup', '#1', '2026-11-01', ?, 1)",
+    ).run(SLUG, JSON.stringify({ batchItems: [{ key: "#2" }] }));
+    db.query("UPDATE launches SET record = ? WHERE id = 'b'").run(
+      JSON.stringify({ batchItems: [{ key: "#3" }] }),
+    );
+    expect(
+      db.query("SELECT item, launch FROM pickup_batch_members").all(),
+    ).toEqual([{ item: "#3", launch: "b" }]);
+    expect(db.query("SELECT record_reads FROM launches").get()).toEqual({
+      record_reads: 0,
+    });
+  });
+
   it("is refused, with its version named, when a newer plugin wrote it", async () => {
     const w = fixture();
     expectSpawnExit(await w.dispatch(["--repo", w.repo, "--json"]), 0);

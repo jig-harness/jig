@@ -404,25 +404,30 @@ export function writeRecord(record: LaunchRecord, root = stateRoot()): void {
     const release = kept ?? (stored === null ? releaseOf() : undefined);
     if (release !== undefined) tick.release = release;
   }
-  db.query(
-    `INSERT INTO launches (id, repo, action, pr, item, created_at, record, record_reads)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (id) DO UPDATE SET record = excluded.record`,
-  ).run(
-    record.id,
-    record.repo,
-    record.action,
-    record.pr,
-    record.item,
-    record.createdAt,
-    JSON.stringify(tick),
-    0,
-  );
-  // A trigger clears the marker when the record changes; mark what this write verified.
-  db.query("UPDATE launches SET record_reads = ? WHERE id = ?").run(
-    isLaunchRecord(JSON.parse(JSON.stringify(tick))) ? 1 : 0,
-    record.id,
-  );
+  const text = JSON.stringify(tick);
+  const reads = isLaunchRecord(JSON.parse(text)) ? 1 : 0;
+  // One write transaction: no other writer can change the row between the record and its marker,
+  // and the marker is set only while the stored JSON is the one this writer validated.
+  db.transaction(() => {
+    db.query(
+      `INSERT INTO launches (id, repo, action, pr, item, created_at, record, record_reads)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET record = excluded.record`,
+    ).run(
+      record.id,
+      record.repo,
+      record.action,
+      record.pr,
+      record.item,
+      record.createdAt,
+      text,
+      0,
+    );
+    // A trigger clears the marker when the record changes; mark what this write verified.
+    db.query(
+      "UPDATE launches SET record_reads = ? WHERE id = ? AND record = ?",
+    ).run(reads, record.id, text);
+  }).immediate();
 }
 
 /** A column's JSON, `undefined` when the column is empty, `null` when it does not parse. */
