@@ -7,6 +7,7 @@ import {
   readFileSync,
 } from "node:fs";
 import {
+  formatDisplayValue,
   isMapping,
   type ConfigLayer,
 } from "../../../../shared/config-layers.ts";
@@ -26,11 +27,21 @@ export type ClassSeedSource =
 
 const LINE_BREAK = /[\r\n\u2028\u2029]/;
 const URL = /^\s*[A-Za-z][A-Za-z0-9+.-]*:\/\//;
+/** A Windows UNC share (`\\host\x`) or its slash form, which is a network path. */
+const NETWORK_PATH = /^\s*[\\/]{2}/;
+/** The vocabulary file and entry bounds keep gather's output reviewable. */
+export const MAX_CLASS_FILE_BYTES = 256 * 1024;
+export const MAX_CLASS_ENTRIES = 500;
 
 /** A configured list's entries, named by the field that supplied it. */
 export function classEntries(value: unknown, field: string): SeededClass[] {
   if (!Array.isArray(value))
     throw new SettingError(`${field} must be a list of class entries`);
+  if (value.length > MAX_CLASS_ENTRIES)
+    throw new SettingError(
+      `${field} lists ${value.length} classes; at most ${MAX_CLASS_ENTRIES} are read`,
+    );
+  const seen = new Set<string>();
   return value.map((entry, index) => {
     const at = `${field}[${index}]`;
     if (!isMapping(entry))
@@ -43,6 +54,9 @@ export function classEntries(value: unknown, field: string): SeededClass[] {
       throw new SettingError(`${at} accepts only slug, shape and source`);
     if (!isClassName(entry.slug))
       throw new SettingError(`${at}.slug must be a kebab-case class slug`);
+    if (seen.has(entry.slug))
+      throw new SettingError(`${at}.slug repeats "${entry.slug}" in one list`);
+    seen.add(entry.slug);
     if (
       typeof entry.shape !== "string" ||
       entry.shape.trim() === "" ||
@@ -64,7 +78,13 @@ export function classEntries(value: unknown, field: string): SeededClass[] {
 
 /** A local class-vocabulary path, before it is expanded for this machine. */
 export function classFilePath(value: unknown): string {
-  if (typeof value !== "string" || value.trim() === "" || URL.test(value))
+  if (
+    typeof value !== "string" ||
+    value.trim() === "" ||
+    value.includes("\0") ||
+    URL.test(value) ||
+    NETWORK_PATH.test(value)
+  )
     throw new SettingError("reflection.classes_from must be a local path");
   return value;
 }
@@ -81,6 +101,8 @@ export function classSeedSources(
   const sources: ClassSeedSource[] = [];
   for (const layer of layers) {
     const reflection = layer.values.reflection;
+    // An explicit null replaces the whole section, dropping lower layers' seeds.
+    if (reflection === null) sources.length = 0;
     if (!isMapping(reflection)) continue;
     try {
       if (reflection.classes_from !== undefined)
@@ -105,8 +127,12 @@ export function classSeedSources(
 function readClassFile(path: string): string {
   const fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
   try {
-    if (!fstatSync(fd).isFile())
-      throw new SettingError("is not a regular file");
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) throw new SettingError("is not a regular file");
+    if (stat.size > MAX_CLASS_FILE_BYTES)
+      throw new SettingError(
+        `is larger than ${MAX_CLASS_FILE_BYTES} bytes, so none of it is read`,
+      );
     return readFileSync(fd, "utf8");
   } finally {
     closeSync(fd);
@@ -141,6 +167,7 @@ export function loadClassSeeds(
   const add = (entries: readonly SeededClass[]) => {
     for (const entry of entries) classes.set(entry.slug, entry);
   };
+  const shown = (path: string) => formatDisplayValue(path);
   for (const source of sources) {
     if (source.kind === "inline") {
       add(source.classes);
@@ -150,21 +177,25 @@ export function loadClassSeeds(
     try {
       text = readClassFile(source.path);
     } catch (error) {
+      // Only a filesystem failure or the explicit refusals above are expected.
+      const code = (error as { code?: unknown } | null)?.code;
+      if (!(error instanceof SettingError) && typeof code !== "string")
+        throw error;
       const reason = error instanceof Error ? error.message : String(error);
       warnings.push(
-        `reflection.classes_from ${source.path} could not be read (${reason}); continuing without it`,
+        `reflection.classes_from ${shown(source.path)} could not be read (${formatDisplayValue(reason)}); continuing without it`,
       );
       continue;
     }
     let parsed: unknown;
     try {
-      parsed = load(text);
+      parsed = /\.json$/i.test(source.path) ? JSON.parse(text) : load(text);
     } catch (error) {
       throw new SettingError(
-        `reflection.classes_from ${source.path} could not be parsed as YAML or JSON${parseLocation(error)}`,
+        `reflection.classes_from ${shown(source.path)} could not be parsed as ${/\.json$/i.test(source.path) ? "JSON" : "YAML"}${parseLocation(error)}`,
       );
     }
-    add(classEntries(parsed, `reflection.classes_from ${source.path}`));
+    add(classEntries(parsed, `reflection.classes_from ${shown(source.path)}`));
   }
   return { classes: [...classes.values()], warnings };
 }

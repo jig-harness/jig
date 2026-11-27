@@ -17,8 +17,6 @@ import { DEFAULT_REFLECTION_TIMEOUT_SEC } from "../../../../shared/repo-commands
 import { isMapping, jigHome } from "../../../../shared/config-layers.ts";
 import { notionId } from "./notion/ids.ts";
 import {
-  classEntries,
-  classFilePath,
   classSeedSources,
   type ClassSeedSource,
 } from "./class-seeds.ts";
@@ -52,7 +50,8 @@ export interface ReflectionSettings {
   timeoutSec: number;
   mode: Mode;
   /** Ordered configuration sources; their files are read only by gather. */
-  classSeedSources: ClassSeedSource[];
+  /** Reads the vocabulary configuration on call, so only `gather` can fail on it. */
+  classSeedSources: () => ClassSeedSource[];
 }
 
 /**
@@ -290,9 +289,6 @@ export function parseReflection(
       ? { on: false }
       : { on: false, journal: pathSetting(section.journal, "journal", root) };
   const store = oneOf(section.store, STORE_KINDS, "store", DEFAULTS.store);
-  if (section.classes !== undefined)
-    classEntries(section.classes, "reflection.classes");
-  if (section.classes_from !== undefined) classFilePath(section.classes_from);
   return {
     on: true,
     store,
@@ -313,7 +309,7 @@ export function parseReflection(
       MAX_TIMEOUT_SEC,
     ),
     mode: oneOf(section.mode, MODES, "mode", DEFAULTS.mode),
-    classSeedSources: [],
+    classSeedSources: () => [],
   };
 }
 
@@ -328,14 +324,14 @@ export function reflectionSettings(): Reflection {
     throw withSource(values, "reflection", error);
   }
   if (!settings.on) return settings;
-  // This validates every active layer, including a lower layer whose list the
-  // normal merged read would replace. The helper includes that layer's source
-  // in its error rather than attributing it to the merged value's source.
+  // Evaluated by `gather` alone: a mistake in a vocabulary must not stop the
+  // journal or the review of stored findings. It validates every active layer,
+  // including a lower layer the merged read would replace, and its error names
+  // that layer's source.
   return {
     ...settings,
-    classSeedSources: classSeedSources(config.layers, (path) =>
-      expandPath(path),
-    ),
+    classSeedSources: () =>
+      classSeedSources(config.layers, (path) => expandPath(path)),
   };
 }
 

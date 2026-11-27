@@ -123,7 +123,7 @@ async function gather(
     fail(2, `--mode takes ${MODES.join(" or ")} (got '${asked}')`, USAGE);
   // A seed file belongs only to gather: planning and review act on stored
   // findings, and even status must not touch a configured local file.
-  const seeds = loadClassSeeds(settings.classSeedSources);
+  const seeds = loadClassSeeds(settings.classSeedSources());
   for (const warning of seeds.warnings) console.error(`warning: ${warning}`);
   const repository = repositoryId();
   const adopted = adoptPending(path, repository);

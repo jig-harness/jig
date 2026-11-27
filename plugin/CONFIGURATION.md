@@ -1362,7 +1362,7 @@ reflection:
 | `reflection.github.repository` | `owner/name` | **Required** with `store: github` | reflect, review-reflections, dispatch | The repository whose issues hold the reflections, often a private one kept for them. Requests go through `gh`, signed in as it is; the account needs write access, and the repository a `jig-reflection` label (`check` names the command that creates it) |
 | `reflection.journal` | file path | `<git-dir>/jig/reflection-journal.jsonl` | reflect, resolve-review-comments | The worktree's journal; a path git would track, or a file it already tracks, is refused. Parking still uses it when the section says `enabled: false` |
 | `reflection.classes` | list of class entries | empty | reflect | Class names to reuse, each with a `slug`, a `shape` and an optional non-empty text `source` |
-| `reflection.classes_from` | local YAML or JSON file path | unset | reflect | A top-level list of class entries. Paths expand `~` to the home directory and resolve relative to the repository root |
+| `reflection.classes_from` | local YAML or JSON file path | unset | reflect | A top-level list of class entries, at most 500 and in a file of at most 256 KiB. A `.json` file is parsed as JSON, any other as YAML. Paths expand `~` to the home directory and resolve relative to the repository root; a URL, a network share path (`\\host\share`, `//host/share`) and a path with a NUL character are refused |
 | `reflection.escalate_after` | whole number, at least 1 | `3` | reflect, review-reflections | The recurrence count at which a class is escalated to one tracker issue |
 | `reflection.timeout_sec` | whole number of seconds, at most 86400 | `120` | reflect, review-reflections, dispatch | The deadline for one store operation; `list` and `diagnose` get five times as long |
 | `reflection.mode` | `quick`, `comprehensive` | `quick` | reflect | The reflection's default depth: what went wrong only, or also what worked and what could improve |
@@ -1385,7 +1385,7 @@ reflection:
 environment layers. For duplicate slugs, the higher layer supplies the whole
 entry. Within a layer, an inline entry takes precedence over the file.
 Missing or unreadable files produce a warning and gathering continues.
-Malformed entries and invalid YAML or JSON are configuration errors.
+Malformed entries, a slug repeated within one list and invalid YAML or JSON are configuration errors; so is a list over the entry limit, while a file over the size limit is a warning and is not read. Only `reflect gather` reads the vocabularies, so a mistake in one never stops the journal or the review of stored findings. The configuration check validates the merged setting and does not read the vocabulary files.
 A seed's shape supplies the example, and the store still supplies the
 finding count. When a store read fails, `store_error` reports the failure
 and any available seeds appear with zero findings. Escalation and review

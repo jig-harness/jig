@@ -232,4 +232,71 @@ describe("seeded reflection classes", () => {
       },
     ]);
   });
+  it("lets each precedence rule win on a collision of its own", () => {
+    machine.userConfig(
+      `reflection:\n  path: ${JSON.stringify(machine.store)}\n  classes:\n    - slug: layer-clash\n      shape: user inline\n`,
+    );
+    const repo = machine.repository("web", "git@github.com:example/web.git");
+    repo.write(
+      "classes.yaml",
+      "- slug: layer-clash\n  shape: repository file\n- slug: same-layer\n  shape: repository file\n",
+    );
+    repo.write(
+      ".config/jig.yaml",
+      "reflection:\n  classes_from: classes.yaml\n  classes:\n    - slug: same-layer\n      shape: repository inline\n",
+    );
+    const shapes = Object.fromEntries(
+      (gather(repo).classes ?? []).map((c) => [c.class, c.example]),
+    );
+    expect(shapes["same-layer"]).toBe("repository inline");
+    expect(shapes["layer-clash"]).toBe("repository file");
+  });
+
+  it("refuses network paths, NUL paths and a repeated slug in one list", () => {
+    const repo = machine.repository("web", "git@github.com:example/web.git");
+    for (const [setting, message] of [
+      ["classes_from: '\\\\\\\\host\\share\\c.yaml'", "must be a local path"],
+      ["classes_from: '//host/share/c.yaml'", "must be a local path"],
+      ['classes_from: "a\\0b.yaml"', "must be a local path"],
+      [
+        "classes:\n    - { slug: dup, shape: one }\n    - { slug: dup, shape: two }",
+        "repeats",
+      ],
+    ] as const) {
+      machine.userConfig(
+        `reflection:\n  path: ${JSON.stringify(machine.store)}\n  ${setting}\n`,
+      );
+      const result = repo.script("reflect.ts", ["gather"]);
+      expectExit(result, 1);
+      expect(result.stderr).toContain(message);
+    }
+  });
+
+  it("parses a .json vocabulary as JSON and drops a lower layer's seeds on a null section", () => {
+    machine.userConfig(
+      `reflection:\n  path: ${JSON.stringify(machine.store)}\n  classes:\n    - slug: user-seed\n      shape: user\n`,
+    );
+    const repo = machine.repository("web", "git@github.com:example/web.git");
+    repo.write("classes.json", "- slug: yaml-in-json\n  shape: not json\n");
+    repo.write(".config/jig.yaml", "reflection:\n  classes_from: classes.json\n");
+    const bad = repo.script("reflect.ts", ["gather"]);
+    expectExit(bad, 1);
+    expect(bad.stderr).toContain("could not be parsed as JSON");
+
+    repo.write(".config/jig.yaml", "reflection: null\n");
+    const reset = repo.script("reflect.ts", ["gather"], undefined, undefined, {
+      ...machine.env,
+      JIG__REFLECTION__ENABLED: "true",
+    });
+    expectExit(reset, 0);
+    expect((JSON.parse(reset.stdout) as Gathered).classes ?? []).toEqual([]);
+  });
+
+  it("does not read vocabularies for the journal's settings", () => {
+    machine.userConfig(
+      `reflection:\n  path: ${JSON.stringify(machine.store)}\n  classes:\n    - slug: bad_slug\n      shape: typo\n`,
+    );
+    const repo = machine.repository("web", "git@github.com:example/web.git");
+    expectExit(repo.script("reflect.ts", ["plan"]), 0);
+  });
 });
