@@ -72,6 +72,40 @@ const stop = (
 });
 
 describe("stopPickup", () => {
+  it("hands on the work a wall-clock park left, and nothing for an ordinary park", async () => {
+    const left = await pickupAfter([stop("8", true)]);
+    expect(left.notice).toStartWith("RE-ARMED AFTER A WALL-CLOCK PARK");
+    expect(left.inheritsEdits).toBe(true);
+    expect((await pickupAfter([stop("8")])).notice).toBe("");
+    expect((await pickupAfter([stop("8", false)])).notice).toBe("");
+  });
+
+  it("reads the work a park left from the last stop alone", async () => {
+    // A refused re-arm's park carries the measurement itself, so it speaks for the tree.
+    const carried = await pickupAfter([stop("8", true), stop("8", true)]);
+    expect(carried.notice).toStartWith("RE-ARMED AFTER A WALL-CLOCK PARK");
+    expect(carried.inheritsEdits).toBe(true);
+    // A later ordinary park that measured nothing never recovers the old work.
+    const later = await pickupAfter([stop("8", true), stop("8")]);
+    expect(later.notice).toBe("");
+    expect(later.inheritsEdits).toBe(false);
+    expect(
+      (await pickupAfter([stop("8", true), stop("8", false)])).notice,
+    ).toBe("");
+  });
+
+  it("hands on the work a wall-clock kill left through a person's stop answer", async () => {
+    const r = await pickupAfter([stop("8", true), stop("1", true)]);
+    expect(r.notice).toStartWith("RE-ARMED AFTER A PERSON'S STOP");
+    expect(r.inheritsEdits).toBe(true);
+    expect((await pickupAfter([stop("1")])).notice).toBe("");
+  });
+
+  it("hands on the work of a ceiling stop whose park could not be recorded", async () => {
+    const r = await pickupAfter([stop("6", true)]);
+    expect(r.inheritsEdits).toBe(true);
+  });
+
   it("hands a stall's recorded decisions to the next drive, and the work it left", async () => {
     const r = await pickupAfter(
       [stop("14", true)],

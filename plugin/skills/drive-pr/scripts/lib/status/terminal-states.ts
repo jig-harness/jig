@@ -485,7 +485,7 @@ export const TERMINAL_STATES: Readonly<
     terminal: true,
     emittedBy: "drive.ts only (MAX_ROUNDS_EXIT)",
     meaning:
-      "The drive spent its round budget (`--max-rounds`, with any rounds a re-arm granted) without converging. Read the handoff file before re-arming: a re-arm a person asks for grants one more round budget.",
+      "The drive spent its round budget (`--max-rounds`, with any rounds a re-arm granted) without converging. Read the handoff file before re-arming: a re-arm a person asks for grants one more round budget, never past the pull request's round ceiling (`drive.max_total_rounds`), whose spending parks the drive instead.",
     report: {
       stop: "used its round budget without converging",
       cause: "deadline",

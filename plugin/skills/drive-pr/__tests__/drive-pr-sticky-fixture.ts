@@ -25,9 +25,9 @@ const backlogEntries = [
   // No `reason`/`firstRound`: a plain "Beyond this PR" carry-forward. The
   // one-head grace keys on backlog MEMBERSHIP, so this entry must
   // get exactly the same treatment there as the wind-down-reasoned one above.
-  // `reason` is NOT retired: past that one head it still selects the separate,
-  // round-bounded exemption, which this entry does not get — the
-  // two rules are stacked, not one superseding the other.
+  // `reason` is NOT retired: past that one head it still selects the separate
+  // winddown exemption, which this entry does not get — the two rules are
+  // stacked, not one superseding the other.
   {
     fingerprint: "c773d9fdb7974e6d",
     path: "AGENTS.md",

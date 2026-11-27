@@ -93,6 +93,11 @@
               "maximum": 1.7976931348623157e308
             },
             "roundsGranted": true,
+            "ceilingRaised": true,
+            "firstDrivenAt": true,
+            "wallClockRaisedHours": true,
+            "circuitStop": true,
+            "usedOverrides": true,
             "phase": {
               "type": "string"
             },
@@ -948,6 +953,11 @@
           "maximum": 1.7976931348623157e308
         },
         "roundsGranted": true,
+        "ceilingRaised": true,
+        "firstDrivenAt": true,
+        "wallClockRaisedHours": true,
+        "circuitStop": true,
+        "usedOverrides": true,
         "phase": {
           "type": "string"
         },
