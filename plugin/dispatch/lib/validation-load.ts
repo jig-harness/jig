@@ -409,9 +409,10 @@ export function validationGauge(
 ): LineLoadGauge {
   const line = `${Math.round(share * 100)}% of validation capacity`;
   const result = forecast(state, "pickup", DEFAULT_PICKUP_DEADLINE_MS, 0);
+  const invalid = state.waitInvalid ?? state.slotsInvalid;
   const reads =
-    state.waitInvalid !== undefined
-      ? state.waitInvalid
+    invalid !== undefined
+      ? invalid
       : result === null
         ? "unread" in state.demand
           ? state.demand.unread
@@ -420,7 +421,7 @@ export function validationGauge(
   return {
     gauge: "validation",
     fill:
-      state.waitInvalid !== undefined
+      invalid !== undefined
         ? // Refused outright, as an unfit forecast is: at the line.
           1
         : result === null

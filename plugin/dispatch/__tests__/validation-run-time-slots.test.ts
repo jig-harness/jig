@@ -400,9 +400,7 @@ describe("the lock's load-derived slot count", () => {
     );
     expect(refused.measured.concurrency).toBe(1);
     expect(refused.slotsUnread).toContain("LOCK_SLOTS");
-    expect(validationGauge(refused, 1).reads).toContain(
-      "the lock's slot count unread",
-    );
+    expect(validationGauge(refused, 1).reads).toContain("LOCK_SLOTS");
     const noHost = readValidationLoad(
       [],
       { holders: 0, waiters: 0, runs: [] },
@@ -438,6 +436,20 @@ describe("a refused slot setting", () => {
     expect(validationHold(load, 1, "pickup", 60 * MINUTE)).toContain(
       "LOCK_SLOTS",
     );
+  });
+
+  test("reads at the line on the gauge, as a refused wait does", () => {
+    const load = readValidationLoad(
+      [],
+      { runs: [], holders: 0, settled: 0 } as never,
+      0,
+      90 * MINUTE,
+      { LOCK_SLOTS: "99" },
+      host(0, 16),
+    );
+    const gauge = validationGauge(load, 1);
+    expect(gauge.fill).toBe(1);
+    expect(gauge.reads).toContain("LOCK_SLOTS");
   });
 });
 
