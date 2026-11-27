@@ -278,7 +278,10 @@ describe("seeded reflection classes", () => {
     );
     const repo = machine.repository("web", "git@github.com:example/web.git");
     repo.write("classes.json", "- slug: yaml-in-json\n  shape: not json\n");
-    repo.write(".config/jig.yaml", "reflection:\n  classes_from: classes.json\n");
+    repo.write(
+      ".config/jig.yaml",
+      "reflection:\n  classes_from: classes.json\n",
+    );
     const bad = repo.script("reflect.ts", ["gather"]);
     expectExit(bad, 1);
     expect(bad.stderr).toContain("could not be parsed as JSON");

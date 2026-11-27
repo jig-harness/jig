@@ -16,10 +16,7 @@ import { splitCommandWords } from "../../../../shared/command-words.ts";
 import { DEFAULT_REFLECTION_TIMEOUT_SEC } from "../../../../shared/repo-commands.ts";
 import { isMapping, jigHome } from "../../../../shared/config-layers.ts";
 import { notionId } from "./notion/ids.ts";
-import {
-  classSeedSources,
-  type ClassSeedSource,
-} from "./class-seeds.ts";
+import { classSeedSources, type ClassSeedSource } from "./class-seeds.ts";
 import { SettingError } from "./setting-error.ts";
 export { SettingError } from "./setting-error.ts";
 
