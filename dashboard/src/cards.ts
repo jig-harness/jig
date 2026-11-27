@@ -6,7 +6,12 @@
  */
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { mergeCount, mergeLanes, type MergeCardView } from "./merge-view.ts";
-import { type NeedView, needCount, needRows } from "./needs-view.ts";
+import {
+  type NeedView,
+  type ReadyNeedView,
+  needCount,
+  needRows,
+} from "./needs-view.ts";
 import { type CardCommit, cardCommit, rowAnswer } from "./picking.ts";
 import { queueGroups, type QueueItemView } from "./queue-view.ts";
 import type { ViewId } from "./search.ts";
@@ -79,6 +84,19 @@ export function needCard(need: NeedView, commit: CardCommit): CardInfo {
   };
 }
 
+export function readyNeedCard(card: ReadyNeedView): CardInfo {
+  return {
+    key: `ready-need ${card.rowKey}`,
+    view: "needs",
+    target: card.target,
+    repo: card.repo,
+    title: card.title,
+    url: card.url,
+    command: card.command,
+    commandLabel: "jig ask line",
+  };
+}
+
 export function slotCard(slot: SlotView, view: ViewId): CardInfo {
   return {
     key: `${view === "needs" ? "stuck" : "slot"} ${slot.record}`,
@@ -128,9 +146,11 @@ export function allCards(
   const needs = needRows(line, clock).flatMap((row) =>
     row.type === "need"
       ? [needCard(row.need, commitOf(row.need))]
-      : row.type === "stuck"
-        ? [slotCard(row.slot, "needs")]
-        : [],
+      : row.type === "ready"
+        ? [readyNeedCard(row.ready)]
+        : row.type === "stuck"
+          ? [slotCard(row.slot, "needs")]
+          : [],
   );
   const running = line.sessions.map((s) =>
     slotCard(slotView(s, clock, line), "running"),

@@ -362,6 +362,86 @@ describe("Needs you", () => {
   );
 
   browserIt(
+    "surfaces a converged PR placed in needs-you by the board read under its mapped act with Ready conditions",
+    async () => {
+      const server = await served("quiet");
+      const { page, context } = await open(
+        requireBrowser(),
+        server.origin,
+        `${server.url}&view=needs`,
+        LAPTOP,
+      );
+      try {
+        await page.route("**/state?*", async (route) => {
+          const response = await route.fetch();
+          const body = await response.json();
+          body.value.line.needs = [];
+          body.value.line.ready = [
+            {
+              repo: "example-org/web",
+              pr: 509,
+              url: "https://forge.example/example-org/web/pull/509",
+              title: "Tighten the branch rule",
+              head: "a".repeat(40),
+              place: "needs-you",
+              lane: null,
+              says: "the forge blocks the merge (BLOCKED) on a rule the board cannot tell, such as signed commits or a deployment: open the pull request",
+              act: "open-pr",
+              waitingFor: null,
+              command: null,
+              withheld: null,
+              requested: [],
+              failing: [],
+              failingOmitted: 0,
+              conditions: [
+                {
+                  name: "converged",
+                  met: true,
+                  fact: "its drive stopped converged",
+                },
+                {
+                  name: "protection lets it merge",
+                  met: false,
+                  fact: "merge state BLOCKED",
+                },
+              ],
+              unblocks: [],
+              since: "2026-11-03T15:00:00.000Z",
+            },
+          ];
+          await route.fulfill({ json: body });
+        });
+        await page.reload();
+        await shows(page, ".pNeeds .need");
+        expect(
+          await page.locator('[data-view="merge"] .badge').textContent(),
+        ).toBe("0");
+        expect(
+          await page.locator('[data-view="needs"] .badge').textContent(),
+        ).toBe("1");
+        const heading = await page
+          .locator(".pNeeds .needGroupTitle")
+          .first()
+          .textContent();
+        expect(heading?.replace(/\s+/g, " ").trim()).toMatch(/^Do · 1(?!\d)/);
+        const card = page.locator(".pNeeds .need").first();
+        expect(await card.locator(".act").textContent()).toBe("Do");
+        expect(await card.textContent()).toContain("PR #509");
+        expect(await card.textContent()).toContain("open the pull request");
+        expect(await card.textContent()).toContain("BLOCKED");
+        await card.locator("[data-card-toggle]").click();
+        await shows(page, ".pNeeds .need .mConds");
+        expect(await card.locator(".mConds").textContent()).toContain(
+          "protection lets it merge (not met): merge state BLOCKED",
+        );
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
     "the count still names a repository the tick could not read",
     async () => {
       const server = await served("loud");
