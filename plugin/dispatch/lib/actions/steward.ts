@@ -44,6 +44,7 @@ import {
 } from "../steward-backlog.ts";
 import { parkClassesOf } from "../steward-resume.ts";
 import { unreportedRuns } from "../steward-causes.ts";
+import { refusedOrders } from "../steward-orders.ts";
 import type { StationContext } from "../line-station.ts";
 import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
 import type { PoolIssue } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
@@ -401,6 +402,7 @@ async function digestOf(
     failures: readFailures(repo.slug, state.root),
     load: state.load === undefined ? null : loadReport(state.load),
     history: stewardHistory(repo.slug, state.root),
+    refused: refusedOrders(repo.slug, observation.tracked.pickups, state.root),
   });
 }
 

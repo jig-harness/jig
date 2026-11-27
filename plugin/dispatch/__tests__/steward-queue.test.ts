@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { applyStewardOrder } from "../lib/steward-queue.ts";
+import {
+  applyStewardOrder,
+  orderFacts,
+  orderRefusal,
+} from "../lib/steward-queue.ts";
 import type { WantedItem } from "../lib/types.ts";
 
 function item(
@@ -80,4 +84,31 @@ test("an incomplete rank, unknown target or duplicate order grants no override",
   expect(
     applyStewardOrder(items, [{ ...orderRecord, targets: ["#2", "#2"] }]),
   ).toEqual(items);
+});
+
+test("an order whose targets were created apart is refused, naming the creation times", () => {
+  const first = item("#1");
+  first.queueIssue.createdAt = "2026-01-01T00:00:03Z";
+  const second = item("#2");
+  second.queueIssue.createdAt = "2026-01-01T00:00:00Z";
+  expect(orderRefusal([first, second], ["#1", "#2"])).toBe(
+    "#1 and #2 do not tie: their creation times differ",
+  );
+  expect(orderRefusal([item("#1"), item("#2")], ["#2", "#1"])).toBeNull();
+});
+
+test("an order naming an item the tick does not want is refused, naming it", () => {
+  expect(orderRefusal([item("#1"), item("#2")], ["#2", "#99"])).toBe(
+    "#99 is not among the items this tick wants",
+  );
+});
+
+test("an order's facts change when a target's ranking or wantedness does", () => {
+  const items = [item("#1"), item("#2")];
+  const facts = orderFacts(items, ["#1", "#2"]);
+  expect(orderFacts([item("#1"), item("#2")], ["#1", "#2"])).toBe(facts);
+  expect(orderFacts([item("#1")], ["#1", "#2"])).not.toBe(facts);
+  const later = item("#2");
+  later.queueIssue.createdAt = "2026-02-01";
+  expect(orderFacts([item("#1"), later], ["#1", "#2"])).not.toBe(facts);
 });

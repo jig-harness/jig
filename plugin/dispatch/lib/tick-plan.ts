@@ -35,12 +35,7 @@ import type { SessionsReport } from "./runtime/port.ts";
 import { deadlineOf, type TickContext } from "./tick-context.ts";
 import type { RepoObservation } from "./tick-observe.ts";
 import type { RepoReport } from "./types.ts";
-import {
-  readStewardDigest,
-  recordBelongsToDigest,
-  stewardRecords,
-} from "./steward.ts";
-import { applyStewardOrder } from "./steward-queue.ts";
+import { orderByStewardRecords } from "./steward-orders.ts";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { bodyLinker } from "../../skills/do-item/scripts/lib/linked-pr.ts";
 import type { StalledPrInput } from "./stalled-pr.ts";
@@ -63,14 +58,11 @@ function orderTracked(
     opened.stages.has("steward") &&
     context.options.machine?.steward?.enabled === true
   ) {
-    const orders = stewardRecords(repo.slug).flatMap((record) => {
-      if (record.value.kind !== "order") return [];
-      const digest = readStewardDigest(record.run);
-      return digest.ok && recordBelongsToDigest(record.value, digest.value)
-        ? [record.value]
-        : [];
-    });
-    tracked.pickups = applyStewardOrder(tracked.pickups, orders);
+    tracked.pickups = orderByStewardRecords(
+      repo.slug,
+      tracked.pickups,
+      context.options.apply === true,
+    );
   }
 }
 
