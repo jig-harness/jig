@@ -696,6 +696,7 @@ function item() {
         name: at.state,
         type: at.state === "Todo" ? "unstarted" : "started",
       },
+      assignee: at.assignees[0] ?? null,
       nativeType: null,
     }),
     transition: async () => {
