@@ -405,9 +405,9 @@ export function writeRecord(record: LaunchRecord, root = stateRoot()): void {
     if (release !== undefined) tick.release = release;
   }
   db.query(
-    `INSERT INTO launches (id, repo, action, pr, item, created_at, record)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (id) DO UPDATE SET record = excluded.record`,
+    `INSERT INTO launches (id, repo, action, pr, item, created_at, record, record_reads)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET record = excluded.record, record_reads = excluded.record_reads`,
   ).run(
     record.id,
     record.repo,
@@ -416,6 +416,7 @@ export function writeRecord(record: LaunchRecord, root = stateRoot()): void {
     record.item,
     record.createdAt,
     JSON.stringify(tick),
+    isLaunchRecord(JSON.parse(JSON.stringify(tick))) ? 1 : 0,
   );
 }
 
