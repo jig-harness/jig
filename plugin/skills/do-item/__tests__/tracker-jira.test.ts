@@ -240,6 +240,32 @@ describe("Jira adapter: reading an issue", () => {
   });
 });
 
+describe("Jira adapter: comment trust lookups", () => {
+  it("asks the assignable-user endpoint once per author when it fails", async () => {
+    let calls = 0;
+    const { t } = jira(
+      routes({
+        "GET issue/ENG-1/comment": comments(
+          comment("1", "a", MEMBER, "2026-01-04T09:00:00.000+0000"),
+          comment("2", "b", MEMBER, "2026-01-05T09:00:00.000+0000"),
+          comment("3", "c", MEMBER, "2026-01-06T09:00:00.000+0000"),
+        ),
+        "GET user/assignable/search": () => {
+          calls += 1;
+          throw new Error("down");
+        },
+      }),
+    );
+    const out = await t.listComments("ENG-1");
+    expect(out.map((c) => c.authorAssociation)).toEqual([
+      "UNKNOWN",
+      "UNKNOWN",
+      "UNKNOWN",
+    ]);
+    expect(calls).toBe(1);
+  });
+});
+
 describe("Jira adapter: transitions", () => {
   const transitions = (...ts: Array<[string, string, boolean]>) => ({
     transitions: ts.map(([id, to, resolution]) => ({

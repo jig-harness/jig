@@ -500,7 +500,7 @@ bun "${CLAUDE_SKILL_DIR}/scripts/select_scout_finding.ts" --input comments.json 
 Write the comment array verbatim to `comments.json` with the file-writing tool;
 `--git-head` reads the current short hash internally. Pass each comment through verbatim; each comment needs `body` plus
 whichever of `created_at` or `createdAt` it carries, and its `author` and
-`authorAssociation` (and `self` where the list carries it: the signed-in credential wrote the comment, which counts as trusted). The script keeps comments whose body opens with
+`authorAssociation` (and `self` where the list carries it: the signed-in credential wrote the comment, which the script counts as trusted whatever its `authorAssociation`; for every other comment the rule above holds). The script keeps comments whose body opens with
 `## Scout Findings` and whose author is trusted, lists the indexes of the
 others in `untrusted` and ignores them, and returns
 `{"action", "selectedIndex", "selectedHash", "untrusted", "reason"}`:

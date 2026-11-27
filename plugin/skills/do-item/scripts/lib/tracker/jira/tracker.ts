@@ -441,21 +441,28 @@ export function jiraTracker(client: Client): Tracker {
 
     async listComments(key, signal) {
       const out: IssueComment[] = [];
+      // One lookup per author per listing, a failed one included, so an
+      // endpoint that is down is asked once, not once per comment.
+      const lookups = new Map<string, Promise<boolean | null>>();
       for (const c of await client.comments(key, signal)) {
         const author = commentAuthor(c.author);
+        const id = author === null ? null : JSON.stringify(c.author);
+        let lookup = id === null ? undefined : lookups.get(id);
+        if (lookup === undefined) {
+          // An unavailable or refused lookup leaves this author unvouched
+          // for (untrusted, the safe reading); the comments themselves were
+          // read. A cancellation travels.
+          lookup = client.trusted(c.author, signal).catch(() => {
+            signal?.throwIfAborted();
+            return null;
+          });
+          if (id !== null) lookups.set(id, lookup);
+        }
         out.push({
           body: c.body,
           createdAt: c.createdAt,
           ...(author === null ? {} : { author: author.name }),
-          authorAssociation: commentAssociation(
-            c.author,
-            // An unavailable or refused lookup leaves this author unvouched
-            // for; the comments themselves were read. A cancellation travels.
-            await client.trusted(c.author, signal).catch(() => {
-              signal?.throwIfAborted();
-              return null;
-            }),
-          ),
+          authorAssociation: commentAssociation(c.author, await lookup),
         });
       }
       return out;
