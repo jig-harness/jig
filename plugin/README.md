@@ -1361,6 +1361,16 @@ names `event: notices_read`, and the steward's digest leaves them out of
 the history it judges from. `jig dispatch log` and its text copy list
 them, one a tick.
 
+Whatever the notify stage does, each tick also keeps the log's account of
+the needs on the line: a `need-opened` event (no class) when a need first
+appears, and a `need-closed` event, with how long it was open and how it
+left, once it has been absent from two ticks' lines in a row. A need missing
+from one tick only (a read that failed) stays open and writes nothing. Every
+row, and every tick receipt and launch record, names the plugin `release`
+that wrote it; an ended row names the release its run was launched under,
+and the scheduled upgrades that moved the machine between releases are
+appended to `~/.local/state/jig/upgrade/history.jsonl`.
+
 **The log as text.** The log prints as text, one line a row, or with
 `--jsonl` as JSON lines:
 

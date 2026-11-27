@@ -193,6 +193,12 @@
       "A need that left the line, one row each: its target, its cause, when it left, by whom (the person who answered, a rule of the tick, the steward, or no one because its facts changed) and how. The tick writes a row when the line it writes no longer holds a need the line before held, whatever its notify stage did; rows older than a week are removed. The line's settled list, the dashboard's Settled recently and `jig ask --settled` read them."
     ],
     [
+      "dispatch-need-open",
+      "dispatch/lib/need-rows.ts",
+      "need_open",
+      "The needs the outcome log holds open: each one's target, its cause, the items a group of releases covers, the key of its `need-opened` row and when it opened, and when it was first absent from the line. A need absent from one line stays open; the tick writes its `need-closed` row, and removes this row, when it is absent from a second, so a read that failed for one tick opens and closes nothing."
+    ],
+    [
       "dispatch-steward-run",
       "dispatch/lib/steward.ts",
       "steward_runs",
@@ -305,6 +311,13 @@
       "~/.local/state/jig/upgrade/last.json",
       1,
       "The scheduled upgrade's latest attempt: when it started, what it came to and the process that made it. A stamp younger than the interval, or a running one whose holder lives, withholds the next attempt; `jig doctor` fails while the latest attempt failed."
+    ],
+    [
+      "upgrade-history",
+      "runtime/upgrade-record.ts",
+      "~/.local/state/jig/upgrade/history.jsonl",
+      1,
+      "Every scheduled upgrade that updated the plugin or failed, one line of JSON each (outcome, detail, time and the versions it moved between), only ever appended to: the releases the machine ran and when each began stay readable after the receipts that held them expire."
     ],
     [
       "upgrade-claim-lock",

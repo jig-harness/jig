@@ -43,6 +43,7 @@ import {
 import type { RefreshResult } from "./refresh.ts";
 import { refreshFromInstalled } from "./upgrade.ts";
 import {
+  appendUpgradeHistory,
   bounded,
   capped,
   type ScheduledUpgrade,
@@ -361,6 +362,13 @@ export async function scheduledUpgradeVerb(
     };
   }
   upgrade = bounded(upgrade);
+  if (
+    ["updated", "failed"].includes(upgrade.outcome) &&
+    !appendUpgradeHistory(upgradeStateRoot(), upgrade)
+  )
+    console.error(
+      "upgrade: the history line could not be written; this transition is missing from the upgrade history",
+    );
   console.error(`upgrade: ${upgradeLine(upgrade)}`);
   console.log(JSON.stringify(upgrade));
   return upgrade.outcome === "failed" ? 1 : 0;

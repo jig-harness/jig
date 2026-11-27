@@ -24,8 +24,14 @@
  *   ending, the end carrying how long it waited: `serial-holds.ts`, and a
  *   park leaving its ledger, answered, decided provisionally or removed,
  *   an answered one timed when its receipt says it was resolved:
- *   `park-events.ts`, and, once per tick of the `notify` stage, the notices
+ *   `park-events.ts`, a need opening on the line and closing once it has been
+ *   absent from two ticks' lines, whatever the notify stage did:
+ *   `need-rows.ts`, and, once per tick of the `notify` stage, the notices
  *   workspace's read state: `notices-read.ts`).
+ *
+ * Every row names the plugin release it belongs to (`release`): an ended row
+ * the release its run was launched under, an event the release of the tick
+ * that wrote it, so runs count under the release in effect at their launch.
  *
  * A row's key is unique in the table, and a row is written in the same
  * transaction as what it records (a record's end, a suppression record, a
@@ -56,6 +62,7 @@ import {
   type ReadRecord,
   targetOf,
 } from "./launches.ts";
+import { releaseOf } from "./release.ts";
 import { sessionResultClass } from "./session-result-class.ts";
 import { unwrittenResult } from "./session-startup.ts";
 import { type ReportFields, reportFields } from "./closing-report-store.ts";
@@ -91,6 +98,8 @@ export interface EndedRow extends ReportFields {
   kind: "ended";
   key: string;
   at: string;
+  /** The plugin release the run was launched under (its launch record's); absent on rows written before releases were named, and for a record that named none. */
+  release?: string;
   repo: string;
   stage: LaunchAction;
   target: string;
@@ -117,6 +126,8 @@ export interface EventRow {
   kind: "event";
   key: string;
   at: string;
+  /** The plugin release of the tick that wrote the row; absent on rows written before releases were named. */
+  release?: string;
   repo: string;
   /** The stage the cause is about: a drive's `rearm`, a `pickup`, a `followup`, a nudge's `steer`; for a defect, the stage it stopped. */
   stage: string;
@@ -233,11 +244,12 @@ export function bucket(row: LogRow): string {
  * true when this call wrote it. Called inside the transaction that writes
  * what the row records, it lands with it or not at all.
  */
-export function insertRow(db: Database, row: LogRow): boolean {
+export function insertRow(db: Database, given: LogRow): boolean {
+  const row = withRelease(given);
   const done = db
     .query(
-      `INSERT INTO log (key, kind, at, at_ms, repo, stage, account, bucket, reason, row, target, cause, report_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO log (key, kind, at, at_ms, repo, stage, account, bucket, reason, row, target, cause, report_by, release)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (key) DO NOTHING`,
     )
     .run(
@@ -254,8 +266,20 @@ export function insertRow(db: Database, row: LogRow): boolean {
       row.target,
       row.kind === "ended" ? (row.cause ?? null) : null,
       row.kind === "ended" ? (row.by ?? null) : null,
+      row.release ?? null,
     );
   return done.changes === 1;
+}
+
+/**
+ * The row with the release it counts under: an ended row keeps the one its
+ * launch record named (the run's release is the one at its launch, not the
+ * one that logs its end); an event is the writing tick's own.
+ */
+function withRelease(row: LogRow): LogRow {
+  if (row.release !== undefined || row.kind === "ended") return row;
+  const release = releaseOf();
+  return release === undefined ? row : { ...row, release };
 }
 
 /**
@@ -612,6 +636,7 @@ export function endedRow(
     kind: "ended",
     key: `ended ${record.id}`,
     at: endedAt,
+    ...(record.release === undefined ? {} : { release: record.release }),
     repo: record.repo,
     stage: record.action,
     target: targetOf(record),

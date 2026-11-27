@@ -64,11 +64,17 @@ async function main(): Promise<number> {
     now: () => fixed,
     readPr: async () => null,
   });
-  console.log(dashboard.url);
-  await new Promise<void>((settle) => {
+  // The handler is in place before the address is printed: a reader that
+  // stops the server the moment it sees the address must not meet a process
+  // that has not yet installed it. The listener stays on for the process's
+  // life: a once-listener is removed on the first signal, and Bun then lets the
+  // same signal end the process while it cleans up, which reads as exit 143.
+  const stopped = new Promise<void>((settle) => {
     for (const signal of ["SIGINT", "SIGTERM"] as const)
-      process.once(signal, () => settle());
+      process.on(signal, () => settle());
   });
+  console.log(dashboard.url);
+  await stopped;
   dashboard.stop();
   closeStateDb(root);
   rmSync(root, { recursive: true, force: true });

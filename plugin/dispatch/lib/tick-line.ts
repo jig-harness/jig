@@ -31,6 +31,7 @@ import {
   pruneLeaves,
   readSettled,
 } from "./need-leaves.ts";
+import { recordNeedRows } from "./need-rows.ts";
 import {
   driversOf,
   type HostDriver,
@@ -77,7 +78,7 @@ import { failureText } from "./text.ts";
 import { tickHealthOf, withTick } from "./tick-health.ts";
 import { readStateStorage, stateStorageNeeds } from "./state-storage-need.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
-import type { TickReceipt } from "../receipts.ts";
+import { receiptJson, type TickReceipt } from "../receipts.ts";
 import type { ClaimedItem, DrivenPr, RepoReport, WantedItem } from "./types.ts";
 import { type PrLinkText, workLinks } from "./work-links.ts";
 import type { IssueKeys } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
@@ -259,22 +260,25 @@ function writeWithParks(
   receipt: string,
   before: readonly LineNeed[] | null,
   evidence: Omit<LeaveEvidence, "answers">,
+  at: string,
 ): void {
   const db = stateDb();
   inTransaction(db, () => {
     for (const row of parked.rows) insertRow(db, row);
-    const nowMs = parseMs(line.finishedAt);
+    // The writing tick's own time: a tick that read only some repositories keeps the earlier snapshot's `finishedAt` on the line.
+    const nowMs = parseMs(at);
     // Every need the line no longer holds leaves one row, whatever the notify stage did.
     if (before !== null) {
       const ev = { ...evidence, answers: answersFrom(db) };
       insertLeaves(
         db,
         leftNeeds(before, line.needs).map((need) =>
-          leaveOf(need, line.needs, ev, line.finishedAt),
+          leaveOf(need, line.needs, ev, at),
         ),
       );
     }
     pruneLeaves(db, nowMs);
+    recordNeedRows(db, line.needs, at);
     writeLine(
       {
         ...line,
@@ -597,9 +601,10 @@ function writeKept(
       writeWithParks(
         withLoad({ ...line, ticks }, receipt),
         parked,
-        receiptText ?? JSON.stringify(receipt, null, 2),
+        receiptText ?? receiptJson(receipt),
         before?.needs ?? null,
         leaveEvidence(reports, tick.inputs, parked, receipt.apply),
+        receipt.finishedAt,
       );
     },
   );

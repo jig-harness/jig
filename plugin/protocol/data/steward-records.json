@@ -73,7 +73,7 @@
       "record": null,
       "name": "dispatch-steward-record",
       "type": null,
-      "version": 52,
+      "version": 54,
       "limit": null,
       "meaning": "The closed records a steward pass submitted. The next tick claims each before acting on it, and first checks again the stops, holds and budgets that apply."
     },
