@@ -199,8 +199,8 @@ function notRunning(
 }
 
 /**
- * Only a launch created after the request, and past pending, answers it
- * (`answerRequest`); a launch still pending may belong to another trigger or
+ * Only a launch created after the request, and past pending or accepted by
+ * the runtime, answers it (`answerRequest`); a launch still pending may belong to another trigger or
  * hold an acknowledgment nobody claimed yet, so the request waits for it.
  * Whether the request needs no further handling this tick.
  */
@@ -260,8 +260,11 @@ function answerRequest(
   const answered = state.records.find(
     (r) =>
       r.record.action === "steward" &&
-      // A launch still pending may never have started a pass.
-      r.state.kind !== "pending" &&
+      // A launch still pending may never have started a pass, unless the
+      // runtime accepted it: a `sent` attempt is a pass that exists, whatever
+      // the wrapper has claimed yet.
+      (r.state.kind !== "pending" ||
+        r.record.attempts.some((a) => a.outcome === "sent")) &&
       r.record.repo.toLowerCase() === request.repo &&
       parseMs(r.record.createdAt) >= parseMs(request.at),
   );
