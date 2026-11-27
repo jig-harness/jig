@@ -7,35 +7,17 @@
  * today included. It counts the outcome log's ended rows and the event rows
  * that carry a class, such as a drive stopped for a person; an event row that
  * carries none (a drift, a wait, a nudge, a hold) stays out, however often it
- * occurs.
+ * occurs. A drive's stall the once-per-head re-drive followed is that
+ * re-drive's to settle and is not counted (`recurring-rows.ts`).
  */
 import type { Database } from "bun:sqlite";
 import type { RecurringClass } from "./dashboard-contract.ts";
 import { midnightIn } from "./host-time.ts";
-import { OUTCOME_CLASSES, type OutcomeClass } from "./log.ts";
+import { COUNTED, occurrences, settlesByRedrive } from "./recurring-rows.ts";
 
 /** The host days a class is looked for, and on how many it must occur to recur. */
 export const RECURRENCE_DAYS = 7;
 const RECURRENCE_AT_LEAST = 3;
-
-/** The classes that are not a stage finishing badly: the finished-well ones, a park, which is a person's to answer, and a follow-up waiting on an arm still pending. */
-const NOT_BAD: readonly OutcomeClass[] = [
-  "converged",
-  "merged",
-  "parked for a person",
-  "arm pending",
-];
-
-const quoted = (names: readonly string[]) =>
-  names.map((name) => `'${name.replaceAll("'", "''")}'`).join(", ");
-
-/**
- * The rows a recurrence counts, in SQL over the log table: an ended row of a
- * bad class, or an event row whose bucket is a class (an event row that
- * carries none is bucketed under its event).
- */
-const COUNTED = `bucket NOT IN (${quoted(NOT_BAD)})
-  AND (kind = 'ended' OR bucket IN (${quoted(OUTCOME_CLASSES)}))`;
 
 /** The start of each of the seven host days, oldest first; the last runs to `nowMs`. */
 export function recurrenceDays(nowMs: number, timeZone: string): number[] {
@@ -90,34 +72,25 @@ export function recurringClasses(
     }
   });
   return [...groups.values()]
+    .map((g) => (settlesByRedrive(g) ? unsettled(db, g, starts, nowMs) : g))
     .filter((g) => g.nights.filter(Boolean).length >= RECURRENCE_AT_LEAST)
     .sort((a, b) => b.rows - a.rows);
 }
 
-/** The reasons a recurring class's rows give most often over its seven days, as the log holds them, with how many rows give each. */
-export function commonReasons(
+/** A drive's stalls counted again without the ones the re-drive followed. */
+function unsettled(
   db: Database,
-  recurring: Pick<RecurringClass, "class" | "repo" | "stage">,
+  group: RecurringClass,
+  starts: readonly number[],
   nowMs: number,
-  timeZone: string,
-  limit = 3,
-): Array<{ reason: string; rows: number }> {
-  const [from] = recurrenceDays(nowMs, timeZone);
-  return (
-    db
-      .query(
-        `SELECT reason, COUNT(*) AS n FROM log
-         WHERE at_ms >= ? AND at_ms <= ? AND repo = ? AND stage = ? AND bucket = ?
-           AND ${COUNTED}
-         GROUP BY reason ORDER BY n DESC, reason LIMIT ?`,
-      )
-      .all(
-        from ?? nowMs,
-        nowMs,
-        recurring.repo,
-        recurring.stage,
-        recurring.class,
-        limit,
-      ) as Array<{ reason: string; n: number }>
-  ).map((r) => ({ reason: r.reason, rows: r.n }));
+): RecurringClass {
+  const left = occurrences(db, group, starts[0] ?? nowMs, nowMs).filter(
+    (o) => o.redrive === null,
+  );
+  const nights = starts.map((start, day) => {
+    const end =
+      day + 1 < starts.length ? (starts[day + 1] ?? nowMs) - 1 : nowMs;
+    return left.some((o) => o.atMs >= start && o.atMs <= end);
+  });
+  return { ...group, nights, rows: left.length };
 }
