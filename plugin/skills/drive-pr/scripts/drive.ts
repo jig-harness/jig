@@ -92,6 +92,16 @@
  *                    restart keeps it (`lib/driver/rearm-budget.ts`). The
  *                    dispatcher passes it on a re-arm a person
  *                    asked for, never on the steward's or the tick's.
+ *                    The budget it grants never reaches past the pull
+ *                    request's round ceiling (`drive.max_total_rounds`):
+ *                    a re-arm that finds the ceiling spent parks
+ *                    `round-ceiling` (`lib/driver/circuit-breaker.ts`).
+ *   --past-ceiling   a person's override of a spent round ceiling or
+ *                    wall-clock cap: raises the ceiling by one
+ *                    `--max-rounds` block (and the cap by one more cap),
+ *                    recorded in the drive state and its ledger; implies
+ *                    `--rearm-budget`. An agent never passes it, and the
+ *                    dispatcher never does.
  *
  * The pass command is given as ARGV after `--`, and is executed directly —
  * with Windows batch shims adapted through cmd.exe by the process runner.

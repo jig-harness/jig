@@ -169,33 +169,11 @@ export function reviewedShaFrom(body: string): string | undefined {
  * A FIX-DEPENDENT answer carries the SHA its fix landed on, and the reviewer
  * round it was posted in (`<fingerprint>@<sha>#<round>`); a durable one carries
  * the bare fingerprint. See `collectAddressed` for why the two are not
- * interchangeable, and for what the round bounds.
+ * interchangeable. The round records when the answer was posted; no rule
+ * reads it to decide whether the answer still stands.
  */
 import { ADDRESSED_MARKER } from "../../../shared/summary-answer-blocks.ts";
 export { ADDRESSED_MARKER };
-
-/**
- * How many further reviewer rounds a `winddown-deferred` marker keeps
- * suppressing its finding after the round that posted it, before the finding is
- * re-asked once.
- *
- * The exemption in `collectAddressed` exists because the reviewer's
- * carry-forward of these entries carries no falsification signal — but that
- * cuts both ways: a later round that REVERTS the fix re-emits the identical
- * fingerprint under the identical reason, so an unbounded exemption suppresses
- * the reintroduced defect forever. The bound is the whole answer
- * available on this side: nothing here can prove the fix still holds, so the
- * marker is trusted for a known number of rounds and then re-asked.
- *
- * 3 is chosen against the two measured costs it sits between. Every-round
- * re-asking is the loop the exemption was introduced to stop (three
- * consecutive rounds each re-answered the same verified-fixed finding);
- * never re-asking suppresses a reverted fix forever. At 3 a still-valid fix
- * costs one re-answer per four rounds — on a reviewer that stops after ~14
- * rounds, three re-answers across a whole PR — while a reverted fix
- * resurfaces within four rounds of the answer that suppressed it.
- */
-export const WINDDOWN_EXEMPTION_ROUNDS = 3;
 
 export interface MarkerPayload {
   fingerprint: string;
@@ -397,7 +375,7 @@ function bodyFingerprintsOf(stickyBody: string): Set<string> {
 /**
  * Both exemption sets `collectAddressed` keys on, read off the same sticky
  * `classify()` parses — the whole backlog blob (the one-head `at` grace) and
- * the `reason: "winddown-deferred"` subset (the round-bounded expiry
+ * the non-blocking `reason: "winddown-deferred"` subset (the expiry
  * exemption).
  *
  * Named functions rather than inlined expressions, because the CLI and the
@@ -1001,59 +979,17 @@ export interface AddressedOptions {
   backlogFingerprints?: Set<string>;
   /**
    * Fingerprints the reviewer's own backlog carries with
-   * `reason: "winddown-deferred"`. A fix-dependent marker for one of these is
-   * exempt from the `reviewerSaw` expiry for `WINDDOWN_EXEMPTION_ROUNDS`
-   * rounds — never from the dating requirement, which `collectAddressed`
-   * enforces by refusing the exemption outright at position `unknown` (a
-   * marker SHA git cannot resolve to a commit). Build it with
+   * `reason: "winddown-deferred"` and without `blocking: true`. A
+   * fix-dependent marker for one of these is exempt from the position expiry
+   * for as long as the reviewer keeps carrying the entry — never from the
+   * dating requirement, which `collectAddressed` enforces by refusing the
+   * exemption outright at position `unknown` (a marker SHA git cannot resolve
+   * to a commit). Absent means empty: no exemption. Build it with
    * `winddownFingerprintsOf`, which applies the same body-bullet exclusion as
    * `backlogFingerprintsOf`. See `collectAddressed` for why re-emission
-   * carries no falsification signal for exactly this set, and why the
-   * exemption is nonetheless bounded.
+   * carries no falsification signal for exactly this set.
    */
   winddownDeferred?: Set<string>;
-  /**
-   * The round the sticky under evaluation describes (`ai-review-round`), or
-   * null when it stamps none. Only the winddown exemption reads it, and ABSENT
-   * MEANS NO EXEMPTION: with no round to measure against, the bound cannot be
-   * evaluated, and an unbounded exemption is the failure this option exists to
-   * close.
-   */
-  currentRound?: number | null;
-}
-
-/**
- * Does a marker the reviewer has already read past still hold?
- *
- * Every clause fails CLOSED — not in the backlog's winddown set, no round on
- * the marker, no round on the sticky, an unparseable/negative/future round, or
- * too many rounds elapsed all yield false, which puts the finding back on the
- * unaddressed list. The cost of a false there is one re-answer; the cost of a
- * false the other way is a live finding suppressed with nothing left to
- * surface it. See `collectAddressed` below for why this set is exempt at all,
- * and why the exemption is bounded.
- *
- * The round is untrusted input — a marker's `#<round>` is hand-writable, and
- * `parseMarkerPayload` only checks it is all-digit, not that it fits a safe
- * integer or precedes `currentRound`. Without the extra checks, a future round
- * (`#999999` against a small `currentRound`) makes `currentRound - round`
- * negative — always `<= WINDDOWN_EXEMPTION_ROUNDS` — so the marker stays
- * exempt until `currentRound` catches up past `round + WINDDOWN_EXEMPTION_ROUNDS`,
- * and a long enough digit run parses past `Number.MAX_SAFE_INTEGER`, making
- * that gap effectively permanent — restoring the unbounded suppression the
- * round budget exists to prevent.
- */
-function exemptFromExpiry(
-  fingerprint: string,
-  round: number | null,
-  opts: AddressedOptions,
-): boolean {
-  if (!opts.winddownDeferred?.has(fingerprint)) return false;
-  if (round === null || opts.currentRound == null) return false;
-  if (!Number.isSafeInteger(round) || round < 0 || round > opts.currentRound) {
-    return false;
-  }
-  return opts.currentRound - round <= WINDDOWN_EXEMPTION_ROUNDS;
 }
 
 /**
@@ -1092,11 +1028,12 @@ function exemptFromExpiry(
  * A fingerprint the sticky emits BOTH ways is the case that decides which of
  * those two sentences wins, and the fresh judgment does. `backlogFingerprintsOf`
  * (and `winddownFingerprintsOf`) subtract the body bullets' fingerprints before
- * either exemption sees them, so a dual-emitted finding gets neither grace nor
- * round budget. It has to be settled at the set rather than here: a fingerprint
- * is one global key, `collectAddressed` returns keys, and `classify`'s own
- * dedup reports the pair as a single finding — so honouring the marker for
- * "the backlog copy" clears the freshly-judged one with it.
+ * either exemption sees them, so a dual-emitted finding gets neither the
+ * one-head grace nor the winddown exemption. It has to be settled at the set
+ * rather than here: a fingerprint is one global key, `collectAddressed`
+ * returns keys, and `classify`'s own dedup reports the pair as a single
+ * finding — so honouring the marker for "the backlog copy" clears the
+ * freshly-judged one with it.
  *
  * Without that grace a fix-dependent marker was inert on arrival. SKILL.md § 6
  * mandates push → `stamp-held` → `drive-status.ts --no-count` → answer, so by
@@ -1109,51 +1046,37 @@ function exemptFromExpiry(
  * later push — a revert, a regression, a rebase — moves the reviewed SHA off the
  * marked one, the position becomes `past`, and the finding is re-asked.
  *
- * Past that one head, a THIRD clause keeps a narrower set alive, and it is not
- * a variant of the same question. The position rule above once read as though
- * a single bounded rule replaced the older `reason: "winddown-deferred"`
- * exemption outright. It does not, because the two are bounded along DIFFERENT
- * axes: the position rule expires at the first later PUSH, which is precisely
- * the carry-forward loop that survives one — measured: three consecutive
- * rounds each re-answering the same verified-fixed finding, and a second
- * drive's carry-forward. So the winddown clause below stands alongside it,
- * bounded in ROUNDS rather than heads.
+ * Past that one head, a THIRD clause keeps a narrower set alive, bounded along
+ * a different axis. The position rule expires at the first later PUSH, and a
+ * carry-forward survives pushes — measured: three consecutive rounds each
+ * re-answering the same verified-fixed finding, and a second drive's
+ * carry-forward. So the winddown clause below stands alongside it, bounded by
+ * the reviewer's own disposition of the entry rather than by heads or rounds.
  *
- * That clause covers `winddown-deferred` backlog entries, where the
- * theory is empirically false. The reviewer carries those forward
- * UNCONDITIONALLY by their original firstRound — it does not re-verify them
- * against the current diff — so re-emission at the fix's head says nothing
- * about the fix, and expiring the marker turns a correctly-fixed,
- * correctly-answered finding into a loop the driver cannot win (measured, as
- * above). A fix-dependent marker whose fingerprint is in
- * `opts.winddownDeferred` therefore survives a `past` position — but NOT an
- * `unknown` one. The SHA is still required, and "required" means datable, not
- * merely present: `past` and `unknown` are both non-answers about the reviewer,
- * yet only `unknown` says the marker names no commit this repository has, so
+ * That clause covers non-blocking `winddown-deferred` backlog entries. The
+ * reviewer carries those forward UNCONDITIONALLY by their original firstRound —
+ * it does not re-verify them against the current diff — so re-emission at a
+ * later head says nothing about the fix, and expiring the marker turns a
+ * correctly-fixed, correctly-answered finding into a loop the driver cannot
+ * win (measured, as above). A fix-dependent marker whose fingerprint is in
+ * `opts.winddownDeferred` therefore survives a `past` position on every later
+ * round: answered once, it stays answered. It does NOT survive an `unknown`
+ * one. The SHA is still required, and "required" means datable, not merely
+ * present: `past` and `unknown` are both non-answers about the reviewer, yet
+ * only `unknown` says the marker names no commit this repository has, so
  * ignoring position (which is this clause's whole point) must not extend to
- * ignoring that. Folding the two together let a hand-written `@deadbeef…`
- * marker ride the exemption for its whole round budget, contradicting the
- * "never exempt from the dating requirement" contract one field up
- *. Every non-winddown finding keeps the
- * full expiry — the reviewer DOES re-verify those, so there re-emission still
- * falsifies.
+ * ignoring that — a hand-written `@deadbeef…` marker earns nothing. Every
+ * non-winddown finding keeps the full expiry — the reviewer DOES re-verify
+ * those, so there re-emission still falsifies.
  *
- * That exemption is BOUNDED, and the bound is essential. Unbounded, it would be
- * unfalsifiable in the other direction too: a later round that REVERTS or
- * regresses the fix reproduces the finding under the same fingerprint and the
- * same `winddown-deferred` reason — indistinguishable from a routine
- * carry-forward — and the marker would suppress it forever, so
- * `drive-status.ts` could reach CONVERGED over a live finding. The distinction
- * is erased at the SOURCE: the reviewer's carry-forward does not record whether
- * an entry was re-detected on this head or merely forwarded, and the reviewer
- * is a self-hosted app, not this repository, so nothing here can recover what
- * was never emitted. What IS available is elapsed rounds. The marker carries
- * the round it was posted in (`<fingerprint>@<sha>#<round>`), and the exemption
- * holds for `WINDDOWN_EXEMPTION_ROUNDS` further rounds; past that the finding is
- * re-asked once, and a still-valid fix re-answers under a fresh round. A marker
- * with no round, or a sticky with no round to measure it against, gets NO
- * exemption — the pre-exemption behaviour, which costs a re-answer rather than
- * an unbounded suppression, and which a re-answer then repairs by stamping one.
+ * Standing indefinitely suppresses nothing that holds the PR. The reviewer
+ * itself declares these entries non-blocking, and `classify` reports them as
+ * `ignoredBacklog`, work that needs no answer. A regression the reviewer
+ * judges to block arrives as `blocking: true`, as a body bullet or as an inline
+ * thread, and each of those is outside `winddownFingerprintsOf`'s set, so the
+ * finding is asked again however long ago it was answered. The marker's
+ * `#<round>` is not read here: it records when the answer was posted, and a
+ * roundless marker is honoured on the same terms.
  *
  * Which outcomes are fix-dependent is NOT decided here, because it is not a
  * property of the word. `accepted` always is. `moot` usually is — a finding is
@@ -1205,16 +1128,14 @@ export function collectAddressed(
     const outcome = outcomeOf(body);
     if (outcome === null) continue;
     for (const m of body.matchAll(re)) {
-      const { fingerprint, sha, round } = parseMarkerPayload(m[1] ?? "");
+      const { fingerprint, sha } = parseMarkerPayload(m[1] ?? "");
       if (!sha) {
         if (FIX_DEPENDENT_OUTCOMES.has(outcome)) continue;
         out.add(fingerprint);
         continue;
       }
       // A marker survives under the clauses below, and they are cumulative
-      // rather than alternatives to each other — the position rule and the
-      // winddown round budget answer overlapping but different questions, and
-      // neither subsumes the other:
+      // rather than alternatives to each other — neither subsumes the other:
       //
       //   behind          the review predates the fix, so it cannot have judged
       //                   it. Every finding, always.
@@ -1222,26 +1143,19 @@ export function collectAddressed(
       //                   a marker is ALWAYS posted at the reviewed head (§ 6's
       //                   push → stamp-held → status → answer ordering) and
       //                   would otherwise be inert on arrival.
-      //   winddown budget `WINDDOWN_EXEMPTION_ROUNDS` rounds PAST that, for the
-      //                   narrower `reason: "winddown-deferred"` subset the
-      //                   reviewer forwards without re-verifying — but only
-      //                   for a marker whose SHA git can actually resolve
-      //                   (`unknown`). That clause ignores POSITION by design;
-      //                   it was never meant to excuse a marker naming nothing
-      //                   datable, which is the one thing `past` used to hide
-      //                   from it.
-      //
-      // The one-head rule's rationale once read as though it replaced the
-      // winddown exemption outright. It does not: the position rule expires at
-      // the FIRST later push, which is exactly the measured carry-forward loop
-      // (three consecutive rounds re-answering one verified-fixed finding).
-      // Dropping either clause here restores a measured failure, so both stay.
+      //   winddown        every head PAST that, for the narrower non-blocking
+      //                   `reason: "winddown-deferred"` subset the reviewer
+      //                   forwards without re-verifying — but only for a marker
+      //                   whose SHA git can actually resolve (not `unknown`).
+      //                   That clause ignores POSITION by design, never the
+      //                   dating requirement.
       const where = position(sha);
       const honour =
         where === "behind" ||
         (where === "at" &&
           opts.backlogFingerprints?.has(fingerprint) === true) ||
-        (where !== "unknown" && exemptFromExpiry(fingerprint, round, opts));
+        (where !== "unknown" &&
+          opts.winddownDeferred?.has(fingerprint) === true);
       if (!honour) continue;
       out.add(fingerprint);
     }
@@ -1275,45 +1189,19 @@ function trustedAnswerBlocks(sources: AddressedSource[]): string[] {
  * is irrelevant to whether posting it again would duplicate it — that is a
  * fact about whether the exact comment already exists, full stop.
  *
- * The marker's ROUND is deliberately not compared for an ordinary fix-dependent
- * marker. It records WHEN the answer was posted, not what the answer claims,
- * so comparing it would make a reclaiming pass whose sticky has since advanced
- * a round miss its own predecessor's marker at the same SHA and post a
- * duplicate — the same bug again, reached through the round field.
- *
- * A `winddown-deferred` fingerprint is the one exception, because it is the
- * one case where a LATER round legitimately re-answers at the exact SAME SHA:
- * the reviewer forwards that backlog entry without re-verifying it, so
- * nothing about the fix changes between rounds, only the round-bounded
- * exemption's remaining budget (`exemptFromExpiry`, `WINDDOWN_EXEMPTION_ROUNDS`).
- * Once `collectAddressed` expires the old marker, `answer-summary-finding.ts`
- * needs to repost at the SAME `sha` with a FRESH `#<round>` to renew it — and
- * if this function still reported the stale marker as an exact match, that
- * repost would be silently skipped as "already posted", leaving the finding
- * `unaddressed` forever. So for a
- * winddown fingerprint, an existing same-SHA marker only counts as a match
- * while it is still within its own exemption window; once elapsed, it is
- * stale rather than a duplicate, and a fresh post is allowed through. A
- * marker still inside the window is exactly the crash-recovery case above —
- * same reasoning applies unchanged.
- *
- * That refresh path requires an actual `opts.currentRound` to measure
- * staleness against — a roundless sticky (no `ai-review-round`) makes
- * `exemptFromExpiry` fail closed to "not exempt" unconditionally, which would
- * make EVERY same-SHA winddown marker read as stale, including one this same
- * pass posted moments ago. `answer-summary-finding.ts` also stamps no round
- * on a roundless sticky (`roundSuffix` is empty), so the "fresh" repost would
- * be textually identical to the marker just posted, and the next
- * reconciliation would see it as stale too — an infinite loop of duplicate
- * comments instead of the intended one-time refresh. With no round to measure
- * by, retain the ordinary unconditional same-SHA match instead — the
- * crash-recovery guarantee — until a later sticky supplies one.
+ * The marker's ROUND is deliberately not compared. It records WHEN the answer
+ * was posted, not what the answer claims, so comparing it would make a
+ * reclaiming pass whose sticky has since advanced a round miss its own
+ * predecessor's marker at the same SHA and post a duplicate — the same bug
+ * again, reached through the round field. That holds for a winddown-deferred
+ * fingerprint too: its answer stands on every later round (`collectAddressed`),
+ * so a same-SHA marker from any earlier round is the answer already given, and
+ * posting again would only duplicate it.
  */
 export function findExactMarkers(
   sources: AddressedSource[],
   fingerprints: Set<string>,
   markerSha: string | undefined,
-  opts: AddressedOptions = {},
 ): Set<string> {
   const out = new Set<string>();
   const re = new RegExp(
@@ -1323,19 +1211,9 @@ export function findExactMarkers(
   for (const body of trustedAnswerBlocks(sources)) {
     if (outcomeOf(body) === null) continue;
     for (const m of body.matchAll(re)) {
-      const { fingerprint, sha, round } = parseMarkerPayload(m[1] ?? "");
+      const { fingerprint, sha } = parseMarkerPayload(m[1] ?? "");
       if (!fingerprints.has(fingerprint)) continue;
-      if (markerSha ? sha === markerSha : sha === "") {
-        if (
-          markerSha &&
-          opts.winddownDeferred?.has(fingerprint) &&
-          opts.currentRound != null &&
-          !exemptFromExpiry(fingerprint, round, opts)
-        ) {
-          continue;
-        }
-        out.add(fingerprint);
-      }
+      if (markerSha ? sha === markerSha : sha === "") out.add(fingerprint);
     }
   }
   return out;
@@ -1593,9 +1471,6 @@ function printAddressProbe(
   sticky: IssueComment | undefined,
 ): number {
   const round = sticky ? parseReviewRound(sticky.body) : null;
-  const winddownDeferred = sticky
-    ? winddownFingerprintsOf(sticky.body)
-    : new Set<string>();
   const primary = primaryArg.split(",").filter(Boolean);
   const durable = durableArg?.split(",").filter(Boolean) ?? [];
   const requested = [...primary, ...durable];
@@ -1608,10 +1483,7 @@ function printAddressProbe(
     }
   }
   const sources = markerSourcesOf(issueComments);
-  const found = findExactMarkers(sources, new Set(primary), markerSha, {
-    winddownDeferred,
-    currentRound: round,
-  });
+  const found = findExactMarkers(sources, new Set(primary), markerSha);
   if (durable.length > 0) {
     for (const fp of findExactMarkers(sources, new Set(durable), undefined))
       found.add(fp);
