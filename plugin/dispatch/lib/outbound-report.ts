@@ -331,7 +331,7 @@ export function quotaRisks(report: LedgerReport, now: number): QuotaRisk[] {
 /** The fewest calls, across the credentials that never succeeded, that make a caller's failures worth a person's look. */
 const FAILING_CALLER_MIN_REQUESTS = 20;
 
-/** A caller outside the tick and its passes whose calls to one system were all refused as unauthorized or invalid. */
+/** A caller outside the tick and its passes with credentials whose every call to one system was refused as unauthorized or invalid. */
 export interface FailingCaller {
   caller: string;
   system: string;
@@ -386,28 +386,31 @@ function outsideCalls(report: LedgerReport): CredentialCalls[] {
   return [...byKey.values()];
 }
 
+/** Whether every call under a credential failed as the caller's own fault. */
+const neverSucceeded = (at: CredentialCalls): boolean =>
+  at.requests > 0 && at.failed >= at.requests;
+
 /**
  * The callers outside the tick and its passes (a skill a timer or a person
- * runs) with credentials whose every call in the report's window failed,
- * at least `FAILING_CALLER_MIN_REQUESTS` calls in all. The tick's own and a
- * pass's failures are already on the receipt and the failure ledger; a
- * caller the dispatcher does not run is otherwise seen by nobody. A
- * credential that fails on every call is one a caller cannot use, whatever
- * it is asking; a caller that starts each run with a fresh credential shows
- * as many.
+ * runs) with credentials that never succeeded in the report's window: every
+ * call under them failed, at least `FAILING_CALLER_MIN_REQUESTS` calls in
+ * all. The tick's own and a pass's failures are already on the receipt and
+ * the failure ledger; a caller the dispatcher does not run is otherwise seen
+ * by nobody. A credential that fails on every call is one a caller cannot
+ * use, whatever it is asking, and a caller that starts each run with a fresh
+ * credential shows as many. Each such credential is judged by its own calls:
+ * a skill is the caller of every run that uses it, so another credential of
+ * the same caller that works says nothing of the ones that do not.
  */
 export function failingCallers(report: LedgerReport): FailingCaller[] {
   const byCaller = new Map<string, CredentialCalls[]>();
   for (const at of outsideCalls(report)) {
+    if (!neverSucceeded(at)) continue;
     const key = `${at.caller}\0${at.system}`;
     byCaller.set(key, [...(byCaller.get(key) ?? []), at]);
   }
   const callers: FailingCaller[] = [];
   for (const groups of byCaller.values()) {
-    // One credential that worked is the caller's success: its other
-    // credentials' failures say nothing of whether the caller can call.
-    if (groups.some((at) => at.failed === 0 || at.failed < at.requests))
-      continue;
     const [first] = groups;
     if (first === undefined) continue;
     callers.push({
@@ -451,7 +454,7 @@ export function failingCallerNeeds(
       title: "A caller's calls all fail",
       workspace: null,
       since: known?.since ?? nowIso,
-      reason: `${c.caller} sent ${c.requests} request(s) to ${c.system} in the last hours and every one was refused (${c.classes.join(", ")}) under ${c.credentials} credential(s): the client it runs with probably has no credential that can answer. Inspect jig budget --hours 2 --json for the caller, and give it a login or stop it.`,
+      reason: `${c.caller} sent ${c.requests} request(s) to ${c.system} in the last hours under ${c.credentials} credential(s) that never succeeded, and every one was refused (${c.classes.join(", ")}): the client it runs with probably has no credential that can answer. Inspect jig budget --hours 3 --json for the caller, and give it a login or stop it.`,
       question: null,
       decisions: [],
       notified: known?.notified ?? null,

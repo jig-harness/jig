@@ -93,6 +93,7 @@ import {
  *      wait; OR the drive's database could not be read
  *   2  usage
  *   3  --stop --expect-started: the lock is held by another acquisition
+ *   4  --doctor: the forge client names no login (`refuseNoLogin`)
  */
 
 import {
@@ -115,6 +116,7 @@ import {
   generationAcked,
 } from "./lib/state/mailbox-stop.ts";
 import * as ledgerStop from "./lib/ledger-stop.ts";
+import { type LoginAsk, askedOnce, refuseNoLogin } from "./lib/ledger-stop.ts";
 import { existsSync } from "node:fs";
 import { driveRepository } from "./lib/drive-repository.ts";
 import { join } from "node:path";
@@ -128,7 +130,7 @@ import {
   noLiveDriver,
   stallThresholdMs,
 } from "./lib/doctor.ts";
-import { ciHoldDoctor } from "./lib/ci-hold-doctor.ts";
+import { attachCiHold, unreleasedHold } from "./lib/ci-hold-doctor.ts";
 import {
   findPassChild,
   type PassChildAnswer,
@@ -365,6 +367,7 @@ async function attachDoctorVerdicts(
   rows: readonly LockRow[],
   selfPath: string,
   doctorMode: boolean,
+  ask: LoginAsk,
 ): Promise<LockRow[]> {
   // ONE process-table read for the whole sweep, taken before the fan-out
   // rather than once per row — see `snapshotProcesses`' own header for why
@@ -381,24 +384,8 @@ async function attachDoctorVerdicts(
         if (row.kind !== "pr") return row;
         const input = await gatherDoctorInput(stateDir, row, selfPath, procs);
         const doctor = classifyDrive(input, Temporal.Now.instant());
-        const snapshot = readStateSnapshot(stateDir, row.key);
-        if (
-          doctorMode &&
-          snapshot.ok &&
-          snapshot.state.ciHold !== null &&
-          snapshot.state.ciHold.phase !== "released"
-        ) {
-          doctor.ciHold = await ciHoldDoctor(
-            stateDir,
-            row.key,
-            snapshot.state,
-            row.state,
-            fileURLToPath(new URL(".", import.meta.url)),
-          );
-          doctor.reason += `; ${doctor.ciHold.reason}`;
-          if (doctor.ciHold.recovery !== null)
-            doctor.recovery = doctor.ciHold.recovery;
-        }
+        if (doctorMode)
+          await attachCiHold(stateDir, row.key, row.state, doctor, ask);
         return { ...row, doctor };
       })(),
     );
@@ -1097,11 +1084,22 @@ async function main(argv: string[]): Promise<number> {
     else console.log("no drive locks: this clone has never been driven");
     return 0;
   }
+  return listDrives(stateDir, { json, doctorMode, onlyPr });
+}
+
+/** The listing, plain or doctored: `--doctor`'s run asks the forge client once, for every record and hold it reads. */
+async function listDrives(
+  stateDir: string,
+  mode: { json: boolean; doctorMode: boolean; onlyPr: string },
+): Promise<number> {
+  const { json, doctorMode, onlyPr } = mode;
   const lockRows = listRows(stateDir);
   // `--doctor`'s population is locks ∪ states; the plain listing and
   // plain `--json` stay lock rows only (`listStateOnlyRows` says why).
+  // One question of the forge client, shared by the whole run.
+  const ask = askedOnce();
   const rows = doctorMode
-    ? await doctorRows(stateDir, lockRows, onlyPr)
+    ? await doctorRows(stateDir, lockRows, onlyPr, ask)
     : lockRows;
   // Classified in every mode: `--json` always carries the verdict, and the
   // human listing's "stalled" annotation reads the same `.doctor` field.
@@ -1114,8 +1112,10 @@ async function main(argv: string[]): Promise<number> {
         : rows.filter((row) => row.kind === "pr" && row.key === onlyPr),
       SELF,
       doctorMode,
+      ask,
     )
   ).map((row) => ({ ...row, repository }));
+  if (doctorMode && ask.refused()) return refuseNoLogin();
   if (json) console.log(JSON.stringify({ stateDir, rows: doctored }, null, 2));
   else if (doctorMode) printDoctor(stateDir, doctored, repository);
   else printHuman(stateDir, doctored, repository);
@@ -1127,15 +1127,13 @@ async function doctorRows(
   stateDir: string,
   lockRows: LockRow[],
   onlyPr: string,
+  ask: LoginAsk,
 ) {
   if (process.env[READ_ONLY_ENV] !== "1") {
-    await ledgerStop.recoverStoppedLedgers(stateDir, (pr) => {
-      if (onlyPr !== "" && pr !== onlyPr) return true;
-      const snapshot = readStateSnapshot(stateDir, pr);
+    await ledgerStop.recoverStoppedLedgers(stateDir, ask, (pr) => {
       return (
-        snapshot.ok &&
-        snapshot.state.ciHold !== null &&
-        snapshot.state.ciHold.phase !== "released"
+        (onlyPr !== "" && pr !== onlyPr) ||
+        unreleasedHold(stateDir, pr) !== null
       );
     });
   }

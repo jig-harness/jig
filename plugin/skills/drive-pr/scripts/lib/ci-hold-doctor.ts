@@ -1,9 +1,12 @@
 /** Read-only evidence gathering for a recorded CI hold. */
 import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { basename, join, resolve } from "node:path";
 import { isRecord } from "../../../../shared/guards.ts";
 import type { ProcessRow } from "../../../../shared/process-table.ts";
-import { readDriverRecord } from "./ledger-stop.ts";
+import { askedOnce, type LoginAsk, readDriverRecord } from "./ledger-stop.ts";
+import type { DoctorRow } from "./doctor.ts";
+import { readStateSnapshot } from "./state/snapshot.ts";
 import { worktreePathKey } from "./state/actor.ts";
 import { judge } from "../../../../shared/liveness.ts";
 import { processTable } from "../../../../shared/process-table.ts";
@@ -31,7 +34,7 @@ import {
 import { leaseRefsFor, readLease } from "./state/lease.ts";
 import type { DriveState } from "./state/schema.ts";
 import { type Ledger, newerClaim } from "./state/ledger.ts";
-import { readLedgerSnapshot, resolveLogin } from "./state/ledger-forge.ts";
+import { readLedgerSnapshot } from "./state/ledger-forge.ts";
 import { peekCloneKey } from "./state/clone-key.ts";
 import { cloneId } from "./state/ledger-mirror.ts";
 import { emptyReport, evaluate } from "./status/evaluate.ts";
@@ -40,8 +43,15 @@ class DiagnosticReadError extends Error {
   readonly code = "CI_HOLD_DIAGNOSIS_UNREADABLE";
 }
 
-async function currentLedger(pr: string): Promise<Ledger> {
-  const snapshot = await readLedgerSnapshot(pr, await resolveLogin());
+async function currentLedger(pr: string, ask: LoginAsk): Promise<Ledger> {
+  // The run's one question: a client that names no login reads no comment,
+  // for this hold or any other of the run.
+  const login = await ask.login();
+  if (login === null && ask.required)
+    throw new DiagnosticReadError(
+      "the forge client names no login, so the ledger was not read",
+    );
+  const snapshot = await readLedgerSnapshot(pr, login);
   if (typeof snapshot === "string") throw new DiagnosticReadError(snapshot);
   const parsed = snapshot.canonical?.parsed;
   if (parsed?.kind !== "ledger")
@@ -355,12 +365,39 @@ async function readReview(
     e.readFailure = `review evidence ${report.state}: ${report.reason}`;
 }
 
+/** A drive's state when it records a CI hold nobody released. */
+export function unreleasedHold(stateDir: string, pr: string) {
+  const snapshot = readStateSnapshot(stateDir, pr);
+  return snapshot.ok &&
+    snapshot.state.ciHold !== null &&
+    snapshot.state.ciHold.phase !== "released"
+    ? snapshot.state
+    : null;
+}
+
+/** Adds the CI-hold diagnosis to a doctor verdict of a drive whose hold is unreleased. */
+export async function attachCiHold(
+  stateDir: string,
+  pr: string,
+  lock: string,
+  doctor: DoctorRow,
+  ask: LoginAsk,
+): Promise<void> {
+  const state = unreleasedHold(stateDir, pr);
+  if (state === null) return;
+  const scripts = fileURLToPath(new URL(".", import.meta.url));
+  doctor.ciHold = await ciHoldDoctor(stateDir, pr, state, lock, scripts, ask);
+  doctor.reason += `; ${doctor.ciHold.reason}`;
+  if (doctor.ciHold.recovery !== null) doctor.recovery = doctor.ciHold.recovery;
+}
+
 export async function ciHoldDoctor(
   stateDir: string,
   pr: string,
   state: DriveState,
   lock: string,
   scripts: string,
+  ask: LoginAsk = askedOnce(),
 ): Promise<CiHoldDiagnosis> {
   const e: CiHoldEvidence = {
     driver: "unknown",
@@ -380,7 +417,7 @@ export async function ciHoldDoctor(
     releaseScript: join(scripts, "ci-hold.ts"),
   };
   try {
-    const ledger = await currentLedger(pr);
+    const ledger = await currentLedger(pr, ask);
     e.ledgerGeneration = ledger.generation;
     e.parked = Math.max(state.parked.length, ledger.parked.length);
     await readLedgerDriver(e, stateDir, lock, ledger);
