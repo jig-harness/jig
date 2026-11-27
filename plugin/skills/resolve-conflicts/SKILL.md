@@ -153,11 +153,11 @@ section in the markers:
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git fetch <remote> <base>
-bun "${CLAUDE_SKILL_DIR}/scripts/start-merge.ts" --base <base> --remote <remote> [--pr <number>]
+bun "${CLAUDE_SKILL_DIR}/scripts/start-merge.ts" --base <base> --remote <remote>
 ```
 
-`--pr` defaults to `$DRIVE_PR_TARGET`, then to the checked-out branch's pull
-request. When that pull request was stacked on another branch that has since
+It reads the pull request from `$DRIVE_PR_TARGET`, else the checked-out
+branch's; `--pr <number>` names another. When that pull request was stacked on another branch that has since
 landed on `<base>` by squash or rebase, the forge records the move onto
 `<base>`, and the script takes the point where this branch left the earlier
 branch as the merge base: the earlier branch's changes, on both sides under
@@ -172,8 +172,8 @@ push), `9` stopped on conflicts with the merge open (go on to Step 2), `3`
 refused before touching anything (an operation already open, staged
 changes, or local changes the merge would overwrite: finish or set those
 aside first), `1` a step failed (its message names which; a merge left open
-after a refused commit is concluded with `git commit` or ended with
-`git merge --abort`). `--json` prints the report on stdout.
+after a refused commit is concluded with a commit, or ended with an abort
+of the merge). `--json` prints the report on stdout.
 
 Never rebase or force-push a branch that has an open pull request under a
 drive: the drive syncs by merging, and rewriting the branch's history
