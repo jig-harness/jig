@@ -69,7 +69,7 @@ export const MARKER_SCHEMAS = {
         enveloped("drive-ledger", LEDGER_PAYLOAD_SHAPE),
         s.object({
           ...LEDGER_PAYLOAD_FIELDS,
-          ledgerVersion: s.enum([1, 2]),
+          ledgerVersion: s.enum([1, 2, 3]),
           kind: s.optional(s.never()),
         }),
       ]),
@@ -402,7 +402,7 @@ export const COMMENT_MARKERS: Chapter = {
   title: "Hidden comment markers on the forge and the tracker",
   summary:
     "The hidden markers Jig writes and reads in comments and bodies on the forge and the tracker: what record each marks, who writes it, its version and what it means.",
-  version: 1,
+  version: 2,
   status: "stable",
   planItems: [],
   module: "tools/protocol/chapters/comment-markers.ts",

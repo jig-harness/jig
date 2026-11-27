@@ -115,7 +115,7 @@ const CLAIM_DATA = "drive-pr-takeover-claim-data";
 export const LEDGER_KIND = "drive-ledger";
 
 /** The ledger shape this version reads and writes: the envelope's `v`, and `ledgerVersion` beside it. */
-export const LEDGER_VERSION = 1;
+export const LEDGER_VERSION = 3;
 const OPERATOR_STOP_LEDGER_VERSION = 2;
 
 /** How much of the handoff narrative travels with the ledger. */
@@ -430,7 +430,7 @@ export function renderLedger(
     ledgerVersion:
       ledger.driver.personStop === undefined
         ? ledger.ledgerVersion
-        : OPERATOR_STOP_LEDGER_VERSION,
+        : LEDGER_VERSION,
     // A receipt or churn-evidence loss the state already carries stays named, whatever this render drops.
     cut: ledger.cut.filter(
       (c) =>
@@ -583,10 +583,12 @@ function envelopedFields(data: Record<string, unknown>): LedgerFields {
  */
 function ledgerFields(data: Record<string, unknown>): LedgerFields {
   const version = data.ledgerVersion;
-  if (isCount(version) && version > OPERATOR_STOP_LEDGER_VERSION)
+  if (isCount(version) && version > LEDGER_VERSION)
     return { kind: "unknown-version", version };
   if ("kind" in data) return envelopedFields(data);
-  return version === LEDGER_VERSION || version === OPERATOR_STOP_LEDGER_VERSION
+  return version === 1 ||
+    version === OPERATOR_STOP_LEDGER_VERSION ||
+    version === LEDGER_VERSION
     ? { fields: data }
     : malformed(
         `ledgerVersion ${JSON.stringify(version) ?? "is missing"} is not a version`,

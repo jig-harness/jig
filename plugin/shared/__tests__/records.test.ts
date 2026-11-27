@@ -379,9 +379,9 @@ describe("the drive ledger carries the envelope", () => {
   it("reads a newer envelope version as a ledger it does not read, and a foreign key as damage", () => {
     const rendered = renderLedger(ledger());
     if ("error" in rendered) throw new Error(rendered.error);
-    expect(parseLedger(rendered.body.replace('"v":1', '"v":3'))).toEqual({
+    expect(parseLedger(rendered.body.replace('"v":1', '"v":4'))).toEqual({
       kind: "unknown-version",
-      version: 3,
+      version: 4,
     });
     expect(parseLedger(rendered.body.replace('"v":1', '"v":2'))?.kind).toBe(
       "malformed",

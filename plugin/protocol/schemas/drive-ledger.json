@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://jig-harness.dev/protocol/comment-markers/v1/schemas/drive-ledger.json",
+  "$id": "https://jig-harness.dev/protocol/comment-markers/v2/schemas/drive-ledger.json",
   "anyOf": [
     {
       "allOf": [
@@ -13,7 +13,7 @@
             "v": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 2
+              "maximum": 3
             },
             "key": {
               "type": "string",
@@ -62,7 +62,7 @@
           "type": "object",
           "properties": {
             "ledgerVersion": {
-              "enum": [1, 2]
+              "enum": [1, 2, 3]
             },
             "generation": {
               "type": "integer",
@@ -135,7 +135,8 @@
                     "maximum": 1.7976931348623157e308
                   },
                   "person": {
-                    "type": "string"
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,38}(?:_[A-Za-z0-9]{3,8})?(?:\\[bot\\])?$"
                   },
                   "at": {
                     "type": "string"
@@ -921,7 +922,7 @@
       "type": "object",
       "properties": {
         "ledgerVersion": {
-          "enum": [1, 2]
+          "enum": [1, 2, 3]
         },
         "generation": {
           "type": "integer",
@@ -994,7 +995,8 @@
                 "maximum": 1.7976931348623157e308
               },
               "person": {
-                "type": "string"
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,38}(?:_[A-Za-z0-9]{3,8})?(?:\\[bot\\])?$"
               },
               "at": {
                 "type": "string"

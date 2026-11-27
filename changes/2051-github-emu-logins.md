@@ -1,5 +1,5 @@
 ---
-release: patch
+release: minor
 ---
 
 ### Fixed
@@ -17,7 +17,10 @@ release: patch
   taken only where it was before. One check in `plugin/shared/forge-logins.ts`
   holds the rule for all of them: a short code of three to eight letters or
   digits, and no other underscore.
-- A drive ledger that names a managed user as a parked question's person is
-  refused by a host still running an earlier release, so upgrade every host
-  that reads a shared ledger before a managed user is routed a parked
-  question.
+- **Breaking:** The [hidden comment markers](../plugin/protocol/comment-markers.md)
+  protocol is now version 2. Its drive-ledger schema constrains a parked
+  question's person to a GitHub login, including an Enterprise Managed User
+  login. Upgrade every host that reads a shared ledger before a managed user
+  is routed a parked question; earlier hosts refuse the version 3 ledger.
+  **Consumer action:** required at machine. Upgrade every host that reads
+  shared drive ledgers.
