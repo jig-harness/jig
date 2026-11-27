@@ -1833,6 +1833,32 @@ repository. What a run may start is the machine's to say, in
 [the machine's dispatch file](#the-machines-dispatch-file); see
 [the plugin's README](README.md#the-dispatcher).
 
+A configuration the tick refuses fails the repository's every turn on the
+host until a person fixes it, so check it before it merges, in the
+repository's CI. `jig dispatch check [--repo <path>]` reads the checkout's
+`.config/jig.yaml` with the tick's own readers: this section, the tracker
+`issue_tracker` names with its [issue facets](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (resolved against the
+checkout's label taxonomy, as the tick resolves them against the host's
+checkout), and the change-area catalog `drive.change_areas_catalog` names.
+It prints each reading the tick would refuse, with the tick's own message,
+and exits `1`; it exits `0` when the tick reads the configuration whole.
+Run on a pull request's tree, it checks what the default branch will hold
+once the pull request merges. It reads files only and sends nothing to the
+tracker or the forge, so what only they can say (a field the organization
+lacks, the store detection finds for a facet) is still the tick's to find.
+The plugin runs from any copy of its directory with Bun alone, so a CI job
+can run the release the hosts run:
+
+```yaml
+- uses: oven-sh/setup-bun@v2
+- name: Check what the dispatcher reads
+  env:
+    JIG_VERSION: "0.315.0" # the plugin version the dispatch hosts run
+  run: |
+    git clone --quiet --depth 1 --branch "v$JIG_VERSION" https://github.com/jig-harness/jig "$RUNNER_TEMP/jig"
+    bun --no-env-file "$RUNNER_TEMP/jig/plugin/jig.ts" dispatch check
+```
+
 | Field | Type | Default / meaning | Read by |
 |-------|------|-------------------|---------|
 | `dispatch.identity` | string: a GitHub login; a Linear user's email or display name; or, on Jira, an Atlassian account id, or an email or display name that matches exactly one user (more or fewer matches are refused) | None: the repository has no pickups. A factory-inherited `do-item` claim requires the identity on the default branch and refuses when it is absent or unreadable | dispatch, do-item |

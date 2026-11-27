@@ -75,6 +75,7 @@ import type {
   SessionsReader,
   SessionsReport,
 } from "./runtime/port.ts";
+import { sectionRefusal } from "./configuration-refusals.ts";
 import { releaseStationOn } from "./release-handoff.ts";
 import {
   branchPattern,
@@ -257,13 +258,7 @@ export async function openRepo(
   let config: ConfigurationOutcome;
   const where = `${repo.slug}@${repo.defaultBranch}:.config/jig.yaml`;
   const unread = (why: string, cause?: Failure): RepoReport => ({
-    ...refusedBy(
-      path,
-      `the dispatch section on the default branch cannot be read, so nothing is planned: ${why}`,
-      cause,
-      nowMs,
-      "configuration",
-    ),
+    ...refusedBy(path, sectionRefusal(why), cause, nowMs, "configuration"),
     slug: repo.slug,
   });
   try {
