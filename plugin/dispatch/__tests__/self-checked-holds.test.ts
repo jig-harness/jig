@@ -17,6 +17,8 @@ import {
   unplacedQueueFields,
 } from "../lib/person-pickup-holds.ts";
 import { closeStateDb } from "../lib/state.ts";
+import { carriedAnchors } from "../lib/tick-plan.ts";
+import type { StalledPrInput } from "../lib/stalled-pr.ts";
 import { input, report } from "./line-fixtures.ts";
 
 const AT = "2026-11-03T12:25:00.000Z";
@@ -166,5 +168,41 @@ describe("the members of a batch whose whole-batch question sits on a carried an
   it("stay held while no open pull request carries the anchor", () => {
     const read = releaseWith(new Set());
     expect(read.record.releasedItems).toBeUndefined();
+  });
+});
+
+describe("the tick's carried anchors, read from the repository's pr_open state", () => {
+  const prOpen = {
+    prs: [],
+    carried: new Map(),
+    prOpen: () => "PR Open",
+  } as unknown as StalledPrInput;
+  const anchor = { key: "#923", title: "t", state: "PR Open" };
+
+  it("name an anchor in pr_open with no matched pull request, which releases its unclaimed members", () => {
+    const carried = carriedAnchors([], [anchor], prOpen);
+    expect([...carried]).toEqual(["#923"]);
+    const read = releaseWith(carried);
+    expect(read.record.releasedItems).toEqual(["#924", "#925"]);
+    expect(read.record.released).toBe(false);
+  });
+
+  it("leave the members held when the anchor is not in pr_open", () => {
+    const carried = carriedAnchors(
+      [],
+      [{ ...anchor, state: "In Progress" }],
+      prOpen,
+    );
+    expect(carried.size).toBe(0);
+    expect(releaseWith(carried).record.releasedItems).toBeUndefined();
+  });
+
+  it("add the plan's quiet carried rows beside it", () => {
+    const carried = carriedAnchors(
+      [{ class: "claimed-carried", target: "#923" }],
+      [],
+      undefined,
+    );
+    expect([...carried]).toEqual(["#923"]);
   });
 });
