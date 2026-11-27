@@ -46,125 +46,128 @@ export function selectReviewerSticky<
   // unstamped sticky can carry findings while status uses its check-run
   // fallback. A marker-prefixed acknowledgement must not erase a preceding
   // finding-bearing summary merely because it is newer.
-  let selected: T | undefined;
-  let selectedRound: number | null = null;
-  let selectedReviewedSha: string | null = null;
-  let selectedCarriesFindings = false;
-  let highestExplicitRound: number | null = null;
-  // Keep every malformed finding-bearing summary. A later malformed comment
-  // must not overwrite a stronger ordering constraint from an earlier one.
-  const malformedFindingEvidence: { round: number | null; sha: string }[] = [];
-  for (const comment of comments) {
-    const body = reviewerStickyBody(comment, isReviewerLogin, stickyMarker());
-    if (body === null) continue;
-    if (
-      hasInvalidReviewRound(body) ||
-      hasInvalidReviewedSha(body, reviewedShaMarker())
-    ) {
-      // A malformed replacement may still carry live work. Skipping the
-      // comment would make an older clean summary look current and could
-      // converge over findings that were never safely ordered.
-      if (carriesFindings(body))
-        malformedFindingEvidence.push({
-          round: parseReviewRound(body),
-          sha: reviewedShaIn(body, reviewedShaMarker()),
-        });
-      continue;
-    }
-    const round = parseReviewRound(body);
-    const reviewedSha = reviewedShaIn(body, reviewedShaMarker());
-    // A lower-round candidate cannot affect the selected summary, including
-    // by failing to parse.  Ignore it before consuming untrusted payload.
-    if (
-      round !== null &&
-      highestExplicitRound !== null &&
-      round < highestExplicitRound
-    )
-      continue;
-    // A stamp says which head was reviewed, not that this comment supersedes
-    // a preceding account of its findings. In particular, a skip notice may
-    // deliberately retain the last reviewed SHA.
-    // Decode rather than merely spotting an opener: malformed protocol
-    // evidence is unreadable, never a clean replacement summary.
-    const carriesFindingEvidence = carriesFindings(body);
-    // A stamp identifies a reviewed head, not a replacement boundary. Without
-    // an affirmative review round it may be an auxiliary acknowledgement on
-    // that same head, which must not erase an earlier finding-bearing summary.
-    // A clean stamp for a different head is a fresh review, however, even when
-    // the reviewer reuses or omits its round marker.
-    const cleanReplacement = isCleanReplacement(
-      carriesFindingEvidence,
-      reviewedSha,
-      selectedReviewedSha,
-    );
-    const replacesSelection = carriesFindingEvidence || cleanReplacement;
-    const skipOnly =
-      !carriesFindingEvidence &&
-      skipNoticeIn(
-        structuralSkipNotices(String(comment.body ?? ""), skipNoticeMarker()),
-        skipNoticeMarker(),
-      ) !== null;
-    // A skip notice never describes a review summary. In particular it must
-    // not establish the initial selection or an ordering watermark that hides
-    // a later affirmative review with findings.
-    if (skipOnly) continue;
-    // A round number alone never retires findings: a clean replacement of a
-    // finding-bearing summary must carry its own reviewed-head stamp.
-    if (
-      selectedCarriesFindings &&
-      !carriesFindingEvidence &&
-      reviewedSha === ""
-    )
-      continue;
-    // A malformed finding-bearing summary remains unreadable until a later
-    // clean summary proves it supersedes that summary by its explicit round.
-    // A different SHA alone cannot establish ordering, and a skip-only
-    // acknowledgement is not a replacement summary at all.
-    const advancesSelection =
-      selected === undefined ||
-      (round !== null && (selectedRound === null || round > selectedRound)) ||
-      (replacesSelection &&
-        (round === null || selectedRound === null || round === selectedRound));
-    if (advancesSelection && round !== null && reviewedSha !== "") {
-      // An explicit newer round is the only evidence that can supersede a
-      // malformed finding-bearing summary. An unorderable malformed comment
-      // remains a stopper until the reviewer repairs its protocol evidence.
-      for (
-        let index = malformedFindingEvidence.length - 1;
-        index >= 0;
-        index--
-      ) {
-        const malformed = malformedFindingEvidence[index];
-        if (
-          malformed !== undefined &&
-          malformed.round !== null &&
-          round > malformed.round
-        )
-          malformedFindingEvidence.splice(index, 1);
-      }
-    }
-    // An auxiliary response never supersedes a finding-bearing summary just
-    // because it happens to mention a protocol marker. A newer declared round
-    // is also evidence: it is the reviewer's explicit replacement boundary.
-    if (round !== null)
-      highestExplicitRound = Math.max(highestExplicitRound ?? round, round);
-    if (
-      selected === undefined ||
-      (round !== null && (selectedRound === null || round > selectedRound)) ||
-      (replacesSelection &&
-        (round === null || selectedRound === null || round === selectedRound))
-    ) {
-      selected = comment;
-      selectedRound = round;
-      selectedReviewedSha = reviewedSha;
-      selectedCarriesFindings = carriesFindingEvidence;
-    }
-  }
-  if (malformedFindingEvidence.length > 0)
+  const state: Selection<T> = {
+    selected: undefined,
+    round: null,
+    reviewedSha: null,
+    carriesFindings: false,
+    highestRound: null,
+    malformed: [],
+  };
+  for (const comment of comments)
+    considerComment(state, comment, carriesFindings);
+  if (state.malformed.length > 0)
     throw new SummaryProtocolError(
       "reviewer summary protocol evidence is unreadable",
     );
-  return selected;
+  return state.selected;
+}
+
+interface Selection<T> {
+  selected: T | undefined;
+  round: number | null;
+  reviewedSha: string | null;
+  carriesFindings: boolean;
+  highestRound: number | null;
+  // Every malformed finding-bearing summary is kept. A later malformed comment
+  // must not overwrite a stronger ordering constraint from an earlier one.
+  malformed: { round: number | null; sha: string }[];
+}
+
+function hasInvalidProtocol(body: string): boolean {
+  return (
+    hasInvalidReviewRound(body) ||
+    hasInvalidReviewedSha(body, reviewedShaMarker())
+  );
+}
+
+/**
+ * A malformed finding-bearing summary remains unreadable until a later clean
+ * summary proves it supersedes that summary by its explicit round. A different
+ * SHA alone cannot establish ordering.
+ */
+function selectionAdvances<T>(
+  state: Selection<T>,
+  round: number | null,
+  replaces: boolean,
+): boolean {
+  return (
+    state.selected === undefined ||
+    (round !== null && (state.round === null || round > state.round)) ||
+    (replaces &&
+      (round === null || state.round === null || round === state.round))
+  );
+}
+
+function isBelowHighest<T>(state: Selection<T>, round: number | null) {
+  return (
+    round !== null && state.highestRound !== null && round < state.highestRound
+  );
+}
+
+function considerComment<T extends { body?: string | null | undefined }>(
+  state: Selection<T>,
+  comment: T,
+  carriesFindings: (body: string) => boolean,
+): void {
+  const body = reviewerStickyBody(comment, isReviewerLogin, stickyMarker());
+  if (body === null) return;
+  const round = parseReviewRound(body);
+  const reviewedSha = reviewedShaIn(body, reviewedShaMarker());
+  if (hasInvalidProtocol(body)) {
+    // A malformed replacement may still carry live work. Skipping the
+    // comment would make an older clean summary look current and could
+    // converge over findings that were never safely ordered.
+    if (carriesFindings(body))
+      state.malformed.push({ round, sha: reviewedSha });
+    return;
+  }
+  // A lower-round candidate cannot affect the selected summary, including
+  // by failing to parse.  Ignore it before consuming untrusted payload.
+  if (isBelowHighest(state, round)) return;
+  // Decode rather than merely spotting an opener: malformed protocol
+  // evidence is unreadable, never a clean replacement summary.
+  const carries = carriesFindings(body);
+  // A skip notice never describes a review summary. In particular it must
+  // not establish the initial selection or an ordering watermark that hides
+  // a later affirmative review with findings.
+  if (!carries && isSkipOnly(comment)) return;
+  // A round number alone never retires findings: a clean replacement of a
+  // finding-bearing summary must carry its own reviewed-head stamp.
+  if (state.carriesFindings && !carries && reviewedSha === "") return;
+  // A stamp identifies a reviewed head, not a replacement boundary. Without
+  // an affirmative review round it may be an auxiliary acknowledgement on
+  // that same head, which must not erase an earlier finding-bearing summary.
+  // A clean stamp for a different head is a fresh review, however, even when
+  // the reviewer reuses or omits its round marker.
+  const replaces =
+    carries || isCleanReplacement(carries, reviewedSha, state.reviewedSha);
+  const advances = selectionAdvances(state, round, replaces);
+  // An explicit newer round is the only evidence that can supersede a
+  // malformed finding-bearing summary. An unorderable malformed comment
+  // remains a stopper until the reviewer repairs its protocol evidence.
+  if (advances && round !== null && reviewedSha !== "")
+    state.malformed = state.malformed.filter(
+      (malformed) => malformed.round === null || round <= malformed.round,
+    );
+  // A newer declared round is the reviewer's explicit replacement boundary.
+  if (round !== null)
+    state.highestRound = Math.max(state.highestRound ?? round, round);
+  if (advances) {
+    state.selected = comment;
+    state.round = round;
+    state.reviewedSha = reviewedSha;
+    state.carriesFindings = carries;
+  }
+}
+
+function isSkipOnly(comment: { body?: string | null | undefined }): boolean {
+  return (
+    skipNoticeIn(
+      structuralSkipNotices(String(comment.body ?? ""), skipNoticeMarker()),
+      skipNoticeMarker(),
+    ) !== null
+  );
 }
 
 function isCleanReplacement(

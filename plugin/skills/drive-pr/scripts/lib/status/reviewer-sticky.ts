@@ -104,40 +104,48 @@ export function withoutProtocolInlineCode(body: string): string {
   // protocol opener from the marker parsers.
   return body
     .split(/(\r?\n\r?\n)/)
-    .map((block) => {
-      let result = "";
-      let offset = 0;
-      while (offset < block.length) {
-        if (block[offset] !== "`") {
-          result += block[offset++] ?? "";
-          continue;
-        }
-        let end = offset;
-        while (block[end] === "`") end += 1;
-        const delimiter = block.slice(offset, end);
-        let close = -1;
-        for (let cursor = end; cursor < block.length; cursor += 1) {
-          if (block[cursor] !== "`") continue;
-          let runEnd = cursor;
-          while (block[runEnd] === "`") runEnd += 1;
-          if (runEnd - cursor === delimiter.length) {
-            close = cursor;
-            break;
-          }
-          cursor = runEnd - 1;
-        }
-        if (close === -1) {
-          result += delimiter;
-          offset = end;
-          continue;
-        }
-        const span = block.slice(offset, close + delimiter.length);
-        result += span.replaceAll("<!--", "< !--");
-        offset = close + delimiter.length;
-      }
-      return result;
-    })
+    .map(maskProtocolOpeners)
     .join("");
+}
+
+/** The offset of the backtick run closing a span opened by `delimiter`, or -1. */
+function closingBackticks(
+  block: string,
+  from: number,
+  delimiter: string,
+): number {
+  for (let cursor = from; cursor < block.length; cursor += 1) {
+    if (block[cursor] !== "`") continue;
+    let runEnd = cursor;
+    while (block[runEnd] === "`") runEnd += 1;
+    if (runEnd - cursor === delimiter.length) return cursor;
+    cursor = runEnd - 1;
+  }
+  return -1;
+}
+
+function maskProtocolOpeners(block: string): string {
+  let result = "";
+  let offset = 0;
+  while (offset < block.length) {
+    if (block[offset] !== "`") {
+      result += block[offset++] ?? "";
+      continue;
+    }
+    let end = offset;
+    while (block[end] === "`") end += 1;
+    const delimiter = block.slice(offset, end);
+    const close = closingBackticks(block, end, delimiter);
+    if (close === -1) {
+      result += delimiter;
+      offset = end;
+      continue;
+    }
+    const span = block.slice(offset, close + delimiter.length);
+    result += span.replaceAll("<!--", "< !--");
+    offset = close + delimiter.length;
+  }
+  return result;
 }
 
 /** The last reviewed-SHA stamp in one sticky body under the configured marker. */
@@ -163,6 +171,59 @@ export function differentReviewedHead(left: string, right: string): boolean {
   return right !== "" && !sameReviewedHead(left, right);
 }
 
+type QuotedFence = { character: "`" | "~"; length: number } | null;
+
+/** The code-fence token opening or closing a quoted line, and what follows it. */
+function quotedToken(content: string): { token: string; rest: string } {
+  const token =
+    markdownIndentation(content).columns <= 3
+      ? (/^\s*(`{3,}|~{3,})/.exec(content)?.[1] ?? "")
+      : "";
+  return { token, rest: content.slice(content.indexOf(token) + token.length) };
+}
+
+/**
+ * One blockquoted line of a summary. Finding-count declarations are
+ * intentionally rendered as blockquotes by the reviewer. Only the
+ * declaration's recognised prefix survives, and only from a quoted prose line
+ * outside quoted code: trailing prose, quoted fences and quoted protocol
+ * markers are untrusted example text.
+ */
+function quotedStructuralLine(
+  line: string,
+  quotedFence: QuotedFence,
+): { quotedFence: QuotedFence; kept: string | null } {
+  const content = line.replace(/^ {0,3}>[ \t]?/, "");
+  const { token, rest } = quotedToken(content);
+  if (quotedFence === null && token !== "") {
+    const opens = token[0] === "~" || !rest.includes("`");
+    return {
+      quotedFence: opens
+        ? { character: token[0] as "`" | "~", length: token.length }
+        : null,
+      kept: null,
+    };
+  }
+  if (quotedFence !== null) {
+    const closes =
+      token !== "" &&
+      token[0] === quotedFence.character &&
+      token.length >= quotedFence.length &&
+      /^[ \t]*$/.test(rest);
+    return { quotedFence: closes ? null : quotedFence, kept: null };
+  }
+  if (markdownIndentation(content).columns >= 4)
+    return { quotedFence, kept: null };
+  const declaration =
+    /^\s*(\S+\s+findings?(?:\(s\))?\s+without\s+a\s+diff-anchorable\s+line)\b/i.exec(
+      content,
+    );
+  return {
+    quotedFence,
+    kept: declaration === null ? null : `> ${declaration[1] as string}`,
+  };
+}
+
 /** A comment's body when the reviewer wrote it as its sticky summary, else `null`. */
 export function reviewerStickyBody(
   raw: unknown,
@@ -177,54 +238,17 @@ export function reviewerStickyBody(
   // A structural marker may follow a heading, but quoted and code examples
   // are not reviewer evidence. Requiring byte zero rejected valid configured
   // summaries; accepting every trimmed line lets an example replace one.
-  let quotedFence: { character: "`" | "~"; length: number } | null = null;
+  let quotedFence: QuotedFence = null;
   const structural: string[] = [];
   for (const { line, step, fence } of fencedLines(body)) {
     // Fenced blocks are structural only at Markdown's permitted indentation.
     // Remember their delimiter length: three backticks inside a four-backtick
     // block are content, not its closing fence.
     if (step.delimiter || fence !== null || step.columns >= 4) continue;
-    // Finding-count declarations are intentionally rendered as blockquotes by
-    // the reviewer. Only the declaration's recognised prefix survives, and
-    // only from a quoted prose line outside quoted code: trailing prose,
-    // quoted fences and quoted protocol markers are untrusted example text.
     if (/^ {0,3}>/.test(line)) {
-      const content = line.replace(/^ {0,3}>[ \t]?/, "");
-      const quotedIndent = markdownIndentation(content);
-      const quotedToken =
-        quotedIndent.columns <= 3
-          ? (/^\s*(`{3,}|~{3,})/.exec(content)?.[1] ?? "")
-          : "";
-      if (quotedFence === null && quotedToken !== "") {
-        const rest = content.slice(
-          content.indexOf(quotedToken) + quotedToken.length,
-        );
-        if (quotedToken[0] === "~" || !rest.includes("`"))
-          quotedFence = {
-            character: quotedToken[0] as "`" | "~",
-            length: quotedToken.length,
-          };
-        continue;
-      }
-      if (quotedFence !== null) {
-        if (
-          quotedToken !== "" &&
-          quotedToken[0] === quotedFence.character &&
-          quotedToken.length >= quotedFence.length &&
-          /^[ \t]*$/.test(
-            content.slice(content.indexOf(quotedToken) + quotedToken.length),
-          )
-        )
-          quotedFence = null;
-        continue;
-      }
-      if (quotedIndent.columns >= 4) continue;
-      const declaration =
-        /^\s*(\S+\s+findings?(?:\(s\))?\s+without\s+a\s+diff-anchorable\s+line)\b/i.exec(
-          content,
-        );
-      if (declaration !== null)
-        structural.push(`> ${declaration[1] as string}`);
+      const quoted = quotedStructuralLine(line, quotedFence);
+      quotedFence = quoted.quotedFence;
+      if (quoted.kept !== null) structural.push(quoted.kept);
       continue;
     }
     quotedFence = null;
@@ -354,6 +378,17 @@ function fenceStep(
     : { fence, delimiter: false, columns };
 }
 
+/** Whether a structural line belongs to a skip-notice block, and whether one is open after it. */
+function skipNoticeStep(
+  line: string,
+  open: boolean,
+  opener: RegExp,
+  closer: RegExp,
+): { keep: boolean; open: boolean } {
+  if (!open) return { keep: opener.test(line), open: opener.test(line) };
+  return { keep: true, open: !closer.test(line) };
+}
+
 /**
  * Complete skip-notice blocks whose delimiters are structural Markdown, while
  * retaining their deliberately blockquoted payload for the skip decoder.
@@ -375,15 +410,132 @@ export function structuralSkipNotices(body: string, marker: string): string {
       if (open && fence === null && step.columns < 4) kept.push(line);
       continue;
     }
-    if (!open && opener.test(line)) {
-      open = true;
-      kept.push(line);
-    } else if (open) {
-      kept.push(line);
-      if (closer.test(line)) open = false;
-    }
+    const next = skipNoticeStep(line, open, opener, closer);
+    if (next.keep) kept.push(line);
+    open = next.open;
   }
   return kept.join("\n");
+}
+
+interface StickyCandidate {
+  sha: string;
+  round: number | null;
+  skip: SkipNotice | null;
+  updatedAt: string;
+}
+
+interface StickyState {
+  sticky: ReviewerSticky;
+  highestExplicitRound: number | null;
+}
+
+function raiseRound(highest: number | null, round: number | null) {
+  return round === null ? highest : Math.max(highest ?? round, round);
+}
+
+/** One comment's evidence, or `null` when it is no sticky or its protocol evidence is malformed. */
+function stickyCandidate(
+  raw: unknown,
+  reviewerLogin: (login: string) => boolean,
+  summaryMarker: string,
+  shaMarker: string,
+  skipNoticeMarker: string,
+): StickyCandidate | null {
+  const body = reviewerStickyBody(raw, reviewerLogin, summaryMarker);
+  if (body === null) return null;
+  // A malformed explicit ordering claim is untrusted protocol input.  In
+  // particular, do not let it fall through as an unstamped skip and alter
+  // the witness selected from another comment.
+  if (hasInvalidReviewRound(body) || hasInvalidReviewedSha(body, shaMarker))
+    return null;
+  const record = raw as Record<string, unknown>;
+  return {
+    sha: reviewedShaIn(body, shaMarker),
+    round: parseReviewRound(body),
+    skip: skipNoticeIn(
+      structuralSkipNotices(String(record.body ?? ""), skipNoticeMarker),
+      skipNoticeMarker,
+    ),
+    // Absent/malformed reads as `''`, never as "now" — a caller flooring
+    // on this must fail closed on an undatable sticky rather than treat it
+    // as freshly written.
+    updatedAt: String(record.updated_at ?? ""),
+  };
+}
+
+/**
+ * A skip says this comment did not review code. Retain the last affirmative
+ * review witness and its timestamp while making the newer skip available to
+ * the skipped-head check.
+ */
+function applySkip(
+  state: StickyState,
+  candidate: StickyCandidate,
+  lowerRound: boolean,
+): StickyState {
+  const { sticky, highestExplicitRound } = state;
+  const { sha, round, skip } = candidate;
+  // A skip without its own review stamp cannot borrow the selected
+  // witness's stamp. A lower-round stamped skip cannot update it either:
+  // both pieces of evidence must remain from the same comment.
+  if (sha !== "" && sticky.sha === "" && !lowerRound) {
+    // One comment carrying both its own stamp and a skip notice (the
+    // reviewer updated its only sticky in place): both witnesses come
+    // from that comment, so the identical-diff comparison can run.
+    return {
+      // The edit that added the skip moved `updated_at`, so it does not
+      // date the stamp's publication: leave it undatable, which the
+      // stranded-run guard reads as not fresh.
+      sticky: { sha, round, updatedAt: "", skip },
+      highestExplicitRound: raiseRound(highestExplicitRound, round),
+    };
+  }
+  const sameWitness =
+    (sha === "" && sticky.sha === "") ||
+    (sha !== "" && sameReviewedHead(sha, sticky.sha));
+  const next = sameWitness && !lowerRound ? { ...sticky, skip } : sticky;
+  // Before any affirmative review witness exists, skip notices order only
+  // one another. Once a reviewed head is selected, a skip for another
+  // head must not block a later acknowledgement of that selected head.
+  return {
+    sticky: next,
+    highestExplicitRound:
+      next.sha === ""
+        ? raiseRound(highestExplicitRound, round)
+        : highestExplicitRound,
+  };
+}
+
+function applyCandidate(
+  state: StickyState,
+  candidate: StickyCandidate,
+): StickyState {
+  const { sticky, highestExplicitRound } = state;
+  const { sha, round, skip, updatedAt } = candidate;
+  // A same-head acknowledgement is auxiliary evidence, not proof a rerun
+  // published a review. It must not replace the selected sticky's timestamp.
+  // A new reviewed head or a newer explicit review round is a replacement.
+  const newerRound =
+    round !== null &&
+    (highestExplicitRound === null || round > highestExplicitRound);
+  // A lower declared round cannot replace the selected review just because
+  // it names another head: summary selection rejects that candidate too.
+  const lowerRound =
+    round !== null &&
+    highestExplicitRound !== null &&
+    round < highestExplicitRound;
+  const replacesSticky =
+    skip === null &&
+    !lowerRound &&
+    sha !== "" &&
+    (sticky.sha === "" || newerRound || !sameReviewedHead(sha, sticky.sha));
+  if (replacesSticky)
+    return {
+      sticky: { sha, round, updatedAt, skip },
+      highestExplicitRound: raiseRound(highestExplicitRound, round),
+    };
+  // An unstamped comment qualifies only when it carries a skip notice.
+  return skip === null ? state : applySkip(state, candidate, lowerRound);
 }
 
 /** The review stamp and its companion markers from the newest qualifying sticky. */
@@ -394,102 +546,19 @@ export function reviewerStickyIn(
   shaMarker: string,
   skipNoticeMarker = "ai-review-skip-notice",
 ): ReviewerSticky {
-  let sticky: ReviewerSticky = {
-    sha: "",
-    round: null,
-    updatedAt: "",
-    skip: null,
+  let state: StickyState = {
+    sticky: { sha: "", round: null, updatedAt: "", skip: null },
+    highestExplicitRound: null,
   };
-  let highestExplicitRound: number | null = null;
   for (const raw of comments) {
-    const body = reviewerStickyBody(raw, reviewerLogin, summaryMarker);
-    if (body === null) continue;
-    const bodySha = reviewedShaIn(body, shaMarker);
-    const round = parseReviewRound(body);
-    const rawBody = String((raw as Record<string, unknown>).body ?? "");
-    const skip = skipNoticeIn(
-      structuralSkipNotices(rawBody, skipNoticeMarker),
+    const candidate = stickyCandidate(
+      raw,
+      reviewerLogin,
+      summaryMarker,
+      shaMarker,
       skipNoticeMarker,
     );
-    // A malformed explicit ordering claim is untrusted protocol input.  In
-    // particular, do not let it fall through as an unstamped skip and alter
-    // the witness selected from another comment.
-    if (hasInvalidReviewRound(body) || hasInvalidReviewedSha(body, shaMarker))
-      continue;
-    // A same-head acknowledgement is auxiliary evidence, not proof a rerun
-    // published a review. It must not replace the selected sticky's timestamp.
-    // A new reviewed head or a newer explicit review round is a replacement.
-    const newerRound =
-      round !== null &&
-      (highestExplicitRound === null || round > highestExplicitRound);
-    // A lower declared round cannot replace the selected review just because
-    // it names another head: summary selection rejects that candidate too.
-    const lowerRound =
-      round !== null &&
-      highestExplicitRound !== null &&
-      round < highestExplicitRound;
-    const replacesSticky =
-      skip === null &&
-      !lowerRound &&
-      bodySha !== "" &&
-      (sticky.sha === "" ||
-        newerRound ||
-        (!sameReviewedHead(bodySha, sticky.sha) && !lowerRound));
-    // An unstamped comment qualifies only when it carries a skip notice.
-    if (!replacesSticky && skip === null) continue;
-    // A skip says this comment did not review code. Retain the last affirmative
-    // review witness and its timestamp while making the newer skip available
-    // to the skipped-head check.
-    if (!replacesSticky) {
-      // A no-stamp skip can prove its own excluded-path case, but it cannot
-      // borrow the reviewed SHA of an earlier comment.
-      // A skip without its own review stamp cannot borrow the selected
-      // witness's stamp. A lower-round stamped skip cannot update it either:
-      // both pieces of evidence must remain from the same comment.
-      if (skip !== null && bodySha !== "" && sticky.sha === "" && !lowerRound) {
-        // One comment carrying both its own stamp and a skip notice (the
-        // reviewer updated its only sticky in place): both witnesses come
-        // from that comment, so the identical-diff comparison can run.
-        if (round !== null)
-          highestExplicitRound = Math.max(highestExplicitRound ?? round, round);
-        sticky = {
-          sha: bodySha,
-          round,
-          // The edit that added the skip moved `updated_at`, so it does not
-          // date the stamp's publication: leave it undatable, which the
-          // stranded-run guard reads as not fresh.
-          updatedAt: "",
-          skip,
-        };
-        continue;
-      }
-      if (
-        skip !== null &&
-        ((bodySha === "" && sticky.sha === "") ||
-          (bodySha !== "" &&
-            sameReviewedHead(bodySha, sticky.sha) &&
-            !lowerRound)) &&
-        !lowerRound
-      )
-        sticky = { ...sticky, skip };
-      // Before any affirmative review witness exists, skip notices order only
-      // one another. Once a reviewed head is selected, a skip for another
-      // head must not block a later acknowledgement of that selected head.
-      if (skip !== null && round !== null && sticky.sha === "")
-        highestExplicitRound = Math.max(highestExplicitRound ?? round, round);
-      continue;
-    }
-    if (round !== null)
-      highestExplicitRound = Math.max(highestExplicitRound ?? round, round);
-    sticky = {
-      sha: bodySha,
-      round,
-      // Absent/malformed reads as `''`, never as "now" — a caller flooring
-      // on this must fail closed on an undatable sticky rather than treat it
-      // as freshly written.
-      updatedAt: String((raw as Record<string, unknown>).updated_at ?? ""),
-      skip,
-    };
+    if (candidate !== null) state = applyCandidate(state, candidate);
   }
-  return sticky;
+  return state.sticky;
 }

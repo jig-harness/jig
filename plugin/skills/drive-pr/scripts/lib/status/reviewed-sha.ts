@@ -161,18 +161,33 @@ export async function reviewedShaGate(
     }
     report.reviewedSha = markerFull;
   }
-  if (markerFull === report.apiHead) {
-    // A stamp and a skip notice that both name this head contradict each
-    // other: neither shows which one the reviewer meant, so fail closed.
-    if (skip !== null && (await noticeNamesHead(skip.head, report.apiHead))) {
-      return {
-        state: "STALE_REVIEW",
-        reason: `${reviewerLabel()} recorded reviewing the PR head ${report.apiHead} and also a skip notice naming it ("${skip.text}") — contradictory evidence, so no review of this head is taken as proven. Have this head reviewed again, then re-arm`,
-      };
-    }
-    return null;
-  }
+  if (markerFull === report.apiHead) return contradictedStamp(report, skip);
   const named = marker === markerFull ? marker : `${marker} (${markerFull})`;
+  return skippedHeadGate(report, markerFull, named, skip);
+}
+
+/** A stamp naming this head holds unless a skip notice names it too. */
+async function contradictedStamp(
+  report: StatusReport,
+  skip: SkipNotice | null,
+): Promise<ReviewedShaStop | null> {
+  // A stamp and a skip notice that both name this head contradict each
+  // other: neither shows which one the reviewer meant, so fail closed.
+  if (skip === null || !(await noticeNamesHead(skip.head, report.apiHead)))
+    return null;
+  return {
+    state: "STALE_REVIEW",
+    reason: `${reviewerLabel()} recorded reviewing the PR head ${report.apiHead} and also a skip notice naming it ("${skip.text}") — contradictory evidence, so no review of this head is taken as proven. Have this head reviewed again, then re-arm`,
+  };
+}
+
+/** A stamp for an earlier head: stale, unless a skip notice for this head covers an identical diff. */
+async function skippedHeadGate(
+  report: StatusReport,
+  markerFull: string,
+  named: string,
+  skip: SkipNotice | null,
+): Promise<ReviewedShaStop | null> {
   const stale: ReviewedShaStop = {
     state: "STALE_REVIEW",
     reason: `${reviewerLabel()} last recorded reviewing ${named}, but the PR head is ${report.apiHead}`,
@@ -302,6 +317,35 @@ async function changedPathsOutsideExcluded(
 function skipExcludedPathsAt(
   baseHead: string,
 ): { paths: string[] } | { reason: string } {
+  const configured = excludedPathsConfig(baseHead);
+  if ("reason" in configured) return configured;
+  const value = configured.value;
+  if (!Array.isArray(value))
+    return {
+      reason:
+        "review.skip_excluded_paths on the pull request base is not a list of exact repository-relative UTF-8 paths",
+    };
+  const paths: string[] = [];
+  for (const path of value) {
+    if (typeof path !== "string" || !isExactRepositoryPath(path))
+      return {
+        reason:
+          "review.skip_excluded_paths on the pull request base contains a path that is not an exact repository-relative UTF-8 path",
+      };
+    paths.push(path);
+  }
+  if (new Set(paths).size !== paths.length)
+    return {
+      reason:
+        "review.skip_excluded_paths on the pull request base names a path more than once",
+    };
+  return { paths };
+}
+
+/** The raw `review.skip_excluded_paths` value from the reviewed policy snapshot. */
+function excludedPathsConfig(
+  baseHead: string,
+): { value: unknown } | { reason: string } {
   // Review excludes have their own schema. Do not make an otherwise readable
   // review policy depend on unrelated autonomy fields in that same config.
   // A stack's bound is the reviewed policy that may narrow this proof.
@@ -329,7 +373,13 @@ function skipExcludedPathsAt(
     };
   if (snapshot.from !== "base")
     return { reason: "the pull request base configuration cannot be read" };
-  const review = snapshot.values.review;
+  return reviewSkipPolicy(snapshot.values.review);
+}
+
+/** `review.skip_excluded_paths` from the review section of the base configuration. */
+function reviewSkipPolicy(
+  review: unknown,
+): { value: unknown } | { reason: string } {
   if (review != null && !isRecord(review))
     return {
       reason: "the pull request base's review section is not a mapping",
@@ -340,26 +390,7 @@ function skipExcludedPathsAt(
       reason:
         "the pull request base configures no review.skip_excluded_paths policy",
     };
-  if (!Array.isArray(value))
-    return {
-      reason:
-        "review.skip_excluded_paths on the pull request base is not a list of exact repository-relative UTF-8 paths",
-    };
-  const paths: string[] = [];
-  for (const path of value) {
-    if (typeof path !== "string" || !isExactRepositoryPath(path))
-      return {
-        reason:
-          "review.skip_excluded_paths on the pull request base contains a path that is not an exact repository-relative UTF-8 path",
-      };
-    paths.push(path);
-  }
-  if (new Set(paths).size !== paths.length)
-    return {
-      reason:
-        "review.skip_excluded_paths on the pull request base names a path more than once",
-    };
-  return { paths };
+  return { value };
 }
 
 function isExactRepositoryPath(path: string): boolean {
