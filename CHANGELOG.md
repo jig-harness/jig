@@ -404,6 +404,22 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.312.2] - 2026-11-27
+
+### Fixed
+
+- drive-pr: a drive under a CI hold no longer waits on `CI_HOLD_WAIT` until it
+  stops as stalled when a label event's skipped run is a required check's
+  newest run on the head. This happens on a repository whose workflows skip
+  the required job on label events, and the drive's own state-label writes
+  start such runs. Until the hold is first added, the drive judges the newest
+  run of that check that is not a skip, so it adds the hold and pushes. A
+  queued or running run is still waited for. A cancelled run is still left to
+  the cancelled-run recovery. A skip is never read as a complete run or a
+  passing one. After a release, and for the final CI check, the drive still
+  judges the newest run. The workflow-convention lint still reports the
+  workflow shape, which M13 forbids.
+
 ## [0.312.1] - 2026-11-27
 
 ### Fixed
@@ -11230,7 +11246,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.312.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.312.2...HEAD
+[0.312.2]: https://github.com/jig-harness/jig/compare/v0.312.1...v0.312.2
 [0.312.1]: https://github.com/jig-harness/jig/compare/v0.312.0...v0.312.1
 [0.312.0]: https://github.com/jig-harness/jig/compare/v0.311.3...v0.312.0
 [0.311.3]: https://github.com/jig-harness/jig/compare/v0.311.2...v0.311.3
