@@ -101,6 +101,14 @@ export async function joinedWorkspace(
   };
 }
 
+/** Where the open left a checkout it detached, the branch it kept, and the rescue branch its unpushed commits are on where it has one. */
+export function leftText(detached: DetachedCheckout): string {
+  const at = `at ${detached.path} detached at ${detached.head.slice(0, 12)}`;
+  return detached.rescue === undefined
+    ? `left the idle checkout ${at}, its branch ${detached.branch} kept`
+    : `left the checkout ${at}, its unpushed commits kept on the rescue branch ${detached.rescue.branch} in ${detached.rescue.clone}, which nothing pushes or collects`;
+}
+
 /**
  * An outcome that lists the idle checkout its open detached,
  * launched or waiting: a leftover tree never blocks a follow-up, and nothing
@@ -116,6 +124,6 @@ export function leftBehind(
   return {
     ...outcome,
     detached,
-    detail: `${outcome.detail}; left the idle checkout at ${detached.path} detached at ${detached.head.slice(0, 12)}, its branch ${detached.branch} kept`,
+    detail: `${outcome.detail}; ${leftText(detached)}`,
   };
 }

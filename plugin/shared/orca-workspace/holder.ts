@@ -17,18 +17,167 @@
  * what keeps it busy, so a caller can tell a person once rather than log the
  * refusal on every attempt. Without the reader, every such checkout is
  * refused, with how to have Orca show it instead.
+ *
+ * The host may widen what is detached without asking (`HolderPolicy`, the
+ * machine file's `detach_idle_holders` and `rescue_unpushed`): a holder
+ * busy only with changes in its tree, which the detach leaves where they
+ * are, and, with the rescue on as well, one whose commits the remote lacks.
+ * Those commits are first kept on a rescue branch, a local branch of the
+ * clone named for the tree and the time (`jig-rescue/<tree>-<time>`) that
+ * nothing pushes or collects; a rescue that fails refuses the open as a busy
+ * holder and leaves the tree as it was. Once the holder is detached, the
+ * branch is moved back to the remote's copy where the remote has one, so the
+ * open can check it out; its commits stay on the rescue branch. A holder
+ * with any other reason (a process, a lease, an unfinished operation, a probe
+ * that could not answer, the time running out) is never touched.
  */
-import { holderVerdict } from "../idle-holder.ts";
+import { basename } from "node:path";
+import { type HolderVerdict, holderVerdict } from "../idle-holder.ts";
+import { currentIso } from "../time.ts";
 import { OrcaError } from "./envelope.ts";
 import { fetchBranchRef, findGitWorktree } from "./git.ts";
 import type { OpenPort } from "./port.ts";
 import { output } from "./runner.ts";
 
-/** An idle checkout the open detached: where it is, the branch it gave up (kept, with its commits) and the commit it was left at. */
+/** What the host lets an open detach beyond an idle holder, without asking a person. */
+export interface HolderPolicy {
+  /** A holder busy only with changes in its tree or index (`detach_idle_holders`). */
+  detachIdle: boolean;
+  /** With `detachIdle`, also one whose commits the remote lacks, once they are kept on a rescue branch (`rescue_unpushed`). */
+  rescueUnpushed: boolean;
+}
+
+/** The rescue branch a holder's unpushed commits were kept on, and the clone it is a branch of. */
+export interface RescueBranch {
+  branch: string;
+  clone: string;
+}
+
+/** An idle checkout the open detached: where it is, the branch it gave up (kept, with its commits) and the commit it was left at; `rescue` where its unpushed commits were kept on a rescue branch first. */
 export interface DetachedHolder {
   path: string;
   branch: string;
   head: string;
+  rescue?: RescueBranch;
+}
+
+/** The prefix every rescue branch's name starts with. */
+export const RESCUE_PREFIX = "jig-rescue/";
+
+/**
+ * Whether `policy` lets a holder `verdict` found busy be detached anyway,
+ * and whether that needs a rescue branch first; `null` when it does not.
+ */
+export function waived(
+  policy: HolderPolicy | undefined,
+  verdict: HolderVerdict,
+): { head: string; rescue: boolean } | null {
+  if (policy?.detachIdle !== true || verdict.idle) return null;
+  if (verdict.timedOut || verdict.head === undefined) return null;
+  const allowed = (kind: string) =>
+    kind === "changes" || (kind === "unpushed" && policy.rescueUnpushed);
+  if (!verdict.kinds.every(allowed)) return null;
+  return { head: verdict.head, rescue: verdict.kinds.includes("unpushed") };
+}
+
+/** A rescue branch's name for the tree at `path`, at the moment `at`: `jig-rescue/<tree>-<YYYYMMDDTHHMMSSZ>`. */
+export function rescueBranchName(path: string, at: string): string {
+  const tree =
+    basename(path)
+      .replace(/[^A-Za-z0-9._-]+/g, "-")
+      .replace(/^[.-]+|[.-]+$/g, "")
+      .replace(/\.{2,}/g, ".")
+      .replace(/\.lock$/, "")
+      .slice(0, 60) || "tree";
+  const stamp = at.replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
+  return `${RESCUE_PREFIX}${tree}-${stamp}`;
+}
+
+/**
+ * Keep `head` on a new rescue branch of `clone`, or say why it could not be
+ * kept. The branch is created only where no branch of that name is, with
+ * hooks off, and read back before the detach may go on.
+ */
+function keepOnRescue(
+  port: OpenPort,
+  clone: string,
+  path: string,
+  head: string,
+): RescueBranch | { failed: string } {
+  const branch = rescueBranchName(path, currentIso());
+  const git = (args: string[]) =>
+    port.host.run([
+      "git",
+      "-c",
+      "core.hooksPath=/dev/null",
+      "-C",
+      clone,
+      ...args,
+    ]);
+  const valid = git(["check-ref-format", "--branch", branch]);
+  if (valid.status !== 0)
+    return { failed: `${branch} is not a valid branch name: ${output(valid)}` };
+  const made = git([
+    "update-ref",
+    "-m",
+    `jig: kept the unpushed commits of ${path}`,
+    `refs/heads/${branch}`,
+    head,
+    "",
+  ]);
+  if (made.status !== 0)
+    return { failed: `${branch} could not be created: ${output(made)}` };
+  const read = git([
+    "rev-parse",
+    "--verify",
+    "--quiet",
+    `refs/heads/${branch}^{commit}`,
+  ]);
+  if (read.status !== 0 || read.stdout.trim() !== head)
+    return { failed: `${branch} does not read back at ${head.slice(0, 12)}` };
+  return { branch, clone };
+}
+
+/**
+ * Move `branch` in `clone` back to the remote's copy, only while it is still
+ * at `head`: its own commits are on the rescue branch, and the open can then
+ * check the branch out from the remote. Nothing to do where the remote has
+ * no copy or the branch is already there.
+ */
+function backToRemote(
+  port: OpenPort,
+  clone: string,
+  branch: string,
+  head: string,
+): void {
+  const remote = port.host.run([
+    "git",
+    "-C",
+    clone,
+    "rev-parse",
+    "--verify",
+    "--quiet",
+    `refs/remotes/${REMOTE}/${branch}^{commit}`,
+  ]);
+  const tip = remote.stdout.trim();
+  if (remote.status !== 0 || tip === "" || tip === head) return;
+  const moved = port.host.run([
+    "git",
+    "-c",
+    "core.hooksPath=/dev/null",
+    "-C",
+    clone,
+    "update-ref",
+    "-m",
+    `jig: moved ${branch} back to ${REMOTE}/${branch}, its commits on a rescue branch`,
+    `refs/heads/${branch}`,
+    tip,
+    head,
+  ]);
+  if (moved.status !== 0)
+    throw new OrcaError(
+      `kept the commits of ${branch} on a rescue branch and detached its checkout, but ${branch} could not be moved back to ${REMOTE}/${branch}: ${output(moved)}`,
+    );
 }
 
 /** The remote the open reads and checks branches out from. */
@@ -137,24 +286,43 @@ export function releaseHiddenHolder(
     remote: REMOTE,
     drivers: port.drivers,
   });
-  if (!verdict.idle) {
+  const waiver = waived(port.holders, verdict);
+  if (!verdict.idle && waiver === null) {
     if (verdict.timedOut)
       throw new OrcaError(
         `${branch} is checked out at ${path}, which Orca${port.where} does not list, and the check of whether it is idle ran out of time: ${verdict.reasons.join("; ")}`,
       );
     throw new BusyHolderError(branch, path, verdict.reasons, port.where);
   }
-  detachAt(port, branch, path, verdict.head);
-  const left = { path, branch, head: verdict.head };
+  const head = verdict.idle ? verdict.head : (waiver?.head as string);
+  const rescue = waiver?.rescue ? keepOnRescue(port, clone, path, head) : null;
+  if (rescue !== null && "failed" in rescue)
+    throw new BusyHolderError(
+      branch,
+      path,
+      [
+        ...(verdict.idle ? [] : verdict.reasons),
+        `its unpushed commits could not be kept on a rescue branch, so it was left as it is: ${rescue.failed}`,
+      ],
+      port.where,
+    );
+  detachAt(port, branch, path, head);
+  const left: DetachedHolder = {
+    path,
+    branch,
+    head,
+    ...(rescue === null ? {} : { rescue }),
+  };
   // Told before any check that can throw: the checkout is already detached.
   detached?.(left);
+  if (rescue !== null) backToRemote(port, clone, branch, head);
   const still = findGitWorktree(port.host, clone, branch);
   if (still !== null)
     throw new OrcaError(
       `detached the checkout at ${path}, but ${branch} is still checked out at ${still}`,
     );
   port.host.log(
-    `↺ detached the idle checkout at ${path} from ${branch} (at ${verdict.head.slice(0, 12)})`,
+    `↺ detached the ${verdict.idle ? "idle " : ""}checkout at ${path} from ${branch} (at ${head.slice(0, 12)})${rescue === null ? "" : `, its unpushed commits kept on ${rescue.branch} in ${rescue.clone}`}`,
   );
   return left;
 }

@@ -33,12 +33,14 @@ import {
 import { workspaceOfTree } from "../stall-tree.ts";
 import type {
   Action,
+  DetachedCheckout,
   DrivenPr,
   LaunchOutcome,
   RepoReport,
   RepoTarget,
 } from "../types.ts";
 import { factsOf } from "./drive-hold.ts";
+import { leftBehind } from "./followup-lane.ts";
 import { changedStale, classChanged, wantedClass } from "./drive-class.ts";
 import { pullStateLabels } from "../forge.ts";
 import { launchHeads } from "../failed-rearms.ts";
@@ -736,6 +738,13 @@ async function admitTracked(
   return admitted;
 }
 
+/** An admitted launch's account slot and workspace, and the checkout its open detached, if any. */
+type Admitted = {
+  slots: Slots;
+  workspace: { id: string; path: string };
+  detached: DetachedCheckout | undefined;
+};
+
 /** The account slot and the workspace one launch runs in, or the outcome that ends it. */
 async function admitAndOpen(
   state: ApplyState,
@@ -745,10 +754,7 @@ async function admitAndOpen(
   sessions: SessionsReport,
   report: RepoReport,
   named: ReturnType<typeof dispatched>,
-): Promise<
-  | { outcome: LaunchOutcome }
-  | { slots: Slots; workspace: { id: string; path: string } }
-> {
+): Promise<{ outcome: LaunchOutcome } | Admitted> {
   const open = (verify: boolean) =>
     workspaceFor(
       state,
@@ -787,10 +793,7 @@ async function openAdmitted(
   candidate: Opened,
   track: ReturnType<typeof rearmTrack>,
   original: Opened | undefined,
-): Promise<
-  | { outcome: LaunchOutcome }
-  | { slots: Slots; workspace: { id: string; path: string } }
-> {
+): Promise<{ outcome: LaunchOutcome } | Admitted> {
   if (track && "refused" in candidate) {
     track.treeRefused(candidate.refused, candidate.structural);
     return { outcome: waits(action, candidate.refused, slots.account.name) };
@@ -804,7 +807,7 @@ async function openAdmitted(
   );
   if ("outcome" in opened) return opened;
   if (original && "workspace" in original) track?.passed("stop");
-  return { slots, workspace: opened.workspace };
+  return { slots, workspace: opened.workspace, detached: opened.detached };
 }
 
 /** One planned re-arm or takeover, through its fresh read, admission, workspace, shared claim and launch. */
@@ -835,7 +838,7 @@ async function launchOne(
     named,
   );
   if ("outcome" in got) return got.outcome;
-  const { slots, workspace } = got;
+  const { slots, workspace, detached } = got;
   const pastDeadline = outOfTime(state);
   if (pastDeadline !== null)
     return waits(action, pastDeadline, slots.account.name);
@@ -850,7 +853,7 @@ async function launchOne(
     drive.claimer,
   );
   if (pr.evidence.rearm === true) await consumeLaunched(state, result, drive);
-  return result;
+  return leftBehind(result, detached);
 }
 
 /** Why a rearm request's pull request changed between the plan's read and the launch; `null` when it did not, or for any other launch. */

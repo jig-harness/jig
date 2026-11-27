@@ -30,6 +30,7 @@
  * retried once, under its own record and token, never as a fresh launch.
  * The tick writes nothing to the tracker: `do-item`'s claim does.
  */
+import { leftBehind } from "./followup-lane.ts";
 import { renderBranchName } from "../../../skills/drive-pr/scripts/lib/pr-policy.ts";
 import { carried, returnCarried } from "../station-answer-store.ts";
 import type { IssueKeys } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
@@ -394,7 +395,10 @@ async function launchOne(
     ...carried(repo.slug, action.target, id),
   };
   const launched = headless(await startOrReturn(state, record, slots), record);
-  return { ...launched, detail: `${launched.detail}; ${route.detail}` };
+  return leftBehind(
+    { ...launched, detail: `${launched.detail}; ${route.detail}` },
+    opened.detached,
+  );
 }
 
 /** Start the record; a launch that did not start hands the answer it was given back to the next one. */
