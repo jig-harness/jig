@@ -88,7 +88,7 @@ export async function applySteward(
   station: StationContext,
   readDigest: typeof digestOf = digestOf,
 ): Promise<void> {
-  const { opened, forge } = observation;
+  const { opened } = observation;
   const { repo, report } = opened;
   const config = state.machine.steward;
   const skip = (status: string) => {
@@ -99,23 +99,7 @@ export async function applySteward(
     return skip("steward is disabled on this host");
   await replayPending(state, repo.slug, report);
   const request = pendingStewardRequest(stateDb(state.root), repo.slug);
-  if (stewardHeld(state.records, repo.slug))
-    return request === null
-      ? skip(STEWARD_RULES.held)
-      : refuseRequest(state, request, report, "held");
-  if (!forge.ok || report.records.some((r) => !r.ok))
-    return skip("the digest's records did not all read");
-  if (
-    stewardBudgetSpent(
-      countedRuns(state.records, stewardRuns(null, state.root)),
-      currentMs(),
-    )
-  ) {
-    if (request !== null)
-      return refuseRequest(state, request, report, "budget");
-    report.steward = { status: STEWARD_RULES.budget, trigger: "budget" };
-    return;
-  }
+  if (!mayStart(state, observation, request)) return;
   const judged = judgedMembers(
     repo.slug,
     state.root,
@@ -182,39 +166,15 @@ export async function applySteward(
     );
     return;
   }
-  const record: LaunchRecord = {
-    version: 1,
+  const record = stewardRecord(state, observation, {
     id,
-    token: newToken(),
-    action: "steward",
-    repo: repo.slug,
-    repoPath: repo.path,
-    pr: null,
-    item: null,
-    account: slots.account.name,
+    account: slots.account,
     vendor,
-    configDir: slots.account.configDir,
-    wallBackoffMs: state.machine.wallBackoffMs,
-    ...(state.machine.failures?.startupThreshold === undefined
-      ? {}
-      : { startupFailureThreshold: state.machine.failures.startupThreshold }),
-    passTimeoutSec: STEWARD_DEADLINE_SEC,
-    ...codexLaunchFields(state.codexOptIn),
-    replaces: null,
-    facts: hash,
-    createdAt: currentIso(),
-    workspace: openedWorkspace.workspace,
-    attempts: [],
-    agentId: null,
     model: runtimeModel(runtime, family),
-    effort: null,
-    released: false,
-    command: null,
-    marker: null,
-    headless: true,
-    sessionId: sessionIdFor(vendor),
+    facts: hash,
+    workspace: openedWorkspace.workspace,
     mark: named.mark,
-  };
+  });
   const launch = await startKept(state, record, slots, digest);
   report.launches.push(launch);
   const kept = state.records.some((r) => r.record.id === record.id);
@@ -225,6 +185,89 @@ export async function applySteward(
       requestRow(request, repo.slug, { started: record.id }),
       state.root,
     );
+}
+
+/**
+ * Whether the rules let a pass start now: no pass holds the repository, the
+ * digest's records all read, and the host's hourly budget is not spent.
+ * When not, the receipt says why, and a request a rule refuses is taken
+ * with the rule named.
+ */
+function mayStart(
+  state: ApplyState,
+  observation: RepoObservation,
+  request: StewardRequest | null,
+): boolean {
+  const { opened, forge } = observation;
+  const { repo, report } = opened;
+  if (stewardHeld(state.records, repo.slug)) {
+    if (request === null) report.steward = { status: STEWARD_RULES.held };
+    else refuseRequest(state, request, report, "held");
+    return false;
+  }
+  if (!forge.ok || report.records.some((r) => !r.ok)) {
+    report.steward = { status: "the digest's records did not all read" };
+    return false;
+  }
+  const runs = countedRuns(state.records, stewardRuns(null, state.root));
+  if (!stewardBudgetSpent(runs, currentMs())) return true;
+  if (request === null)
+    report.steward = { status: STEWARD_RULES.budget, trigger: "budget" };
+  else refuseRequest(state, request, report, "budget");
+  return false;
+}
+
+/** What a steward launch is started with, beside what every steward record holds. */
+interface StewardLaunch {
+  id: string;
+  account: { name: string; configDir: string };
+  vendor: LaunchRecord["vendor"];
+  model: LaunchRecord["model"];
+  facts: string;
+  workspace: LaunchRecord["workspace"];
+  mark: NonNullable<LaunchRecord["mark"]> | null;
+}
+
+/** The launch record of a headless steward pass on the repository `observation` opened. */
+function stewardRecord(
+  state: ApplyState,
+  observation: RepoObservation,
+  launch: StewardLaunch,
+): LaunchRecord {
+  const { repo } = observation.opened;
+  return {
+    version: 1,
+    id: launch.id,
+    token: newToken(),
+    action: "steward",
+    repo: repo.slug,
+    repoPath: repo.path,
+    pr: null,
+    item: null,
+    account: launch.account.name,
+    vendor: launch.vendor,
+    configDir: launch.account.configDir,
+    wallBackoffMs: state.machine.wallBackoffMs,
+    ...(state.machine.failures?.startupThreshold === undefined
+      ? {}
+      : { startupFailureThreshold: state.machine.failures.startupThreshold }),
+    passTimeoutSec: STEWARD_DEADLINE_SEC,
+    ...codexLaunchFields(state.codexOptIn),
+    replaces: null,
+    facts: launch.facts,
+    createdAt: currentIso(),
+    workspace: launch.workspace,
+    attempts: [],
+    agentId: null,
+    model: launch.model,
+    effort: null,
+    released: false,
+    command: null,
+    marker: null,
+    headless: true,
+    sessionId: sessionIdFor(launch.vendor),
+    mark: launch.mark,
+  };
 }
 
 /** How many members the judgment backlog holds, and how many no pass has judged. */

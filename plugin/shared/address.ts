@@ -147,11 +147,22 @@ export function parseAddress(
       input,
       `${JSON.stringify(repo)} is not a repository (owner/name, or its name)`,
     );
+  const key = writtenKey(input, station, inline, second);
+  return key.ok ? ok({ station, repo, key: key.value }) : key;
+}
+
+/** The key an address names, inline (`inline`) or as a second argument (`second`); empty for a station that takes none. */
+function writtenKey(
+  input: string,
+  station: Station,
+  inline: string | null,
+  second: string | undefined,
+): Outcome<string, "malformed"> {
   if (inline !== null && second !== undefined)
     return malformed(input, "it names its key twice");
   if (STATIONS[station].key === "none")
     return inline === null && second === undefined
-      ? ok({ station, repo, key: "" })
+      ? ok("")
       : malformed(
           input,
           `a ${station} address names its repository and no key (${station}@owner/name)`,
@@ -160,7 +171,7 @@ export function parseAddress(
   if (key === "") return malformed(input, "it names no key");
   if (!RAW_KEY.test(key))
     return malformed(input, `${JSON.stringify(key)} is not a key`);
-  return ok({ station, repo, key });
+  return ok(key);
 }
 
 /**
