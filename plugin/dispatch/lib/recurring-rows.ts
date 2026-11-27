@@ -175,16 +175,22 @@ function againstRedrive(
   const ownIndex = launches.findIndex((l) => l.launch?.id === row.record);
   if (ownIndex < 0) return { head: null, redrive: null };
   const own = launches[ownIndex]?.launch ?? null;
-  // The table records only whole milliseconds. A tied or unreadable ordering
-  // timestamp means no record can establish which launch immediately followed
-  // another, so retain the stall instead of crediting a possible re-drive.
+  // The table records only whole milliseconds. Both sides of the proposed
+  // succession must therefore have unique, readable timestamps; a tie at
+  // either side cannot establish which launch immediately followed another.
+  // A tie elsewhere does not change this pair's order.
   const ordered = launches.every((launch) => launch.createdMs !== null);
-  const distinct =
-    ordered &&
-    new Set(launches.map((launch) => launch.createdMs)).size ===
-      launches.length;
-  if (!distinct) return { head: short(headOf(null, own)), redrive: null };
   const successor = launches[ownIndex + 1] ?? null;
+  const ownTimestampIsUnique =
+    own !== null &&
+    launches.filter((launch) => launch.createdMs === own.createdMs).length ===
+      1;
+  const successorTimestampIsUnique =
+    successor !== null &&
+    launches.filter((launch) => launch.createdMs === successor.createdMs)
+      .length === 1;
+  if (!ordered || !ownTimestampIsUnique || !successorTimestampIsUnique)
+    return { head: short(headOf(null, own)), redrive: null };
   const next = successor?.launch ?? null;
   const redrove =
     next?.redroveStall === true && STALL_EXIT.test(row.reason) ? next : null;

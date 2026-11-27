@@ -215,6 +215,20 @@ describe("a drive's stall the re-drive followed", () => {
     expect(stalled(f.root, WEDNESDAY).map((r) => r.rows)).toEqual([3]);
   });
 
+  it("settles a stall when an unrelated later timestamp is tied", () => {
+    const f = fixture();
+    for (const back of [0, 1, 2]) {
+      const pr = 85 + back;
+      const at = WEDNESDAY - back * DAY - 2 * HOUR;
+      launch(f.root, `drive-${pr}`, pr, at - HOUR);
+      ended(f.root, `drive-${pr}`, pr, at);
+      launch(f.root, `redrive-${pr}`, pr, at + HOUR / 2, true);
+      launch(f.root, `a-later-${pr}`, pr, at + HOUR);
+      launch(f.root, `z-later-${pr}`, pr, at + HOUR);
+    }
+    expect(stalled(f.root, WEDNESDAY)).toEqual([]);
+  });
+
   it("counts a stall when a launch's ordering timestamp is unreadable", () => {
     const f = fixture();
     for (const back of [0, 1, 2]) {
