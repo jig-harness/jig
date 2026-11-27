@@ -46,8 +46,10 @@ export interface ReflectionSettings {
   escalateAfter: number;
   timeoutSec: number;
   mode: Mode;
-  /** Ordered configuration sources; their files are read only by gather. */
-  /** Reads the vocabulary configuration on call, so only `gather` can fail on it. */
+  /**
+   * Ordered vocabulary sources, read on call: their files are read only by
+   * gather, so only `gather` can fail on them.
+   */
   classSeedSources: () => ClassSeedSource[];
 }
 

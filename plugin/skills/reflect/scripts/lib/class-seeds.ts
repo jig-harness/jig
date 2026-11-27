@@ -4,7 +4,8 @@ import {
   constants,
   fstatSync,
   openSync,
-  readFileSync,
+  readSync,
+  realpathSync,
 } from "node:fs";
 import {
   formatDisplayValue,
@@ -123,9 +124,21 @@ export function classSeedSources(
   return sources;
 }
 
-/** Open without blocking on a pipe, then check the file actually opened. */
+/**
+ * Open without blocking on a pipe, then check the file actually opened.
+ * The path is refused when it, after expansion or after resolving links,
+ * names a network location.
+ */
 function readClassFile(path: string): string {
-  const fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+  if (URL.test(path) || NETWORK_PATH.test(path))
+    throw new SettingError("is not a local path");
+  const resolved = realpathSync(path);
+  if (URL.test(resolved) || NETWORK_PATH.test(resolved))
+    throw new SettingError("resolves to a network location");
+  const fd = openSync(
+    resolved,
+    constants.O_RDONLY | (constants.O_NONBLOCK ?? 0),
+  );
   try {
     const stat = fstatSync(fd);
     if (!stat.isFile()) throw new SettingError("is not a regular file");
@@ -133,7 +146,19 @@ function readClassFile(path: string): string {
       throw new SettingError(
         `is larger than ${MAX_CLASS_FILE_BYTES} bytes, so none of it is read`,
       );
-    return readFileSync(fd, "utf8");
+    // Read at most one byte past the bound: the file may have grown since fstat.
+    const buffer = Buffer.alloc(MAX_CLASS_FILE_BYTES + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const read = readSync(fd, buffer, length, buffer.length - length, null);
+      if (read === 0) break;
+      length += read;
+    }
+    if (length > MAX_CLASS_FILE_BYTES)
+      throw new SettingError(
+        `is larger than ${MAX_CLASS_FILE_BYTES} bytes, so none of it is read`,
+      );
+    return buffer.toString("utf8", 0, length);
   } finally {
     closeSync(fd);
   }
