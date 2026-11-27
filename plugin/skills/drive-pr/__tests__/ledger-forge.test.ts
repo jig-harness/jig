@@ -160,6 +160,15 @@ describe("the ledger written from the drive state", () => {
     expect(forge.calls().filter((c) => c.includes("PATCH"))).toHaveLength(1);
   });
 
+  it("preserves an existing readable ledger version when it mirrors", async () => {
+    const v2 = ledgerBody(ledger(3))
+      .replace(`"v":${LEDGER_VERSION}`, '"v":2')
+      .replace(`"ledgerVersion":${LEDGER_VERSION}`, '"ledgerVersion":2');
+    const forge = fakeForge([forgeComment(40, v2)], { login: "drive-bot" });
+    expectSpawnExit(await handoff(forge), 0);
+    expect(ledgersOn(forge).get(40)?.ledgerVersion).toBe(2);
+  });
+
   it("rebuilds with the notes as they stand when the ledger moved under the write", async () => {
     const forge = fakeForge(
       [forgeComment(40, ledgerBody(ledger(3)), "maintainer")],

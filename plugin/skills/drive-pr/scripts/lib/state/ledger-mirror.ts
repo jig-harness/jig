@@ -319,7 +319,11 @@ async function mirrorUnlocked(
     const narrative = narrativeOf(handoff);
     const watching =
       driver.watchingConvergedCi === true && driver.stopped === undefined;
-    return ledgerFromState(
+    const existingVersion =
+      snapshot.canonical?.parsed?.kind === "ledger"
+        ? snapshot.canonical.parsed.ledger.ledgerVersion
+        : undefined;
+    const ledger = ledgerFromState(
       watching ? { ...state, phase: CONVERGED_CI_PHASE } : state,
       {
         generation:
@@ -338,6 +342,12 @@ async function mirrorUnlocked(
         })),
       },
     );
+    // A shape-only upgrade remains readable by the prior ledger reader. Keep
+    // that version when updating its existing record, so one upgraded writer
+    // does not make the shared handoff unavailable to older hosts.
+    return existingVersion === undefined
+      ? ledger
+      : { ...ledger, ledgerVersion: existingVersion };
   });
   if (result.kind !== "written") {
     console.error(`ledger: not written — ${result.reason}.`);
