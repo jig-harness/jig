@@ -109,7 +109,7 @@ function connectionFields(
   first: number,
   after = "",
 ): string {
-  return `${c.field}(first: ${first}${after}) { pageInfo { hasNextPage endCursor } nodes { ${c.entry} } }`;
+  return `${c.field}(first: ${first}${after}) { totalCount pageInfo { hasNextPage endCursor } nodes { ${c.entry} } }`;
 }
 
 /** One pull request's part of the query, aliased by its number. */
@@ -488,6 +488,8 @@ function checkPageNodes(page: unknown): unknown[] | null {
 interface Page {
   entries: unknown[];
   after: string | null;
+  /** The connection's size as this page saw it, `null` when it reported none. */
+  total: number | null;
 }
 
 /** One connection's continuation: how to ask for its next page, and where the answer holds it. */
@@ -559,8 +561,16 @@ async function readPage(
   return ok({
     entries,
     after: hasNext ? str(at(page, "pageInfo", "endCursor")) : null,
+    total: totalOf(page),
   });
 }
+
+const totalOf = (page: unknown): number | null => {
+  const total = at(page, "totalCount");
+  return typeof total === "number" && Number.isSafeInteger(total)
+    ? total
+    : null;
+};
 
 /**
  * Follow `initial` from its first page's `entries` for at most `pages` pages
@@ -580,6 +590,10 @@ async function follow(
   let after = str(at(initial, "pageInfo", "endCursor"));
   const all = [...entries];
   const cursors = new Set<string>();
+  // Cursor paging can skip an entry when the list changes between pages, and
+  // the head's oid does not pin these lists: a size that moves, or that the
+  // entries read do not add up to, means the pages are not one reading.
+  const total = totalOf(initial);
   for (let pageNumber = 1; pageNumber < pages; pageNumber++) {
     if (after === "" || cursors.has(after))
       return `the next ${c.what} had no usable cursor`;
@@ -587,7 +601,11 @@ async function follow(
     const result = await readPage(slug, c, read, after, deadline);
     if (!result.ok) return result.failure.reason;
     all.push(...result.value.entries);
+    if (total !== null && result.value.total !== total)
+      return `the ${c.what} count changed while it was read`;
     if (result.value.after === null) {
+      if (total !== null && all.length !== total)
+        return `the ${c.what} entries did not add up to the ${total} the forge counted`;
       initial.nodes = all;
       initial.pageInfo = { hasNextPage: false };
       return null;
@@ -666,9 +684,17 @@ async function completeConnection(
   deadline: number,
 ): Promise<string | null> {
   const initial = at(pull, c.field);
-  if (!more(initial) || !isRecord(initial)) return null;
+  // A connection that does not continue is still one partial pull request's
+  // evidence: its entries and its pageInfo must read whole before the
+  // pull request is called complete.
+  if (
+    !isRecord(initial) ||
+    typeof at(initial, "pageInfo", "hasNextPage") !== "boolean"
+  )
+    return `the first ${c.label} page was incomplete`;
   const entries = connectionNodes(c, initial);
   if (entries === null) return `the first ${c.label} page was incomplete`;
+  if (!more(initial)) return null;
   return follow(
     slug,
     pullContinuation(facts, c),

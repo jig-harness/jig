@@ -303,6 +303,11 @@ for (const scenario of [
   "forge-error",
   "unreadable-review",
   "labels",
+  "reviews",
+  "requests",
+  "unread-sibling",
+  "count-changed",
+  "short-count",
 ] as const) {
   it(`places a converged pull request using paginated pull connections (${scenario})`, async () => {
     const r = await run(
@@ -316,7 +321,7 @@ for (const scenario of [
       const placed = readiness({
         ...facts, slug: repo, converged: true, verifiedSha: facts.head, held: false,
       }, { reviewerApp: "example-review", reviewerCheck: /^AI review$/, ciHoldLabel: null });
-      console.log(JSON.stringify({ placed, partial: facts.partial, threads: facts.unresolvedThreads, labels: facts.labels.length, cost: read.value.cost }));
+      console.log(JSON.stringify({ placed, partial: facts.partial, threads: facts.unresolvedThreads, labels: facts.labels.length, reviews: facts.reviews.length, requested: facts.requested, cost: read.value.cost }));
       `,
       `#!/usr/bin/env bun
       import { appendFileSync } from "node:fs";
@@ -325,10 +330,14 @@ for (const scenario of [
       const scenario = ${JSON.stringify(scenario)};
       const after = Number(args.find((arg) => arg.startsWith("after="))?.slice("after=".length) ?? 0);
       appendFileSync(process.env.MERGE_FIXTURE + "/calls", JSON.stringify(args) + "\\n");
-      const field = { labels: "labels", "unreadable-review": "latestReviews" }[scenario] ?? "reviewThreads";
-      const review = (i) => ({ state: "COMMENTED", authorAssociation: "MEMBER", author: i === 140 ? null : { __typename: "User", login: "reviewer-" + i }, commit: { oid: head } });
-      const entry = (i) => field === "labels" ? { name: "label-" + i } : field === "latestReviews" ? review(i) : { isResolved: !(scenario === "unresolved" && i === 140) };
+      const field = { labels: "labels", "unread-sibling": "labels", "unreadable-review": "latestReviews", reviews: "latestReviews", requests: "reviewRequests" }[scenario] ?? "reviewThreads";
+      const total = 100 + 40;
+      const review = (i) => ({ state: "COMMENTED", authorAssociation: "MEMBER", author: i === (field === "latestReviews" && scenario === "unreadable-review" ? 60 : 140) ? null : { __typename: "User", login: "reviewer-" + i }, commit: { oid: head } });
+      const request = (i) => ({ requestedReviewer: { __typename: "User", login: "requested-" + i } });
+      const entry = (i) => field === "labels" ? { name: "label-" + i } : field === "latestReviews" ? review(i) : field === "reviewRequests" ? request(i) : { isResolved: !(scenario === "unresolved" && i === 140) };
+      const firstSize = field === "latestReviews" || field === "reviewRequests" ? 20 : 100;
       const page = (from, count, more) => ({
+        totalCount: scenario === "count-changed" && after ? total + 1 : scenario === "short-count" ? total + 1 : firstSize + 40,
         nodes: Array.from({ length: count }, (_, i) => entry(from + i + 1)),
         pageInfo: { hasNextPage: more, endCursor: String(after + 1) },
       });
@@ -338,7 +347,7 @@ for (const scenario of [
         process.exit(0);
       }
       if (after) {
-        const pull = { headRefOid: scenario === "wrong-head" ? "b".repeat(40) : head, [field]: page(after * 100, 40, scenario === "capped") };
+        const pull = { headRefOid: scenario === "wrong-head" ? "b".repeat(40) : head, [field]: page(after * firstSize, 40, scenario === "capped") };
         console.log(JSON.stringify({ data: { repository: { pull }, rateLimit: { cost: 1, remaining: 99, limit: 100 } } }));
         process.exit(0);
       }
@@ -349,7 +358,8 @@ for (const scenario of [
         latestReviews: { ...none, nodes: [{ state: "APPROVED", authorAssociation: "MEMBER", author: { __typename: "User", login: "maintainer" }, commit: { oid: head } }] },
         commits: { nodes: [{ commit: { oid: head, statusCheckRollup: { contexts: { ...none, nodes: [check] } } } }] },
       };
-      pr7[field] = page(0, 100, true);
+      pr7[field] = page(0, firstSize, true);
+      if (scenario === "unread-sibling") pr7.reviewThreads = { ...none, nodes: [{}] };
       console.log(JSON.stringify({ data: { repository: { squashMergeAllowed: true, pr7 }, rateLimit: { cost: 1, remaining: 100, limit: 100 } } }));
       `,
     );
@@ -362,6 +372,12 @@ for (const scenario of [
       "wrong-head": ["review threads", "original head"],
       "forge-error": ["review threads", "with an error"],
       "unreadable-review": ["latest reviews", "was incomplete"],
+      "unread-sibling": [
+        "review threads",
+        "first review threads page was incomplete",
+      ],
+      "count-changed": ["review threads", "count changed"],
+      "short-count": ["review threads", "did not add up"],
     } as const;
     if (scenario in partialReasons) {
       expect(calls).toHaveLength(scenario === "capped" ? 3 : 2);
@@ -385,6 +401,11 @@ for (const scenario of [
         lane: "merge-now",
       });
       if (scenario === "labels") expect(result.labels).toBe(140);
+      if (scenario === "reviews") expect(result.reviews).toBe(60);
+      if (scenario === "requests") {
+        expect(result.requested).toHaveLength(60);
+        expect(result.requested[59]).toBe("requested-60");
+      }
     }
   });
 }
