@@ -5,8 +5,9 @@
  * value in its preview. Each case runs in a child with a home of its own,
  * `process.platform` reading `darwin` and a fake `launchctl` on `PATH`.
  */
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -39,8 +40,15 @@ const INSTALLED = {
   REPLACED_TOKEN: "old-secret-value",
 };
 
+const roots: string[] = [];
+afterEach(() => {
+  for (const root of roots.splice(0))
+    rmSync(root, { recursive: true, force: true });
+});
+
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "dispatch-install-env-"));
+  roots.push(root);
   const home = join(root, "home");
   const bin = join(root, "bin");
   const agents = join(home, "Library", "LaunchAgents");
@@ -53,7 +61,9 @@ function fixture() {
     env: INSTALLED,
     spec: dispatchJobSpec(5, null, {}),
   })["dev.jig.dispatch.plist"] as string;
-  writeFileSync(plist, installed, { mode: 0o600 });
+  // As a person's editor leaves it: readable by others until the install narrows it.
+  writeFileSync(plist, installed, { mode: 0o644 });
+  chmodSync(plist, 0o644);
   writeFakeProgram(
     join(bin, "launchctl"),
     `#!/usr/bin/env bun
@@ -68,7 +78,7 @@ if (args[0] === "print") process.exit(113);
   writeFileSync(
     driver,
     `Object.defineProperty(process, "platform", { value: process.env.TEST_PLATFORM ?? "darwin" });
-const { installDispatch, dispatchJobSpec } = await import(${JSON.stringify(install)});
+const { installDispatch, dispatchJobSpec, probeJobSpec } = await import(${JSON.stringify(install)});
 const { managedEnvironment, updateJob } = await import(${JSON.stringify(scheduler)});
 const { capturedEnvironment } = await import(${JSON.stringify(environment)});
 const { parseMachineConfigText } = await import(${JSON.stringify(machineConfig)});
@@ -78,9 +88,11 @@ try {
   if (mode === "write") {
     const captured = capturedEnvironment(names, process.env, managedEnvironment(dispatchJobSpec(5)));
     if (!captured.ok) throw new Error(captured.failure.reason);
-    const job = await updateJob(dispatchJobSpec(5, null, process.env, captured.value));
-    if (!job.ok) throw new Error(job.failure.reason);
-    console.log(job.value);
+    for (const spec of [dispatchJobSpec(5, null, process.env, captured.value), probeJobSpec(null, process.env, captured.value)]) {
+      const job = await updateJob(spec);
+      if (!job.ok) throw new Error(job.failure.reason);
+      console.log(job.value);
+    }
     process.exit(0);
   }
   const machine = parseMachineConfigText("repositories: []\\n", "dispatch.yaml");
@@ -125,7 +137,7 @@ try {
       stderr: "pipe",
       timeout: 30000,
     });
-  return { home, plist, installed, calls, path, run };
+  return { home, agents, plist, installed, calls, path, run };
 }
 
 describe.skipIf(process.platform === "win32")(
@@ -146,6 +158,12 @@ describe.skipIf(process.platform === "win32")(
       expect(env.PATH).toBe(f.path);
       expect(statSync(f.plist).mode & 0o777).toBe(0o600);
       expect(readFileSync(f.calls, "utf8")).toContain("bootstrap");
+      const probe = join(f.agents, "dev.jig.dispatch-probe.plist");
+      const probeEnv = launchdEnvironment(readFileSync(probe, "utf8"));
+      expect(probeEnv.NEW_TOKEN).toBe("captured-secret");
+      expect(probeEnv.REPLACED_TOKEN).toBe("new-secret-value");
+      expect(probeEnv.JIRA_TOKEN_COMMAND).toBeUndefined();
+      expect(statSync(probe).mode & 0o777).toBe(0o600);
     });
 
     test("a first install, with no job installed, carries nothing forward", () => {

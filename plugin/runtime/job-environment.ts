@@ -16,9 +16,15 @@
  */
 import { failed, ok, type Outcome } from "../shared/outcome.ts";
 
-/** A plist string's text, its XML escapes undone. */
+/** A plist string's text, its XML escapes undone, numeric references included. */
 export function unxml(value: string): string {
   return value
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) =>
+      String.fromCodePoint(Number.parseInt(hex, 16)),
+    )
+    .replace(/&#([0-9]+);/g, (_, decimal: string) =>
+      String.fromCodePoint(Number.parseInt(decimal, 10)),
+    )
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
@@ -32,16 +38,23 @@ export function unxml(value: string): string {
  * tool leaves them.
  */
 export function launchdEnvironment(plist: string): Record<string, string> {
-  const variables =
+  const env: Record<string, string> = {};
+  for (const match of environmentBlock(plist).matchAll(STRING_ENTRY))
+    env[unxml(match[1] as string)] = unxml(match[2] ?? "");
+  return env;
+}
+
+/** One `EnvironmentVariables` entry with a string value, `<string/>` for an empty one. */
+const STRING_ENTRY =
+  /<key>(.*?)<\/key>\s*(?:<string>(.*?)<\/string>|<string\/>)/gs;
+
+/** The inside of a plist's `EnvironmentVariables` dictionary, empty when it has none. */
+function environmentBlock(plist: string): string {
+  return (
     /<key>EnvironmentVariables<\/key>\s*<dict>(.*?)<\/dict>/s.exec(
       plist,
-    )?.[1] ?? "";
-  const env: Record<string, string> = {};
-  for (const match of variables.matchAll(
-    /<key>(.*?)<\/key>\s*<string>(.*?)<\/string>/gs,
-  ))
-    env[unxml(match[1] as string)] = unxml(match[2] as string);
-  return env;
+    )?.[1] ?? ""
+  );
 }
 
 /** What a preview shows in place of a value it must not print. */
@@ -52,18 +65,36 @@ const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
  * The variables the installed launchd job (`plist`, null when there is
- * none) holds that are not `managed`: what a reinstall keeps.
+ * none) holds that are not `managed`: what a reinstall keeps. A job whose
+ * variables cannot all be read and written back is `unreadable`, never read
+ * as one with none: a binary plist, an entry whose value is not a string,
+ * or a kept value with a line break. No reason repeats a value.
  */
 export function carriedEnvironment(
   plist: string | null,
   managed: ReadonlySet<string>,
-): Record<string, string> {
-  if (plist === null) return {};
-  return Object.fromEntries(
-    Object.entries(launchdEnvironment(plist)).filter(
-      ([name]) => !managed.has(name),
-    ),
-  );
+): Outcome<Record<string, string>, "unreadable"> {
+  if (plist === null) return ok({});
+  if (!/^\s*(<\?xml|<!DOCTYPE|<plist)/.test(plist))
+    return failed(
+      "unreadable",
+      "it is not an XML plist; convert it with plutil -convert xml1, then install again",
+    );
+  const keys = [...environmentBlock(plist).matchAll(/<key>/g)].length;
+  const env = launchdEnvironment(plist);
+  if (Object.keys(env).length !== keys)
+    return failed(
+      "unreadable",
+      "an EnvironmentVariables entry is not a string; make each value a <string>, then install again",
+    );
+  const carried = Object.entries(env).filter(([name]) => !managed.has(name));
+  const broken = carried.find(([, value]) => /[\r\n\0]/.test(value));
+  if (broken)
+    return failed(
+      "unreadable",
+      `the value of ${broken[0]} holds a line break or NUL, which the installed job cannot keep; rewrite or remove it, then install again`,
+    );
+  return ok(Object.fromEntries(carried));
 }
 
 /**

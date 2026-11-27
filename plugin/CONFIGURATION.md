@@ -2349,8 +2349,13 @@ depends on the scheduler.
   `jig install dispatch --yes` keeps every variable the installed job holds
   that the install does not write itself, whether `--env` put it there or a
   person added it to the job's `EnvironmentVariables`; `--env` with the same
-  name replaces the kept value. `jig upgrade` keeps the job's whole
-  environment as it is. The preview names the variables it keeps and
+  name replaces the kept value; to drop a kept variable, delete it from the
+  job's file (`~/Library/LaunchAgents/dev.jig.dispatch.plist`, and
+  `dev.jig.dispatch-probe.plist`) before reinstalling. An install refuses a
+  job file it cannot keep whole (a binary plist, which
+  `plutil -convert xml1` turns back into XML; a value that is not a string;
+  a kept value with a line break) rather than drop what it holds.
+  `jig upgrade` keeps the job's whole environment as it is. The preview names the variables it keeps and
   captures and shows each value as `(hidden)`. `--env` is the dispatcher's
   alone: `jig install` refuses it unless `dispatch` is the only component
   named.

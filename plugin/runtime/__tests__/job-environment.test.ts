@@ -40,13 +40,59 @@ describe("the variables kept from the installed launchd job", () => {
       JIG_NOTIFY_URL: "https://hooks.example/<secret>",
     });
     expect(carriedEnvironment(installed, managed)).toEqual({
-      JIRA_TOKEN_COMMAND: "broker token --site 'a&b'",
-      JIG_NOTIFY_URL: "https://hooks.example/<secret>",
+      ok: true,
+      value: {
+        JIRA_TOKEN_COMMAND: "broker token --site 'a&b'",
+        JIG_NOTIFY_URL: "https://hooks.example/<secret>",
+      },
     });
   });
 
   test("are none when no job is installed", () => {
-    expect(carriedEnvironment(null, managed)).toEqual({});
+    expect(carriedEnvironment(null, managed)).toEqual({ ok: true, value: {} });
+  });
+
+  test("refuse a binary plist rather than reading it as holding none", () => {
+    const refused = carriedEnvironment("bplist00\u0000binary", managed);
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    expect(refused.failure.reason).toContain("plutil -convert xml1");
+  });
+
+  test("refuse an entry whose value is not a string", () => {
+    const refused = carriedEnvironment(
+      `<?xml version="1.0"?><plist><dict><key>EnvironmentVariables</key><dict><key>RETRIES</key><integer>3</integer><key>TOKEN</key><string>kept-secret</string></dict></dict></plist>`,
+      managed,
+    );
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    expect(refused.failure.reason).toContain("not a string");
+    expect(refused.failure.reason).not.toContain("kept-secret");
+  });
+
+  test("refuse a kept value with a line break, naming the variable and not the value", () => {
+    const refused = carriedEnvironment(
+      plist({ PATH: "/bin" }).replace(
+        "</dict>",
+        "<key>MULTI</key><string>line-one&#10;line-two</string></dict>",
+      ),
+      managed,
+    );
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    expect(refused.failure.reason).toContain("MULTI");
+    expect(refused.failure.reason).not.toContain("line-one");
+  });
+
+  test("read an empty value and numeric character references", () => {
+    const edited = plist({ PATH: "/bin" }).replace(
+      "</dict>",
+      "<key>EMPTY</key><string/><key>AMP</key><string>a&#38;b&#x3c;c</string></dict>",
+    );
+    expect(carriedEnvironment(edited, managed)).toEqual({
+      ok: true,
+      value: { EMPTY: "", AMP: "a&b<c" },
+    });
   });
 
   test("are read from a job a plist tool laid out on lines of its own", () => {
@@ -68,7 +114,8 @@ describe("the variables kept from the installed launchd job", () => {
       LINEAR_API_KEY: "lin-value",
     });
     expect(carriedEnvironment(edited, managed)).toEqual({
-      LINEAR_API_KEY: "lin-value",
+      ok: true,
+      value: { LINEAR_API_KEY: "lin-value" },
     });
   });
 });

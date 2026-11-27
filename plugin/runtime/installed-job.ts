@@ -117,7 +117,7 @@ function systemdJob(files: Record<string, string>): InstalledJob | null {
 }
 
 function launchdJob(plist: string): InstalledJob | null {
-  const program = /<key>ProgramArguments<\/key><array>(.*?)<\/array>/s.exec(
+  const program = /<key>ProgramArguments<\/key>\s*<array>(.*?)<\/array>/s.exec(
     plist,
   )?.[1];
   if (program === undefined) return null;

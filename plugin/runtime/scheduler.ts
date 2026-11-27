@@ -8,6 +8,7 @@ import { jigHome } from "../shared/config-layers.ts";
 import { fixtureRegistryLimit } from "../shared/fixture-registry-index.ts";
 import { GcError } from "../shared/gc-error.ts";
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -346,10 +347,21 @@ function carriedFromInstalled(
   if (scheduler !== "launchd") return {};
   const managed = managedEnvironment(spec);
   for (const name of Object.keys(spec.capturedEnv ?? {})) managed.add(name);
-  return carriedEnvironment(
-    readOptional(join(jobDirectory("launchd"), `${spec.label}.plist`)),
-    managed,
-  );
+  const path = join(jobDirectory("launchd"), `${spec.label}.plist`);
+  const carried = carriedEnvironment(readOptional(path), managed);
+  if (!carried.ok)
+    throw new GcError(
+      `The installed job ${path} cannot be kept: ${carried.failure.reason}`,
+    );
+  return carried.value;
+}
+/**
+ * Writes a job file only the user can read: `mode` on a write applies only
+ * to a file it creates, so an existing file is narrowed too.
+ */
+function writePrivate(path: string, text: string): void {
+  writeFileSync(path, text, { mode: 0o600 });
+  chmodSync(path, 0o600);
 }
 /**
  * The job to write; a removal names it only, so a bad value cannot block it.
@@ -409,7 +421,7 @@ async function updateLaunchd(
     await execute(["launchctl", "bootout", `${domain}/${LABEL}`]);
   if (remove) rmSync(path, { force: true });
   else {
-    writeFileSync(path, files[`${LABEL}.plist`] as string, { mode: 0o600 });
+    writePrivate(path, files[`${LABEL}.plist`] as string);
     await execute(["launchctl", "bootstrap", domain, path]);
   }
   return path;
@@ -427,7 +439,7 @@ async function updateSystemd(
   for (const [name, text] of Object.entries(files)) {
     const path = join(dir, name);
     if (remove) rmSync(path, { force: true });
-    else writeFileSync(path, text, { mode: 0o600 });
+    else writePrivate(path, text);
   }
   await execute(["systemctl", "--user", "daemon-reload"]);
   if (!remove) await execute(["systemctl", "--user", "enable", "--now", timer]);
@@ -848,7 +860,7 @@ async function rewrite(
   const dir = jobDirectory(scheduler);
   if (scheduler === "systemd") {
     for (const [name, text] of Object.entries(files))
-      writeFileSync(join(dir, name), text, { mode: 0o600 });
+      writePrivate(join(dir, name), text);
     await execute(
       ["systemctl", "--user", "daemon-reload"],
       undefined,
@@ -864,9 +876,7 @@ async function rewrite(
       undefined,
       announce,
     );
-  writeFileSync(path, files[`${spec.label}.plist`] as string, {
-    mode: 0o600,
-  });
+  writePrivate(path, files[`${spec.label}.plist`] as string);
   if (snapshot.active)
     await execute(
       ["launchctl", "bootstrap", domain, path],
@@ -890,7 +900,7 @@ export function jobPreview(spec: JobSpec, remove: boolean): string {
   try {
     carried = carriedFromInstalled(scheduler, spec);
   } catch (error) {
-    return `Scheduler preview unavailable: the installed ${spec.name} job cannot be read: ${reasonOf(error)}`;
+    return `Scheduler preview unavailable: ${reasonOf(error)}`;
   }
   const job = installedJob(spec, false, carried);
   const captured = Object.keys(spec.capturedEnv ?? {});
