@@ -6,7 +6,6 @@
  * with the sentence the tick's receipt carries.
  */
 import { afterAll, describe, expect, it } from "bun:test";
-import { execFileSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
@@ -25,6 +24,7 @@ import {
 } from "../lib/config-check.ts";
 import type { TickReceipt } from "../receipts.ts";
 import { SLUG, type World, world } from "./fixtures.ts";
+import { git } from "./git-fixtures.ts";
 
 const TRACKER = `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\n`;
 const CATALOG = ".config/change-areas.yaml";
@@ -186,12 +186,10 @@ const checkoutFactory = () => {
 
 /** Commit everything in a checkout, optionally with CRLF conversion on. */
 const commitAll = (root: string, crlf = false): void => {
-  const git = (...args: string[]) =>
-    execFileSync("git", ["-C", root, ...args], { stdio: "ignore" });
-  git("init", "-q");
-  if (crlf) git("config", "core.autocrlf", "true");
-  git("add", "-A");
-  git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x");
+  git(root, "init", "-q");
+  if (crlf) git(root, "config", "core.autocrlf", "true");
+  git(root, "add", "-A");
+  git(root, "commit", "-qm", "x");
 };
 
 describe("checkConfiguration", () => {

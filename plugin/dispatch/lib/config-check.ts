@@ -63,7 +63,8 @@ export const INLINE_CONTENT_LIMIT = 1024 * 1024;
  * blob, which a checkout's line-ending conversion does not change. Where the
  * committed blob does not stand for the file's contents (an untracked or
  * modified file, no git), the size of the file on disk stands: the bytes the
- * check then parses. No git filter runs, so the check changes nothing.
+ * check then parses. The comparison reads the checkout only; a configured
+ * clean filter may run, as for any `git diff`.
  */
 function committedSize(root: string, path: string, onDisk: number): number {
   try {
