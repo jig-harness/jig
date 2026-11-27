@@ -25,6 +25,8 @@ export interface WorktreeEvidence {
   mergedHeadCovers: boolean | null;
   aheadOfBase: number | null;
   held: boolean | null;
+  /** Why `held` is null: what made the holder reading unknown. */
+  heldUnknown?: string;
   idleMs: number | null;
   /**
    * A workspace runtime manages the worktree and its registry showed no agent
@@ -151,7 +153,11 @@ function candidate(reason: string, coordinated: Coordination): Proof {
 }
 function holderGuard(facts: WorktreeEvidence, guardMs: number): Proof | null {
   if (facts.held === null)
-    return unknown("process holders could not be enumerated");
+    return unknown(
+      facts.heldUnknown === undefined
+        ? "process holders could not be enumerated"
+        : `process holders could not be enumerated: ${facts.heldUnknown}`,
+    );
   if (facts.held)
     return live(
       "a process has a working directory or open file inside the worktree",

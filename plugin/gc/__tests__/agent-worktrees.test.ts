@@ -462,12 +462,49 @@ describe.skipIf(
     expect(line(gc(f, []))).toMatchObject({
       outcome: "unverified",
       reason: expect.stringContaining(
-        "process holders could not be enumerated",
+        "process holders could not be enumerated: lsof's standard error holds more than warnings about unrelated mounts",
       ),
     });
     // Killed after its warnings, it may not have read a process at all.
     f.lsof(warning("/run/user/1000/doc"), "kill -9 $$");
     expect(line(gc(f, [])).outcome).toBe("unverified");
+  }, 60_000);
+
+  test("lsof listing a holder while exiting 1 over unrelated mount warnings reads the tree as held, not unknown", () => {
+    const f = setup();
+    idle(f);
+    // lsof's own output for a worktree a process works in on a host with
+    // portal, network-namespace and container mounts: warnings, a listed
+    // process, and exit status 1.
+    const warnings = [
+      ["fuse.portal", "/run/user/1000/doc"],
+      ["nsfs", "/run/docker/netns/default"],
+      [
+        "overlay",
+        "/var/lib/docker/rootfs/overlayfs/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      ],
+    ]
+      .map(
+        ([type, mount]) =>
+          `lsof: WARNING: can't stat() ${type} file system ${mount}\n      Output information may be incomplete.\n`,
+      )
+      .join("");
+    const holder = `printf 'p4242\\nfcwd\\nn%s\\n' '${f.tree}'\nexit 1`;
+    f.lsof(warnings, holder);
+    expect(line(gc(f, []))).toMatchObject({
+      outcome: "refused",
+      reason: expect.stringContaining("a process has a working directory"),
+    });
+    // The same listing beside a warning about the tree's own mount still
+    // names a holder: the tree is kept as held.
+    f.lsof(
+      `${warnings}lsof: WARNING: can't stat() ext4 file system ${f.root}\n      Output information may be incomplete.\n`,
+      holder,
+    );
+    expect(line(gc(f, []))).toMatchObject({
+      outcome: "refused",
+      reason: expect.stringContaining("a process has a working directory"),
+    });
   }, 60_000);
 
   test("one the idle guard has not passed is kept", () => {
