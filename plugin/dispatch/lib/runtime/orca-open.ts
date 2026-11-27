@@ -11,7 +11,10 @@
  *
  * A checkout Orca does not list that holds the branch is detached when it
  * is idle, judged with the drive's records of what drives a tree
- * (`tree-drivers.ts`), and the receipt names it (`detached`); one in use
+ * (`tree-drivers.ts`), or busy only in the ways the host's holder policy
+ * waives (`holders`, `shared/orca-workspace/holder.ts`; applied only to a
+ * pull request's open, the one that reports a rescue), and the receipt
+ * names it (`detached`, with its rescue branch where it has one); one in use
  * refuses the open, and the receipt names it (`busyHolder`) for the notice
  * a person gets.
  *
@@ -21,7 +24,10 @@
  * to that comment.
  */
 import { orcaCommandOrInstalled } from "../../../shared/orca.ts";
-import { BusyHolderError } from "../../../shared/orca-workspace/holder.ts";
+import {
+  BusyHolderError,
+  type HolderPolicy,
+} from "../../../shared/orca-workspace/holder.ts";
 import { openBranch } from "../../../shared/orca-workspace/open.ts";
 import {
   type OpenPort,
@@ -48,9 +54,10 @@ import type {
 import { detachedField } from "./port.ts";
 import { currentMs } from "../../../shared/time.ts";
 
-function portOn(ctx: Context): OpenPort {
+function portOn(ctx: Context, holders: HolderPolicy | undefined): OpenPort {
   const orca = orcaCommandOrInstalled(process.env);
   return {
+    ...(holders === undefined ? {} : { holders }),
     host: ctx,
     runHook: supervisedHook,
     orcaCall: <T>(args: string[], what: string) =>
@@ -73,6 +80,7 @@ export function openPullRequestWorkspace(
   repo: { id: string; path: string },
   target: PullRequestTarget,
   timeoutMs: number,
+  holders?: HolderPolicy,
 ): Promise<RuntimeReceipt> {
   return open(
     repo,
@@ -83,6 +91,7 @@ export function openPullRequestWorkspace(
       ...(target.purpose === "followup" ? {} : { pr: target.pr }),
     },
     timeoutMs,
+    holders,
   );
 }
 
@@ -111,6 +120,7 @@ export async function openNoticesWorkspace(
       createHook: false,
     },
     timeoutMs,
+    undefined,
   );
   if (!opened.ok || opened.workspace === undefined || opened.reattached)
     return withoutReattached(opened);
@@ -158,6 +168,7 @@ export function openItemWorkspace(
       createFlags: itemLink(target),
     },
     timeoutMs,
+    undefined,
   );
 }
 
@@ -171,6 +182,7 @@ async function open(
     pr?: number;
   },
   timeoutMs: number,
+  holders: HolderPolicy | undefined,
 ): Promise<RuntimeReceipt & { reattached?: boolean }> {
   const lines: string[] = [];
   const ctx = withLimit(
@@ -191,7 +203,7 @@ async function open(
           );
     if (resolved !== null && !resolved.ok)
       return { ok: false, detail: resolved.failure.reason };
-    const opened = openBranch(portOn(ctx), {
+    const opened = openBranch(portOn(ctx, holders), {
       repo,
       branch: options.branch,
       name: options.dispatched.name,

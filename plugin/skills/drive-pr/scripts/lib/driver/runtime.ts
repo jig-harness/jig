@@ -26,6 +26,12 @@ interface DriverRuntime {
    */
   stallFinish: { state: string; reason: string } | null;
   /**
+   * How the stalled passes finished, set by the stall stop whether or not
+   * they agree (`state/events.ts`'s `StallReasons`): the last reasons they
+   * recorded and how many recorded none. `null` for any other stop.
+   */
+  stallReasons: import("../state/events.ts").StallReasons | null;
+  /**
    * When the forge's rate limit resets, for a stop on it
    * (`FORGE_RATE_LIMITED`): recorded on its `stop` event as `until`, which
    * the dispatcher re-drives it after. `null` for any other stop.
@@ -125,6 +131,7 @@ export const driverRuntime: DriverRuntime = {
   reviewerFailure: null,
   stopListingPages: null,
   stallFinish: null,
+  stallReasons: null,
   stopLimitedUntil: null,
   forgeLimitWaits: 0,
   quotaScanTruncated: [],

@@ -39,6 +39,7 @@ function poolNode(estimate?: number | null): Record<string, unknown> {
     state: { id: "s", name: "Todo", type: "unstarted" },
     assignee: null,
     labels: page([{ name: "bug" }]),
+    allChildren: { nodes: [] },
     children: page([]),
   };
 }

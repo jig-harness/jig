@@ -251,6 +251,45 @@ console.log("STOP " + (await check()));`,
     });
   }
 
+  it("names a rejected round-boundary read once per run of the same reason", async () => {
+    const forge = fakeForge([], { login: "drive-bot" });
+    const r = await probe(
+      forge,
+      `let now = 0;
+const check = t.roundBoundaryTakeoverCheck("999", () => now);
+const override = process.env.LEDGER_FAKE_DIR + "/list-override";
+const reject = (stdout) => fs.writeFileSync(override, JSON.stringify({ stdout, code: 0 }));
+reject("[]");
+for (; now < 40_000; now += 10_000) console.log("UNREAD " + (await check()));
+reject("[[{}]]");
+for (; now < 60_000; now += 10_000) console.log("UNREAD " + (await check()));
+fs.unlinkSync(override);
+console.log("READ " + (await check()));
+now += 10_000;
+reject("[]");
+now += 60_000;
+console.log("UNREAD " + (await check()));`,
+      { DRIVE_PR_LEDGER_DRIVER: driverEnv("clone-b") },
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toContain("READ null");
+    expect(r.stdout).not.toContain("UNREAD 20");
+    const lines = r.stderr
+      .split("\n")
+      .filter((line) =>
+        line.includes("round-boundary takeover check rejected"),
+      );
+    // Four rejections for an empty listing, two for a comment without an id,
+    // then one after a read that worked: one line per run, never per checkpoint.
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toContain("PR #999's ledger listing");
+    expect(lines[0]).not.toBe(lines[1]);
+    expect(lines[2]).toBe(lines[0]);
+    expect(
+      forge.calls().filter((call) => call.includes("/999/comments")),
+    ).toHaveLength(8);
+  });
+
   it("refuses to start beside a ledger comment it cannot read", async () => {
     const damaged = ownLedger().replace(
       /"heartbeat":"[^"]*"/,
