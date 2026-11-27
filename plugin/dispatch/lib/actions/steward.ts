@@ -276,7 +276,10 @@ function stewardStatus(
       hash,
     };
   return {
-    status: `started for ${trigger.unjudged} unjudged of ${trigger.members} in the judgment backlog`,
+    status:
+      trigger.members === 0
+        ? `started for ${trigger.unjudged} refused order(s) awaiting the steward's reading`
+        : `started for ${trigger.unjudged} unjudged of ${trigger.members} in the judgment backlog`,
     hash,
     trigger: "started",
   };
