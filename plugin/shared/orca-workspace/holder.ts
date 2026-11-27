@@ -260,6 +260,50 @@ function detachAt(
   );
 }
 
+/** The log's words for a rescue branch, none without one. */
+function rescueText(rescue: RescueBranch | null): string {
+  return rescue === null
+    ? ""
+    : `, its unpushed commits kept on ${rescue.branch} in ${rescue.clone}`;
+}
+
+/**
+ * The commit a holder `verdict` read may be detached at, and the rescue
+ * branch its unpushed commits were kept on first where the host's policy
+ * asked for one; else throw why it stays: busy, out of time, or a rescue
+ * that could not be made, which leaves the tree as it was.
+ */
+function detachable(
+  port: OpenPort,
+  clone: string,
+  branch: string,
+  path: string,
+  verdict: HolderVerdict,
+): { head: string; rescue: RescueBranch | null } {
+  if (verdict.idle) return { head: verdict.head, rescue: null };
+  const waiver = waived(port.holders, verdict);
+  if (waiver === null) {
+    if (verdict.timedOut)
+      throw new OrcaError(
+        `${branch} is checked out at ${path}, which Orca${port.where} does not list, and the check of whether it is idle ran out of time: ${verdict.reasons.join("; ")}`,
+      );
+    throw new BusyHolderError(branch, path, verdict.reasons, port.where);
+  }
+  if (!waiver.rescue) return { head: waiver.head, rescue: null };
+  const rescue = keepOnRescue(port, clone, path, waiver.head);
+  if ("failed" in rescue)
+    throw new BusyHolderError(
+      branch,
+      path,
+      [
+        ...verdict.reasons,
+        `its unpushed commits could not be kept on a rescue branch, so it was left as it is: ${rescue.failed}`,
+      ],
+      port.where,
+    );
+  return { head: waiver.head, rescue };
+}
+
 /**
  * Free `branch` from the checkout at `path`, which Orca does not list:
  * detach it when it is idle, and say where it was left, else throw what
@@ -286,26 +330,7 @@ export function releaseHiddenHolder(
     remote: REMOTE,
     drivers: port.drivers,
   });
-  const waiver = waived(port.holders, verdict);
-  if (!verdict.idle && waiver === null) {
-    if (verdict.timedOut)
-      throw new OrcaError(
-        `${branch} is checked out at ${path}, which Orca${port.where} does not list, and the check of whether it is idle ran out of time: ${verdict.reasons.join("; ")}`,
-      );
-    throw new BusyHolderError(branch, path, verdict.reasons, port.where);
-  }
-  const head = verdict.idle ? verdict.head : (waiver?.head as string);
-  const rescue = waiver?.rescue ? keepOnRescue(port, clone, path, head) : null;
-  if (rescue !== null && "failed" in rescue)
-    throw new BusyHolderError(
-      branch,
-      path,
-      [
-        ...(verdict.idle ? [] : verdict.reasons),
-        `its unpushed commits could not be kept on a rescue branch, so it was left as it is: ${rescue.failed}`,
-      ],
-      port.where,
-    );
+  const { head, rescue } = detachable(port, clone, branch, path, verdict);
   detachAt(port, branch, path, head);
   const left: DetachedHolder = {
     path,
@@ -322,7 +347,7 @@ export function releaseHiddenHolder(
       `detached the checkout at ${path}, but ${branch} is still checked out at ${still}`,
     );
   port.host.log(
-    `↺ detached the ${verdict.idle ? "idle " : ""}checkout at ${path} from ${branch} (at ${head.slice(0, 12)})${rescue === null ? "" : `, its unpushed commits kept on ${rescue.branch} in ${rescue.clone}`}`,
+    `↺ detached the ${verdict.idle ? "idle " : ""}checkout at ${path} from ${branch} (at ${head.slice(0, 12)})${rescueText(rescue)}`,
   );
   return left;
 }

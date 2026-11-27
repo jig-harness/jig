@@ -15,7 +15,7 @@ import type { DetachedCheckout } from "../types.ts";
 import type { SessionRuntime } from "./port.ts";
 
 /** The comment: where the checkout was, the commit it was left at, and where its commits are kept. */
-export function rescueCommentBody(
+function rescueCommentBody(
   detached: DetachedCheckout & { rescue: { branch: string; clone: string } },
 ): string {
   return [

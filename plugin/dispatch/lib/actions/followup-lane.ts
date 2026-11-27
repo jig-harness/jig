@@ -102,7 +102,7 @@ export async function joinedWorkspace(
 }
 
 /** Where the open left a checkout it detached, the branch it kept, and the rescue branch its unpushed commits are on where it has one. */
-export function leftText(detached: DetachedCheckout): string {
+function leftText(detached: DetachedCheckout): string {
   const at = `at ${detached.path} detached at ${detached.head.slice(0, 12)}`;
   return detached.rescue === undefined
     ? `left the idle checkout ${at}, its branch ${detached.branch} kept`
