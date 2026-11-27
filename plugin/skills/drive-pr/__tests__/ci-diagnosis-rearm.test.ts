@@ -68,7 +68,7 @@ describe("diagnosedHeadStop after the diagnosis park", () => {
     expect(recorded).toEqual([DIAGNOSIS]);
   });
 
-  it("stops while another park is held but not the one the diagnosis named", async () => {
+  it("admits the repair past an unrelated park, and stops on the diagnosis's own", async () => {
     // Only the diagnosis's own park admits the repair: an unrelated park left
     // after an answer removed the diagnosis's park does not stop it.
     const other = { ...park, key: "another-decision" };
