@@ -211,9 +211,28 @@ test("the doctor check passes with no token and names the tokens a person must i
   expect(check.detail).toContain("4 admission token(s)");
   expect(check.detail).toContain("/locks/scratch/reader-a");
   expect(check.detail).toContain("/locks/scratch/reader-c");
-  expect(check.detail).not.toContain("reader-d");
-  expect(check.detail).toContain("1 more");
+  expect(check.detail).toContain("/locks/scratch/reader-d");
   expect(check.fix).toContain("Inspect each token's holder");
+});
+
+test("a record that names a host but carries no host ID is not proof its process is gone", async () => {
+  const dir = root();
+  const pid = exitedAfter("0");
+  const token = plant(
+    dir,
+    "scratch",
+    `reader-${pid}-nohostid`,
+    encodeIdentity({ ...ownIdentity(), hostId: "", pid }),
+  );
+  expect(await refused(dir)).toContain("admission token");
+  expect(existsSync(token)).toBe(true);
+});
+
+test("a folder that cannot be read fails the listing instead of reading as empty", () => {
+  const dir = root();
+  writeFileSync(join(dir, "scratch"), "not a folder");
+  expect(() => unprovenAdmissionTokens(dir, Date.now())).toThrow();
+  expect(unprovenAdmissionTokens(join(dir, "missing"), Date.now())).toEqual([]);
 });
 
 test("a token gc cannot judge raises one state-storage need while it stands", () => {

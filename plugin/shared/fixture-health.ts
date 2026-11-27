@@ -86,8 +86,6 @@ export function fixtureRegistryCheck(): DoctorCheck {
       };
 }
 
-const NAMED_TOKENS = 3;
-
 /**
  * Admission tokens gc will not remove and cannot show a live process holds:
  * each one blocks the collection it guards until a person inspects it.
@@ -113,18 +111,11 @@ export function admissionTokenCheck(
       status: "pass",
       detail: "no admission token stands that gc cannot judge",
     };
-  const named = tokens
-    .slice(0, NAMED_TOKENS)
-    .map((token) => token.why)
-    .join("; ");
-  const more =
-    tokens.length > NAMED_TOKENS
-      ? `; ${tokens.length - NAMED_TOKENS} more`
-      : "";
+  const named = tokens.map((token) => token.why).join("; ");
   return {
     id,
     status: "fail",
-    detail: `${tokens.length} admission token(s) block collection and gc cannot prove their holder gone: ${named}${more}`,
+    detail: `${tokens.length} admission token(s) block collection and gc cannot prove their holder gone: ${named}`,
     fix: "Inspect each token's holder: a token with no record, one written before records named a host, or one from another host stays until a person has checked that no process of its holder can still run, and then removes the file; leave a token whose holder may still run",
   };
 }

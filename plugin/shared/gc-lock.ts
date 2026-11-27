@@ -115,7 +115,10 @@ function judged(path: string, namedPid: number | null): Judged | null {
   const verdict = isAliveSync(identity);
   const reason = verdict.ok ? verdict.value.reason : verdict.failure.reason;
   const holder: Holder = !verdict.ok ? "unknown" : verdict.value.state;
-  const names = identity.hostId !== "" || identity.host !== "";
+  // Proof needs a positive match: the record's host ID is this host's own.
+  // A record with no host ID, or one this host cannot compare, never proves.
+  const here = ownIdentity().hostId;
+  const names = identity.hostId !== "" && identity.hostId === here;
   return {
     holder,
     gone: holder === "dead",
@@ -260,13 +263,15 @@ export function unprovenAdmissionTokens(
   );
 }
 
-/** The sorted names in a folder; none when it cannot be read. */
+/** The sorted names in a folder; none when it does not exist, a throw when it cannot be read. */
 function listNames(dir: string): string[] {
   try {
     return readdirSync(dir).sort();
   } catch (error) {
-    swallow(error, "a folder that cannot be read holds no admission token");
-    return [];
+    // A folder that does not exist holds no token; one that cannot be read
+    // may hold one, so the failure goes to the caller.
+    if (errnoCode(error) === "ENOENT") return [];
+    throw error;
   }
 }
 
