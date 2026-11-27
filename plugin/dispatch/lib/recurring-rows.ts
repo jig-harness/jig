@@ -83,6 +83,8 @@ interface Launch {
 
 /** A launch-table row, including one whose record cannot establish succession. */
 interface LaunchRow {
+  /** Stable launch-record key, used when timestamps have millisecond ties. */
+  id: string;
   launch: Launch | null;
   createdMs: number | null;
 }
@@ -119,16 +121,21 @@ function launchOf(text: string): Launch | null {
 function drivesOfPr(db: Database, repo: string, pr: number): LaunchRow[] {
   const rows = db
     .query(
-      `SELECT record, created_at FROM launches WHERE repo = ? AND pr = ?
-         AND action IN (${quoted(DRIVE_STAGES)}) ORDER BY created_at`,
+      `SELECT id, record, created_at FROM launches WHERE repo = ? AND pr = ?
+         AND action IN (${quoted(DRIVE_STAGES)}) ORDER BY created_at, id`,
     )
-    .all(repo, pr) as Array<{ record: string; created_at: string }>;
+    .all(repo, pr) as Array<{ id: string; record: string; created_at: string }>;
   return rows
     .map((r) => ({
+      id: r.id,
       launch: launchOf(r.record),
       createdMs: parseMs(r.created_at),
     }))
-    .sort((a, b) => (a.createdMs ?? Infinity) - (b.createdMs ?? Infinity));
+    .sort(
+      (a, b) =>
+        (a.createdMs ?? Infinity) - (b.createdMs ?? Infinity) ||
+        a.id.localeCompare(b.id),
+    );
 }
 
 const SHORT = 7;

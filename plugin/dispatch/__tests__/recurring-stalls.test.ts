@@ -185,6 +185,21 @@ describe("a drive's stall the re-drive followed", () => {
     expect(stalled(f.root, WEDNESDAY).map((r) => r.rows)).toEqual([3]);
   });
 
+  it("uses the launch id to order launches that share a timestamp", () => {
+    const f = fixture();
+    for (const back of [0, 1, 2]) {
+      const pr = 70 + back;
+      const at = WEDNESDAY - back * DAY - 2 * HOUR;
+      // Insert in the opposite order: timestamp precision alone cannot say
+      // whether the takeover came before the stalled drive.
+      launch(f.root, `z-takeover-${pr}`, pr, at - HOUR);
+      launch(f.root, `a-drive-${pr}`, pr, at - HOUR);
+      ended(f.root, `a-drive-${pr}`, pr, at);
+      launch(f.root, `redrive-${pr}`, pr, at + HOUR / 2, true);
+    }
+    expect(stalled(f.root, WEDNESDAY).map((r) => r.rows)).toEqual([3]);
+  });
+
   it("counts a stall when its launch record has expired", () => {
     const f = fixture();
     for (const back of [0, 1, 2]) {
