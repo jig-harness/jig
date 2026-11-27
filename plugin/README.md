@@ -2476,7 +2476,7 @@ drive:
   max_rounds: 10              # default round budget of a drive-pr run; --max-rounds overrides; default 10
   max_total_rounds: 8         # round ceiling per pull request across re-arms; at most 50; default 8
   max_wall_clock_hours: 12    # hours a pull request may be driven from its first launch; default: no cap
-  pass_deadline_retries: 2    # passes killed at their deadline one drive restarts from, across re-arms; default 2
+  pass_deadline_retries: 2    # passes one drive restarts (deadline or background task), across re-arms; default 2
   ci_repair_rounds: 2         # CI-repair passes per head and failing check on red final CI; 0 stops on red; default 2
   pass_model: sonnet          # model each pass runs on: a model id, a Claude Code alias or a routing tier; default sonnet
 ci:

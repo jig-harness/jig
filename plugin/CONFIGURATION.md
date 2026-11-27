@@ -2671,7 +2671,7 @@ drive:
   max_total_rounds: 8                    # round ceiling per pull request, across re-arms; at most 50
   max_wall_clock_hours: 12               # optional: hours a pull request may be driven from its first launch
   churn_rounds: 4                        # rounds of non-blocking findings on one file before the drive parks; 0 off
-  pass_deadline_retries: 2               # passes killed at their deadline a drive restarts from
+  pass_deadline_retries: 2               # passes a drive restarts (deadline or background task)
   ci_repair_rounds: 2                    # CI-repair passes per head and failing check; 0 stops on red
   pass_model: sonnet                     # a model id, an alias or a routing tier; --pass-model overrides
   escape_baseline_doc: docs/review-loop-baseline.md

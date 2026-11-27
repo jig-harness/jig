@@ -38,8 +38,12 @@ import {
 import { measureStop } from "./stop-measure.ts";
 import { driverRuntime } from "./runtime.ts";
 
-/** The variable that carries a review pass's token to everything it starts. */
-export const PASS_TOKEN_VARIABLE = "DRIVE_PR_PASS_TOKEN";
+/**
+ * The variable that carries a review pass's token to everything it starts.
+ * It stands outside the `DRIVE_PR_` prefix, which a pass strips from the
+ * environment of the tests it runs.
+ */
+export const PASS_TOKEN_VARIABLE = "JIG_DRIVE_PASS_TOKEN";
 
 /** A fresh token for one review pass. */
 export function newPassToken(): string {

@@ -1555,7 +1555,7 @@ The driver sets `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` for spawned passes.
 Claude Code removes background tool parameters and auto-backgrounding under
 this setting; other runtimes follow the foreground rule below. A process a
 pass leaves running when it exits (a shell `&`, a background terminal) is
-found by the `$DRIVE_PR_PASS_TOKEN` it inherits and stopped. When the pass
+found by the `$JIG_DRIVE_PASS_TOKEN` it inherits and stopped. When the pass
 left work in the tree, it is restarted with a notice that starts
 `RESTARTED AFTER A PASS LEFT A BACKGROUND TASK`, within
 `drive.pass_deadline_retries`. If a pass
