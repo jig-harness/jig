@@ -12,6 +12,7 @@ import type { LineLoadGauge } from "./dashboard-contract.ts";
 import { holds, type ReadRecord } from "./launches.ts";
 import type { LoadReading } from "./load-read.ts";
 import { DEFAULT_PICKUP_DEADLINE_MS } from "./section.ts";
+import { arrivalQueue } from "./validation-arrivals.ts";
 import { lockSlots } from "./validation-slots.ts";
 import {
   forecastValidation,
@@ -292,6 +293,54 @@ function arrivingAt(
 }
 
 /**
+ * How many of a pickup's sequential runs the lock has released by the time a
+ * drive launched after it asks for the lock, from the arrival queue itself.
+ * A concurrency that is not whole cannot be simulated; no run is credited.
+ */
+function completedBeforeDrive(
+  state: ValidationLoad & { demand: ValidationDemand },
+  ownRuns: number,
+): number {
+  const { measured, demand } = state;
+  if (!Number.isInteger(measured.concurrency)) return 0;
+  const arrivals = demand.arrivals ?? [];
+  const unestimated = demand.unestimated ?? [];
+  const runsOf = (timed: readonly { runs: number }[]) =>
+    timed.reduce((sum, { runs }) => sum + runs, 0);
+  const arriveMs = measured.kinds.pickup.timeToValidationMs;
+  const releasedByMs = arriveMs + measured.kinds.drive.timeToValidationMs;
+  const ownRunMs = measured.candidateRunMs ?? measured.runMs;
+  let completed = 0;
+  for (let runs = 1; runs <= Math.ceil(ownRuns); runs++) {
+    const { lastStartMs } = arrivalQueue({
+      concurrency: measured.concurrency,
+      runMs: measured.runMs,
+      ...(measured.candidateRunMs === undefined
+        ? {}
+        : { candidateRunMs: measured.candidateRunMs }),
+      atLock: demand.atLock,
+      ...(demand.atLockRunMs === undefined
+        ? {}
+        : { atLockRunMs: demand.atLockRunMs }),
+      arrivals,
+      unknownRuns: Math.max(
+        0,
+        demand.toArrive +
+          state.admittedRuns -
+          runsOf(arrivals) -
+          runsOf(unestimated),
+      ),
+      unestimated,
+      arriveMs,
+      candidateRuns: runs,
+    });
+    if (lastStartMs + ownRunMs > releasedByMs) break;
+    completed = runs;
+  }
+  return Math.min(completed, ownRuns);
+}
+
+/**
  * The demand a drive launched after this pickup meets: everything ahead of
  * the pickup, the runs this tick admitted, and the pickup's runs still on the
  * lock when the drive asks for it.
@@ -303,49 +352,12 @@ function driveReserve(
   // An immediately admitted pickup still occupies its slot when a drive
   // arrives next. Reserve every run this pickup commits, not only runs that
   // wait before their own acquisition.
-  // A reserved drive starts after this pickup has begun. Its measured time
-  // to validation is therefore time in which the pickup's whole service
-  // waves can finish. Keep only the runs that can still occupy the lock
-  // when that downstream drive asks for it.
-  // A wave lasts as long as the longest run in it, so the pickup's own run
-  // time bounds the credit when it exceeds every repository's.
-  // A predecessor in flight can run longer than both: its own run time
-  // lengthens the wave too.
-  const ownWaveMs = Math.max(
-    state.measured.runMs,
-    state.measured.candidateRunMs ?? 0,
-  );
-  const longer = (state.demand.unestimated ?? []).filter(
-    (entry) => entry.runMs > ownWaveMs,
-  );
-  const longestMs = Math.max(ownWaveMs, ...longer.map((entry) => entry.runMs));
-  // Only the slots those longer runs occupy wait out their time; the others
-  // keep turning over at the pickup's own wave.
-  const heldSlots = Math.min(
-    Math.max(0, state.measured.concurrency - 1),
-    longer.reduce((total, entry) => total + entry.runs, 0),
-  );
-  // A pickup's runs are sequential, so however many slots are free it
-  // finishes at most one run per its own run time before the drive arrives.
-  const ownRunMs = state.measured.candidateRunMs ?? state.measured.runMs;
-  const sequentialCap = Math.floor(
-    state.measured.kinds.drive.timeToValidationMs / ownRunMs,
-  );
-  const driveAtMs = state.measured.kinds.drive.timeToValidationMs;
-  const completedBeforeDrive =
-    (state.measured.concurrency - heldSlots) *
-      Math.floor(driveAtMs / ownWaveMs) +
-    heldSlots * Math.floor(driveAtMs / longestMs);
-  // Work already forecast ahead of this pickup spends the early service
-  // first. Only remaining service can complete the pickup before a drive
-  // reaches validation; otherwise the pickup is incorrectly given the same
-  // capacity credit as its predecessors.
-  const predecessorRuns =
-    state.demand.atLock + state.demand.toArrive + state.admittedRuns;
-  const pickupCompletedBeforeDrive = Math.max(
-    0,
-    Math.min(ownRuns, sequentialCap, completedBeforeDrive - predecessorRuns),
-  );
+  // The pickup's runs are served by the same queue every other forecast
+  // reads: predecessors at the lock, estimated and unestimated arrivals and
+  // this tick's admitted runs all occupy slots ahead of it, each for its own
+  // run time and in whole requests. A run counts as finished before the
+  // drive asks for the lock when the simulated queue releases it by then.
+  const pickupCompletedBeforeDrive = completedBeforeDrive(state, ownRuns);
   const stillRunning = Math.max(0, ownRuns - pickupCompletedBeforeDrive);
   // Only work at the lock, and passes in flight with an arrival estimate,
   // may consume service before the drive arrives. Admitted passes still have
