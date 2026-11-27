@@ -40,7 +40,7 @@ import {
   aheadOfBase,
   ancestry,
   localOnlyCommits,
-  processHolder,
+  holderOf,
   requestByNumber,
   requests,
   requestsForCommit,
@@ -502,7 +502,9 @@ async function historyEvidence(
     if (!ahead.ok) return ahead;
     facts.aheadOfBase = ahead.value;
   }
-  facts.held = await processHolder(path);
+  const holders = await holderOf(path);
+  facts.held = holders.held;
+  if (holders.held === null) facts.heldUnknown = holders.unknown;
   const idle = worktreeActivity(path, identity.admin);
   if (!idle.ok) return idle;
   facts.idleMs = idle.value;

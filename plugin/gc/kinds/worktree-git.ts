@@ -3,7 +3,7 @@ import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
-import { readTimeoutEnv, run } from "../../shared/proc.ts";
+import { readTimeoutEnv, run, type RunResult } from "../../shared/proc.ts";
 import { gcGit as git, gitEnvironment } from "../git.ts";
 import type { WorktreeRequest } from "./worktree-evidence.ts";
 import { currentMs } from "../../shared/time.ts";
@@ -410,26 +410,75 @@ export function onlyUnrelatedMountWarnings(
   return true;
 }
 
-export async function processHolder(path: string): Promise<boolean | null> {
+/** What the holder check made of one `lsof` run: a finding, or why it cannot say. */
+export type HolderReading = { held: boolean } | { held: null; unknown: string };
+
+/**
+ * Reads one `lsof +D` run over the worktree. `lsof` exits 1 whenever it
+ * warns about a mount it cannot stat, whether or not it also listed
+ * processes, so the exit status says nothing about holders by itself: a
+ * listed process is a holder, and an empty listing is "not held" only when
+ * every complaint on standard error is about a mount unrelated to the
+ * worktree. A run that was killed or cut off, a complaint that could hide a
+ * holder, or an exit status that is no listing at all leaves the reading
+ * unknown, with what made it so.
+ */
+export function holderReading(
+  result: Pick<
+    RunResult,
+    "code" | "signal" | "timedOut" | "bufferExceeded" | "stdout" | "stderr"
+  >,
+  resolve: () => string | null,
+  path: string,
+): HolderReading {
+  const unknown = (why: string): HolderReading => ({
+    held: null,
+    unknown: why,
+  });
+  // A killed or cut-off run may have stopped before it read any process.
+  if (result.timedOut) return unknown("lsof ran past its deadline");
+  if (result.signal !== undefined)
+    return unknown(`lsof was killed by ${result.signal}`);
+  if (result.bufferExceeded) return unknown("lsof's output was cut off");
+  // A listing from a run that finished: a process is in the worktree,
+  // whatever lsof also complained of or exited with.
+  if (result.stdout.trim()) return { held: true };
+  if (result.stderr.trim()) {
+    const resolved = resolve();
+    if (resolved === null)
+      return unknown("the worktree path could not be resolved");
+    if (!onlyUnrelatedMountWarnings(result.stderr, [path, resolved]))
+      return unknown(
+        "lsof's standard error holds more than warnings about unrelated mounts (an error, or a warning about the worktree's own mount, a mount inside it, or a mount named with escapes)",
+      );
+  }
+  if (result.code === 1) return { held: false };
+  return unknown(
+    result.code === 0
+      ? "lsof exited 0 without listing a process"
+      : `lsof exited ${result.code} without a listing`,
+  );
+}
+
+export async function holderOf(path: string): Promise<HolderReading> {
   const result = await run(["lsof", "-nP", "-F", "pfn", "+D", path], {
     timeoutSec: 30,
     env: gitEnvironment(),
   });
-  // A killed or cut-off run may have stopped before it read any process.
-  if (result.signal !== undefined || result.bufferExceeded) return null;
-  if (result.stderr.trim()) {
-    const resolved = attempt("unreadable", "Cannot resolve the worktree", () =>
-      realpathSync.native(path),
-    );
-    if (
-      !resolved.ok ||
-      !onlyUnrelatedMountWarnings(result.stderr, [path, resolved.value])
-    )
-      return null;
-  }
-  if (result.code === 0 && result.stdout.trim()) return true;
-  return result.code === 1 && !result.stdout.trim() ? false : null;
+  return holderReading(
+    result,
+    () => {
+      const resolved = attempt(
+        "unreadable",
+        "Cannot resolve the worktree",
+        () => realpathSync.native(path),
+      );
+      return resolved.ok ? resolved.value : null;
+    },
+    path,
+  );
 }
+
 /**
  * How long ago anything in the worktree, or its `HEAD` log, last changed.
  * The walk is bounded by `deadline`, checked per entry, and fails
