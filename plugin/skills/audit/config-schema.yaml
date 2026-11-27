@@ -138,6 +138,8 @@ null_refused:
   - file_issue.sweep.move
   - routing.model_tiers
   - routing.stages
+  - reflection.classes
+  - reflection.classes_from
 
 # Sections a skill refuses outright, with what to do instead.
 refused:
@@ -1471,6 +1473,21 @@ fields:
     type: path
     read_by: [reflect, resolve-review-comments]
     since: 0.28.0
+  reflection.classes:
+    type: list
+    items:
+      fields:
+        slug: { type: string, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+        shape: { type: string, pattern: '^[^\r\n\u2028\u2029]*$' }
+        source: string
+      optional: [source]
+    read_by: [reflect]
+    since: next
+  reflection.classes_from:
+    type: path
+    pattern: '^(?!\s*[A-Za-z][A-Za-z0-9+.-]*://)(?!\s*[\\/]{2})[^\u0000]*$'
+    read_by: [reflect]
+    since: next
   reflection.escalate_after:
     type: integer
     min: 1
