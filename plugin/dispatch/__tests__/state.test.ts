@@ -13,10 +13,12 @@ import { hostname } from "node:os";
 import { resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { processTable } from "../../shared/process-table.ts";
+import { PICKUP_SUCCESSORS } from "../lib/launch-conditional-result.ts";
 import { readRecord } from "../lib/launches.ts";
+import { PICKUP_SUCCESSOR_SCHEMA } from "../lib/pickup-successor-schema.ts";
 import { bootId } from "../../shared/liveness.ts";
 import { readRows } from "../lib/log.ts";
-import { SCHEMA_VERSION, statePath } from "../lib/state.ts";
+import { MIGRATIONS, SCHEMA_VERSION, statePath } from "../lib/state.ts";
 import { SLUG, type World, world } from "./fixtures.ts";
 import {
   claimed,
@@ -65,6 +67,17 @@ describe("the state database", () => {
     expect(db.query("PRAGMA journal_mode").get()).toEqual({
       journal_mode: "wal",
     });
+    const plan = db
+      .query<{ detail: string }, Record<string, string | number>>(
+        `EXPLAIN QUERY PLAN ${PICKUP_SUCCESSORS}`,
+      )
+      .all({ $repo: SLUG, $item: "#1", $at: "", $ordinal: 0 })
+      .map(({ detail }) => detail)
+      .join("\n");
+    expect(plan).toContain("USING INDEX launches_pickup_successors");
+    expect(plan).toContain("SEARCH member USING");
+    expect(plan).toContain("USING INDEX launches_unreadable_pickups");
+    expect(plan).not.toMatch(/SCAN (launches|member)/);
     const tables = (
       db
         .query("SELECT name FROM sqlite_master WHERE type = 'table'")
@@ -82,6 +95,39 @@ describe("the state database", () => {
         "log",
       ]),
     );
+  });
+
+  it("backfills readable batch members from an older database with damaged pickup records", () => {
+    const db = new Database(":memory:");
+    cleanups.push(() => db.close());
+    const upgrade = MIGRATIONS.findIndex(
+      ({ sql }) => sql === PICKUP_SUCCESSOR_SCHEMA,
+    );
+    expect(upgrade).toBeGreaterThan(0);
+    for (const migration of MIGRATIONS.slice(0, upgrade))
+      db.exec(migration.sql);
+    const insert = db.query(
+      "INSERT INTO launches (id, repo, action, item, created_at, record) VALUES (?, ?, 'pickup', '#1', ?, ?)",
+    );
+    insert.run("damaged", SLUG, "2026-11-01", "{");
+    insert.run(
+      "batch",
+      SLUG,
+      "2026-11-01",
+      JSON.stringify({ batchItems: ["damaged", { key: "#2" }] }),
+    );
+
+    db.exec(PICKUP_SUCCESSOR_SCHEMA);
+    expect(
+      db.query("SELECT item, launch FROM pickup_batch_members").all(),
+    ).toEqual([{ item: "#2", launch: "batch" }]);
+    const candidates = db.query(PICKUP_SUCCESSORS).all({
+      $repo: SLUG,
+      $item: "#9",
+      $at: "2026-10-31",
+      $ordinal: 0,
+    });
+    expect(candidates).toEqual([expect.objectContaining({ id: "damaged" })]);
   });
 
   it("is refused, with its version named, when a newer plugin wrote it", async () => {

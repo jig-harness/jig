@@ -69,6 +69,24 @@ function stillOwns(
   );
 }
 
+/** Indexed later pickups, including unreadable records that may have named the item. */
+export const PICKUP_SUCCESSORS = `
+  SELECT * FROM launches
+  WHERE repo = $repo AND action = 'pickup' AND item = $item
+    AND created_at >= $at AND (created_at > $at OR rowid > $ordinal)
+  UNION ALL
+  SELECT launches.* FROM pickup_batch_members AS member
+  CROSS JOIN launches ON launches.id = member.launch
+  WHERE member.repo = $repo AND member.item = $item AND member.created_at >= $at
+    AND (member.created_at > $at OR launches.rowid > $ordinal)
+    AND launches.item IS NOT $item
+  UNION ALL
+  SELECT * FROM launches
+  WHERE repo = $repo AND action = 'pickup' AND NOT json_valid(record)
+    AND item IS NOT $item
+    AND created_at >= $at AND (created_at > $at OR rowid > $ordinal)
+`;
+
 /** Why a later pickup of `item`, batch members included, supersedes `record`, or `null` when none does. */
 function supersession(
   db: ReturnType<typeof stateDb>,
@@ -77,24 +95,12 @@ function supersession(
   own: { id: string; ordinal: number },
   item: string,
 ): string | null {
-  const later = db
-    .query(
-      `SELECT * FROM launches
-       WHERE repo = ? AND action = 'pickup'
-       AND (created_at > ? OR (created_at = ? AND rowid > ?))
-       AND (item = ? OR EXISTS (
-         SELECT 1 FROM json_each(launches.record, '$.batchItems') AS member
-           WHERE json_extract(member.value, '$.key') = ?
-       ))`,
-    )
-    .iterate(
-      record.repo,
-      record.createdAt,
-      record.createdAt,
-      own.ordinal,
-      item,
-      item,
-    ) as IterableIterator<LaunchRow>;
+  const later = db.query(PICKUP_SUCCESSORS).iterate({
+    $repo: record.repo,
+    $at: record.createdAt,
+    $ordinal: own.ordinal,
+    $item: item,
+  }) as IterableIterator<LaunchRow>;
   for (const row of later) {
     const successor = recordOf(row, root, new Map(), db);
     if (successor === null)
