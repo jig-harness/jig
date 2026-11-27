@@ -272,6 +272,8 @@ export async function orcaLiveness(
   if (result === null) return unread(`could not be read ${orcaFailure(done)}`);
   if (result.truncated !== false || !Array.isArray(result.worktrees))
     return unread("answered an incomplete list");
+  if (terminals && !coversEveryHost(result))
+    return unread("does not cover every host");
   const own = canonicalWorktree(path);
   // Every row for the path counts: a second row must not hide an agent the first omits.
   const rows = result.worktrees.filter(
@@ -294,6 +296,16 @@ export async function orcaLiveness(
       };
   }
   return terminals ? terminalLiveness(row, unread) : null;
+}
+/** Whether `hostScope` names its hosts and omits none. */
+function coversEveryHost(result: Record<string, unknown>): boolean {
+  const scope = result.hostScope;
+  return (
+    isMapping(scope) &&
+    Array.isArray(scope.hostIds) &&
+    Array.isArray(scope.omittedHostIds) &&
+    scope.omittedHostIds.length === 0
+  );
 }
 /** What the row's terminal counts say: live, unreadable, or null when it shows none. */
 function terminalLiveness(

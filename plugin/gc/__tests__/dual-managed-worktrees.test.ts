@@ -26,6 +26,8 @@ interface Scenario {
         liveTerminalCount: unknown;
         unverifiableTerminalCount: unknown;
       };
+  /** The listing's host coverage, when it is not whole. */
+  hostScope?: unknown;
   /** The row Orca reports once the proof is done, before collection starts. */
   later?: Record<string, unknown>;
   /** Work the checkout holds that the runtimes' evidence does not cover. */
@@ -36,6 +38,8 @@ interface Scenario {
     collected: boolean;
     /** The outcome collection answers, when it is reached. */
     outcome?: string;
+    /** What the refusal says, when collection is reached and refused. */
+    collectedReason?: string;
   };
 }
 
@@ -99,6 +103,26 @@ const SCENARIOS: Scenario[] = [
     }),
   ),
   {
+    name: "a listing that omits a host keeps it as unverified",
+    registry: quiet,
+    hostScope: { hostIds: ["local"], omittedHostIds: ["remote"] },
+    expect: {
+      state: "unverified",
+      reason: "does not cover every host",
+      collected: false,
+    },
+  },
+  {
+    name: "a listing without host coverage keeps it as unverified",
+    registry: quiet,
+    hostScope: null,
+    expect: {
+      state: "unverified",
+      reason: "does not cover every host",
+      collected: false,
+    },
+  },
+  {
     name: "a terminal opened after the proof keeps it at collection",
     registry: quiet,
     later: { liveTerminalCount: 1 },
@@ -106,6 +130,7 @@ const SCENARIOS: Scenario[] = [
       state: "dead",
       collected: false,
       outcome: "failed",
+      collectedReason: "Orca's registry reports 1 live terminal(s)",
     },
   },
   {
@@ -116,6 +141,7 @@ const SCENARIOS: Scenario[] = [
       state: "dead",
       collected: false,
       outcome: "failed",
+      collectedReason: "Orca's registry reports an agent working",
     },
   },
   {
@@ -183,7 +209,7 @@ function program(root: string, scenario: Scenario): string {
     }
     // Orca lists the worktree; its registry answers as the scenario says.
     const list = { ok: true, result: { truncated: false, worktrees: [{ id: "external", path: tree }] } };
-    const ps = scenario.registry === "unreadable" ? null : { ok: true, result: { truncated: false, worktrees: [{ path: tree, ...scenario.registry }] } };
+    const ps = scenario.registry === "unreadable" ? null : { ok: true, result: { truncated: false, hostScope: "hostScope" in scenario ? scenario.hostScope : { hostIds: ["local"], omittedHostIds: [] }, worktrees: [{ path: tree, ...scenario.registry }] } };
     writeFileSync(join(root, "list.json"), JSON.stringify(list));
     writeFileSync(join(root, "ps.json"), JSON.stringify(ps));
     const orca = join(f.bin, "orca");
@@ -197,7 +223,7 @@ function program(root: string, scenario: Scenario): string {
     if (resource.details.runtime !== "process" || resource.details.dualManaged !== true) throw Error("not dual managed: " + JSON.stringify(resource));
     const proof = await kind.exclusive(async () => {
       const proof = await kind.prove(resource);
-      if (scenario.later) writeFileSync(join(root, "ps.json"), JSON.stringify({ ok: true, result: { truncated: false, worktrees: [{ path: tree, ...scenario.registry, ...scenario.later }] } }));
+      if (scenario.later) writeFileSync(join(root, "ps.json"), JSON.stringify({ ok: true, result: { truncated: false, hostScope: "hostScope" in scenario ? scenario.hostScope : { hostIds: ["local"], omittedHostIds: [] }, worktrees: [{ path: tree, ...scenario.registry, ...scenario.later }] } }));
       const collected = proof.state === "dead" ? await kind.collect(resource) : null;
       return { proof, collected };
     });
@@ -258,6 +284,12 @@ for (const scenario of SCENARIOS)
       expect(got.outcome === "collected", label).toBe(
         scenario.expect.collected,
       );
+      if (scenario.expect.outcome !== undefined)
+        expect(got.outcome, label).toBe(scenario.expect.outcome);
+      if (scenario.expect.collectedReason !== undefined)
+        expect(got.collectedReason, label).toContain(
+          scenario.expect.collectedReason,
+        );
       expect(got.exists, label).toBe(!scenario.expect.collected);
     },
     60_000,
