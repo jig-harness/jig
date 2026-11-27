@@ -36,7 +36,7 @@ home and its own way to read a weekly schedule:
   plans `serve[].chat.slack`, the chat user a host maps to a person's forge
   login, and the [priorities design](../../design/priorities-and-overview.md)
   planned an individual `priorities` record under the same entry.
-- The individual routine (#1403) plans a host-local file with `focus`,
+- The individual routine ([#1403](https://github.com/jig-harness/jig/issues/1403)) plans a host-local file with `focus`,
   `loose` and `away` modes and a timed override.
 - The chat design plans host-wide `chat.timezone`, `chat.quiet`,
   `chat.direct` and `chat.digest_at`, with `chat.quiet` written as a bare
@@ -46,8 +46,8 @@ home and its own way to read a weekly schedule:
   `<days> [HH:MM-HH:MM]`, read in the machine's local time zone through
   Temporal ([ADR-0018](ADR-0018-time-is-temporal.md)).
 
-Left alone, the routine, the Slack channel (#1105), the digest (#1106) and
-the declared priorities (#1177) would each add a home, a parser and a
+Left alone, the routine, the Slack channel ([#1105](https://github.com/jig-harness/jig/issues/1105)), the digest
+([#1106](https://github.com/jig-harness/jig/issues/1106)) and the declared priorities ([#1177](https://github.com/jig-harness/jig/issues/1177)) would each add a home, a parser and a
 precedence rule, and the four would disagree about the same person's
 evening.
 
@@ -77,17 +77,20 @@ The forces, as the code and the designs stood on 2026-11-27 (the evidence date):
 ### 1. A person's profile is host-local, beside the machine file (ruling 1A)
 
 **`serve[]` stays host authorization and identity.** Its keys stay `name`,
-`forge` and `tracker`, with `chat.slack` added when the chat bridge ships,
-as the host's login-write authorization boundary ADR-0022 describes. No
+`forge` and `tracker`, with `chat.slack` added when the chat design's
+mapping from forge login to chat user ships, as the host's login-write
+authorization boundary ADR-0022 describes. No
 preference moves into it. A machine that does not dispatch will never
-create `dispatch.yaml` for a preference, so the file keeps its meaning as
-the opt-in for `jig install` and `jig install hub`.
+create `dispatch.yaml` for a preference, so the file keeps its meaning:
+the switch `jig install` reads to include the dispatcher, and the mark
+`jig install hub` reads to refuse the dispatcher's user.
 
 **Preferences do not live in the user layer.** `~/.jig/jig.yaml` stays
 repository-layered configuration.
 
 **One shared `PersonProfile` schema will hold a person's host-local
-preferences**, the [person profile](../../GLOSSARY.md): the time zone, the routine and its timed override (#1403),
+preferences**, the [person profile](../../GLOSSARY.md): the time zone, the routine and its timed override
+([#1403](https://github.com/jig-harness/jig/issues/1403)),
 and personal chat delivery (`direct`, quiet hours). A field is added to the
 schema only in the change that ships the feature that reads it.
 
@@ -109,7 +112,7 @@ allocation or breaks the machine file.
 **One shared reader will read every person profile, failing closed:** it
 checks the path with `lstat`, so a dangling symbolic link fails rather than
 reading as absent; it refuses unknown keys; and it refuses a path Git tracks
-inside a working tree, so a profile is never committed.
+inside a working tree, so a committed profile is never read.
 
 ### 2. One schedule and time-zone primitive (ruling 2A-i)
 
@@ -144,9 +147,10 @@ until off-hours is validated or a host that runs in UTC needs it.
 **Personal quiet hours follow the routine.** A person's chat mentions and
 direct messages are held during the routine's modes whose interrupt policy
 is `digest` or `none`, or, with no routine, during the profile's explicit
-`quiet` window list. The host-level `chat.timezone` and `chat.quiet` remain
-for the team's shared channels (the digest's date key among them) and for
-people with no profile.
+`quiet` window list. The host-level `chat.timezone` and `chat.quiet` remain:
+`chat.timezone` keeps the team's shared channels' clock (the digest's date
+key among them), and both are the defaults for a person with no profile or
+whose profile leaves the field unset.
 
 ### 3. What stays out (ruling Q3)
 
@@ -190,7 +194,8 @@ people with no profile.
 
 ### Benefits
 
-- #1403, #1105, #1106 and #1177 start from one contract: one home, one
+- The routine, the Slack channel, the digest and the declared priorities
+  start from one contract: one home, one
   reader, one schedule grammar, one precedence rule.
 - The machine file stays the dispatch switch and a short authorization
   list.
@@ -200,7 +205,7 @@ people with no profile.
 
 ### Costs
 
-- `chat.quiet` changes grammar before the chat bridge ships it, so the chat
+- `chat.quiet` changes grammar before the Slack channel ships it, so the chat
   design changes now.
 - A multi-person host keeps a profile file per person and names each path.
 - The off-hours parser will be refactored into the shared primitive, and its
@@ -215,8 +220,9 @@ This record changes documents only: the
 individual record in its sibling file, and the
 [chat design](../../design/chat.md) resolves a person's time zone, quiet
 hours and direct messages from the person profile. `schedule.ts`, the
-person-profile reader and `serve[].profile` will be built by #1403 and the
-issues that follow it; the Slack channel and the digest by #1105 and #1106.
+person-profile reader and `serve[].profile` will be built by
+[#1403](https://github.com/jig-harness/jig/issues/1403) and the issues that follow it; the Slack channel and the
+digest by [#1105](https://github.com/jig-harness/jig/issues/1105) and [#1106](https://github.com/jig-harness/jig/issues/1106).
 
 ## Reversal conditions
 

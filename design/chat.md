@@ -221,14 +221,16 @@ owner starts new threads.
   `$JIG_HOME/person.yaml` on a machine one person uses, or the file
   `serve[].profile` names on a host serving several. The host-level
   `chat.timezone`, `chat.quiet` and `chat.direct` are the defaults for a
-  person with no profile, or whose profile leaves a field out, and
-  `chat.timezone` and `chat.quiet` alone govern the shared channels.
+  person with no profile, or whose profile leaves the field unset, and
+  `chat.timezone` alone keeps the shared channels' clock (the digest's
+  date).
 - **Quiet hours.** Quiet hours hold mentions and direct messages, never
   posts. A notice posted in a person's quiet hours does not mention them,
   and the tick replies once with the held mention at the first tick after
   their quiet hours end, if its cause still stands; a cause sent once for
   the life of its key keeps its mention that way. A person's quiet hours
-  are the modes of their routine (#1403) whose interrupt policy is
+  are the modes of their routine
+  ([#1403](https://github.com/jig-harness/jig/issues/1403)) whose interrupt policy is
   `digest` or `none`; with no routine, the `quiet` window list of their
   profile; with neither, the host's `chat.quiet`. Every quiet-hours
   setting is a list of weekly windows in the shared schedule grammar
@@ -489,9 +491,10 @@ configuration names and only for a repository it routes to that channel.
 
 ### Configuration
 
-The values are the team's: the workspace, the channels, the people. They
-arrive in the machine file on a host and in the hub's settings on a hub,
-never in Jig.
+The values are the team's: the workspace, the channels, the people's
+identities. They arrive in the machine file on a host and in the hub's
+settings on a hub, never in Jig. A person's own settings arrive in their
+person profile (below).
 
 ```yaml
 chat:
@@ -503,9 +506,9 @@ chat:
     repositories:
       example-org/web: C0234567890
     host_channel: C0345678901 # host faults and the digest
-  timezone: Europe/Berlin # shared channels, the digest's date, people with no profile
-  direct: true # the default for a person whose profile does not say
-  quiet: ["Mon-Fri 20:00-08:00", "Sat-Sun"] # shared channels; people with no profile
+  timezone: Europe/Berlin # the digest's date; the default for a person
+  direct: true # the default for a person
+  quiet: ["Mon-Fri 20:00-08:00", "Sat-Sun", "Mon 00:00-08:00"] # the default for a person
   digest_at: "09:00"
   unfurl: false
   bridge: true # run `jig chat serve` on this host
@@ -526,11 +529,13 @@ On a machine one person uses, the profile is `$JIG_HOME/person.yaml`:
 timezone: Europe/Berlin # IANA only; a fixed offset is refused
 chat:
   direct: true
-  quiet: ["Mon-Fri 19:00-08:00", "Sat-Sun"] # used when no routine is set
+  quiet: ["Mon-Fri 19:00-08:00", "Sat-Sun", "Mon 00:00-08:00"] # used when no routine is set
 ```
 
-Its fields arrive with the features that read them, through the one
-reader that refuses unknown keys, a dangling link and a file Git tracks.
+Its fields arrive with the features that read them. One reader reads it,
+refusing unknown keys, a dangling link and a file Git tracks.
+"The default for a person" in the machine file above means a person with
+no profile, or whose profile leaves that field unset.
 
 A repository says which bridge identities may answer for it, in its own
 configuration, read at the head of its base branch:
