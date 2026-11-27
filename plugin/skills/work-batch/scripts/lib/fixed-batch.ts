@@ -22,6 +22,7 @@ import {
   type EligibilityOptions,
   type Excluded,
   type ExclusionReason,
+  otherExclusion,
   partition,
   sanitizeForDisplay,
 } from "./eligibility.ts";
@@ -37,6 +38,8 @@ export interface LeftOut {
   why: string;
   /** Whether its missing priority, not its size, keeps it out. */
   noPriority: boolean;
+  /** Whether another guard (repository, type, state, ...) also bars it, so it may not be the member worked alone. */
+  blocked: boolean;
 }
 
 /** `dispatch.missing_priority`'s values, as a fixed batch's launch carries them. */
@@ -116,8 +119,17 @@ export function splitFixed(
   const fixed = opts.fixed;
   if (fixed === undefined) return { ...parts, leftOut: [] };
   const unranked = new Set(
-    issues.filter((i) => i.priority === 0).map((i) => i.identifier),
+    issues
+      .filter(
+        (i) => i.priority === 0 && !i.unmappedFacets?.includes("priority"),
+      )
+      .map((i) => i.identifier),
   );
+  const byKey = new Map(issues.map((i) => [i.identifier, i]));
+  const blockedBy = (key: string) => {
+    const issue = byKey.get(key);
+    return issue !== undefined && otherExclusion(issue, policy, opts) !== null;
+  };
   const verdict = verdictSizes(policy);
   const sizeOf = (i: PoolIssue) => batchableSizeOf(i, policy) ?? "";
   const leftOut: LeftOut[] = [];
@@ -131,6 +143,7 @@ export function splitFixed(
       size,
       why: `${size} is the most expensive batchable size, which a fixed batch leaves to its own pull request`,
       noPriority: unranked.has(i.identifier),
+      blocked: false,
     });
     return false;
   });
@@ -143,6 +156,7 @@ export function splitFixed(
       size: e.reason.kind === "not-batchable-size" ? e.reason.size : null,
       why: describeReason(e.reason, policy),
       noPriority: unranked.has(e.identifier),
+      blocked: blockedBy(e.identifier),
     });
     return false;
   });
@@ -155,8 +169,8 @@ export function splitFixed(
 
 /**
  * The member a fixed batch with fewer than two kept works alone: the one
- * kept, else the first left out whose priority is set, else, under `start`,
- * the first left out. `null` for a proposal that is no fixed batch, or a
+ * kept, else the first left out that no other guard bars and whose priority is
+ * set, else, under `start`, the first such left out. `null` for a proposal that is no fixed batch, or a
  * batch that keeps two or more.
  */
 export function aloneChoice(
@@ -167,7 +181,7 @@ export function aloneChoice(
   if (opts.fixed === undefined || kept.length >= 2) return null;
   const missingPriority = opts.missingPriority ?? "hold";
   const startable = leftOut.filter(
-    (l) => missingPriority === "start" || !l.noPriority,
+    (l) => !l.blocked && (missingPriority === "start" || !l.noPriority),
   );
   const claim = kept[0]?.identifier ?? startable[0]?.identifier ?? null;
   return {

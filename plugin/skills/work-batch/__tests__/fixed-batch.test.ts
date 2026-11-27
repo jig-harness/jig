@@ -245,6 +245,38 @@ describe("the member a fixed batch with fewer than two kept works alone", () => 
     });
   });
 
+  it("does not hold a member whose priority is set to a value nothing maps", async () => {
+    const mapped = issue("ENG-2", {
+      priority: 0,
+      unmappedFacets: ["priority"],
+    });
+    const p = await propose([unranked("ENG-1"), mapped], "ENG-1", [
+      "ENG-1",
+      "ENG-2",
+    ]);
+    expect(p.leftOut.map((l) => [l.identifier, l.noPriority])).toEqual([
+      ["ENG-1", true],
+      ["ENG-2", false],
+    ]);
+    expect(p.alone?.claim).toBe("ENG-2");
+  });
+
+  it("does not work alone a member another guard bars behind its size", async () => {
+    const hidden = issue("ENG-2", {
+      hasOpenChildren: true,
+      labels: relabel(base, ["small"], ["large"]),
+    });
+    const p = await propose([medium("ENG-1"), hidden], "ENG-1", [
+      "ENG-1",
+      "ENG-2",
+    ]);
+    expect(p.leftOut.map((l) => [l.identifier, l.blocked])).toEqual([
+      ["ENG-1", false],
+      ["ENG-2", true],
+    ]);
+    expect(p.alone?.claim).toBe("ENG-1");
+  });
+
   it("is no part of a proposal that names no fixed batch", async () => {
     const p = await propose([issue("ENG-1")], "ENG-1");
     expect(p.alone).toBeUndefined();
