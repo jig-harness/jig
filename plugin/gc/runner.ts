@@ -8,6 +8,7 @@ import { log } from "../shared/log.ts";
 import { scheduledUpgradeOf, upgradeLine } from "../runtime/upgrade-record.ts";
 import type {
   CollectionKind,
+  KindFailure,
   Proof,
   Receipt,
   ReceiptLine,
@@ -198,13 +199,27 @@ export function recordFailedRun(
   receipt.failure = { code: failure.code, reason: failure.reason };
   return { receipt, path: writeReceipt(receipt, options.receiptRoot) };
 }
+/**
+ * Fails one kind after every kind ran: its entries are marked `failed`, the
+ * run's failure and exit name it, and the other kinds keep what they did.
+ */
+function failKind(receipt: Receipt, { kind, failure }: KindFailure): void {
+  const reason = `${kind}: ${failure.reason}`;
+  for (const entry of receipt.kinds)
+    if (entry.name === kind) {
+      entry.status = "failed";
+      entry.reason = failure.reason;
+    }
+  receipt.failure = { code: failure.code, reason, kind };
+  receipt.exitStatus = stopped({ ...failure, reason });
+}
 /** A receipt exists before any action; each removal records intent and proof first. */
 export async function runCollection(
   kinds: CollectionKind[],
   options: {
     collect: boolean;
     receiptRoot?: string;
-    verify?: (receipt: Receipt) => Failure | null;
+    verify?: (receipt: Receipt) => KindFailure | null;
   },
 ): Promise<{ receipt: Receipt; path: string }> {
   const receipt = newReceipt(options.collect);
@@ -212,17 +227,15 @@ export async function runCollection(
     name: kind.name,
     ...scope(kind),
     declaration: kind.declaration,
+    status: "run" as const,
   }));
   const journal = openReceipt(receipt, options.receiptRoot);
   for (const kind of kinds) {
     await evaluateKind(kind, receipt, journal.update);
     journal.update();
   }
-  const failure = options.verify?.(receipt);
-  if (failure) {
-    receipt.failure = { code: failure.code, reason: failure.reason };
-    receipt.exitStatus = stopped(failure);
-  }
+  const verdict = options.verify?.(receipt);
+  if (verdict) failKind(receipt, verdict);
   receipt.completed = true;
   receipt.finishedAt = currentIso();
   journal.update();
@@ -268,7 +281,7 @@ function claimNoteOf(line: ReceiptLine): string {
 export function formatReceipt(receipt: Receipt): string {
   const declarations = receipt.kinds.map(
     (kind) =>
-      `${kind.name} ${kind.repository ?? "machine"}: declaration ${kind.declaration}`,
+      `${kind.name} ${kind.repository ?? "machine"}: declaration ${kind.declaration}${kind.status === "failed" ? ` — failed: ${kind.reason ?? "no reason recorded"}` : ""}`,
   );
   const lines = receipt.resources.flatMap((line) => [
     `${line.kind} ${line.repository ?? "machine"} ${line.resource}${runtimeOf(line)}: ${line.outcome} — ${line.reason}${claimNoteOf(line)}${line.bytes === undefined ? "" : ` (${line.bytes} bytes)`}`,
