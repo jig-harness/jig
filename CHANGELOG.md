@@ -404,6 +404,21 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.313.4] - 2026-11-27
+
+### Fixed
+
+- A scratch admission token left by a process that died no longer blocks
+  every scratch collection until a person removes it. When a token's record
+  names this host and the host proves its process gone (no process has that
+  pid with that start time, or the host restarted since), the collector
+  removes the token and logs it; the scratch collector likewise takes over
+  the `writer` file of a collector that was killed. A token that may still be
+  held, or that gc cannot prove gone (no record, a record written before
+  records named a host, another host, an unreadable process table), still
+  blocks and is kept, and `jig doctor gc` and the dispatch dashboard now
+  raise one host need naming it, with the check a person makes.
+
 ## [0.313.3] - 2026-11-27
 
 ### Fixed
@@ -11347,7 +11362,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.313.3...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.313.4...HEAD
+[0.313.4]: https://github.com/jig-harness/jig/compare/v0.313.3...v0.313.4
 [0.313.3]: https://github.com/jig-harness/jig/compare/v0.313.2...v0.313.3
 [0.313.2]: https://github.com/jig-harness/jig/compare/v0.313.1...v0.313.2
 [0.313.1]: https://github.com/jig-harness/jig/compare/v0.313.0...v0.313.1
