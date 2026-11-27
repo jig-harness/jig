@@ -5,12 +5,12 @@
       "**/*.ts",
       "**/*.tsx",
       "**/*.json",
-      "!**/fixtures",
-      "!**/templates",
-      "!seeds",
-      "!docs",
-      "!.context",
-      "!dist",
+      "!**/fixtures/**",
+      "!**/templates/**",
+      "!seeds/**",
+      "!docs/**",
+      "!.context/**",
+      "!dist/**",
       "!renovate.json5"
     ]
   },
