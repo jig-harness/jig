@@ -164,6 +164,21 @@ describe("an environment read whole or not at all", () => {
     }
   });
 
+  test("finds a key spelled with a character reference, and refuses other spellings", () => {
+    const body = "<dict><key>A</key><string>1</string></dict>";
+    const spelled = (key: string) =>
+      `<?xml version="1.0"?>\n<plist version="1.0"><dict>${key}${body}</dict></plist>`;
+    expect(
+      parseLaunchdEnvironment(spelled("<key>Environment&#86;ariables</key>")),
+    ).toEqual(ok({ A: "1" }));
+    for (const key of [
+      "<key><![CDATA[EnvironmentVariables]]></key>",
+      "<key> EnvironmentVariables</key>",
+    ]) {
+      expect(parseLaunchdEnvironment(spelled(key)).ok).toBe(false);
+    }
+  });
+
   test("refuses a name given twice without repeating either value", () => {
     const text = wrap(
       "<dict><key>A</key><string>first-secret</string><key>A</key><string>second-secret</string></dict>",

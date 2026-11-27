@@ -58,6 +58,24 @@ export function parseLaunchdEnvironment(
       "unreadable",
       "it holds an XML comment that is not closed or is nested; remove it, then install again",
     );
+  // The key may be spelled with character references (`Environment&#86;ariables`):
+  // decode each plain key's text before looking for it, and refuse any other
+  // spelling of the name (CDATA, padding) rather than read it as absent.
+  const KEY = "<key>EnvironmentVariables</key>";
+  const keyed = text.replace(/<key>([^<]*)<\/key>/g, (whole, name: string) =>
+    unxml(name) === "EnvironmentVariables" ? KEY : whole,
+  );
+  if (keyed.split("EnvironmentVariables").length !== keyed.split(KEY).length)
+    return failed(
+      "unreadable",
+      "it names EnvironmentVariables in a form this reader does not recognize; write the key as plain text, then install again",
+    );
+  return readEnvironmentBlock(keyed);
+}
+
+function readEnvironmentBlock(
+  text: string,
+): Outcome<Record<string, string>, "unreadable"> {
   const start = /<key>EnvironmentVariables<\/key>\s*<dict\s*(\/?)>/.exec(text);
   if (start === null) {
     return text.includes("<key>EnvironmentVariables</key>")
