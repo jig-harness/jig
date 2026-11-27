@@ -139,6 +139,13 @@ function considerComment<T extends { body?: string | null | undefined }>(
   const candidate = { round, reviewedSha, carries: carriesFindings(body) };
   if (!candidate.carries && considerFindingFree(state, comment, candidate))
     return;
+  if (candidate.carries && cannotSupersede(state, comment, candidate)) {
+    // Work carried by a notice, or by a comment with no stamp, is kept as an
+    // unreadable stopper: it neither replaces stamped review evidence nor
+    // raises the ordering watermark, and only a later stamped round retires it.
+    state.malformed.push({ round, sha: reviewedSha });
+    return;
+  }
   advanceSelection(state, comment, candidate);
 }
 
@@ -159,6 +166,23 @@ function considerFindingFree<T extends { body?: string | null | undefined }>(
   // ordering watermark that would hide a later finding-bearing summary.
   if (state.selected === undefined) select(state, comment, candidate);
   return true;
+}
+
+// Whether a finding-bearing candidate lacks the evidence to supersede the
+// selection: a skip notice never reviews, and an unstamped comment cannot
+// replace a stamped selection.
+function cannotSupersede<T extends { body?: string | null | undefined }>(
+  state: Selection<T>,
+  comment: T,
+  candidate: Candidate,
+): boolean {
+  if (isSkipOnly(comment)) return true;
+  return (
+    candidate.reviewedSha === "" &&
+    state.selected !== undefined &&
+    state.reviewedSha !== null &&
+    state.reviewedSha !== ""
+  );
 }
 
 function advanceSelection<T>(

@@ -77,4 +77,38 @@ describe("selectReviewerSticky auxiliary comments", () => {
     `);
     expect(out).toBe("3");
   });
+  it("keeps an unstamped finding-bearing comment from replacing a stamped summary", async () => {
+    const src = join(SCRIPTS, "lib", "status", "summary-sticky.ts");
+    const proc = Bun.spawn(
+      [
+        "bun",
+        "-e",
+        `const m = await import(${JSON.stringify(src)});
+         const u = { login: 'reviewer[bot]' };
+         try {
+           m.selectReviewerSticky([
+             { id: 1, user: u, body: '<!-- other-review -->\\n<!-- custom+sha: abc1234 -->\\n<!-- ai-review-round: 2 -->\\n- finding' },
+             { id: 2, user: u, body: '<!-- other-review -->\\n<!-- ai-review-round: 3 -->\\n- finding' },
+           ], (body) => body.includes('- finding'));
+           console.log('picked');
+         } catch (e) { console.log(e.name); }`,
+      ],
+      {
+        env: {
+          ...process.env,
+          DRIVE_PR_STICKY_MARKER: "<!-- other-review -->",
+          DRIVE_PR_SHA_MARKER: "custom+sha",
+          DRIVE_PR_REVIEWER_APP: "reviewer",
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const [out, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      proc.exited,
+    ]);
+    expect(code).toBe(0);
+    expect(out.trim()).toBe("SummaryProtocolError");
+  });
 });
