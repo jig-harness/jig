@@ -127,7 +127,28 @@ describe("the state database", () => {
       $at: "2026-10-31",
       $ordinal: 0,
     });
-    expect(candidates).toEqual([expect.objectContaining({ id: "damaged" })]);
+    expect(candidates.map((row) => (row as { id: string }).id).sort()).toEqual([
+      "batch",
+      "damaged",
+    ]);
+  });
+
+  it("lists pickups whose record is valid JSON but not a launch record as successor candidates", () => {
+    const db = new Database(":memory:");
+    cleanups.push(() => db.close());
+    for (const migration of MIGRATIONS) db.exec(migration.sql);
+    const insert = db.query(
+      "INSERT INTO launches (id, repo, action, item, created_at, record) VALUES (?, ?, 'pickup', '#1', ?, ?)",
+    );
+    insert.run("empty", SLUG, "2026-11-01", "{}");
+    insert.run("other-id", SLUG, "2026-11-01", JSON.stringify({ id: "x" }));
+    insert.run("array", SLUG, "2026-11-01", "[]");
+    const ids = db
+      .query(PICKUP_SUCCESSORS)
+      .all({ $repo: SLUG, $item: "#9", $at: "2026-10-31", $ordinal: 0 })
+      .map((row) => (row as { id: string }).id)
+      .sort();
+    expect(ids).toEqual(["array", "empty", "other-id"]);
   });
 
   it("is refused, with its version named, when a newer plugin wrote it", async () => {

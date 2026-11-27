@@ -1,11 +1,22 @@
 /**
  * Index ordinary pickups and materialize batch membership when a launch is written.
- * Unreadable records stay in launches so backfilling the index can proceed.
+ * Records that do not read as launch records stay in launches so backfilling the index can proceed.
  */
+export const UNREADABLE_PICKUP = `action = 'pickup' AND CASE WHEN json_valid(record) THEN
+      json_type(record) IS NOT 'object'
+      OR json_extract(record, '$.id') IS NOT id
+      OR json_type(record, '$.version') IS NOT 'integer'
+      OR json_type(record, '$.token') IS NOT 'text'
+      OR json_type(record, '$.account') IS NOT 'text'
+      OR json_type(record, '$.repo') IS NOT 'text'
+      OR json_type(record, '$.repoPath') IS NOT 'text'
+      OR json_type(record, '$.createdAt') IS NOT 'text'
+    ELSE 1 END`;
+
 export const PICKUP_SUCCESSOR_SCHEMA = `
   CREATE INDEX launches_pickup_successors ON launches (repo, action, item, created_at);
   CREATE INDEX launches_unreadable_pickups ON launches (repo, created_at)
-    WHERE action = 'pickup' AND NOT json_valid(record);
+    WHERE ${UNREADABLE_PICKUP};
   CREATE TABLE pickup_batch_members (
     repo TEXT NOT NULL,
     item TEXT NOT NULL,

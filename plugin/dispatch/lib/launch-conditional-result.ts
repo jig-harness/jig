@@ -11,6 +11,7 @@ import {
   insertPickupHold,
   type PersonPickupHold,
 } from "./person-pickup-holds.ts";
+import { UNREADABLE_PICKUP } from "./pickup-successor-schema.ts";
 import { writeResult } from "./launch-result.ts";
 
 /** Store a pickup's dependency and its result together, preserving an existing hold. */
@@ -69,7 +70,7 @@ function stillOwns(
   );
 }
 
-/** Indexed later pickups, including unreadable records that may have named the item. */
+/** Indexed later pickups, including records that do not read (invalid JSON, not a launch record, or naming another id) and may have named the item. */
 export const PICKUP_SUCCESSORS = `
   SELECT * FROM launches
   WHERE repo = $repo AND action = 'pickup' AND item = $item
@@ -82,7 +83,7 @@ export const PICKUP_SUCCESSORS = `
     AND launches.item IS NOT $item
   UNION ALL
   SELECT * FROM launches
-  WHERE repo = $repo AND action = 'pickup' AND NOT json_valid(record)
+  WHERE repo = $repo AND ${UNREADABLE_PICKUP}
     AND item IS NOT $item
     AND created_at >= $at AND (created_at > $at OR rowid > $ordinal)
 `;

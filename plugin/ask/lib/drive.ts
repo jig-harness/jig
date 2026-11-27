@@ -68,6 +68,9 @@ import {
   type WaitsOn,
 } from "./answer.ts";
 import { type HoldFacts, heldStopWait } from "./hold-wait.ts";
+import { actOfLineNeed } from "../../shared/acts.ts";
+import { busyHolderNeed } from "./line-needs.ts";
+import { personAct } from "./waiting.ts";
 import { lineParkOf, parkedWait } from "./park-wait.ts";
 import {
   parkReading,
@@ -344,6 +347,11 @@ function waitsOnOf(
   base: PrFacts["base"],
   merge: WaitsOn,
 ): WaitsOn {
+  const busy = busyHolderNeed(ctx, r.pull.number);
+  if (busy !== undefined)
+    return personWait(personAct(busy.cause), busy.reason, {
+      act: actOfLineNeed(busy),
+    });
   const placed = placeLedger(ledger, r, base);
   const settled = conflictSettled(placed, ledger, r, ctx.host);
   if (settled !== null) return personWait("re-arm", settled);
