@@ -1,6 +1,6 @@
 /** A local session runtime whose runs are witnessed by process identity. */
-import { statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { readFileSync, statSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 import {
   detachedCarriers,
   holdersIn,
@@ -22,6 +22,7 @@ import {
   processTable,
   type ProcessRow,
 } from "../../../shared/process-table.ts";
+import { CREATE_HOOK_MARK } from "../../../shared/orca-workspace/hooks.ts";
 import { parseGitWorktreeList } from "../../../shared/orca-workspace/git.ts";
 import { run } from "../../../shared/proc.ts";
 import { readLaunches, type ReadRecord } from "../launches.ts";
@@ -110,12 +111,36 @@ function activity(records: ReadRecord[], rows: ProcessRow[] | null) {
   return { agents, known: descendants(rows ?? [], known), uncertain };
 }
 
+/** The worktree's git directory, read from its `.git` file or directory. */
+function gitDirectory(tree: string): string | null {
+  const dot = join(tree, ".git");
+  try {
+    if (statSync(dot).isDirectory()) return dot;
+    const line = readFileSync(dot, "utf8").trim();
+    if (!line.startsWith("gitdir:")) return null;
+    const dir = line.slice("gitdir:".length).trim();
+    return isAbsolute(dir) ? dir : resolve(tree, dir);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The latest moment, in seconds since the epoch, a process the tree's create
- * hook started can have started: the worktree's creation plus the hook's
- * time limit. Work started after it inherited the marker from something else.
+ * hook started can have started. Once the hook has run, its mark's time ends
+ * the window exactly: nothing the hook started began after it finished.
+ * Until then the worktree's creation plus the hook's time limit bounds it.
+ * Work started after it inherited the marker from something else.
  */
 function preparationEndsAt(tree: string): number {
+  const dir = gitDirectory(tree);
+  if (dir !== null) {
+    try {
+      return statSync(join(dir, CREATE_HOOK_MARK)).mtimeMs / 1000 + 2;
+    } catch {
+      // The hook has not left its mark: fall back to its time limit.
+    }
+  }
   const born = attempt(
     "tree-unreadable",
     "the worktree's creation time",
