@@ -644,6 +644,7 @@ function startupOf(
     (found) => {
       phrase = found;
     },
+    ran.head,
   );
   const threshold = record.startupFailureThreshold ?? DEFAULT_STARTUP_THRESHOLD;
   const deaths = recordStartupDeath(

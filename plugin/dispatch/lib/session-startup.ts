@@ -14,8 +14,8 @@
  * a usage notice states (`startupReset`), else for `wall_backoff`. A pickup
  * stopped by a notice is wanted again once a wall keeps it off that account
  * (`pickup-hold.ts`). Every pickup the tick starts is such a headless pass;
- * an interactive pickup an earlier release started runs in its terminal,
- * whose exit the wrapper never sees, so no startup of one is read.
+ * an interactive pickup runs in its terminal, whose exit the wrapper never
+ * sees, so no startup of one is read.
  */
 import { type Dirent, statSync } from "node:fs";
 import { harnessNamed } from "../../shared/agent-harness/index.ts";
@@ -81,21 +81,36 @@ function transcriptFiles(configDir: string, deadline: number): string[] | null {
 }
 
 /**
+ * What a stage printed: the start of its output, where a harness prints its
+ * header (a Codex session's id), and the end of it, where a usage notice
+ * is. Either is bounded, so a long output keeps its header only in `head`.
+ */
+interface StartupOutput {
+  head: string;
+  tail: string;
+}
+
+/**
  * Whether a harness that prints its session id (Codex) left no transcript of
- * the session: none printed, the session never reached its header; one
- * printed, the harness's own lookup (Codex's rollout under its home's day
- * directories) finds none in a complete walk. A link, an unreadable
- * directory or a walk the lookup cut short withholds the retry.
+ * the session. The id is read from the output's head, where the harness
+ * prints it before anything else. An output with nothing in it means the
+ * session never reached its header. An output with text and no id cannot
+ * prove the session never started, so it withholds the retry. With an id,
+ * the harness's own lookup (Codex's rollout under its home's day
+ * directories) must find no rollout in a complete walk. A link, an
+ * unreadable directory or a walk the lookup cut short withholds the retry.
  */
 function printedSessionAbsent(
   record: LaunchRecord,
   started: number,
-  output: string,
+  output: StartupOutput,
 ): boolean {
   const harness = harnessNamed(record.vendor);
   if (harness === null) return false;
-  const session = harness.sessionIdIn(output);
-  if (session === null) return true;
+  const session =
+    harness.sessionIdIn(output.head) ?? harness.sessionIdIn(output.tail);
+  if (session === null)
+    return output.head.trim() === "" && output.tail.trim() === "";
   let complete = true;
   const walk = (dir: string, onEntry: (entry: Dirent) => boolean) => {
     const read = forEachDirEntry(dir, (entry) => {
@@ -137,7 +152,7 @@ export function readsStartup(vendor: string): boolean {
 function sessionAbsent(
   record: LaunchRecord,
   started: number,
-  output: string,
+  output: StartupOutput,
 ): boolean {
   return printsSession(record)
     ? printedSessionAbsent(record, started, output)
@@ -320,6 +335,14 @@ export function quickStartupDeath(
   );
 }
 
+/**
+ * How a quick, unsuccessful exit of a session the wrapper started reads:
+ * a sign-in problem, a usage notice, a session that never started, or
+ * `undefined` for a pass that died. `output` is the end of what the stage
+ * printed; `head` its start, where a harness that prints its session id
+ * puts it (`Ran.head`), the end standing in for it when the stage printed
+ * nothing it kept as a head.
+ */
 export function failedStartup(
   record: LaunchRecord,
   code: number | null,
@@ -327,6 +350,7 @@ export function failedStartup(
   output: string,
   exited: number,
   keepPhrase?: (phrase: SignInPhrase) => void,
+  head?: string,
 ): Exclude<StartupFailure, "breaker"> | undefined {
   if (!quickStartupDeath(record, code, started, exited)) return;
   // The sign-in phrases are Claude Code's; no other harness's are read yet.
@@ -338,7 +362,8 @@ export function failedStartup(
     keepPhrase?.(phrase);
     return "sign-in";
   }
-  if (!sessionAbsent(record, started, output)) return;
+  const printed = { head: head ?? output, tail: output };
+  if (!sessionAbsent(record, started, printed)) return;
   return quotaNotice(output) === null ? "unstarted" : "quota";
 }
 

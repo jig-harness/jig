@@ -257,6 +257,64 @@ describe("which stages recognise a startup", () => {
       ).toBeUndefined();
     });
 
+    it("reads the session id from the head of a long output, so a session that left its rollout still died", () => {
+      const record = codexOf({ action: "followup" });
+      const started = Date.now() - 10_000;
+      rollout(record.configDir, started, `rollout-x-${session}.jsonl`);
+      const head = `session id: ${session}\n${"tool output\n".repeat(400)}`;
+      const tail = "tool output\n".repeat(800).slice(-8192);
+      expect(tail).not.toContain(session);
+      expect(
+        failedStartup(
+          record,
+          1,
+          started,
+          tail,
+          started + 5_000,
+          undefined,
+          head,
+        ),
+      ).toBeUndefined();
+    });
+
+    it("classes a session whose id is only in the head and that left no rollout as unstarted", () => {
+      const record = codexOf({ action: "followup" });
+      const started = Date.now() - 10_000;
+      const head = `session id: ${session}\nERROR: usage limit\n`;
+      const tail = "ERROR: usage limit\n";
+      expect(
+        failedStartup(
+          record,
+          1,
+          started,
+          tail,
+          started + 5_000,
+          undefined,
+          head,
+        ),
+      ).toBe("unstarted");
+    });
+
+    it("withholds the retry of a session that printed text but no session id", () => {
+      const record = codexOf({ action: "followup" });
+      const started = Date.now() - 10_000;
+      const output = "ERROR: usage limit\n";
+      expect(
+        failedStartup(
+          record,
+          1,
+          started,
+          output,
+          started + 5_000,
+          undefined,
+          output,
+        ),
+      ).toBeUndefined();
+      expect(
+        failedStartup(record, 1, started, "\n", started + 5_000, undefined, ""),
+      ).toBe("unstarted");
+    });
+
     it("reads past another session's rollout, and withholds the retry when the walk meets a link", () => {
       const record = codexOf({ action: "followup" });
       const started = Date.now() - 10_000;
