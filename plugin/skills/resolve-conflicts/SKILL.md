@@ -107,6 +107,7 @@ from this side before they are regenerated.
 
 | Script | What it does | Exit codes |
 |--------|--------------|------------|
+| `bun "${CLAUDE_SKILL_DIR}/scripts/start-merge.ts" --base <base> [--remote <remote>] [--pr <number>] [--json]` | Merges `<remote>/<base>` into the checked-out branch, with the earlier base's merge base when the pull request's earlier base was squash- or rebase-merged into `<base>` (Step 1) | 0 merged and committed; 1 a step failed; 2 usage or not in a git work tree; 3 refused, nothing touched; 9 stopped on conflicts, the merge open |
 | `bun "${CLAUDE_SKILL_DIR}/scripts/conflict-map.ts" [--json] [--integration <side>]` | Maps the stopped operation and writes the snapshot. The integration side is `ours` or `theirs`; read-only otherwise | 0 mapped; 2 usage, not in a git work tree, or invalid configuration; 3 nothing in progress, or the stored snapshot is unreadable (it is never replaced) |
 | `bun "${CLAUDE_SKILL_DIR}/scripts/migration-plan.ts"` | Prints the migration sequence, renames and regeneration inputs as JSON from the current map and committed trees | 0 planned; 1 a sequence needs attention; 2 usage or invalid configuration; 3 nothing in progress or no current map |
 | `bun "${CLAUDE_SKILL_DIR}/scripts/record.ts" "<path>" <decision> [--reason "<reason>"] [--command "<command>"] [--dropped "<reason>"]` | Records one path's decision in the snapshot | 0 recorded; 2 usage (unknown path or decision, missing reason, no known regeneration command, or `regenerated` for a path that is not a lockfile or generated file); 3 nothing in progress, or no snapshot for this operation |
@@ -146,13 +147,33 @@ else first, and prints `attention:` lines for entries it could not move
 cleanly: fix those before committing.
 
 To bring a branch up to date with its base (the `conflict-resolve` round of
-[`/jig:drive-pr`](../drive-pr/SKILL.md) is this case), merge the base
-in, with a base section in the markers:
+[`/jig:drive-pr`](../drive-pr/SKILL.md) is this case), fetch the base and
+merge it in with `start-merge.ts`, which writes conflicts with a base
+section in the markers:
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git fetch <remote> <base>
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git -c merge.conflictStyle=zdiff3 merge <remote>/<base>
+bun "${CLAUDE_SKILL_DIR}/scripts/start-merge.ts" --base <base> --remote <remote> [--pr <number>]
 ```
+
+`--pr` defaults to `$DRIVE_PR_TARGET`, then to the checked-out branch's pull
+request. When that pull request was stacked on another branch that has since
+landed on `<base>` by squash or rebase, the forge records the move onto
+`<base>`, and the script takes the point where this branch left the earlier
+branch as the merge base: the earlier branch's changes, on both sides under
+different commits, then cannot conflict, and only this branch's own changes
+can. The prepared merge message names the earlier branch and the pull
+request that landed it, and records the base as a `Merge-base:` line, which
+Step 2's map reads and the merge commit keeps. In every other case it runs
+git's own merge, and says why the earlier base did not apply.
+
+It exits `0` merged and committed (nothing to resolve: go on to validate and
+push), `9` stopped on conflicts with the merge open (go on to Step 2), `3`
+refused before touching anything (an operation already open, staged
+changes, or local changes the merge would overwrite: finish or set those
+aside first), `1` a step failed (its message names which; a merge left open
+after a refused commit is concluded with `git commit` or ended with
+`git merge --abort`). `--json` prints the report on stdout.
 
 Never rebase or force-push a branch that has an open pull request under a
 drive: the drive syncs by merging, and rewriting the branch's history

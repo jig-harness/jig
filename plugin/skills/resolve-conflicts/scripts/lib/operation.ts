@@ -90,11 +90,30 @@ function replayInputs(
   const mergeHead = resolveCommit(root, "MERGE_HEAD");
   if (mergeHead === null)
     return { theirs: incoming, base: parentOf(root, incoming) };
-  const result = gitRaw(root, ["merge-base", head, mergeHead]);
-  return {
-    theirs: mergeHead,
-    base: result.code === 0 ? result.stdout.trim() : null,
-  };
+  return { theirs: mergeHead, base: mergeBaseOf(root, head, mergeHead) };
+}
+
+/**
+ * The merge base of an open merge: the one its prepared message records
+ * (`Merge-base: <commit>`, written by `start-merge.ts` when the branch's
+ * earlier base landed by squash or rebase) while it is an ancestor of HEAD,
+ * else git's own.
+ */
+function mergeBaseOf(
+  root: string,
+  head: string,
+  incoming: string,
+): string | null {
+  const recorded = read(gitPath(root, "MERGE_MSG"))?.match(
+    /^Merge-base: ([0-9a-f]{40}|[0-9a-f]{64})$/m,
+  )?.[1];
+  if (
+    recorded !== undefined &&
+    gitRaw(root, ["merge-base", "--is-ancestor", recorded, head]).code === 0
+  )
+    return recorded;
+  const result = gitRaw(root, ["merge-base", head, incoming]);
+  return result.code === 0 ? result.stdout.trim() : null;
 }
 
 /** The id of the empty tree in this repository's hash format. */
@@ -246,7 +265,6 @@ export function detectOperation(
       throw new NoOperation("MERGE_HEAD does not name a commit.");
     const branch = currentBranch(root);
     const theirsRef = mergedRef(root) ?? refAt(root, incoming);
-    const mergeBase = gitRaw(root, ["merge-base", head, incoming]);
     let integration: SideName = "theirs";
     let why =
       "assumed: merging another branch into the checked-out branch brings in its base; pass --integration ours to override";
@@ -264,7 +282,7 @@ export function detectOperation(
       kind: "merge",
       head,
       incoming,
-      base: mergeBase.code === 0 ? mergeBase.stdout.trim() : null,
+      base: mergeBaseOf(root, head, incoming),
       ours: side(
         root,
         head,
