@@ -69,7 +69,7 @@ function committedSize(root: string, path: string, onDisk: number): number {
     const out = execFileSync("git", ["cat-file", "-s", `HEAD:${path}`], {
       cwd: root,
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
+      stdio: ["ignore", "pipe", "pipe"],
       timeout: 10_000,
     });
     const size = Number(out.trim());
