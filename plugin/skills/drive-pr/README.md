@@ -892,11 +892,15 @@ hand the pull request to a person with a framed decision
 - **The divergence stop.** At each round's gate the drive compares the open
   review threads and summary findings with the previous gate's: the ones not
   open before are the round's new findings, the ones no longer open its fixed
-  findings. A round diverges when it raised at least one finding and no fewer
-  than it fixed. After two diverging rounds in a row with a finding still
-  open, the drive parks `divergence-stop`, listing the counts of its last
-  rounds. A round whose findings did not move counts neither way (the stall
-  stop judges no progress), and rounds whose findings decrease never park.
+  findings. Summary findings the reviewer renders in its not-blocking
+  backlog section (*Beyond this PR*) are left out of both sides and of the
+  open count, even where convergence still asks for an answer to them. A
+  round diverges when it raised more findings than it fixed; a round that
+  raised as many as it fixed does not. After two diverging rounds in a row
+  with a finding still open, the drive parks `divergence-stop`, listing the
+  counts of its last rounds. A round whose findings did not move is recorded
+  as no movement and ends a streak of diverging rounds (the stall stop judges
+  no progress), and rounds whose findings hold level or decrease never park.
   The counts of the last four rounds are kept in the drive state.
 
 Only you raise a spent ceiling. Answer the `round-ceiling` decision with

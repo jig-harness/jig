@@ -63,9 +63,20 @@ Scratch creators use `shared/gc-lock.ts` to hold shared admission while
 creating a scope and writing its owner record. Collectors take exclusive
 admission across the final proof and removal. Each admission token holds its
 creator's [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
-(`shared/liveness.ts`). An abandoned admission token blocks collection and
-needs inspection; it is never stolen on age, and the refusal names its
-creator and why that creator counts as gone.
+(`shared/liveness.ts`). A token is never stolen on age. A collector removes
+a creator's token, and says so in its log, when the token's own record names
+this host and the host proves its process gone: no process has that pid with
+that start time, or the host restarted since. The scratch kind's collector
+likewise takes over a `writer` file left by a collector that was killed, on
+the same proof; every other kind refuses it. The next collection proves every
+scope again before it removes anything. A token that may still be held always blocks
+collection: one that is alive, one with no record, one written before records
+named a host, one from another host, and one whose host's process table
+cannot be read. The refusal names the creator and why it counts as gone.
+Such a token that is known gone, or that has stood for thirty minutes with its
+holder unknown, is reported by `jig doctor gc` (the `gc:admission-tokens` check) and raises one
+host need in the dispatch dashboard naming the token; a person inspects its
+holder and removes the file only once no process of that holder can still run.
 The process worktree opener uses the same protocol. Other worktree openers
 remain report-only, except those a workspace runtime manages and those an
 agent tool makes.

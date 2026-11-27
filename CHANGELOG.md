@@ -404,6 +404,36 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.313.4] - 2026-11-27
+
+### Fixed
+
+- A scratch admission token left by a process that died no longer blocks
+  every scratch collection until a person removes it. When a token's record
+  names this host and the host proves its process gone (no process has that
+  pid with that start time, or the host restarted since), the collector
+  removes the token and logs it; the scratch collector likewise takes over
+  the `writer` file of a collector that was killed. A token that may still be
+  held, or that gc cannot prove gone (no record, a record written before
+  records named a host, another host, an unreadable process table), still
+  blocks and is kept, and `jig doctor gc` and the dispatch dashboard now
+  raise one host need naming it, with the check a person makes.
+
+## [0.313.3] - 2026-11-27
+
+### Fixed
+
+- drive-pr's divergence stop parked drives that were converging. A round now
+  diverges only when it raises more review findings than it fixes, so a round
+  that raises as many as it fixes no longer counts. Backlog findings the
+  reviewer renders in its not-blocking *Beyond this PR* section are no longer
+  counted, even when that section abbreviates them. Convergence still asks for
+  an answer to such an entry. The status JSON lists these entries under
+  `work.summaryNotBlockingKeys`. The round ceiling and the two diverging rounds
+  that park are unchanged.
+  A drive that was counting under the earlier rule starts its count again at
+  its next round.
+
 ## [0.313.2] - 2026-11-27
 
 The drive doctor asks its forge client who it is once per run, and the dispatcher's line now shows a caller whose credentials never succeed.
@@ -11332,7 +11362,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.313.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.313.4...HEAD
+[0.313.4]: https://github.com/jig-harness/jig/compare/v0.313.3...v0.313.4
+[0.313.3]: https://github.com/jig-harness/jig/compare/v0.313.2...v0.313.3
 [0.313.2]: https://github.com/jig-harness/jig/compare/v0.313.1...v0.313.2
 [0.313.1]: https://github.com/jig-harness/jig/compare/v0.313.0...v0.313.1
 [0.313.0]: https://github.com/jig-harness/jig/compare/v0.312.3...v0.313.0
