@@ -157,26 +157,69 @@ describe("an environment read whole or not at all", () => {
     expect(parseLaunchdEnvironment(text).ok).toBe(false);
   });
 
-  test("refuses a comment that removal would reassemble or leave open", () => {
-    for (const hidden of ["<!<!---->--", "<!-- open"]) {
+  test("refuses a comment that removal would reassemble, nest, or leave open", () => {
+    for (const hidden of [
+      "<!<!---->--",
+      "<!-- open",
+      "<!-- nested <!-- -->",
+      "<!-- double -- hyphen -->",
+      "<!--->",
+    ]) {
       const text = wrap(`${hidden}<dict><key>A</key><string>1</string></dict>`);
       expect(parseLaunchdEnvironment(text).ok).toBe(false);
     }
   });
 
-  test("finds a key spelled with a character reference, and refuses other spellings", () => {
+  test("finds a key spelled with a character reference or tag whitespace, and refuses other spellings", () => {
     const body = "<dict><key>A</key><string>1</string></dict>";
     const spelled = (key: string) =>
       `<?xml version="1.0"?>\n<plist version="1.0"><dict>${key}${body}</dict></plist>`;
-    expect(
-      parseLaunchdEnvironment(spelled("<key>Environment&#86;ariables</key>")),
-    ).toEqual(ok({ A: "1" }));
+    for (const valid of [
+      "<key>Environment&#86;ariables</key>",
+      "<key >Environment&#86;ariables</key>",
+      "<key\n>Environment&#x56;ariables</key >",
+      '<key xml:space="preserve">EnvironmentVariables</key>',
+    ]) {
+      expect(parseLaunchdEnvironment(spelled(valid))).toEqual(ok({ A: "1" }));
+    }
     for (const key of [
       "<key><![CDATA[EnvironmentVariables]]></key>",
       "<key> EnvironmentVariables</key>",
+      "<key>Environment<!--split-->Variables</key>",
     ]) {
       expect(parseLaunchdEnvironment(spelled(key)).ok).toBe(false);
     }
+  });
+
+  test("allows the word EnvironmentVariables in values and program arguments", () => {
+    const text = `<?xml version="1.0"?>
+<plist version="1.0"><dict>
+  <key>ProgramArguments</key><array><string>--section=EnvironmentVariables</string></array>
+  <key>EnvironmentVariables</key><dict>
+    <key>LABEL</key><string>EnvironmentVariables</string>
+  </dict>
+</dict></plist>`;
+    expect(parseLaunchdEnvironment(text)).toEqual(
+      ok({ LABEL: "EnvironmentVariables" }),
+    );
+    const noEnv = `<?xml version="1.0"?>
+<plist version="1.0"><dict>
+  <key>ProgramArguments</key><array><string>EnvironmentVariables</string></array>
+</dict></plist>`;
+    expect(parseLaunchdEnvironment(noEnv)).toEqual(ok({}));
+  });
+
+  test("refuses a plist with duplicate top-level EnvironmentVariables or a DOCTYPE internal subset", () => {
+    const duplicate = `<?xml version="1.0"?>
+<plist version="1.0"><dict>
+  <key>EnvironmentVariables</key><dict><key>A</key><string>1</string></dict>
+  <key>EnvironmentVariables</key><dict><key>B</key><string>2</string></dict>
+</dict></plist>`;
+    expect(parseLaunchdEnvironment(duplicate).ok).toBe(false);
+    const doctypeSubset = `<?xml version="1.0"?>
+<!DOCTYPE plist [ <!ENTITY ev "EnvironmentVariables"> ]>
+<plist version="1.0"><dict><key>&ev;</key><dict><key>A</key><string>1</string></dict></dict></plist>`;
+    expect(parseLaunchdEnvironment(doctypeSubset).ok).toBe(false);
   });
 
   test("refuses a name given twice without repeating either value", () => {
@@ -250,15 +293,31 @@ describe("--env NAME", () => {
     expect(refused.failure.reason).toContain("Jig writes PATH");
   });
 
-  test("refuses a value with a line break, without repeating it", () => {
-    const refused = capturedEnvironment(
-      ["MULTI"],
-      { MULTI: "line-one\nline-two" },
+  test("refuses a value with a line break or XML 1.0 forbidden control character, without repeating it", () => {
+    for (const bad of ["line-one\nline-two", "ctrl\u0001secret", "bad\uD800"]) {
+      const refused = capturedEnvironment(["MULTI"], { MULTI: bad }, managed);
+      expect(refused.ok).toBe(false);
+      if (refused.ok) return;
+      expect(refused.failure.reason).not.toContain(bad);
+      expect(refused.failure.reason).not.toContain("secret");
+      expect(refused.failure.reason).not.toContain("line-one");
+    }
+  });
+
+  test("keeps __proto__ as an own entry and ignores inherited Object.prototype names", () => {
+    const captured = capturedEnvironment(
+      ["__proto__"],
+      Object.fromEntries([["__proto__", "value"]]),
       managed,
     );
-    expect(refused.ok).toBe(false);
-    if (refused.ok) return;
-    expect(refused.failure.reason).not.toContain("line-one");
+    expect(captured.ok).toBe(true);
+    if (!captured.ok) return;
+    expect(Object.keys(captured.value)).toEqual(["__proto__"]);
+    expect(
+      Object.getOwnPropertyDescriptor(captured.value, "__proto__")?.value,
+    ).toBe("value");
+    const inherited = capturedEnvironment(["toString"], {}, managed);
+    expect(inherited.ok).toBe(false);
   });
 });
 

@@ -27,6 +27,7 @@ import { installedEntry, outsideCheckout } from "./launcher.ts";
 import { directoryVariables } from "../shared/agent-harness/index.ts";
 import {
   carriedEnvironment,
+  hasUnwritableChar,
   HIDDEN_VALUE,
   maskedEnvironment,
 } from "./job-environment.ts";
@@ -94,10 +95,16 @@ export function jobFiles(
   const label = spec.label;
   if (
     [...command, ...Object.values(job.env)].some((value) =>
-      /[\r\n\0]/.test(value),
+      scheduler === "launchd"
+        ? hasUnwritableChar(value)
+        : /[\r\n\0]/.test(value),
     )
   )
-    throw new GcError("Scheduler values cannot contain line breaks or NUL");
+    throw new GcError(
+      scheduler === "launchd"
+        ? "Scheduler values cannot contain line breaks, NUL or XML 1.0 forbidden characters"
+        : "Scheduler values cannot contain line breaks or NUL",
+    );
   if (scheduler === "launchd")
     return {
       [`${label}.plist`]: `<?xml version="1.0" encoding="UTF-8"?>
