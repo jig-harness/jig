@@ -114,35 +114,11 @@ function collidesWithMarker(value: string): boolean {
   );
 }
 
-/**
- * Resolve `reference` through the host's credential command; the value, or
- * why not. `env` is the environment the command runs with
- * (`credentialEnvOf`).
- */
-// fallow-ignore-next-line complexity -- every refusal learns output before it can be recorded.
-export async function resolveCredential(
-  settings: CredentialSettings | undefined,
-  reference: string,
-  env: Record<string, string | undefined>,
-): Promise<Outcome<string, CredentialCode>> {
-  const command = settings?.credentialCommand ?? null;
-  if (settings === undefined || command === null)
-    return failed(
-      "unauthorized",
-      "the machine file names no credential_command to resolve the credential reference",
-    );
-  const timeoutSec = Math.max(
-    1,
-    Math.ceil(settings.credentialTimeoutMs / 1000),
-  );
-  const done = await run([...command, reference], {
-    timeoutSec,
-    env,
-    // Keep only the bounded failure tail to teach the process what to mask;
-    // error output never appears in the outcome reason.
-    stderr: "pipe",
-    reapGroup: true,
-  });
+/** Process-level failure of a credential command run, learning captured output first; `null` on clean exit. */
+function commandFailure(
+  done: Awaited<ReturnType<typeof run>>,
+  timeoutSec: number,
+): Outcome<string, CredentialCode> | null {
   if (done.bufferExceeded) {
     // Only the bounded head is kept: the overflow chunk is never retained.
     learnCommandOutput(
@@ -175,10 +151,30 @@ export async function resolveCredential(
       "the credential command left a background process running; it was stopped, and its value is not used",
     );
   }
-  // Learn captured output before refusing marker-shaped values too: a failed
-  // value can contain a marker beside opaque material that must stay masked.
-  learnCommandOutput(done.stdout, done.stderrTail);
-  const value = done.stdout.replace(/\r?\n$/, "");
+  return null;
+}
+
+/** Content-level refusal for a remembered credential value; `null` when valid. */
+function rememberedValueRefusal(value: string): string | null {
+  // The output was decoded as UTF-8 before it reached here: a malformed byte became U+FFFD, so the value is not what the command printed.
+  if (value.includes("\uFFFD"))
+    return "the credential command printed a value that is not valid UTF-8";
+  if (value.includes("\0"))
+    return "the credential command printed a value with a NUL character in it";
+  if (/[\r\n]/.test(value))
+    return "the credential command printed a value with a line break inside it";
+  if (Buffer.byteLength(value) > LONGEST_VALUE)
+    return "the credential command printed a value over 4 KiB";
+  if (!isMaskable(value))
+    return "the credential command printed a value under 8 characters, too short to keep out of what is recorded";
+  return null;
+}
+
+/** Validate the printed credential after a clean exit, remembering non-marker values before refusing them. */
+function validateCredentialValue(
+  stdout: string,
+): Outcome<string, CredentialCode> {
+  const value = stdout.replace(/\r?\n$/, "");
   if (value === "")
     return failed("unauthorized", "the credential command printed no value");
   // A value that is part of, or contains, a sink's replacement text is refused before it is remembered. The sinks emit these markers in lowercase and match exactly.
@@ -189,33 +185,44 @@ export async function resolveCredential(
     );
   // A refused value is still remembered, so nothing this process records later can carry it.
   rememberSecret(value);
-  // The output was decoded as UTF-8 before it reached here: a malformed byte became U+FFFD, so the value is not what the command printed.
-  if (value.includes("\uFFFD"))
+  const refusal = rememberedValueRefusal(value);
+  return refusal === null ? ok(value) : failed("unauthorized", refusal);
+}
+
+/**
+ * Resolve `reference` through the host's credential command; the value, or
+ * why not. `env` is the environment the command runs with
+ * (`credentialEnvOf`).
+ */
+export async function resolveCredential(
+  settings: CredentialSettings | undefined,
+  reference: string,
+  env: Record<string, string | undefined>,
+): Promise<Outcome<string, CredentialCode>> {
+  const command = settings?.credentialCommand ?? null;
+  if (settings === undefined || command === null)
     return failed(
       "unauthorized",
-      "the credential command printed a value that is not valid UTF-8",
+      "the machine file names no credential_command to resolve the credential reference",
     );
-  if (value.includes("\0"))
-    return failed(
-      "unauthorized",
-      "the credential command printed a value with a NUL character in it",
-    );
-  if (/[\r\n]/.test(value))
-    return failed(
-      "unauthorized",
-      "the credential command printed a value with a line break inside it",
-    );
-  if (Buffer.byteLength(value) > LONGEST_VALUE)
-    return failed(
-      "unauthorized",
-      "the credential command printed a value over 4 KiB",
-    );
-  if (!isMaskable(value))
-    return failed(
-      "unauthorized",
-      "the credential command printed a value under 8 characters, too short to keep out of what is recorded",
-    );
-  return ok(value);
+  const timeoutSec = Math.max(
+    1,
+    Math.ceil(settings.credentialTimeoutMs / 1000),
+  );
+  const done = await run([...command, reference], {
+    timeoutSec,
+    env,
+    // Keep only the bounded failure tail to teach the process what to mask;
+    // error output never appears in the outcome reason.
+    stderr: "pipe",
+    reapGroup: true,
+  });
+  const failure = commandFailure(done, timeoutSec);
+  if (failure !== null) return failure;
+  // Learn captured output before refusing marker-shaped values too: a failed
+  // value can contain a marker beside opaque material that must stay masked.
+  learnCommandOutput(done.stdout, done.stderrTail);
+  return validateCredentialValue(done.stdout);
 }
 
 /**

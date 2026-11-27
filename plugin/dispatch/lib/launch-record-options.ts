@@ -203,6 +203,15 @@ export function hasStrings(
   return keys.every((k) => typeof value[k] === "string");
 }
 
+export function isAttempt(value: unknown): boolean {
+  return (
+    isMapping(value) &&
+    typeof value.at === "string" &&
+    ["sent", "failed", "lost"].includes(value.outcome as string) &&
+    typeof value.detail === "string"
+  );
+}
+
 /** What a record names: a pull request for a drive or a follow-up, an item for a pickup. */
 export function namesTarget(value: Record<string, unknown>): boolean {
   if (value.action === "steward")

@@ -55,6 +55,7 @@ import { ordinalAnchors } from "./account-ordinal.ts";
 import { relaunchAnchors } from "./pickup-relaunch.ts";
 import {
   hasStrings,
+  isAttempt,
   isWorkspace,
   namesTarget,
   optionalLaunchFields,
@@ -507,15 +508,6 @@ export function targetOf(
 ): string {
   if (record.action === "steward") return "the steward";
   return record.item ?? `PR #${String(record.pr)}`;
-}
-
-function isAttempt(value: unknown): value is LaunchAttempt {
-  return (
-    isMapping(value) &&
-    typeof value.at === "string" &&
-    ["sent", "failed", "lost"].includes(value.outcome as string) &&
-    typeof value.detail === "string"
-  );
 }
 
 function isExit(value: unknown): value is LaunchExit {

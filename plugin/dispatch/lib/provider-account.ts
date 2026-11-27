@@ -296,6 +296,47 @@ function urlFormRefusal(url: URL, where: string): string | null {
     : `${where} must be an https:// URL (plain http:// only on a loopback address)`;
 }
 
+/** Parse the raw base URL string before `URL` normalizes whitespace or control characters. */
+function parseRawBaseUrl(value: unknown, where: string): Checked<string> {
+  // The value as written is checked before `text` trims it: a leading or trailing space or control character is refused like one inside.
+  if (typeof value === "string" && hasRefusedCharacter(value))
+    return invalid(
+      `${where} must be a plain URL with no backslash, space or control character (its value is withheld)`,
+    );
+  if (typeof value === "string" && value !== value.trim())
+    return invalid(
+      `${where} must be a plain URL with no leading or trailing space (its value is withheld)`,
+    );
+  const raw = text(value, where);
+  if (!raw.ok) return raw;
+  return URL.canParse(raw.value)
+    ? raw
+    : invalid(`${where} must be an absolute URL`);
+}
+
+/** Why the base URL as written (before `URL` normalizes dot segments or empty credentials) is refused; `null` when it is not. */
+function writtenBaseUrlRefusal(rawValue: string, where: string): string | null {
+  // The path as written is checked before the URL parser normalizes it: a dot segment or an escaped dot could otherwise remove text the checks below never see.
+  // Only a plain form is accepted: the URL parser also reads a backslash as a separator and drops tabs and line breaks, which would hide a path segment from these checks.
+  const written = /^[a-z][a-z0-9+.-]*:\/\/([^/?#\\]+)(\/[^?#\\]*)?$/i.exec(
+    rawValue.split(/[?#]/)[0] ?? "",
+  );
+  if (written === null)
+    return `${where} must be a plain URL with no backslash, space or control character (its value is withheld)`;
+  // URL normalizes an empty username/password away, so catch those raw authority forms before it does.
+  if (written[1]?.startsWith("@") || written[1]?.startsWith(":@"))
+    return `${where} must carry no user name or password (its value is withheld)`;
+  const writtenPath = written[2] ?? "";
+  if (
+    /%/.test(writtenPath) ||
+    writtenPath.split("/").some((part) => part === "." || part === "..")
+  )
+    return `${where} must carry a path with no percent escapes or dot segments (its value is withheld)`;
+  if (maskCredentialShapes(writtenPath, "\u0000") !== writtenPath)
+    return `${where} must carry no credential-shaped value in its path (its value is withheld)`;
+  return null;
+}
+
 /**
  * The base URL, canonical, or why it is refused: `https:` (or `http:` on a
  * loopback host), with no user name, password, query or fragment, on a host
@@ -303,7 +344,6 @@ function urlFormRefusal(url: URL, where: string): string | null {
  * loopback or private-network host is never a provider's own, so it needs
  * `provider_hosts` too.
  */
-// fallow-ignore-next-line complexity -- each URL refusal protects a distinct credential boundary.
 function baseUrl(
   value: unknown,
   where: string,
@@ -319,48 +359,11 @@ function baseUrl(
           `${where} is required for ${provider} on ${harness}: only ${DEFAULT_ENDPOINT_PROVIDER[harness]} is that harness's own default endpoint`,
         );
   }
-  // The value as written is checked before `text` trims it: a leading or trailing space or control character is refused like one inside.
-  if (typeof value === "string" && hasRefusedCharacter(value))
-    return invalid(
-      `${where} must be a plain URL with no backslash, space or control character (its value is withheld)`,
-    );
-  if (typeof value === "string" && value !== value.trim())
-    return invalid(
-      `${where} must be a plain URL with no leading or trailing space (its value is withheld)`,
-    );
-  const raw = text(value, where);
+  const raw = parseRawBaseUrl(value, where);
   if (!raw.ok) return raw;
-  if (!URL.canParse(raw.value))
-    return invalid(`${where} must be an absolute URL`);
   const url = new URL(raw.value);
-  // The path as written is checked before the URL parser normalizes it: a dot segment or an escaped dot could otherwise remove text the checks below never see.
-  // Only a plain form is accepted: the URL parser also reads a backslash as a separator and drops tabs and line breaks, which would hide a path segment from these checks.
-  const written = /^[a-z][a-z0-9+.-]*:\/\/([^/?#\\]+)(\/[^?#\\]*)?$/i.exec(
-    raw.value.split(/[?#]/)[0] ?? "",
-  );
-  if (written === null)
-    return invalid(
-      `${where} must be a plain URL with no backslash, space or control character (its value is withheld)`,
-    );
-  // URL normalizes an empty username/password away, so catch those raw authority forms before it does.
-  if (written[1]?.startsWith("@") || written[1]?.startsWith(":@"))
-    return invalid(
-      `${where} must carry no user name or password (its value is withheld)`,
-    );
-  const writtenPath = written[2] ?? "";
-  if (
-    /%/.test(writtenPath) ||
-    writtenPath.split("/").some((part) => part === "." || part === "..")
-  )
-    return invalid(
-      `${where} must carry a path with no percent escapes or dot segments (its value is withheld)`,
-    );
-  const writtenShape = maskCredentialShapes(writtenPath, "\u0000");
-  if (writtenShape !== writtenPath)
-    return invalid(
-      `${where} must carry no credential-shaped value in its path (its value is withheld)`,
-    );
-  const refused = urlFormRefusal(url, where);
+  const refused =
+    writtenBaseUrlRefusal(raw.value, where) ?? urlFormRefusal(url, where);
   if (refused !== null) return invalid(refused);
   const host = url.hostname.toLowerCase();
   const allowed = [

@@ -259,24 +259,34 @@ function isMaskedValue(layer: string, at: number): boolean {
   return false;
 }
 
+/** Index of the closing double quote for a JSON string opening at `openAt`, or `-1` when unclosed. */
+function closingQuote(layer: string, openAt: number): number {
+  let end = openAt + 1;
+  while (end < layer.length && layer[end] !== '"')
+    end += layer[end] === "\\" ? 2 : 1;
+  return end < layer.length ? end : -1;
+}
+
+/** First index at or after `from` that is not whitespace. */
+function skipWhitespace(layer: string, from: number): number {
+  let i = from;
+  while (i < layer.length && /\s/.test(layer[i] as string)) i++;
+  return i;
+}
+
 /** Whether `layer` holds a quoted member named like a credential whose value is not masked. Each quoted span is read once, left to right: a span that never closes ends the scan, since every later quote is escaped inside it and would never close either. */
-// fallow-ignore-next-line complexity -- this scanner must preserve escaped JSON-string semantics.
 function layerHoldsCredentialMember(layer: string): boolean {
   let at = layer.indexOf('"');
   while (at !== -1) {
-    let end = at + 1;
-    while (end < layer.length && layer[end] !== '"')
-      end += layer[end] === "\\" ? 2 : 1;
-    if (end >= layer.length) return false;
-    let value = end + 1;
-    while (value < layer.length && /\s/.test(layer[value] as string)) value++;
-    if (layer[value] !== ":") {
+    const end = closingQuote(layer, at);
+    if (end === -1) return false;
+    const colon = skipWhitespace(layer, end + 1);
+    if (layer[colon] !== ":") {
       // No member here; the closing quote may open the next span.
       at = end;
       continue;
     }
-    value++;
-    while (value < layer.length && /\s/.test(layer[value] as string)) value++;
+    const value = skipWhitespace(layer, colon + 1);
     if (
       !isMaskedValue(layer, value) &&
       isCredentialKey(layer.slice(at + 1, end))
@@ -295,8 +305,40 @@ function holdsCredentialMember(text: string): boolean {
 /** The deepest structural nesting of arrays and objects that is walked; anything deeper counts as holding a secret. */
 const NEST_LIMIT = 64;
 
+/** Whether a string value, or JSON encoded inside it, still holds a secret or an unmasked credential field. */
+function stringLeaksDecoded(
+  value: string,
+  secrets: readonly string[],
+  depth: number,
+): boolean {
+  // A fenced block, a header or trailing text around encoded JSON does not parse, so the text is unescaped, in any spelling, and searched for each secret.
+  if (holdsAfterUnescaping(value, secrets) || holdsCredentialMember(value))
+    return true;
+  // JSON that only parses once the escapes around it are decoded is looked into the same way, so a credential field it reveals is not kept.
+  for (const text of new Set([value, fullyDecoded(value)])) {
+    const inner = embeddedJson(text);
+    if (inner !== undefined && leaksDecoded(inner, secrets, depth + 1, true))
+      return true;
+  }
+  return false;
+}
+
+/** Whether a decoded object property names a credential whose value is still live. */
+function isLiveCredentialField(
+  key: string,
+  field: unknown,
+  decoded: boolean,
+): boolean {
+  return (
+    decoded &&
+    isCredentialKey(key) &&
+    field !== "<redacted>" &&
+    field !== "" &&
+    field !== null
+  );
+}
+
 /** Whether `value`, or any JSON a string in it encodes at any depth, still holds a secret or a credential field that is not masked. Nothing is rewritten: a hit leaves the whole line out, so no number or property name is ever re-encoded. */
-// fallow-ignore-next-line complexity -- each decoded JSON shape has distinct secret-detection rules.
 function leaksDecoded(
   value: unknown,
   secrets: readonly string[],
@@ -305,19 +347,8 @@ function leaksDecoded(
   nest = 0,
 ): boolean {
   if (depth > LOOK_DEPTH || nest > NEST_LIMIT) return true;
-  if (typeof value === "string") {
-    // A fenced block, a header or trailing text around encoded JSON does not parse, so the text is unescaped, in any spelling, and searched for each secret.
-    if (holdsAfterUnescaping(value, secrets)) return true;
-    // Text in which any decode layer names a credential field with a live value is left out whole, parsed or not.
-    if (holdsCredentialMember(value)) return true;
-    // JSON that only parses once the escapes around it are decoded is looked into the same way, so a credential field it reveals is not kept.
-    for (const text of new Set([value, fullyDecoded(value)])) {
-      const inner = embeddedJson(text);
-      if (inner !== undefined && leaksDecoded(inner, secrets, depth + 1, true))
-        return true;
-    }
-    return false;
-  }
+  if (typeof value === "string")
+    return stringLeaksDecoded(value, secrets, depth);
   if (typeof value === "number")
     return secrets.some((secret) => String(value).includes(secret));
   if (Array.isArray(value))
@@ -327,19 +358,30 @@ function leaksDecoded(
   if (value !== null && typeof value === "object")
     return Object.entries(value).some(
       ([key, field]) =>
+        isLiveCredentialField(key, field, decoded) ||
         leaksDecoded(key, secrets, depth, decoded, nest + 1) ||
-        (decoded &&
-          isCredentialKey(key) &&
-          field !== "<redacted>" &&
-          field !== "" &&
-          field !== null) ||
         leaksDecoded(field, secrets, depth, decoded, nest + 1),
     );
   return false;
 }
 
+/** Rebuild a plain object with every property name and value masked against `secrets`. */
+function maskExactObject(
+  value: object,
+  secrets: readonly string[],
+): Record<string, unknown> {
+  const rebuilt: Record<string, unknown> = Object.create(null);
+  for (const [key, field] of Object.entries(value)) {
+    const maskedKey = replaceSecrets(key, secrets);
+    let name = maskedKey;
+    // Two names that mask alike stay two fields; only names already written count.
+    for (let n = 2; name in rebuilt; n++) name = `${maskedKey}#${n}`;
+    rebuilt[name] = maskExact(field, secrets);
+  }
+  return rebuilt;
+}
+
 /** `value` with each exact secret replaced in every string, every number written as one and every property name, before any generic redaction can split it. JSON a string encodes is not decoded here: `leaksDecoded` leaves such a line out when it holds a secret. */
-// fallow-ignore-next-line complexity -- each JSON shape must retain its original structure while masking.
 function maskExact(value: unknown, secrets: readonly string[]): unknown {
   if (secrets.length === 0) return value;
   if (typeof value === "string") return replaceSecrets(value, secrets);
@@ -349,17 +391,8 @@ function maskExact(value: unknown, secrets: readonly string[]): unknown {
   }
   if (Array.isArray(value))
     return value.map((item) => maskExact(item, secrets));
-  if (value !== null && typeof value === "object") {
-    const rebuilt: Record<string, unknown> = Object.create(null);
-    for (const [key, field] of Object.entries(value)) {
-      let name = replaceSecrets(key, secrets);
-      // Two names that mask alike stay two fields; only names already written count.
-      for (let n = 2; name in rebuilt; n++)
-        name = `${replaceSecrets(key, secrets)}#${n}`;
-      rebuilt[name] = maskExact(field, secrets);
-    }
-    return rebuilt;
-  }
+  if (value !== null && typeof value === "object")
+    return maskExactObject(value, secrets);
   return value;
 }
 

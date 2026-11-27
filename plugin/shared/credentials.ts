@@ -36,6 +36,31 @@ interface NameFinder {
   exec(text: string): NameMatch | null;
 }
 
+/** Match one maximal name run as a quoted or bare credential assignment; `null` when it is not one. */
+function matchNameCandidate(
+  text: string,
+  candidate: RegExpExecArray,
+  quoted: boolean,
+  tail: RegExp,
+): { match: NameMatch; nextIndex: number } | null {
+  if (!isCredentialKey(candidate[0])) return null;
+  const end = candidate.index + candidate[0].length;
+  const quote = quoted ? (text[candidate.index - 1] ?? "") : "";
+  if (quoted && (!/["']/.test(quote) || text[end] !== quote)) return null;
+  tail.lastIndex = quoted ? end + 1 : end;
+  if (!tail.test(text)) return null;
+  const index = quoted ? candidate.index - 1 : candidate.index;
+  return {
+    match: {
+      index,
+      0: text.slice(index, tail.lastIndex),
+      1: quoted ? quote : candidate[0],
+      2: candidate[0],
+    },
+    nextIndex: tail.lastIndex,
+  };
+}
+
 /**
  * A finder that reads the text once: each maximal run of name characters is
  * one candidate, tested with `isCredentialKey` and followed by its
@@ -49,24 +74,13 @@ function nameFinder(quoted: boolean): NameFinder {
   const tail = /\s*[:=]\s*/y;
   return {
     lastIndex: 0,
-    // fallow-ignore-next-line complexity -- the scanner advances each candidate only once.
     exec(text) {
       run.lastIndex = this.lastIndex;
       for (let r = run.exec(text); r; r = run.exec(text)) {
-        if (!isCredentialKey(r[0])) continue;
-        const end = r.index + r[0].length;
-        const quote = quoted ? (text[r.index - 1] ?? "") : "";
-        if (quoted && (!/["']/.test(quote) || text[end] !== quote)) continue;
-        tail.lastIndex = quoted ? end + 1 : end;
-        if (!tail.test(text)) continue;
-        const index = quoted ? r.index - 1 : r.index;
-        this.lastIndex = tail.lastIndex;
-        return {
-          index,
-          0: text.slice(index, tail.lastIndex),
-          1: quoted ? quote : r[0],
-          2: r[0],
-        };
+        const found = matchNameCandidate(text, r, quoted, tail);
+        if (found === null) continue;
+        this.lastIndex = found.nextIndex;
+        return found.match;
       }
       return null;
     },
@@ -113,31 +127,36 @@ function startsAssignment(text: string, at: number): boolean {
   return m !== null && isCredentialKey(m[2] ?? m[3] ?? "");
 }
 
+/** Advance past a backslash escape or doubled quote inside a quoted value; `-1` at a closing quote or line break. */
+function advanceQuotedChar(text: string, i: number, quote: string): number {
+  const c = text[i];
+  if (c === "\n") return -1;
+  if (c === "\\") return text[i + 1] === "\n" ? -1 : i + 2;
+  if (c === quote) return text[i + 1] === quote ? i + 2 : -1;
+  return i + 1;
+}
+
 /**
  * End of the quoted segment opening at `start`. A value's leading quote may
  * span lines and ends at its closing quote; with none, it takes its first
  * physical line. A quote glued to a bare prefix takes its line only, which
  * is all a line-cutting reader can track.
  */
-// fallow-ignore-next-line complexity -- this is the complete quoted-value grammar.
 function quotedEnd(text: string, start: number, multiline: boolean): number {
-  const q = text[start];
+  const q = text[start] as string;
   let firstBreak = -1;
-  for (let i = start + 1; i < text.length; i++) {
-    const c = text[i];
-    if (c === "\n") {
-      if (!multiline) return i;
-      if (firstBreak < 0) firstBreak = i;
-    } else if (c === "\\") {
-      i++;
-      if (text[i] === "\n") {
-        if (!multiline) return i;
-        if (firstBreak < 0) firstBreak = i;
-      }
-    } else if (c === q) {
-      if (text[i + 1] !== q) return i + 1;
-      i++;
+  let i = start + 1;
+  while (i < text.length) {
+    const next = advanceQuotedChar(text, i, q);
+    if (next !== -1) {
+      i = next;
+      continue;
     }
+    if (text[i] === q) return i + 1;
+    const breakAt = text[i] === "\\" ? i + 1 : i;
+    if (!multiline) return breakAt;
+    if (firstBreak < 0) firstBreak = breakAt;
+    i = breakAt + 1;
   }
   return firstBreak >= 0 ? firstBreak : text.length;
 }
@@ -165,6 +184,34 @@ function separatorEnds(text: string, i: number): boolean {
   );
 }
 
+/** Whether `text[i]` ends an unquoted value after a closed quote segment. */
+function endsAfterQuote(text: string, i: number, afterQuote: boolean): boolean {
+  const c = text[i] ?? "";
+  return (
+    afterQuote &&
+    (c === "," || c === ";" || c === "}") &&
+    separatorEnds(text, i)
+  );
+}
+
+/** Advance one segment (quoted, escaped, or bare character) inside an unquoted value. */
+function stepValueSegment(
+  text: string,
+  start: number,
+  i: number,
+): { next: number; afterQuote: boolean } {
+  const c = text[i] ?? "";
+  if (c === '"' || c === "'") {
+    const next = quotedEnd(text, i, i === start);
+    return { next, afterQuote: text[next - 1] === c };
+  }
+  if (c === "\\") {
+    const step = text[i + 1] === "\n" || text[i + 1] === "\r" ? 1 : 2;
+    return { next: i + step, afterQuote: false };
+  }
+  return { next: i + 1, afterQuote: false };
+}
+
 /**
  * End of an unquoted assignment's value: segments (bare, escaped, quoted)
  * run on until whitespace. After a quoted segment closes, `,` `;` and `}`
@@ -172,31 +219,37 @@ function separatorEnds(text: string, i: number): boolean {
  * survives; a bare run takes them as part of the secret. A backslash before
  * a line break does not continue the value past it.
  */
-// fallow-ignore-next-line complexity -- this is the complete unquoted-value grammar.
 function valueEnd(text: string, start: number): number {
   let afterQuote = false;
   let i = start;
   while (i < text.length) {
-    const c = text[i] ?? "";
-    if (/\s/.test(c)) break;
-    if (
-      afterQuote &&
-      (c === "," || c === ";" || c === "}") &&
-      separatorEnds(text, i)
-    )
-      break;
-    if (c === '"' || c === "'") {
-      i = quotedEnd(text, i, i === start);
-      afterQuote = text[i - 1] === c;
-    } else if (c === "\\") {
-      i += text[i + 1] === "\n" || text[i + 1] === "\r" ? 1 : 2;
-      afterQuote = false;
-    } else {
-      i++;
-      afterQuote = false;
-    }
+    if (/\s/.test(text[i] ?? "") || endsAfterQuote(text, i, afterQuote)) break;
+    const stepped = stepValueSegment(text, start, i);
+    i = stepped.next;
+    afterQuote = stepped.afterQuote;
   }
   return Math.min(i, text.length);
+}
+
+/** End offset of the credential value starting at `at`, or `-1` when no supported value grammar matches. */
+function matchValueEnd(
+  text: string,
+  at: number,
+  quoted: RegExp,
+  plainY: RegExp,
+  contiguous: boolean,
+): number {
+  quoted.lastIndex = at;
+  plainY.lastIndex = at;
+  if (contiguous && text[at] !== "[") {
+    if (startsAssignment(text, at)) return -1;
+    const end = valueEnd(text, at);
+    return end === at ? -1 : end;
+  }
+  if (quoted.test(text)) return quoted.lastIndex;
+  if (text[at] === "[") return bracketedEnd(text, at);
+  if (startsAssignment(text, at)) return -1;
+  return plainY.test(text) ? plainY.lastIndex : -1;
 }
 
 /**
@@ -204,7 +257,6 @@ function valueEnd(text: string, start: number): number {
  * string, a bracketed value, or else what `plain` matches there; `skip`
  * leaves a value already masked alone.
  */
-// fallow-ignore-next-line complexity -- each branch selects one supported value grammar.
 function maskValues(
   text: string,
   prefix: NameFinder,
@@ -220,18 +272,8 @@ function maskValues(
   prefix.lastIndex = 0;
   for (let m = prefix.exec(text); m; m = prefix.exec(text)) {
     const at = m.index + m[0].length;
-    let end = -1;
-    quoted.lastIndex = at;
-    plainY.lastIndex = at;
     if (skip?.(text.slice(at))) continue;
-    if (contiguous && text[at] !== "[") {
-      if (startsAssignment(text, at)) continue;
-      end = valueEnd(text, at);
-      if (end === at) end = -1;
-    } else if (quoted.test(text)) end = quoted.lastIndex;
-    else if (text[at] === "[") end = bracketedEnd(text, at);
-    else if (startsAssignment(text, at)) continue;
-    else if (plainY.test(text)) end = plainY.lastIndex;
+    const end = matchValueEnd(text, at, quoted, plainY, contiguous);
     if (end < 0) continue;
     out += text.slice(last, m.index) + render(m);
     last = end;
