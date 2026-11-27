@@ -546,6 +546,7 @@ export function jiraTracker(client: Client): Tracker {
     },
 
     ...reportOperations(client, stores),
+    unavailableFacets: stores.unavailableFacets,
     ...assignerOperations(client),
     ...stateChangeOperations(client),
     ...claimOperations(client),

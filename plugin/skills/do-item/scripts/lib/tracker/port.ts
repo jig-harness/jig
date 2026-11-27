@@ -426,7 +426,9 @@ export interface IncompletePage {
   issues: IncompleteIssue[];
   /** The cursor of the next page; `null` after the last. */
   next: string | null;
-  counts: Partial<Record<Facet, { required: number; lacking: number }>>;
+  counts: Partial<
+    Record<Facet, { required: number; lacking: number; unavailable?: number }>
+  >;
 }
 
 /** Where a tracker keeps a facet. */
@@ -944,6 +946,13 @@ export interface Tracker
     labels: string[];
     nativeType: string | null;
   }>;
+  /** Candidate facets whose fields are absent from the issue type's create screen and, for an existing issue, its edit screen. */
+  unavailableFacets?(
+    nativeType: string | null,
+    facets: readonly Facet[],
+    issueKey?: string,
+    signal?: AbortSignal,
+  ): Promise<Facet[]>;
   /** Change an issue. Throws on an empty patch, and as `createIssue` does. */
   updateIssue(
     key: string,

@@ -211,6 +211,10 @@ export interface JiraFacetStores {
     patch: IssuePatch,
     signal?: AbortSignal,
   ): Promise<FacetWrite>;
+  /** The fields absent from the screens through which a missing facet could be set. */
+  unavailableFacets: NonNullable<
+    import("../port.ts").Tracker["unavailableFacets"]
+  >;
   /** Each named store's health, for `facetStores()`. */
   report(options?: FacetReadOptions): Promise<CoreFacetReport>;
 }
@@ -856,6 +860,27 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
       }
       const written = await fieldWrites(issue, createScreen(issueType));
       return { issueType, fields: written, add, remove: [] };
+    },
+
+    async unavailableFacets(nativeType, candidates, key, signal) {
+      const relevant = fields.filter((field) =>
+        candidates.includes(field.facet),
+      );
+      if (nativeType === null || relevant.length === 0) return [];
+      const create = await createScreen(nativeType, signal)();
+      if (create === null) return [];
+      let edit: Promise<FieldMeta> | undefined;
+      const unavailable: Facet[] = [];
+      for (const slot of relevant) {
+        const field = await fieldOf(slot, signal);
+        if (create.screen.has(field.id)) continue;
+        if (key !== undefined) {
+          edit ??= client.editMeta(key, signal);
+          if ((await edit).has(field.id)) continue;
+        }
+        unavailable.push(slot.facet);
+      }
+      return unavailable;
     },
 
     async update(issue, patch, signal) {

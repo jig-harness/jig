@@ -1,3 +1,4 @@
+import { batch } from "../../../../../../shared/outbound/batch.ts";
 import { trackerFootprints } from "../footprints.ts";
 import type { TrackerFootprints } from "../footprint-port.ts";
 import {
@@ -86,6 +87,25 @@ export type CoreQueueIssue = CorePoolIssue &
       parent: string | null;
     } | null;
   };
+
+/** Take a page in the code-unit order used for the sweep's kept cursor. */
+function incompletePage(
+  listed: IncompleteIssue[],
+  query: IncompleteQuery,
+  counts: IncompletePage["counts"],
+): IncompletePage {
+  listed.sort((a, b) =>
+    a.cursor < b.cursor ? -1 : a.cursor > b.cursor ? 1 : 0,
+  );
+  const after = query.after ?? null;
+  const from = after === null ? listed : listed.filter((i) => i.cursor > after);
+  const issues = from.slice(0, query.limit);
+  return {
+    issues,
+    next: from.length > issues.length ? (issues.at(-1)?.cursor ?? null) : null,
+    counts,
+  };
+}
 
 /** The adapter's own part of `facetStores`. */
 export interface CoreFacetReport {
@@ -482,6 +502,91 @@ export function withFacets(
   }
 
   const census = censusReader(openPopulation);
+  // A census is shared by the sweep's pages and its started-issue read.
+  const screenChecks = new WeakMap<
+    CorePoolIssue,
+    Map<string, Promise<Facet[]>>
+  >();
+
+  function unavailable(
+    raw: CorePoolIssue,
+    issue: PoolIssue,
+    requested: readonly Facet[],
+    signal?: AbortSignal,
+  ) {
+    if (core.unavailableFacets === undefined) return undefined;
+    const candidates = requested.filter((facet) => lacks(issue, facet, true));
+    if (candidates.length === 0) return undefined;
+    let checks = screenChecks.get(raw);
+    if (checks === undefined) {
+      checks = new Map();
+      screenChecks.set(raw, checks);
+    }
+    const key = candidates.join(",");
+    let pending = checks.get(key);
+    if (pending === undefined) {
+      pending = core.unavailableFacets(
+        issue.nativeType ?? null,
+        candidates,
+        issue.identifier,
+        signal,
+      );
+      checks.set(key, pending);
+    }
+    return pending;
+  }
+
+  /** Bound concurrent screen reads and settle each group before starting the next. */
+  async function screenCoverage(
+    population: CorePoolIssue[],
+    facets: Facet[],
+    signal?: AbortSignal,
+  ) {
+    const open = population
+      .map((raw) => ({ raw, issue: withValues(raw) }))
+      .filter(({ issue }) => issue.state.type !== "triage");
+    if (core.unavailableFacets === undefined)
+      return open.map(({ issue }) => ({ issue, absent: undefined }));
+    const concurrentReads = 8;
+    return batch(open, concurrentReads, async (group) => {
+      refuseStopped(signal);
+      const reads = await Promise.allSettled(
+        group.map(async ({ raw, issue }) => ({
+          issue,
+          absent: await unavailable(raw, issue, facets, signal),
+        })),
+      );
+      refuseStopped(signal);
+      return reads.map((read) => {
+        if (read.status === "rejected") throw read.reason;
+        return read.value;
+      });
+    });
+  }
+
+  function countMissing(
+    issue: PoolIssue,
+    facets: Facet[],
+    counts: IncompletePage["counts"],
+    absent?: Facet[],
+  ): Facet[] {
+    const missing: Facet[] = [];
+    for (const facet of facets) {
+      if (facet === "size" && issue.isEpic) continue;
+      const count = counts[facet];
+      if (count === undefined) continue;
+      if (absent?.includes(facet)) {
+        count.unavailable = (count.unavailable ?? 0) + 1;
+        continue;
+      }
+      count.required++;
+      if (lacks(issue, facet, false)) {
+        count.lacking++;
+        missing.push(facet);
+      }
+    }
+    return missing;
+  }
 
   async function incompleteIssues(
     query: IncompleteQuery,
@@ -498,25 +603,22 @@ export function withFacets(
     const population = await census(options?.census, signal);
     refuseStopped(signal);
     refuseTruncatedLabels(population);
-    const open = population.map(withValues);
-    const outside = open.filter((i) => i.state.type !== "triage");
     const counts: IncompletePage["counts"] = {};
-    for (const f of query.missing) {
-      const required = outside.filter((i) => !(f === "size" && i.isEpic));
-      counts[f] = {
-        required: required.length,
-        lacking: required.filter((i) => lacks(i, f, false)).length,
-      };
-    }
     const retired = query.retired.map(fold);
     const listed: IncompleteIssue[] = [];
     const wanted = (type: string) =>
       query.started === true
         ? type === "started"
         : type === "backlog" || type === "unstarted";
-    for (const i of outside) {
+    const facets = [...new Set(query.missing)];
+    for (const f of facets) counts[f] = { required: 0, lacking: 0 };
+    for (const { issue: i, absent } of await screenCoverage(
+      population,
+      facets,
+      signal,
+    )) {
+      const missing = countMissing(i, facets, counts, absent);
       if (!wanted(i.state.type)) continue;
-      const missing = query.missing.filter((f) => lacks(i, f, true));
       const carried = [...i.labels, ...(i.hiddenLabels ?? [])].filter((l) =>
         retired.includes(fold(l)),
       );
@@ -530,21 +632,7 @@ export function withFacets(
         cursor: `${i.createdAt}|${i.identifier}`,
       });
     }
-    // Code-unit order, the order `after` and a kept cursor are compared in.
-    listed.sort((a, b) =>
-      a.cursor < b.cursor ? -1 : a.cursor > b.cursor ? 1 : 0,
-    );
-    const after = query.after ?? null;
-    const from =
-      after === null ? listed : listed.filter((i) => i.cursor > after);
-    const page = from.slice(0, query.limit);
-    const last = page.at(-1);
-    return {
-      issues: page,
-      next:
-        from.length > page.length && last !== undefined ? last.cursor : null,
-      counts,
-    };
+    return incompletePage(listed, query, counts);
   }
 
   return {
