@@ -104,6 +104,12 @@ function unmerged(root: string): string[] {
   return r.code === 0 ? r.stdout.split("\0").filter(Boolean) : [];
 }
 
+/** The tracked change in the index and working tree against HEAD; null when unreadable. */
+function workingChange(root: string): string | null {
+  const r = gitRaw(root, ["diff", "--binary", "HEAD"]);
+  return r.code === 0 ? r.stdout : null;
+}
+
 function openOperation(root: string): string | null {
   return (
     OPEN_OPERATIONS.find((name) => existsSync(gitPath(root, name))) ?? null
@@ -123,7 +129,8 @@ async function chooseBase(
     return {
       base: null,
       landing: null,
-      detection: "no pull request is known for this branch",
+      detection:
+        "no pull request was named, and none could be read for this branch",
     };
   const landing = await readLanding(input.ask, input.pr, input.base);
   if (!landing.ok)
@@ -138,7 +145,7 @@ async function chooseBase(
       landing: null,
       detection: `#${input.pr} was not retargeted onto ${input.base} from a branch that has merged there`,
     };
-  const base = mergeBaseAfter(
+  const base = await mergeBaseAfter(
     input.root,
     input.remote,
     head,
@@ -233,6 +240,7 @@ function mergeWithBase(
       outcome: "refused",
       reason: "the index holds staged changes; commit or unstage them first",
     });
+  const before = workingChange(root);
   const r = gitRaw(
     root,
     [
@@ -247,12 +255,22 @@ function mergeWithBase(
     undefined,
     { ...process.env, [`GITHEAD_${theirs}`]: ref },
   );
-  if (r.code !== 0 && r.code !== 1)
-    return report({
-      ...fields,
-      outcome: "refused",
-      reason: `git merge-recursive refused (exit ${r.code}): ${`${r.stderr}${r.stdout}`.trim()}`,
-    });
+  if (r.code !== 0 && r.code !== 1) {
+    const said = `${r.stderr}${r.stdout}`.trim();
+    // git refuses before writing anything when local changes stand in the
+    // way; anything else that stops it may have written part of the merge.
+    return before !== null && workingChange(root) === before
+      ? report({
+          ...fields,
+          outcome: "refused",
+          reason: `git merge-recursive refused (exit ${r.code}): ${said}`,
+        })
+      : report({
+          ...fields,
+          outcome: "failed",
+          reason: `git merge-recursive exited ${r.code}, and the tree may hold part of the merge; restore it with git reset --merge: ${said}`,
+        });
+  }
   // What `git merge` itself leaves: the merged commit, the message, the
   // previous HEAD. `git commit` concludes it and `git merge --abort` ends it.
   gitRaw(root, ["update-ref", "ORIG_HEAD", head]);

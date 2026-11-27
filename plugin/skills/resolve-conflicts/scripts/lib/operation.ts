@@ -94,24 +94,29 @@ function replayInputs(
 }
 
 /**
- * The merge base of an open merge: the one its prepared message records
+ * The merge base an open merge's prepared message records
  * (`Merge-base: <commit>`, written by `start-merge.ts` when the branch's
- * earlier base landed by squash or rebase) while it is an ancestor of HEAD,
- * else git's own.
+ * earlier base landed by squash or rebase), while it is an ancestor of
+ * `head`; null when there is none.
  */
+export function recordedMergeBase(root: string, head: string): string | null {
+  const recorded = read(gitPath(root, "MERGE_MSG"))?.match(
+    /^Merge-base: ([0-9a-f]{40}|[0-9a-f]{64})$/m,
+  )?.[1];
+  return recorded !== undefined &&
+    gitRaw(root, ["merge-base", "--is-ancestor", recorded, head]).code === 0
+    ? recorded
+    : null;
+}
+
+/** The merge base of an open merge: the recorded one, else git's own. */
 function mergeBaseOf(
   root: string,
   head: string,
   incoming: string,
 ): string | null {
-  const recorded = read(gitPath(root, "MERGE_MSG"))?.match(
-    /^Merge-base: ([0-9a-f]{40}|[0-9a-f]{64})$/m,
-  )?.[1];
-  if (
-    recorded !== undefined &&
-    gitRaw(root, ["merge-base", "--is-ancestor", recorded, head]).code === 0
-  )
-    return recorded;
+  const recorded = recordedMergeBase(root, head);
+  if (recorded !== null) return recorded;
   const result = gitRaw(root, ["merge-base", head, incoming]);
   return result.code === 0 ? result.stdout.trim() : null;
 }

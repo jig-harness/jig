@@ -20,7 +20,12 @@
 import { isRecord, isString, valueAt } from "../../../../shared/guards.ts";
 import { failed, ok, type Outcome } from "../../../../shared/outcome.ts";
 import { graphqlAnswer } from "../../../../shared/outbound/github.ts";
-import { ghCall, ghRepoEnv } from "../../../drive-pr/scripts/lib/proc.ts";
+import {
+  ghCall,
+  ghRepoEnv,
+  git as gitAsync,
+  gitCallTimeoutSeconds,
+} from "../../../drive-pr/scripts/lib/proc.ts";
 import { gitRaw, resolveCommit } from "./git.ts";
 
 /** The query reading the pull request's base changes, as the cost ledger names it. */
@@ -127,6 +132,11 @@ export function earlierRef(answer: unknown, base: string): string | null {
   return null;
 }
 
+/** A full commit id, SHA-1 or SHA-256: nothing else from the forge reaches git. */
+function isObjectId(value: unknown): value is string {
+  return isString(value) && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(value);
+}
+
 /** The most recently merged of the listed pull requests that carries both commits. */
 export function landingOf(answer: unknown): Omit<Landing, "ref"> | null {
   const nodes = valueAt(answer, "data", "repository", "pullRequests", "nodes");
@@ -136,7 +146,7 @@ export function landingOf(answer: unknown): Omit<Landing, "ref"> | null {
     const landed = valueAt(node, "mergeCommit", "oid");
     const pr = valueAt(node, "number");
     const mergedAt = valueAt(node, "mergedAt");
-    if (!isString(tip) || !isString(landed) || typeof pr !== "number")
+    if (!isObjectId(tip) || !isObjectId(landed) || typeof pr !== "number")
       return [];
     return [{ pr, tip, landed, mergedAt: isString(mergedAt) ? mergedAt : "" }];
   });
@@ -155,10 +165,25 @@ export async function readLanding(
 ): Promise<Outcome<Landing | null, "unreadable" | "too-costly">> {
   const retarget = await ask("retarget", { number: pr });
   if (!retarget.ok) return retarget;
+  const changes = ["data", "repository", "pullRequest", "timelineItems"];
+  if (!Array.isArray(valueAt(retarget.value, ...changes, "nodes")))
+    return failed(
+      "unreadable",
+      `the forge's answer lists no base changes of #${pr}`,
+    );
   const ref = earlierRef(retarget.value, base);
   if (ref === null) return ok(null);
   const answer = await ask("landing", { head: ref, base });
   if (!answer.ok) return answer;
+  if (
+    !Array.isArray(
+      valueAt(answer.value, "data", "repository", "pullRequests", "nodes"),
+    )
+  )
+    return failed(
+      "unreadable",
+      `the forge's answer lists no merged pull requests of ${ref}`,
+    );
   const landing = landingOf(answer.value);
   return ok(landing === null ? null : { ref, ...landing });
 }
@@ -176,22 +201,30 @@ function isAncestor(root: string, ancestor: string, of: string): boolean {
   return gitRaw(root, ["merge-base", "--is-ancestor", ancestor, of]).code === 0;
 }
 
-/** Fetch the earlier base's tip when the clone does not hold it. */
-function ensureTip(
+/** Fetch the earlier base's tip when the clone does not hold it; the fetch's complaint when it still does not. */
+async function ensureTip(
   root: string,
   remote: string,
   landing: Landing,
-): string | null {
+): Promise<Outcome<string, "tip-missing">> {
   const held = resolveCommit(root, landing.tip);
-  if (held !== null) return held;
-  gitRaw(root, [
-    "fetch",
-    "--quiet",
-    "--no-tags",
-    remote,
-    `refs/pull/${landing.pr}/head`,
-  ]);
-  return resolveCommit(root, landing.tip);
+  if (held !== null) return ok(held);
+  const fetched = await gitAsync(
+    ["fetch", "--quiet", "--no-tags", remote, `refs/pull/${landing.pr}/head`],
+    {
+      cwd: root,
+      stderr: "pipe",
+      timeoutSec: gitCallTimeoutSeconds(),
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    },
+  );
+  const tip = resolveCommit(root, landing.tip);
+  if (tip !== null) return ok(tip);
+  const said = fetched.stderr.trim();
+  return failed(
+    "tip-missing",
+    `the earlier base's last commit ${landing.tip} could not be fetched (git fetch exited ${fetched.code}${said === "" ? "" : `: ${said}`})`,
+  );
 }
 
 /**
@@ -201,19 +234,16 @@ function ensureTip(
  * on `theirs` (an ordinary merge, which git's own base already handles), the
  * histories are unrelated, or the chosen base would be git's own.
  */
-export function mergeBaseAfter(
+export async function mergeBaseAfter(
   root: string,
   remote: string,
   head: string,
   theirs: string,
   landing: Landing,
-): Outcome<string, NotApplicable> {
-  const tip = ensureTip(root, remote, landing);
-  if (tip === null)
-    return failed(
-      "tip-missing",
-      `the earlier base's last commit ${landing.tip} could not be fetched`,
-    );
+): Promise<Outcome<string, NotApplicable>> {
+  const fetched = await ensureTip(root, remote, landing);
+  if (!fetched.ok) return fetched;
+  const tip = fetched.value;
   const landed = resolveCommit(root, landing.landed);
   if (landed === null || !isAncestor(root, landed, theirs))
     return failed(

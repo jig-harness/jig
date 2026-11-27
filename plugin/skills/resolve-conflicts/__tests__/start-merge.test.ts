@@ -188,6 +188,41 @@ describe("a pull request whose base was squash-merged", () => {
     expect(s.git("status", "--porcelain")).toBe("");
   });
 
+  it("concludes a conflict beside an echo in another file through record and check", () => {
+    s.commit("Add the files", { "f.txt": file(), "e.txt": "echo\n" });
+    s.git("checkout", "-q", "-b", "stack");
+    const tip = s.commit("Stack", { "e.txt": "stack\n" });
+    s.git("checkout", "-q", "-b", "feature");
+    s.commit("Feature", {
+      "e.txt": "feature\n",
+      "f.txt": file({ 18: "feature 18" }),
+    });
+    s.git("checkout", "-q", "main");
+    s.commit("Main work", { "f.txt": file({ 18: "main 18" }) });
+    s.git("merge", "-q", "--squash", "stack");
+    const landed = s.commit("Stack (#6)");
+    s.git("update-ref", "refs/remotes/origin/main", "main");
+    s.git("checkout", "-q", "feature");
+    retargetedAfter(landed, tip);
+
+    expect(startMerge(9).conflicts).toEqual(["f.txt"]);
+    expect(s.read("e.txt")).toBe("feature\n");
+    const map = s.script("conflict-map.ts", ["--json"]);
+    expectSpawnExit({ ...map, exitCode: map.code }, 0);
+    s.write("f.txt", file({ 18: "feature 18\nmain 18" }));
+    s.git("add", "f.txt");
+    const recorded = s.script("record.ts", [
+      "f.txt",
+      "combined",
+      "--reason",
+      "keeps both sides' line 18",
+    ]);
+    expectSpawnExit({ ...recorded, exitCode: recorded.code }, 0);
+    const check = s.script("check-resolution.ts", ["--commit-message"]);
+    expectSpawnExit({ ...check, exitCode: check.code }, 0);
+    expect(check.stdout).toContain(`Merge-base: ${tip}`);
+  });
+
   it("merges as git does when the forge cannot be read", () => {
     stackedOnSquashed();
     forge({ fail: true });
@@ -299,6 +334,7 @@ describe("refusals", () => {
 });
 
 describe("reading the forge's answers", () => {
+  const oid = (digit: string) => digit.repeat(40);
   const timeline = (nodes: unknown[]) => ({
     data: { repository: { pullRequest: { timelineItems: { nodes } } } },
   });
@@ -326,19 +362,19 @@ describe("reading the forge's answers", () => {
             nodes: [
               {
                 number: 3,
-                headRefOid: "a",
+                headRefOid: oid("a"),
                 mergedAt: "2026-10-01T00:00:00Z",
-                mergeCommit: { oid: "x" },
+                mergeCommit: { oid: oid("1") },
               },
               {
                 number: 4,
-                headRefOid: "b",
+                headRefOid: oid("b"),
                 mergedAt: "2026-11-01T00:00:00Z",
-                mergeCommit: { oid: "y" },
+                mergeCommit: { oid: oid("2") },
               },
               {
                 number: 5,
-                headRefOid: "c",
+                headRefOid: oid("c"),
                 mergedAt: "2026-12-01T00:00:00Z",
                 mergeCommit: null,
               },
@@ -347,7 +383,28 @@ describe("reading the forge's answers", () => {
         },
       },
     };
-    expect(landingOf(answer)).toEqual({ pr: 4, tip: "b", landed: "y" });
+    expect(landingOf(answer)).toEqual({
+      pr: 4,
+      tip: oid("b"),
+      landed: oid("2"),
+    });
     expect(landingOf({ data: {} })).toBeNull();
+    const nodes = answer.data.repository.pullRequests.nodes;
+    const notAnId = {
+      data: {
+        repository: {
+          pullRequests: {
+            nodes: nodes.map((node) =>
+              node.number === 4 ? { ...node, headRefOid: "HEAD~1" } : node,
+            ),
+          },
+        },
+      },
+    };
+    expect(landingOf(notAnId)).toEqual({
+      pr: 3,
+      tip: oid("a"),
+      landed: oid("1"),
+    });
   });
 });
