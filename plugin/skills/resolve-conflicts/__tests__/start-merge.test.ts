@@ -8,7 +8,7 @@
  * whose forge cannot be read, merges as `git merge` does.
  */
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
@@ -198,6 +198,22 @@ describe("a pull request whose base was squash-merged", () => {
     const map = s.script("conflict-map.ts", ["--json"]);
     expectSpawnExit({ ...map, exitCode: map.code }, 0);
 
+    const ordinary = s.git("merge-base", "HEAD", "MERGE_HEAD").trim();
+    expect(ordinary).not.toBe(tip);
+    expect(s.snapshot().operation).toMatchObject({ base: ordinary });
+  });
+
+  it("reads a record with the same modification time as MERGE_HEAD as stale", () => {
+    const { landed, tip } = stackedOnSquashed({ 18: "feature 18" });
+    retargetedAfter(landed, tip);
+    startMerge(9);
+    const gitDir = s.git("rev-parse", "--absolute-git-dir").trim();
+    const time = new Date();
+    utimesSync(join(gitDir, "MERGE_HEAD"), time, time);
+    utimesSync(join(gitDir, "JIG_MERGE_BASE"), time, time);
+
+    const map = s.script("conflict-map.ts", ["--json"]);
+    expectSpawnExit({ ...map, exitCode: map.code }, 0);
     const ordinary = s.git("merge-base", "HEAD", "MERGE_HEAD").trim();
     expect(ordinary).not.toBe(tip);
     expect(s.snapshot().operation).toMatchObject({ base: ordinary });

@@ -101,7 +101,7 @@ export const MERGE_BASE_RECORD = "JIG_MERGE_BASE";
  * record (`<base> <MERGE_HEAD> <HEAD>`, never from the editable merge
  * message). The record belongs to this merge only while it names the merge's
  * current `MERGE_HEAD` and the `HEAD` the merge started on, the base is an
- * ancestor of `head`, and it was written no earlier than git's own
+ * ancestor of `head`, and it was written strictly after git's own
  * `MERGE_HEAD` (an aborted merge leaves the record behind, and a later
  * ordinary merge of the same commit writes a newer `MERGE_HEAD`); null when
  * there is none.
@@ -124,7 +124,9 @@ export function recordedMergeBase(root: string, head: string): string | null {
     throwIfNoEntry: false,
   });
   if (written === undefined || started === undefined) return null;
-  if (written.mtimeMs < started.mtimeMs) return null;
+  // Equal times cannot order the two files on a coarse-resolution filesystem,
+  // so they read as stale: falling back to git's own base is the safe side.
+  if (written.mtimeMs <= started.mtimeMs) return null;
   return gitRaw(root, ["merge-base", "--is-ancestor", recorded, head]).code ===
     0
     ? recorded
