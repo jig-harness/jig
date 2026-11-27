@@ -1,3 +1,9 @@
+import { readConfig } from "../../../../../shared/consumer.ts";
+import { currentMs } from "../../../../../shared/time.ts";
+import {
+  optionalPollPacing,
+  readStatusPolling,
+} from "../status/poll-pacing.ts";
 import { newerClaim } from "../state/ledger.ts";
 import {
   readCompleteLedgerSnapshot,
@@ -46,15 +52,25 @@ export async function standDownOnNewerClaim(
 export function roundBoundaryTakeoverCheck(
   pr: string,
   now = () => performance.now(),
+  deferPoll = optionalPollPacing(
+    readStatusPolling(readConfig()),
+    "drive takeover",
+  ),
 ): () => Promise<number | null> {
   let dueAt = Number.NEGATIVE_INFINITY;
+  let lastReadAt: number | undefined;
   return async () => {
     const startedAt = now();
     if (startedAt < dueAt) return null;
+    if (lastReadAt !== undefined && deferPoll(lastReadAt, TAKEOVER_POLL_MS))
+      return null;
+    const wallStartedAt = currentMs();
     const result = await checkForNewerClaim(pr, readCompleteLedgerSnapshot);
     // A lapse must be retried at the next boundary. Before a pass or ledger
     // write, the separate fresh guards still apply.
-    if (result === null) dueAt = startedAt + TAKEOVER_POLL_MS;
+    lastReadAt = result === null ? wallStartedAt : undefined;
+    dueAt =
+      result === null ? startedAt + TAKEOVER_POLL_MS : Number.NEGATIVE_INFINITY;
     return result === "unread" ? null : result;
   };
 }

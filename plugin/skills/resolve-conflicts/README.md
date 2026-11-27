@@ -20,6 +20,19 @@ the role of each side, maps the conflicts, regenerates derived files, records
 decisions, and checks for dropped changes. The
 [agent procedure](SKILL.md) gives the commands and exit codes.
 
+## A base that was squash-merged beneath the branch
+
+A pull request built on another pull request's branch holds that branch's
+commits. When the branch below lands by squash or rebase, its changes reach
+the new base as different commits, and an ordinary merge of the new base
+reports conflicts that are only echoes of them. `start-merge.ts`, the
+skill's first step for bringing a branch up to date, reads from the forge
+which branch the pull request was moved off and which pull request landed
+it, and then merges with the point where the branch left the earlier base
+as the merge base, so only the branch's own changes can conflict. The merge
+commit's message records the earlier branch and the merge base. Without that
+evidence, the step runs Git's ordinary merge.
+
 When resolving a base merge inside a drive, the skill refreshes dependencies
 before validation if the staged merge changes a package manifest or lockfile.
 The resolution record includes the frozen install command.
