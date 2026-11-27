@@ -2196,8 +2196,9 @@ These entries need no answer. Body bullets, unaccounted slots and backlog
 entries without an explicit non-blocking disposition still count as work.
 The divergence stop alone also leaves out an unaddressed backlog entry the
 non-blocking section renders by its path, line and recorded comment, an
-abbreviated one included, listed under `work.summaryNotBlockingKeys`; it still
-needs its answer for convergence.
+abbreviated one included: the report lists it under `notBlockingBacklog` and
+status JSON under `work.summaryNotBlockingKeys`. It still needs its answer for
+convergence.
 
 A finding the reviewer could not anchor to a diff line
 creates **no thread** — thread count reads zero while it sits live, so a

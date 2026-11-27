@@ -424,6 +424,76 @@ describe("the settings", () => {
   );
 });
 
+describe("the divergence stop at the round gates", () => {
+  const LIB = join(SCRIPTS, "lib");
+  /** Run `checkDivergence` on each status in turn, then print the exits and the stored state. */
+  const PROBE = `
+import { checkDivergence } from ${JSON.stringify(join(LIB, "driver", "circuit-breaker.ts"))};
+import { openStore } from ${JSON.stringify(join(LIB, "state", "store.ts"))};
+const statuses = JSON.parse(await Bun.stdin.text());
+const exits = [];
+for (const status of statuses) exits.push(await checkDivergence("12", status, false));
+const state = (await openStore("12")).read().state;
+console.log(JSON.stringify({ exits, history: state.roundFindings ?? [], parked: state.parked.map((p) => p.key) }));
+`;
+
+  async function gates(statuses: Record<string, unknown>[]) {
+    const forge = fakeForge();
+    writeState(forge.stateDir, "12", freshState(12));
+    const file = join(forge.dir, "probe.ts");
+    writeFileSync(file, PROBE);
+    const r = await runIn(forge, file, [], {
+      stdin: JSON.stringify(statuses),
+      env: { DRIVE_PR_TARGET: "12" },
+    });
+    expectSpawnExit(r, 0);
+    return JSON.parse(r.stdout) as {
+      exits: (number | null)[];
+      history: RoundFindings[];
+      parked: string[];
+    };
+  }
+
+  /** A gate whose open summary findings are `open`, of which `held` are rendered not blocking. */
+  const gate = (open: string[], held: string[], n: number) => ({
+    head: { api: String(n).repeat(40) },
+    work: {
+      unresolvedThreadKeys: [],
+      summaryUnaddressedKeys: open,
+      summaryNotBlockingKeys: held,
+    },
+  });
+
+  it("records open 0 and never parks when only not-blocking findings churn", async () => {
+    const churn = [
+      ["h1"],
+      ["h2", "h3"],
+      ["h4", "h5", "h6"],
+      ["h7", "h8", "h9", "h10"],
+    ];
+    const r = await gates(churn.map((keys, n) => gate(keys, keys, n + 1)));
+    expect(r.exits).toEqual([null, null, null, null]);
+    expect(r.parked).not.toContain("divergence-stop");
+    expect(r.history.every((h) => h.open === 0)).toBe(true);
+  });
+
+  it("still parks when the blocking findings beside them grow", async () => {
+    const r = await gates([
+      gate(["b1", "h1"], ["h1"], 1),
+      gate(["b2", "b3", "h2"], ["h2"], 2),
+      gate(["b4", "b5", "b6", "h3"], ["h3"], 3),
+    ]);
+    expect(r.exits.at(-1)).toBe(8);
+    expect(r.parked).toContain("divergence-stop");
+    expect(
+      r.history.map((h) => [h.newFindings, h.fixedFindings, h.open]),
+    ).toEqual([
+      [2, 1, 2],
+      [3, 2, 3],
+    ]);
+  });
+});
+
 describe("a person's answers to the circuit breaker's parks", () => {
   const LIB = join(SCRIPTS, "lib");
   /** Apply `verdicts` as a re-arm does, then print the override flag and the stored history. */

@@ -9,8 +9,8 @@
  *   - the wall-clock cap, `drive.max_wall_clock_hours` from the first launch,
  *     which parks the same way;
  *   - the divergence stop, checked at every round gate: rounds that each
- *     raise more blocking review findings than they fix park
- *     `divergence-stop`.
+ *     raise more review findings than they fix park `divergence-stop`,
+ *     not counting those the reviewer renders as not blocking.
  *
  * Only a person raises a spent ceiling: `--past-ceiling` on the launch, or an
  * answer to the `round-ceiling` park that chooses the override.
