@@ -117,7 +117,11 @@ import { standDownOnNewerClaim } from "./takeover-check.ts";
 import { currentIso, currentMs, parseMs } from "../../../../../shared/time.ts";
 import { DRIVE_EXIT } from "./../status/terminal-states.ts";
 import { probeStopOf } from "./../status/probe-stop.ts";
-import { stopFinishOf } from "./../state/events.ts";
+import {
+  type StallReasons,
+  type StopFinish,
+  stopFinishOf,
+} from "./../state/events.ts";
 
 /** Who this driver is, as the ledger names it. */
 export interface LedgerIdentity {
@@ -913,9 +917,7 @@ export function ledgerSettlement(
       driverRuntime.stopProbe?.code === code
         ? probeStopOf(driverRuntime.stopProbe)
         : null,
-      code === DRIVE_EXIT.STALLED
-        ? (stopFinishOf(driverRuntime.stallFinish) ?? null)
-        : null,
+      ...stallStopDetails(code),
     );
 
   const recordProjectionLimit = async (
@@ -978,4 +980,15 @@ export function ledgerSettlement(
       await settle(null);
     },
   };
+}
+
+/** What a stall's stop event records of its passes (their shared finish, their tally); neither for any other stop. */
+function stallStopDetails(
+  code: number | null,
+): [StopFinish | null, StallReasons | null] {
+  if (code !== DRIVE_EXIT.STALLED) return [null, null];
+  return [
+    stopFinishOf(driverRuntime.stallFinish) ?? null,
+    driverRuntime.stallReasons,
+  ];
 }

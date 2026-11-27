@@ -53,6 +53,7 @@ function wireAnswers(adapter: string, key: string): Record<string, unknown> {
               title: "held issue",
               url: null,
               labels: PAGE,
+              allChildren: { nodes: [] },
               children: PAGE,
               priority: 2,
               createdAt: "2026-01-01T00:00:00.000Z",

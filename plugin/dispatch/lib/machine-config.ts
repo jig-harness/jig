@@ -81,6 +81,8 @@ import {
   notifyStageFault,
 } from "./notify-config.ts";
 import { type PreflightProbe, preflightSetting } from "./preflight-config.ts";
+import type { HolderPolicy } from "../../shared/orca-workspace/holder.ts";
+import { HOLDER_KEYS, holderSettings } from "./holder-config.ts";
 import { type ServedPerson, servedPeople } from "./serve-config.ts";
 import { isoFromMs, parseMs } from "../../shared/time.ts";
 import { duration } from "./duration.ts";
@@ -205,6 +207,8 @@ export interface MachineConfig {
   preflight?: PreflightProbe[];
   /** The notification channels the tick sends through beside the Orca card (`notify.channels`); none when absent. */
   notifyChannels?: NotifyChannelConfig[];
+  /** What the open detaches beyond an idle holder without asking (`detach_idle_holders`, `rescue_unpushed`): `holder-config.ts`. */
+  holders?: HolderPolicy;
 }
 
 const DEFAULTS = {
@@ -248,6 +252,7 @@ const TOP_KEYS = [
   "tracker_share",
   "preflight",
   "notify",
+  ...HOLDER_KEYS,
 ];
 const DASHBOARD_KEYS = ["listen", "require_token", "allowed_hosts", "front"];
 const FAILURES_KEYS = [
@@ -606,8 +611,11 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   if (!priorities.ok) return priorities;
   const tracker = trackerSettings(top);
   if (!tracker.ok) return tracker;
+  const holders = holderSettings(top);
+  if (!holders.ok) return holders;
   return ok({
     ...tracker.value,
+    ...holders.value,
     ...repos.value,
     path: where,
     serve: serve.value,

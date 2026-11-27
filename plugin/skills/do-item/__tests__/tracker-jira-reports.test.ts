@@ -464,14 +464,17 @@ describe("Jira adapter: populations", () => {
 });
 
 describe("Jira adapter: candidate pools", () => {
-  it("reads a pool with one JQL and its open children with one more", async () => {
+  it("reads a pool with one JQL and detects open and finished children with one more", async () => {
     const { t, calls } = jira(
       routes({
         "POST search/jql": byJql(
           [
             /parent in/,
             {
-              issues: [{ key: "ENG-5", fields: { parent: { key: "ENG-1" } } }],
+              issues: [
+                issue({ key: "ENG-5", parent: "ENG-1" }),
+                issue({ key: "ENG-6", parent: "ENG-2", category: "done" }),
+              ],
               isLast: true,
             },
           ],
@@ -501,9 +504,9 @@ describe("Jira adapter: candidate pools", () => {
       'project = ENG AND statusCategory != Done AND labels in ("a", "b") AND labels in ("c") AND (labels not in ("x") OR labels is EMPTY) ORDER BY created ASC',
     );
     expect(jqlOf(calls[2] as Call)).toBe(
-      "parent in (ENG-1, ENG-2) AND statusCategory != Done ORDER BY created ASC",
+      "parent in (ENG-1, ENG-2) ORDER BY created ASC",
     );
-    expect(calls[2]?.body.fields).toEqual(["parent"]);
+    expect(calls[2]?.body.fields).toEqual(["parent", "status", "issuetype"]);
     expect(pool[0]).toEqual({
       nativeType: "Task",
       identifier: "ENG-1",
@@ -519,9 +522,13 @@ describe("Jira adapter: candidate pools", () => {
       labels: ["a"],
       isEpic: false,
       hasOpenChildren: true,
+      hasChildren: true,
       truncated: [],
     });
-    expect(pool[1]?.hasOpenChildren).toBe(false);
+    expect(pool[1]).toMatchObject({
+      hasOpenChildren: false,
+      hasChildren: true,
+    });
   });
 
   it("refuses an empty label list", async () => {
@@ -830,13 +837,16 @@ describe("Jira adapter: assignments", () => {
     );
   });
 
-  it("throws when the issue is no longer the account's or holds no such change", async () => {
+  it("throws when the issue is no longer assigned to the account", async () => {
     await expect(
       jira(assigned(MEMBER, { ...MEMBER })).t.assignedBy(
         "ENG-42",
         "factory@example.com",
       ),
     ).rejects.toThrow("no longer assigned");
+  });
+
+  it("explains how to start pickup for a Jira issue created with an assignee", async () => {
     const { t } = jira(
       routes({
         "GET issue/ENG-1": issue({ key: "ENG-1", assignee: FACTORY }),
@@ -849,7 +859,9 @@ describe("Jira adapter: assignments", () => {
         },
       }),
     );
-    await expect(t.assignedBy("ENG-1")).rejects.toThrow("holds no assignment");
+    await expect(t.assignedBy("ENG-1")).rejects.toThrow(
+      "Jira omits assignments made at issue creation. To start a pickup, have a trusted person unassign the issue and assign it again.",
+    );
   });
 
   it("gives the dispatcher a trusted pickup for a member's assignment and none for an app's", async () => {

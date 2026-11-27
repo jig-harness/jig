@@ -252,11 +252,24 @@ describe("the recoveries the drive records", () => {
     const r = await inModule(
       forge,
       "lib/driver/restart.ts",
-      'admitDeadlineRestart("12", 2)',
+      'admitPassRestart("12", 2, "pass-deadline")',
     );
     expectSpawnExit(r, 0);
     expect(JSON.parse(r.stdout)).toEqual({ admitted: true, taken: 1 });
     expect(await causes(forge)).toEqual(["restart:pass-deadline"]);
+  });
+
+  it("a restart after a pass left a background task, on the same count", async () => {
+    const forge = fakeForge("");
+    const r = await inModule(
+      forge,
+      "lib/driver/restart.ts",
+      'admitPassRestart("12", 2, "background-pending")',
+    );
+    expectSpawnExit(r, 0);
+    expect(JSON.parse(r.stdout)).toEqual({ admitted: true, taken: 1 });
+    expect(await causes(forge)).toEqual(["restart:background-pending"]);
+    expect((await state(forge)).deadlineRetries).toBe(1);
   });
 
   it("the stall's extra round, at its site", async () => {

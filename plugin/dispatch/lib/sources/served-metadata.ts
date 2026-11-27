@@ -52,12 +52,7 @@ async function childrenOf(
   view: ServedView,
   assigned: Pick<Metadata, "by" | "noAssigner">,
 ): Promise<PoolIssue[]> {
-  if (
-    assigned.noAssigner !== undefined ||
-    !issue.isEpic ||
-    !issue.hasOpenChildren
-  )
-    return [];
+  if (assigned.noAssigner !== undefined || !issue.hasOpenChildren) return [];
   const source = tracker.dispatchSource;
   if (source === undefined)
     return view.once(`children ${issue.identifier}`, () =>
@@ -139,7 +134,7 @@ export async function metadata(
     tracker.readinessKey ?? "",
     trackerStateMaps(tracker),
   ]);
-  const key = `${trackerScope(tracker)}:${credential}:${interpretation}:item:${issue.identifier}:${identity}:${issue.isEpic ? "epic" : ""}`;
+  const key = `${trackerScope(tracker)}:${credential}:${interpretation}:item:${issue.identifier}:${identity}:${issue.hasOpenChildren ? "open-children" : ""}`;
   const nativeGitHub =
     tracker.adapter === "github" && tracker.dispatchSource !== undefined;
   const kept = await cacheByVersion<Metadata>(

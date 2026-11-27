@@ -16,6 +16,8 @@ import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import {
   personPickupHolds,
   pickupHoldReason,
+  selfChecked,
+  type UnplacedHold,
   type PersonPickupHold,
 } from "./person-pickup-holds.ts";
 import { readPickupConditions } from "./tick-pickup-conditions.ts";
@@ -42,6 +44,7 @@ import type {
   DispatchSection,
   RepoReport,
   RepoTarget,
+  Unplaced,
   WantedItem,
 } from "./types.ts";
 
@@ -265,14 +268,17 @@ export async function readTracker(
     const active = currentHolds.filter((hold) => hold.settled !== "cleared");
     const byKey = new Map(active.map((hold) => [hold.item, hold]));
     for (const hold of active) {
-      report.unplaced.push({
+      const placed: Unplaced & UnplacedHold = {
         target: hold.item,
         record: "tracker",
         reason: pickupHoldReason(hold),
         title: hold.title,
         url: hold.url,
-        pickupHold: { by: hold.by, at: hold.at },
-      });
+        ...(selfChecked(hold)
+          ? { selfChecked: true }
+          : { pickupHold: { by: hold.by, at: hold.at } }),
+      };
+      report.unplaced.push(placed);
     }
     const mergeFailures: unknown[] = [];
     tracked.servedPolicy = servedPolicyOf(

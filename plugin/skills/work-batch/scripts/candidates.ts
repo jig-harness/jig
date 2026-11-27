@@ -27,7 +27,9 @@
  *
  * `--fixed` proposes a batch a dispatcher launch named: only those issues,
  * each read by its key and counted as claimed, with the ones their size keeps
- * out listed as left for their own pickups (`lib/fixed-batch.ts`).
+ * out listed as left for their own pickups, and, with fewer than two kept,
+ * the one to work alone under the launch's `--missing-priority`
+ * (`lib/fixed-batch.ts`).
  *
  * The eligibility mode reads issues on stdin, reads no tracker, and prints
  * one versioned JSON document: the effective policy and a verdict for each
@@ -63,7 +65,6 @@ import {
   type ExclusionReason,
   excludeReason,
   isKnownAreaLabel,
-  partition,
   sanitizeForDisplay,
   soloFlagOf,
   stateStanding,
@@ -78,13 +79,22 @@ import {
 import { anchorIssueKey } from "./lib/anchor-key.ts";
 import { capCandidates } from "./lib/budget.ts";
 import {
+  type AloneChoice,
+  aloneChoice,
   type LeftOut,
   leftOutLines,
+  missingPriorityFlag,
   readFixedMembers,
   leavesFixedBatch,
   splitFixed,
 } from "./lib/fixed-batch.ts";
 import { Refusal } from "./lib/errors.ts";
+import {
+  claimedSet,
+  positiveInteger,
+  readStdin,
+  unique,
+} from "./lib/cli-input.ts";
 import { parsePoolIssues } from "./lib/pool-input.ts";
 import {
   areaNamedBy,
@@ -159,6 +169,8 @@ export interface Proposal {
   excluded: Excluded[];
   /** Under `--fixed`: the members their size leaves for their own pickups. */
   leftOut: LeftOut[];
+  /** Under `--fixed`, with fewer than two kept: the member to work alone, or none. */
+  alone?: AloneChoice;
   labellingGaps: LabellingGap[];
   /** Eligible issues left out by the item limit or the point budget. */
   overflow: number;
@@ -171,6 +183,8 @@ export interface BuildOptions {
   claimed: ReadonlySet<string>;
   /** The members a dispatcher launch named, in its order: the proposal's whole scope. */
   fixed?: ReadonlySet<string>;
+  /** Under `fixed`: the launch's `dispatch.missing_priority`, read from the default branch; `hold` when absent. */
+  missingPriority?: AloneChoice["missingPriority"];
 }
 
 function refuse(message: string): never {
@@ -441,7 +455,7 @@ export function buildProposal(
   warnings: string[],
   sizeGaps: readonly PoolIssue[],
 ): Proposal {
-  const parts = splitFixed(partition(issues, policy, opts), policy, opts.fixed);
+  const parts = splitFixed(issues, policy, opts);
   const ranked = rank(parts.eligible, policy, anchor.sharedLabels);
   // An issue held back for no priority is a labelling gap, not a refusal.
   const unranked = unrankedOf(issues, parts.excluded);
@@ -460,6 +474,7 @@ export function buildProposal(
     warnings.push(
       `the anchor issue ${anchor.input} alone costs more than the ${opts.budget}-point budget; it is proposed anyway, since it is the issue this run was invoked for`,
     );
+  const alone = aloneChoice(candidates, parts.leftOut, opts);
   return {
     version: OUTPUT_VERSION,
     anchor,
@@ -469,20 +484,11 @@ export function buildProposal(
     candidates,
     excluded,
     leftOut: parts.leftOut,
+    ...(alone === null ? {} : { alone }),
     labellingGaps: gaps,
     overflow: ranked.length - candidates.length,
     warnings,
   };
-}
-
-/** Keep the first of each identifier: a pool read twice can return an issue twice. */
-function unique(issues: readonly PoolIssue[]): PoolIssue[] {
-  const seen = new Set<string>();
-  return issues.filter((i) => {
-    if (seen.has(i.identifier)) return false;
-    seen.add(i.identifier);
-    return true;
-  });
 }
 
 /**
@@ -874,7 +880,7 @@ export function renderTable(p: Proposal, policy: BatchPolicy): string {
   return [
     ...anchorLines(p),
     ...batchLines(p, policy),
-    ...leftOutLines(p.leftOut),
+    ...leftOutLines(p.leftOut, p.alone),
     ...heldBackLines(p, policy),
     ...gapLines(p.labellingGaps, policy),
     ...p.warnings.flatMap((w) => ["", `WARNING: ${sanitizeForDisplay(w)}`]),
@@ -885,40 +891,10 @@ export function renderTable(p: Proposal, policy: BatchPolicy): string {
 // CLI
 // ─────────────────────────────────────────────────────────────────────────────
 
-const USAGE = `usage: candidates.ts <anchor> [--limit N] [--budget N] [--claimed K1,K2] [--fixed K1,K2] [--catalog <path>] [--format table|json]
+const USAGE = `usage: candidates.ts <anchor> [--limit N] [--budget N] [--claimed K1,K2] [--fixed K1,K2 [--missing-priority hold|start]] [--catalog <path>] [--format table|json]
        candidates.ts --eligibility [--claimed K1,K2] [--catalog <path>]   (issues as a JSON array on stdin)
 
   <anchor>  a change-area name, a repository path, an epic's key or one issue's key`;
-
-function positiveInteger(
-  raw: string | undefined,
-  flag: string,
-  fallback: number,
-): number {
-  if (raw === undefined) return fallback;
-  const n = Number(raw);
-  if (!Number.isSafeInteger(n) || n < 1)
-    throw new Refusal(
-      `--${flag} must be a positive whole number, got "${raw}"\n${USAGE}`,
-    );
-  return n;
-}
-
-function claimedSet(raw: string | undefined): Set<string> {
-  return new Set(
-    (raw ?? "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s !== ""),
-  );
-}
-
-async function readStdin(): Promise<string> {
-  process.stdin.setEncoding("utf8");
-  let text = "";
-  for await (const chunk of process.stdin) text += chunk;
-  return text;
-}
 
 /** Print the verdicts for the issues on stdin. */
 async function eligibilityCommand(
@@ -949,6 +925,7 @@ async function proposalCommand(
   catalog: ChangeAreaCatalog | null,
   policy: BatchPolicy,
   claimed: ReadonlySet<string>,
+  tracker: () => Tracker,
 ): Promise<number> {
   const format = values.get("format") ?? "table";
   if (format !== "table" && format !== "json")
@@ -957,13 +934,19 @@ async function proposalCommand(
     ? claimedSet(values.get("fixed"))
     : undefined;
   if (fixed?.size === 0) throw new Refusal(`--fixed names no key\n${USAGE}`);
+  const missingPriority = missingPriorityFlag(
+    values.get("missing-priority"),
+    fixed,
+  );
+  const count = (flag: string, fallback: number) =>
+    positiveInteger(values.get(flag), flag, fallback, USAGE);
   const limits = {
-    limit: positiveInteger(values.get("limit"), "limit", policy.maxItems),
-    budget: positiveInteger(values.get("budget"), "budget", policy.pointBudget),
+    limit: count("limit", policy.maxItems),
+    budget: count("budget", policy.pointBudget),
     claimed: new Set([...claimed, ...(fixed ?? [])]),
-    ...(fixed === undefined ? {} : { fixed }),
+    ...(fixed === undefined ? {} : { fixed, missingPriority }),
   };
-  const proposal = await run(openTracker(), catalog, policy, anchor, limits);
+  const proposal = await run(tracker(), catalog, policy, anchor, limits);
   console.log(
     format === "json"
       ? JSON.stringify(proposal, null, 2)
@@ -972,13 +955,19 @@ async function proposalCommand(
   return 0;
 }
 
-export async function main(argv: string[]): Promise<number> {
+/** The proposal's valued flags. */
+const PROPOSAL_VALUES =
+  "limit budget claimed fixed missing-priority catalog format".split(" ");
+
+/** Run the command line; `tracker` opens the configured tracker unless a caller supplies its own. */
+export async function main(
+  argv: string[],
+  tracker: () => Tracker = openTracker,
+): Promise<number> {
   const eligibility = argv.includes("--eligibility");
   const parsed = parseArgs(argv, {
     flags: ["eligibility"],
-    values: eligibility
-      ? ["claimed", "catalog"]
-      : ["limit", "budget", "claimed", "fixed", "catalog", "format"],
+    values: eligibility ? ["claimed", "catalog"] : PROPOSAL_VALUES,
     usage: USAGE,
     noPositional: eligibility,
   });
@@ -994,7 +983,14 @@ export async function main(argv: string[]): Promise<number> {
     const claimed = claimedSet(values.get("claimed"));
     return eligibility
       ? await eligibilityCommand(policy, claimed)
-      : await proposalCommand(values, positional, catalog, policy, claimed);
+      : await proposalCommand(
+          values,
+          positional,
+          catalog,
+          policy,
+          claimed,
+          tracker,
+        );
   } catch (err) {
     console.error(
       `work-batch: ${err instanceof Error ? err.message : String(err)}`,

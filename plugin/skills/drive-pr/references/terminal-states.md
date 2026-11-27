@@ -672,7 +672,13 @@ state other than `FINISHED`, the stop prints that state and the last reason,
 and the closing report names them and takes its cause from the state
 (`CI_HOLD_WAIT` reads `environment`) instead of `unknown`. The drive's `stop`
 event records that state and reason as its `finish`, and the ledger's summary
-names them. A failed push's reason says why it failed (`lib/push-failure.ts`:
+names them. When the passes did not all end on one state, the stop prints how
+they finished instead (`How those passes finished: …`): the last reasons they recorded,
+newest last, and how many passes recorded none, a pass that never reached
+`finish-round.ts` counted as missing its reason. The `stop` event keeps that
+tally as `reasons`; the ledger's summary, the closing report of a stall whose
+passes did not agree, and the dispatcher's `why` for the stall, which the
+steward's digest carries, name it. A failed push's reason says why it failed (`lib/push-failure.ts`:
 a pre-push gate, a remote's rejection, a connection, the push's timeout, an
 unconfirmed head) and quotes the last lines `guarded-push.ts` wrote; a stall
 whose every pass ended `PUSH_FAILED` sends a person to fix what refuses the
