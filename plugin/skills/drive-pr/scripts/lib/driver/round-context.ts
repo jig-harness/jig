@@ -126,4 +126,7 @@ export interface DriveRoundContext {
    * when its status is clean.
    */
   inheritsOperation: boolean;
+  /** The converged CI wait's line, printed once per wait (`wait-line.ts`). */
+  waitLinePrinted?: string | null;
+  waitLineNow?: string | null;
 }
