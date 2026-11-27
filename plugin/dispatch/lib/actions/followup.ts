@@ -654,17 +654,21 @@ async function retryMarked(
       safety === null
         ? await accountBlock(state, record)
         : { detail: safety.wait, waitsOn: "admission" as const };
-    const classes = narrowedClasses(
-      record.routineClasses,
-      ctx.section.followupRoutine,
-    );
-    const { routineClasses: _stored, ...rest } = record;
-    const current: Marked =
-      classes === undefined ? rest : { ...rest, routineClasses: classes };
+    const current = underCurrentPolicy(record, ctx);
     const outcome = await replay(state, current, action, blocked);
     report.launches.push(headless(outcome, record));
   }
   return held;
+}
+
+/** The record to replay: its routine classes narrowed to what the repository's policy names now. */
+function underCurrentPolicy(record: Marked, ctx: FollowupContext): Marked {
+  const classes = narrowedClasses(
+    record.routineClasses,
+    ctx.section.followupRoutine,
+  );
+  const { routineClasses: _stored, ...rest } = record;
+  return classes === undefined ? rest : { ...rest, routineClasses: classes };
 }
 
 /**
