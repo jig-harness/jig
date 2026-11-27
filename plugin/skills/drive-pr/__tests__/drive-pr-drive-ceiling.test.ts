@@ -2,8 +2,9 @@
  * drive-pr suite: the economic circuit breaker end to end. A drive whose
  * pull request has spent its round ceiling or its wall-clock cap parks
  * `round-ceiling`; a re-arm grants nothing past the ceiling, and only
- * `--past-ceiling` raises it; rounds that keep raising as many findings as
- * they fix park `divergence-stop`, and rounds that converge never do.
+ * `--past-ceiling` raises it; rounds that keep raising more findings than
+ * they fix park `divergence-stop`, and rounds that hold level or converge
+ * never do.
  */
 import { describe, expect, it } from "bun:test";
 import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
@@ -399,10 +400,14 @@ describe("the divergence stop", () => {
   }
 
   it.skipIf(skipLongDriveFixture)(
-    "parks divergence-stop after two rounds that each raised at least as many findings as they fixed",
+    "parks divergence-stop after two rounds that each raised more findings than they fixed",
     async () => {
       const { f, r } = await driveThrough(
-        [["PRRT_a1"], ["PRRT_b1", "PRRT_b2"], ["PRRT_c1", "PRRT_c2"]],
+        [
+          ["PRRT_a1"],
+          ["PRRT_b1", "PRRT_b2"],
+          ["PRRT_c1", "PRRT_c2", "PRRT_c3"],
+        ],
         "10",
       );
       expectSpawnExit({ ...r, stdout: null }, 8);
@@ -410,7 +415,21 @@ describe("the divergence stop", () => {
       expect(r.stderr).toContain("divergence stop on PR #999");
       const steps = park(f.stateDir, "divergence-stop")?.decision?.steps ?? [];
       expect(steps.join("\n")).toContain("2 new finding(s), 1 fixed, 2 open");
-      expect(steps.join("\n")).toContain("2 new finding(s), 2 fixed, 2 open");
+      expect(steps.join("\n")).toContain("3 new finding(s), 2 fixed, 3 open");
+    },
+    MULTI_ROUND_TIMEOUT_MS,
+  );
+
+  it.skipIf(skipLongDriveFixture)(
+    "does not park on rounds that each raised as many findings as they fixed",
+    async () => {
+      const { f, r } = await driveThrough(
+        [["PRRT_a1"], ["PRRT_b1"], ["PRRT_c1"], ["PRRT_d1"]],
+        "3",
+      );
+      expectSpawnExit({ ...r, stdout: null }, 6);
+      expect(r.passes).toBe(3);
+      expect(park(f.stateDir, "divergence-stop")).toBeUndefined();
     },
     MULTI_ROUND_TIMEOUT_MS,
   );
