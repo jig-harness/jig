@@ -22,7 +22,7 @@ import {
   checkLauncherResolves,
   detectScheduler,
   installedScript,
-  jobPreview,
+  jobPreviewOutcome,
   restoreScheduler,
   type SchedulerSnapshot,
   snapshotScheduler,
@@ -78,11 +78,14 @@ export async function install(options: InstallOptions): Promise<number> {
   // only the machine entry, and keeps the job and the programs it recorded.
   const keepJob = options.uninstall && !noEntries;
   console.log(`Machine entry preview (${machinePath}):\n${dump({ gc: next })}`);
-  console.log(
-    keepJob
-      ? "Scheduler preview: the jig-gc job is unchanged"
-      : jobPreview(gcJobSpec(next.hour), noEntries),
-  );
+  const preview = keepJob
+    ? ok("Scheduler preview: the jig-gc job is unchanged")
+    : jobPreviewOutcome(gcJobSpec(next.hour), noEntries);
+  if (!preview.ok) {
+    console.error(preview.failure.reason);
+    return 1;
+  }
+  console.log(preview.value);
   if (!options.confirm) {
     console.log(
       "Preview only. Repeat with --yes to confirm these bounds and update the scheduler.",

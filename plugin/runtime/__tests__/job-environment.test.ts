@@ -8,9 +8,10 @@ import {
   capturedEnvironment,
   carriedEnvironment,
   HIDDEN_VALUE,
-  launchdEnvironment,
+  parseLaunchdEnvironment,
   maskedEnvironment,
 } from "../job-environment.ts";
+import { ok } from "../../shared/outcome.ts";
 import { jobFiles } from "../scheduler.ts";
 
 const managed = new Set(["HOME", "PATH", "JIG_HOME"]);
@@ -120,14 +121,48 @@ describe("the variables kept from the installed launchd job", () => {
 </dict>
 </plist>
 `;
-    expect(launchdEnvironment(edited)).toEqual({
-      PATH: "/usr/bin",
-      LINEAR_API_KEY: "lin-value",
-    });
+    expect(parseLaunchdEnvironment(edited)).toEqual(
+      ok({ PATH: "/usr/bin", LINEAR_API_KEY: "lin-value" }),
+    );
     expect(carriedEnvironment(edited, managed)).toEqual({
       ok: true,
       value: { LINEAR_API_KEY: "lin-value" },
     });
+  });
+});
+
+describe("an environment read whole or not at all", () => {
+  const wrap = (inner: string) =>
+    `<?xml version="1.0"?>\n<plist version="1.0"><dict><key>EnvironmentVariables</key>${inner}</dict></plist>`;
+
+  test("ignores a comment between the key and its dictionary", () => {
+    const text = wrap(
+      "<!-- note --><dict><key>A</key><string>1</string></dict>",
+    );
+    expect(parseLaunchdEnvironment(text)).toEqual(ok({ A: "1" }));
+  });
+
+  test("refuses a CDATA value instead of keeping its markup", () => {
+    const text = wrap(
+      "<dict><key>A</key><string><![CDATA[a&b]]></string></dict>",
+    );
+    expect(parseLaunchdEnvironment(text).ok).toBe(false);
+    expect(carriedEnvironment(text, managed).ok).toBe(false);
+  });
+
+  test("refuses a non-string entry beside valid ones", () => {
+    const text = wrap(
+      "<dict><key>A</key><string>1</string><key>N</key><integer>2</integer></dict>",
+    );
+    expect(parseLaunchdEnvironment(text).ok).toBe(false);
+  });
+
+  test("keeps a variable named __proto__ as an own entry", () => {
+    const read = parseLaunchdEnvironment(
+      wrap("<dict><key>__proto__</key><string>v</string></dict>"),
+    );
+    if (!read.ok) throw new Error("unreadable");
+    expect(Object.keys(read.value)).toEqual(["__proto__"]);
   });
 });
 

@@ -35,7 +35,7 @@ import {
   checkLauncherResolves,
   detectScheduler,
   installedScript,
-  jobPreview,
+  jobPreviewOutcome,
   managedEnvironment,
   restoreScheduler,
   type SchedulerSnapshot,
@@ -273,8 +273,14 @@ export async function installDispatch(
       remove: options.uninstall || machine?.changeProbe === false,
     },
   ];
-  for (const change of changes)
-    console.log(jobPreview(change.spec, change.remove));
+  for (const change of changes) {
+    const preview = jobPreviewOutcome(change.spec, change.remove);
+    if (!preview.ok) {
+      console.error(preview.failure.reason);
+      return 1;
+    }
+    console.log(preview.value);
+  }
   if (!options.confirm) {
     console.log("Preview only. Repeat with --yes to write the jobs.");
     return 0;

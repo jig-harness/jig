@@ -40,28 +40,52 @@ export function unxml(value: string): string {
 }
 
 /**
- * A launchd job's `EnvironmentVariables`: the form `jobFiles` writes, or the
- * same keys laid out on lines of their own, as a person's edit with a plist
- * tool leaves them.
+ * A launchd job's `EnvironmentVariables`, read whole or not at all: the form
+ * `jobFiles` writes, or the same keys laid out on lines of their own, as a
+ * person's edit with a plist tool leaves them. XML comments are ignored; an
+ * entry that is not a plain `<string>` (CDATA, a number, a nested dictionary)
+ * makes the block `unreadable`, never a smaller one. A job with no
+ * environment holds none.
  */
-export function launchdEnvironment(plist: string): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const match of environmentBlock(plist).matchAll(STRING_ENTRY))
-    env[unxml(match[1] as string)] = unxml(match[2] ?? "");
-  return env;
-}
-
-/** One `EnvironmentVariables` entry with a string value, `<string/>` for an empty one. */
-const STRING_ENTRY =
-  /<key>(.*?)<\/key>\s*(?:<string>(.*?)<\/string>|<string\/>)/gs;
-
-/** The inside of a plist's `EnvironmentVariables` dictionary, empty when it has none. */
-function environmentBlock(plist: string): string {
-  return (
-    /<key>EnvironmentVariables<\/key>\s*<dict>(.*?)<\/dict>/s.exec(
-      plist,
-    )?.[1] ?? ""
-  );
+export function parseLaunchdEnvironment(
+  plist: string,
+): Outcome<Record<string, string>, "unreadable"> {
+  const text = plist.replace(/<!--.*?-->/gs, "");
+  const start = /<key>EnvironmentVariables<\/key>\s*<dict\s*(\/?)>/.exec(text);
+  if (start === null) {
+    return text.includes("<key>EnvironmentVariables</key>")
+      ? failed(
+          "unreadable",
+          "its EnvironmentVariables is not a dictionary; make it a <dict> of <string> values, then install again",
+        )
+      : ok({});
+  }
+  if (start[1] === "/") return ok({});
+  const rest = text.slice(start.index + start[0].length);
+  const end = rest.indexOf("</dict>");
+  if (end < 0)
+    return failed(
+      "unreadable",
+      "its EnvironmentVariables dictionary is not closed",
+    );
+  const entries: [string, string][] = [];
+  const entry =
+    /\s*<key>([^<]*)<\/key>\s*(?:<string>([^<]*)<\/string>|<string\s*\/>)/y;
+  const body = rest.slice(0, end);
+  let at = 0;
+  while (body.slice(at).trim() !== "") {
+    entry.lastIndex = at;
+    const match = entry.exec(body);
+    if (match === null)
+      return failed(
+        "unreadable",
+        "an EnvironmentVariables entry is not a string (a plain <string> without CDATA); make each value one, then install again",
+      );
+    entries.push([unxml(match[1] as string), unxml(match[2] ?? "")]);
+    at = entry.lastIndex;
+  }
+  // Own data properties, so a variable named `__proto__` stays a variable.
+  return ok(Object.fromEntries(entries));
 }
 
 /** What a preview shows in place of a value it must not print. */
@@ -87,13 +111,9 @@ export function carriedEnvironment(
       "unreadable",
       "it is not an XML plist; convert it with plutil -convert xml1, then install again",
     );
-  const keys = [...environmentBlock(plist).matchAll(/<key>/g)].length;
-  const env = launchdEnvironment(plist);
-  if (Object.keys(env).length !== keys)
-    return failed(
-      "unreadable",
-      "an EnvironmentVariables entry is not a string; make each value a <string>, then install again",
-    );
+  const read = parseLaunchdEnvironment(plist);
+  if (!read.ok) return failed("unreadable", read.failure.reason);
+  const env = read.value;
   const carried = Object.entries(env).filter(([name]) => !managed.has(name));
   const broken = carried.find(([, value]) => /[\r\n\0]/.test(value));
   if (broken)

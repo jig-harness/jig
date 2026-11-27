@@ -360,6 +360,8 @@ function carriedFromInstalled(
  * to a file it creates, so an existing file is narrowed too.
  */
 function writePrivate(path: string, text: string): void {
+  // Narrow before writing, so the old permissions never cover the new text.
+  if (existsSync(path)) chmodSync(path, 0o600);
   writeFileSync(path, text, { mode: 0o600 });
   chmodSync(path, 0o600);
 }
@@ -890,17 +892,34 @@ async function rewrite(
  * `--env` captured shown as `HIDDEN_VALUE`, and those variables named.
  */
 export function jobPreview(spec: JobSpec, remove: boolean): string {
+  const preview = jobPreviewOutcome(spec, remove);
+  return preview.ok ? preview.value : preview.failure.reason;
+}
+
+/**
+ * `jobPreview` as an outcome: a job file the install would refuse is a
+ * failure, so a caller's preview exits unsuccessfully.
+ */
+export function jobPreviewOutcome(
+  spec: JobSpec,
+  remove: boolean,
+): Outcome<string, "unreadable"> {
   const detected = detectScheduler();
   if (!detected.ok)
-    return `Scheduler preview unavailable: ${detected.failure.reason}`;
+    return ok(`Scheduler preview unavailable: ${detected.failure.reason}`);
   const scheduler = detected.value;
   if (remove)
-    return `Scheduler preview (${scheduler}): the ${spec.name} job is removed`;
+    return ok(
+      `Scheduler preview (${scheduler}): the ${spec.name} job is removed`,
+    );
   let carried: Record<string, string>;
   try {
     carried = carriedFromInstalled(scheduler, spec);
   } catch (error) {
-    return `Scheduler preview unavailable for the ${spec.name} job: ${reasonOf(error)}`;
+    return failed(
+      "unreadable",
+      `Scheduler preview unavailable for the ${spec.name} job: ${reasonOf(error)}`,
+    );
   }
   const job = installedJob(spec, false, carried);
   const captured = Object.keys(spec.capturedEnv ?? {});
@@ -915,12 +934,14 @@ export function jobPreview(spec: JobSpec, remove: boolean): string {
     names.length === 0
       ? []
       : [`${what}, values shown as ${HIDDEN_VALUE}: ${names.join(", ")}`];
-  return [
-    `Scheduler preview (${scheduler}):`,
-    ...Object.entries(files).map(([name, text]) => `--- ${name}\n${text}`),
-    ...named(Object.keys(carried), "Kept from the installed job"),
-    ...named(captured, "Captured from this shell with --env"),
-  ].join("\n");
+  return ok(
+    [
+      `Scheduler preview (${scheduler}):`,
+      ...Object.entries(files).map(([name, text]) => `--- ${name}\n${text}`),
+      ...named(Object.keys(carried), "Kept from the installed job"),
+      ...named(captured, "Captured from this shell with --env"),
+    ].join("\n"),
+  );
 }
 export function installedScript(script: string): boolean {
   return outsideCheckout(script);

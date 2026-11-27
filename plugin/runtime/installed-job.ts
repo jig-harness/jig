@@ -7,7 +7,7 @@
  * never what the install recorded, and `jig doctor` checks the programs a job
  * names.
  */
-import { launchdEnvironment, unxml } from "./job-environment.ts";
+import { parseLaunchdEnvironment, unxml } from "./job-environment.ts";
 import type { JobSpec } from "./job-spec.ts";
 import { installedSchedule } from "./job-status.ts";
 import type { SchedulerSnapshot } from "./scheduler.ts";
@@ -124,9 +124,13 @@ function launchdJob(plist: string): InstalledJob | null {
   const command = [...program.matchAll(/<string>(.*?)<\/string>/gs)].map(
     (match) => unxml(match[1] as string),
   );
+  // An environment that cannot be read whole is a job that cannot be read:
+  // a refresh would otherwise rewrite it without what it could not read.
+  const env = parseLaunchdEnvironment(plist);
+  if (!env.ok) return null;
   return {
     command,
-    env: launchdEnvironment(plist),
+    env: env.value,
     schedule: installedSchedule("launchd", plist),
   };
 }

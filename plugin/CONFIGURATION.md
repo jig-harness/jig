@@ -2367,9 +2367,11 @@ depends on the scheduler.
 - **Linux (cron).** Export the variable in a wrapper that then runs the
   launcher; a reinstall rewrites the crontab line.
 
-A pass started with `runtime: process` keeps only the variables
-`process.env_keep` names, so on such a host a variable a pass needs from the
-tick's environment (a forge token, `LOCK_TIMEOUT`) is listed there as well.
+A pass started with `runtime: process` runs with a built-in environment
+(the base variables, `LC_` locale variables and the platform's own values)
+plus the variables `process.env_keep` names, so on such a host a variable a
+pass needs from the tick's environment (a forge token, `LOCK_TIMEOUT`) is
+listed there as well.
 
 ### The host-local account launch weights file
 
