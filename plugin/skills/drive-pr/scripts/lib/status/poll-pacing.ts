@@ -1,4 +1,4 @@
-import type { Clock } from "../../../../../shared/clock.ts";
+import { type Clock, systemClock } from "../../../../../shared/clock.ts";
 import { definedFields } from "../../../../../shared/defined-fields.ts";
 import { DecodeError, isRecord } from "../../../../../shared/guards.ts";
 import type { BudgetWindow } from "../../../../../shared/outbound/budget.ts";
@@ -71,52 +71,73 @@ export function pollFingerprint(report: StatusReport): string {
   ]);
 }
 
+const quotaLabel = { requests: "REST core", complexity: "GraphQL" } as const;
+type PollQuota = keyof typeof quotaLabel;
+
 interface BalanceSample {
-  windows: BudgetWindow[];
+  windows: Partial<Record<PollQuota, BudgetWindow[]>>;
   credential?: string;
 }
 
-function readBalance(now: number): BalanceSample {
-  const balances = forgeBudgetOn() ? githubBalances() : null;
-  if (balances === null) return { windows: [] };
+function readBalance(
+  now: number,
+  balances: ReturnType<typeof githubBalances>,
+): BalanceSample {
+  if (balances === null) return { windows: {} };
   return {
-    windows: [balances.graphql, ...graphqlPollFloors(balances.windows, now)],
+    windows: {
+      requests: [balances.core],
+      complexity: [
+        balances.graphql,
+        ...graphqlPollFloors(balances.windows, now),
+      ],
+    },
     ...definedFields({ credential: balances.credential }),
   };
 }
 
 interface Dependencies extends Clock {
   balance(): BalanceSample;
-  record(credential: string | undefined, ms: number, skipped: number): void;
+  record(
+    credential: string | undefined,
+    ms: number,
+    skipped: number,
+    quota?: PollQuota,
+    operation?: string,
+  ): void;
 }
 
 // Leave enough time for the final loop iteration to start its forge read even
 // when the timer fires late and this wait records its outbound-call telemetry.
 const FINAL_EVALUATION_MARGIN_MS = 1_000;
 
-export function pollDependencies(clock: Clock): Dependencies {
+export function pollDependencies(
+  clock: Clock,
+  read = () => (forgeBudgetOn() ? githubBalances() : null),
+): Dependencies {
   return {
     ...clock,
-    balance: () => readBalance(clock.now()),
-    record(credential, durationMs, skipped) {
+    balance: () => readBalance(clock.now(), read()),
+    record(credential, durationMs, skipped, quota, operation = "drive-status") {
+      const suffix = quota === undefined ? "" : ` (${quotaLabel[quota]})`;
       const entry = {
         system: "github",
         credential: credential ?? "(unavailable)",
         owner: credential ?? null,
-        window: "none",
+        window: quota ?? "none",
         unit: "polls",
         requests: 0,
       };
       recordCall({
         ...entry,
-        operation: "drive-status poll wait",
+        operation: `${operation} poll wait${suffix}`,
         cost: 1,
         durationMs,
       });
       if (skipped > 0)
         recordCall({
           ...entry,
-          operation: "drive-status poll skipped",
+          operation: `${operation} poll skipped${suffix}`,
           cost: skipped,
           durationMs: 0,
         });
@@ -159,35 +180,46 @@ function enforcesMoreStrictly(
   );
 }
 
-export class StatusPollPacing {
-  private previous: string | undefined;
-  private cadence = 0;
-  private lower: BudgetWindow[] = [];
+const pollQuotas = ["requests", "complexity"] as const;
+
+/** Keep the strictest live readings and infer missing limits within one quota. */
+function retainWindows(windows: BudgetWindow[], now: number): BudgetWindow[] {
+  const live = windows.filter(
+    (window) => window.resetAt !== null && window.resetAt > now,
+  );
+  const lowest = live.filter(
+    (window, index) =>
+      !live.some((other, otherIndex) =>
+        enforcesMoreStrictly(other, otherIndex, window, index),
+      ),
+  );
+  const capacities = new Set(
+    lowest
+      .map(({ limit }) => limit)
+      .filter((limit): limit is number => limit !== null && limit > 0),
+  );
+  if (capacities.size !== 1) return lowest;
+  const [limit] = capacities;
+  return lowest.map((window) =>
+    window.limit === null && limit !== undefined
+      ? { ...window, limit }
+      : window,
+  );
+}
+
+/** A drive's waiting readers use the most restrictive live quota. */
+class QuotaPollPacing {
+  private lower: Record<PollQuota, BudgetWindow[]> = {
+    requests: [],
+    complexity: [],
+  };
   private credential: string | undefined;
-  private finalEvaluationDeadline: number | undefined;
-  private readonly maximumMs: number;
-  private readonly baseMs: number;
-  private readonly policy: StatusPolling;
+  private readonly waitingShare: number;
   private readonly deps: Dependencies;
 
-  constructor(baseMs: number, policy: StatusPolling, deps: Dependencies) {
-    this.baseMs = baseMs;
-    this.policy = policy;
+  constructor(waitingShare: number, deps: Dependencies) {
+    this.waitingShare = waitingShare;
     this.deps = deps;
-    this.maximumMs = Math.max(baseMs, policy.maxIntervalSeconds * 1000);
-  }
-
-  /** Keep only readings another reading enforces at least as strictly. */
-  private compactLower(now: number): void {
-    const live = this.lower.filter(
-      (window) => window.resetAt !== null && window.resetAt > now,
-    );
-    this.lower = live.filter(
-      (window, index, all) =>
-        !all.some((other, otherIndex) =>
-          enforcesMoreStrictly(other, otherIndex, window, index),
-        ),
-    );
   }
 
   /** Forget the readings of another credential. */
@@ -197,24 +229,8 @@ export class StatusPollPacing {
       sample.credential === this.credential
     )
       return;
-    this.lower = [];
+    this.lower = { requests: [], complexity: [] };
     this.credential = sample.credential;
-  }
-
-  /** A single known capacity completes the readings that omit their limit. */
-  private completeLimits(): void {
-    const capacities = new Set(
-      this.lower
-        .map(({ limit }) => limit)
-        .filter((limit): limit is number => limit !== null && limit > 0),
-    );
-    if (capacities.size !== 1) return;
-    const [limit] = capacities;
-    this.lower = this.lower.map((window) =>
-      window.limit === null && limit !== undefined
-        ? { ...window, limit }
-        : window,
-    );
   }
 
   /** The earliest the next poll may start, given one reading. */
@@ -223,8 +239,9 @@ export class StatusPollPacing {
     started: number,
     pollAt: number,
     maximumMs: number,
+    baseMs: number,
   ): number {
-    const share = this.policy.waitingShare;
+    const share = this.waitingShare;
     if (share <= 0 || low.remaining === null || low.resetAt === null)
       return pollAt;
     // Some GraphQL answers give a balance and reset without reporting the limit.
@@ -234,10 +251,96 @@ export class StatusPollPacing {
     if (fraction === null || fraction >= share) return pollAt;
     const stretched = Math.min(
       maximumMs,
-      Math.ceil((this.baseMs * share) / fraction),
-      Math.max(this.baseMs, low.resetAt - started),
+      Math.ceil((baseMs * share) / fraction),
+      Math.max(baseMs, low.resetAt - started),
     );
     return Math.max(pollAt, started + stretched);
+  }
+
+  /** Fold one balance reading into the lowest windows held. */
+  private absorb(): void {
+    const now = this.deps.now();
+    const sample = this.deps.balance();
+    this.adoptCredential(sample);
+    for (const quota of pollQuotas)
+      this.lower[quota] = retainWindows(
+        [...this.lower[quota], ...(sample.windows[quota] ?? [])],
+        now,
+      );
+  }
+
+  /** The poll time after every held window has had its say. */
+  next(
+    started: number,
+    pollAt: number,
+    maximumMs: number,
+    baseMs: number,
+  ): { at: number; quota: PollQuota | undefined } {
+    this.absorb();
+    let at = pollAt;
+    let quota: PollQuota | undefined;
+    for (const candidate of pollQuotas) {
+      for (const low of this.lower[candidate]) {
+        const next = this.pollAfter(low, started, at, maximumMs, baseMs);
+        if (next > at) quota = candidate;
+        at = next;
+      }
+    }
+    return { at, quota };
+  }
+
+  record(
+    ms: number,
+    skipped: number,
+    quota?: PollQuota,
+    operation?: string,
+  ): void {
+    this.deps.record(this.credential, ms, skipped, quota, operation);
+  }
+}
+
+/** Defer an optional repeated read without suspending the driver's local controls. */
+export function optionalPollPacing(
+  policy: StatusPolling,
+  operation: string,
+  deps = pollDependencies(systemClock),
+): (lastRead: number, baseMs: number, deadline?: number) => boolean {
+  const quota = new QuotaPollPacing(policy.waitingShare, deps);
+  let recordedUntil = 0;
+  return (lastRead, baseMs, deadline = Infinity) => {
+    const now = deps.now();
+    const due = lastRead + baseMs;
+    const next = quota.next(
+      lastRead,
+      due,
+      Math.max(baseMs, policy.maxIntervalSeconds * 1000),
+      baseMs,
+    );
+    const until = Math.min(next.at, deadline);
+    if (next.quota === undefined || until <= now) return false;
+    if (now >= recordedUntil) {
+      const interval = Math.min(until - now, baseMs);
+      quota.record(interval, 1, next.quota, operation);
+      recordedUntil = now + interval;
+    }
+    return true;
+  };
+}
+
+export class StatusPollPacing {
+  private previous: string | undefined;
+  private cadence = 0;
+  private finalEvaluationDeadline: number | undefined;
+  private readonly maximumMs: number;
+  private readonly baseMs: number;
+  private readonly quota: QuotaPollPacing;
+  private readonly deps: Dependencies;
+
+  constructor(baseMs: number, policy: StatusPolling, deps: Dependencies) {
+    this.baseMs = baseMs;
+    this.quota = new QuotaPollPacing(policy.waitingShare, deps);
+    this.deps = deps;
+    this.maximumMs = Math.max(baseMs, policy.maxIntervalSeconds * 1000);
   }
 
   /** An unchanged signal doubles the interval up to the ceiling. */
@@ -299,12 +402,18 @@ export class StatusPollPacing {
     this.cadence = this.nextCadence(signal, effectiveMaximumMs);
     this.previous = signal;
     let pollAt = started + this.cadence;
-    let sample = this.deps.balance();
+    let limitingQuota: PollQuota | undefined;
     for (;;) {
       const now = this.deps.now();
-      this.absorb(sample, now);
       const cadencePollAt = pollAt;
-      pollAt = this.budgetPollAt(started, pollAt, effectiveMaximumMs);
+      const budget = this.quota.next(
+        started,
+        pollAt,
+        effectiveMaximumMs,
+        this.baseMs,
+      );
+      pollAt = budget.at;
+      limitingQuota = budget.quota ?? limitingQuota;
       const { wakeAt, reserves } = this.wakeTime(
         pollAt,
         cadencePollAt,
@@ -315,29 +424,8 @@ export class StatusPollPacing {
       if (wakeAt <= now || abort?.aborted) break;
       await this.deps.sleep(wakeAt - now, abort);
       if (abort?.aborted) break;
-      sample = this.deps.balance();
     }
-    return this.finish(started, deadline, abort);
-  }
-
-  /** Fold one balance reading into the lowest windows held. */
-  private absorb(sample: BalanceSample, now: number): void {
-    this.adoptCredential(sample);
-    this.lower = [...this.lower, ...sample.windows];
-    this.compactLower(now);
-    this.completeLimits();
-  }
-
-  /** The poll time after every held window has had its say. */
-  private budgetPollAt(
-    started: number,
-    pollAt: number,
-    maximumMs: number,
-  ): number {
-    let at = pollAt;
-    for (const low of this.lower)
-      at = this.pollAfter(low, started, at, maximumMs);
-    return at;
+    return this.finish(started, deadline, abort, limitingQuota);
   }
 
   /** Record the wait and say whether the caller polls now. */
@@ -345,6 +433,7 @@ export class StatusPollPacing {
     started: number,
     deadline: number,
     abort: AbortSignal | undefined,
+    quota: PollQuota | undefined,
   ): boolean {
     const ended = this.deps.now();
     const willPoll = !abort?.aborted && ended < deadline;
@@ -353,10 +442,10 @@ export class StatusPollPacing {
     // evaluation; reserve it so the next call does not poll again at once.
     if (willPoll && ended >= deadline - FINAL_EVALUATION_MARGIN_MS)
       this.finalEvaluationDeadline = deadline;
-    this.deps.record(
-      this.credential,
+    this.quota.record(
       ended - started,
       this.skippedPolls(started, ended, willPoll),
+      quota,
     );
     return willPoll;
   }

@@ -68,6 +68,7 @@ import {
 import {
   githubCredential,
   githubHost,
+  installationToken,
   legacyGithubCredential,
   unverifiedOwner,
   userOwner,
@@ -91,7 +92,12 @@ import {
   splitHeaders,
   type Whose,
 } from "./github-answer.ts";
-import type { OutboundFailure } from "./failure.ts";
+import {
+  outboundFailure,
+  type FailureClass,
+  type OutboundFailure,
+} from "./failure.ts";
+import { ok, type Outcome } from "../outcome.ts";
 import { type GhRun, ghResponseStatus, ghRunFailure } from "./github.ts";
 import { defaultLedgerPath, recordCall, UNATTRIBUTED } from "./ledger.ts";
 
@@ -202,6 +208,17 @@ export function setForgeGovernor(
   overridePacing = pace;
 }
 
+let singleIdentityLookup = false;
+
+/** Reuse a drive's authenticated-user lookup for its process lifetime. */
+export function reuseForgeIdentity(): void {
+  singleIdentityLookup = true;
+}
+
+export function forgeIdentityReused(): boolean {
+  return singleIdentityLookup;
+}
+
 /** The machine's governor, store and owners over the budget database this process writes. */
 function machine(): Machine {
   const path = defaultLedgerPath();
@@ -216,6 +233,7 @@ function machine(): Machine {
         owners: sqliteOwnerStore(path),
         budget: store,
         governor,
+        singleLookup: () => singleIdentityLookup,
       }),
     };
     machines = new Map([[path, found]]);
@@ -285,6 +303,27 @@ export async function forgeOwner(
     };
   }
   return { owner: found.owner, account: found.account, misattributed };
+}
+
+/** Resolve the login through quota-owner discovery. Undefined means discovery does not apply. */
+export async function forgeLogin(
+  deadlineMs?: number,
+  env: Record<string, string | undefined> = process.env,
+  cwd = process.cwd(),
+): Promise<Outcome<string, FailureClass> | undefined> {
+  if (!forgeBudgetOn(env) || installationToken(env)) return undefined;
+  const owners = override === null ? machine().owners : overrideOwners;
+  if (owners === null) return undefined;
+  const scope = ghRunScope(["api", "user"], env, cwd);
+  const found = await owners.resolve(env, deadlineMs, scope, cwd);
+  return found.login === null
+    ? {
+        ok: false,
+        failure:
+          found.discoveryFailure ??
+          outboundFailure("unreachable", "the forge client names no login"),
+      }
+    : ok(found.login);
 }
 
 /** Tell the ledger row which resource answered, and read the HTTP status off a captured answer. */

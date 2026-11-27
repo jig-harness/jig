@@ -37,7 +37,11 @@ import type {
   PoolIssue,
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
-import { ancestorsOf, batchItemsOf } from "../queue-batch.ts";
+import {
+  ancestorsOf,
+  batchItemsOf,
+  batchRecordFields,
+} from "../queue-batch.ts";
 import { admittedVendor, codexLaunchFields } from "../accounts.ts";
 import { holding } from "../holding.ts";
 import { sessionIdFor } from "../session.ts";
@@ -377,7 +381,7 @@ async function launchOne(
     ...codexLaunchFields(state.codexOptIn),
     headless: true,
     ...served,
-    ...(batch === undefined ? {} : { batchItems: batch }),
+    ...batchRecordFields(batch, ctx.section),
     replaces: null,
     facts: `state ${after.issue.state.name}, assignee ${after.issue.assignee?.name ?? "nobody"}`,
     createdAt: currentIso(),

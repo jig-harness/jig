@@ -51,7 +51,9 @@ const save = (pr, c) => fs.writeFileSync(fileFor(pr), JSON.stringify(c));
 const stamp = (pr) => new Date(Date.parse("2026-10-01T11:00:00Z") + (read(pr).length + 1) * 1000).toISOString();
 if (args[0] === "api" && args[1] === "user") {
   if (!has("login")) { process.stderr.write("no login\\n"); process.exit(1); }
-  process.stdout.write(text("login").trim() + "\\n");
+  const login = text("login").trim();
+  if (args.includes("--jq") || args.includes("-q")) console.log(login);
+  else console.log(JSON.stringify({ id: 123, login }));
   process.exit(0);
 }
 if (args[0] === "repo" && args[1] === "view") {
