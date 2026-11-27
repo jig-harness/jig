@@ -46,13 +46,11 @@ import {
   servedParentHold,
   servedParentSteps,
 } from "./served-parents.ts";
-import { blocksWithin } from "../../../skills/do-item/scripts/lib/blocker-chain.ts";
 import {
   closed,
   openBlockers,
   pullBlockers,
   ready,
-  whyNotPulled,
   type OpenBlocker,
   type PullOrigin,
 } from "./served-pull.ts";
@@ -74,7 +72,7 @@ import {
   type UnlabeledMode,
   unlabeledOutcome,
 } from "./served-repo.ts";
-import { freshAuthority } from "./served-authority.ts";
+import { freshAuthority, freshPulledAuthority } from "./served-authority.ts";
 import { childMergeEvidence, planKeys, servedPlan } from "./served-plan.ts";
 import type { ServedView, ServedViews } from "./served-reads.ts";
 import type { LiveIssue } from "../../../skills/do-item/scripts/lib/execution-plan.ts";
@@ -378,6 +376,7 @@ export async function freshServedPickup(
             blockingFor,
             ancestor,
             policy,
+            (item) => freshParentHold(tracker, item, policy),
           );
     if (authority !== null) return authority;
     return issue;
@@ -966,46 +965,4 @@ async function heldReason(
     return `${pull.reason}; this issue service cannot assign a blocker on its own, so a person assigns it`;
   found.pending.push(...pulledNodes(pull, ctx.seen, candidate.by));
   return pull.reason;
-}
-
-/** A pulled blocker is empty; the served item it blocks must still hold the person's authority and wait on it. */
-async function freshPulledAuthority(
-  tracker: Tracker,
-  issue: PoolIssue,
-  identity: string,
-  blockingFor: string,
-  ancestor: string | undefined,
-  policy: ServedPolicy,
-): Promise<string | null> {
-  if (issue.assignee !== null)
-    return "the pulled blocker has acquired an assignee";
-  if (isEpicPickup(issue)) return "the pulled blocker has become an epic";
-  const origin = await tracker.poolIssue(blockingFor);
-  if (
-    origin === null ||
-    !ready(origin, tracker.stateName("blocked", origin.nativeType ?? null))
-  )
-    return `${blockingFor}, which it blocks, is no longer open and not started`;
-  if (queueHold({ issue: origin, blockers: [], unblocks: 0 }, policy) !== null)
-    return `${blockingFor}, which it blocks, needs a person to start`;
-  const originHold = await freshParentHold(tracker, origin, policy);
-  if (originHold !== null) return `${blockingFor}: ${originHold}`;
-  const authority = await freshAuthority(tracker, origin, identity, ancestor);
-  if (authority !== null) return `${blockingFor}: ${authority}`;
-  const through = async (via: string): Promise<boolean> => {
-    const item = await tracker.poolIssue(via);
-    return (
-      whyNotPulled(item, {
-        hitl: policy.hitl,
-        manualOps: policy.manualOps,
-        repoScope: policy.repoScope,
-        blockedState: (item) =>
-          tracker.stateName("blocked", item.nativeType ?? null),
-      }) === null &&
-      (await freshParentHold(tracker, item as PoolIssue, policy)) === null
-    );
-  };
-  return (await blocksWithin(tracker, blockingFor, issue.identifier, through))
-    ? null
-    : `it no longer blocks ${blockingFor}`;
 }
