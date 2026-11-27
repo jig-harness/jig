@@ -273,25 +273,38 @@ export function readSocketFacts(path: string): Outcome<SocketFacts | null> {
   }
 }
 
-/** Whether the socket answers a request for the page, within three seconds; never throws, never prints the error. */
-export async function socketAnswers(path: string): Promise<boolean> {
-  // Never print a fetch error: it names the socket's path.
-  const pending = attempt("not-answering", "socket not answering", () =>
-    fetch("http://dashboard/", {
-      unix: path,
-      redirect: "error",
-      signal: AbortSignal.timeout(3000),
-    }),
-  );
+/**
+ * Whether a request for the page is answered with a success status; never
+ * throws, never prints the error (it may name the socket or the private URL).
+ */
+export async function pageAnswers(
+  request: () => Promise<Response>,
+  what: string,
+): Promise<boolean> {
+  const pending = attempt("not-answering", what, request);
   if (!pending.ok) return false;
   const response = await pending.value.then(
     (value) => ok(value),
-    (cause) => failed("not-answering", "socket not answering", cause),
+    (cause) => failed("not-answering", what, cause),
   );
   if (!response.ok) return false;
+  // A body that errors after the headers arrive makes cancel() reject.
   const cancelled = await Promise.resolve(response.value.body?.cancel()).then(
     () => true,
     () => false,
   );
   return cancelled && response.value.ok;
+}
+
+/** Whether the socket answers a request for the page, within three seconds. */
+export function socketAnswers(path: string): Promise<boolean> {
+  return pageAnswers(
+    () =>
+      fetch("http://dashboard/", {
+        unix: path,
+        redirect: "error",
+        signal: AbortSignal.timeout(3000),
+      }),
+    "socket not answering",
+  );
 }

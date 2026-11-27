@@ -43,6 +43,7 @@ import { attempt, failed, ok, type Outcome } from "../shared/outcome.ts";
 import { DEFAULT_PORT } from "./dashboard.ts";
 import { funnelFinding } from "./dashboard-funnel.ts";
 import {
+  pageAnswers,
   readSocketFacts,
   socketAnswers,
   socketProblem,
@@ -296,23 +297,11 @@ function settingsMatch(
   );
 }
 
-async function answers(url: string): Promise<boolean> {
-  // Never print a fetch error: it may carry the private URL.
-  const pending = attempt("not-answering", "reader not answering", () =>
-    fetch(url, { redirect: "error", signal: AbortSignal.timeout(3000) }),
+function answers(url: string): Promise<boolean> {
+  return pageAnswers(
+    () => fetch(url, { redirect: "error", signal: AbortSignal.timeout(3000) }),
+    "reader not answering",
   );
-  if (!pending.ok) return false;
-  const response = await pending.value.then(
-    (value) => ok(value),
-    (cause) => failed("not-answering", "reader not answering", cause),
-  );
-  if (!response.ok) return false;
-  // A body that errors after the headers arrive makes cancel() reject.
-  const cancelled = await Promise.resolve(response.value.body?.cancel()).then(
-    () => true,
-    () => false,
-  );
-  return cancelled && response.value.ok;
 }
 
 /** The private socket's and Funnel's lines for `--status`, and whether both are as installed. */

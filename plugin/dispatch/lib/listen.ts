@@ -133,7 +133,7 @@ export function parseListen(value: string): Outcome<Listen, "invalid"> {
 }
 
 /** The longest socket path: the system's address field is about 108 bytes, with room to spare. */
-export const SOCKET_PATH_MAX_BYTES = 100;
+const SOCKET_PATH_MAX_BYTES = 100;
 
 /** The mode the socket must keep: its owner alone (root is not bound by a mode). */
 export const SOCKET_MODE = 0o600;
