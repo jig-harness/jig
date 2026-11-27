@@ -230,16 +230,27 @@ export function partitionBacklog(
   };
 }
 
-/** A rendered bullet's severity and category header: an icon, the bold severity, optional fields, then ` — `. */
-const BULLET_HEADER = /^\S+ \*\*[A-Za-z]+\*\*[^—]* — $/;
+/**
+ * A rendered bullet's severity and category header: an icon, the bold
+ * severity, optional `· field: value` segments, then ` — `. Anything else
+ * between the bold word and the separator is prose, not a header.
+ */
+const BULLET_HEADER =
+  /^\S+ \*\*[A-Za-z]+\*\*(?: · [^—·:()]+: [^—·()]+?(?: \([^)—]*\))?)* — /;
+
+/** Whether `text` is the recorded comment, whole or abbreviated with a trailing `…`. */
+function readsComment(text: string, comment: string): boolean {
+  if (text === comment) return true;
+  return comment.endsWith("…") && text.startsWith(comment.slice(0, -1));
+}
 
 /** Whether a bullet is at the entry's location and reads its recorded comment, whole or after a header. */
 function reads(b: BodyFinding, e: BacklogEntry): boolean {
   if (b.path !== e.path || b.line !== e.line) return false;
-  if (b.text === e.comment) return true;
+  if (readsComment(b.text, e.comment)) return true;
+  const header = BULLET_HEADER.exec(b.text);
   return (
-    b.text.endsWith(e.comment) &&
-    BULLET_HEADER.test(b.text.slice(0, b.text.length - e.comment.length))
+    header !== null && readsComment(b.text.slice(header[0].length), e.comment)
   );
 }
 
