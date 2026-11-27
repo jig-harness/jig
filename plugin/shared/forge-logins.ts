@@ -9,12 +9,17 @@ export function uniqueLogins(logins: readonly string[]): string[] {
 
 /**
  * A GitHub login, as a pattern source without anchors: a letter or digit,
- * then up to 38 letters, digits, hyphens or underscores. The underscore is
- * the separator of an Enterprise Managed User's login (`<handle>_<shortcode>`,
- * such as `mona_acme`). A schema that cannot import this module (the audit's
- * configuration schema) spells the same source out.
+ * then up to 38 letters, digits or hyphens, and optionally one underscore
+ * and a three-to-eight character alphanumeric short code, the form of an
+ * Enterprise Managed User's login (`<handle>_<shortcode>`, such as
+ * `mona_acme`). No other underscore is taken. A schema that cannot import
+ * this module (the audit's configuration schema) spells the same source out.
  */
-export const GITHUB_LOGIN_SOURCE = "[A-Za-z0-9][A-Za-z0-9_-]{0,38}";
+export const GITHUB_LOGIN_SOURCE =
+  "[A-Za-z0-9][A-Za-z0-9-]{0,38}(?:_[A-Za-z0-9]{3,8})?";
+
+/** An organization's name, with no leading or trailing hyphen. */
+const ORG_SOURCE = "[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?";
 
 /** The suffix GitHub gives an App's bot account (`example-bot[bot]`). */
 const BOT_SUFFIX_SOURCE = String.raw`(?:\[bot\])?`;
@@ -39,9 +44,12 @@ export function isGithubLogin(
   );
 }
 
-/** A reviewer to request: a login or `org/team`, with or without `@`. */
+/**
+ * A reviewer to request: a login, or `org/team` with an organization's own
+ * name (never a managed user's), with or without `@`.
+ */
 export const REVIEWER = new RegExp(
-  `^@?${GITHUB_LOGIN_SOURCE}(?:/[A-Za-z0-9._-]+)?$`,
+  `^@?(?:${GITHUB_LOGIN_SOURCE}|${ORG_SOURCE}/[A-Za-z0-9._-]+)$`,
 );
 
 /** A reviewer as `gh pr create --reviewer` takes it: without the `@`. */

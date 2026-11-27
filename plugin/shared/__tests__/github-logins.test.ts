@@ -23,7 +23,7 @@ import { activeUserIn } from "../outbound/github-credential.ts";
 import { isPerson } from "../../skills/drive-pr/scripts/lib/state/park-frame.ts";
 import { loadSchema } from "../../skills/audit/scripts/lib/schema.ts";
 
-const EMU = ["mona_acme", "Mona_ACME", "mona-lisa_acme", "a_b"];
+const EMU = ["mona_acme", "Mona_ACME", "mona-lisa_acme", "a_bcd"];
 const BOTS = ["example-bot[bot]", "mona_acme[bot]"];
 /** Never a login, wherever a bare one is read. */
 const NOT_LOGINS = [
@@ -41,6 +41,12 @@ const NOT_LOGINS = [
   "mona.acme",
   "a".repeat(40),
   "mona[bot]x",
+  "mona__acme",
+  "mona_",
+  "mona_ab",
+  "mona_acme_inc",
+  "mona_acmeacme1",
+  "a_b",
 ];
 
 describe("isGithubLogin", () => {
@@ -77,7 +83,17 @@ test("REVIEWER takes a login with or without @, and org/team", () => {
     "example-org/team_name",
   ])
     expect(REVIEWER.test(r)).toBe(true);
-  for (const r of ["", "@", "mona acme", "@@mona", "a/b/c", "_mona"])
+  for (const r of [
+    "",
+    "@",
+    "mona acme",
+    "@@mona",
+    "a/b/c",
+    "_mona",
+    "mona_acme/team-name",
+    "example-org-/team",
+    "mona__acme",
+  ])
     expect(REVIEWER.test(r)).toBe(false);
 });
 
@@ -146,6 +162,7 @@ else process.stdout.write("HTTP/2.0 200 OK\\r\\nContent-Type: application/json\\
         unset: ["GH_TOKEN", "GITHUB_TOKEN", "GH_HOST", "GH_REPO"],
         gh: gh(login),
         code: `process.env.JIG_GH_CACHE = "off";
+process.env.JIG_FORGE_BUDGET = "off";
 const ledger = await import(${JSON.stringify(LEDGER_FORGE)});
 const ask = await import(${JSON.stringify(ASK_FORGE)});
 const { reading } = await import(${JSON.stringify(ASK_READING)});
