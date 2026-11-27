@@ -294,3 +294,83 @@ for (const scenario of [
     }
   });
 }
+
+for (const scenario of [
+  "resolved",
+  "unresolved",
+  "capped",
+  "wrong-head",
+  "labels",
+] as const) {
+  it(`places a converged pull request using paginated pull connections (${scenario})`, async () => {
+    const r = await run(
+      `
+      import { readMergeFacts } from ${JSON.stringify(join(LIB, "merge-facts.ts"))};
+      import { readiness } from ${JSON.stringify(join(LIB, "merge-ready.ts"))};
+      const repo = "example-org/repo";
+      const read = await readMergeFacts(repo, [7], 30);
+      if (!read.ok) throw new Error(read.failure.reason);
+      const facts = read.value.pulls.get(7);
+      const placed = readiness({
+        ...facts, slug: repo, converged: true, verifiedSha: facts.head, held: false,
+      }, { reviewerApp: "example-review", reviewerCheck: /^AI review$/, ciHoldLabel: null });
+      console.log(JSON.stringify({ placed, partial: facts.partial, threads: facts.unresolvedThreads, labels: facts.labels.length, cost: read.value.cost }));
+      `,
+      `#!/usr/bin/env bun
+      import { appendFileSync } from "node:fs";
+      const head = "${"a".repeat(40)}";
+      const args = process.argv.slice(2);
+      const scenario = ${JSON.stringify(scenario)};
+      const after = Number(args.find((arg) => arg.startsWith("after="))?.slice("after=".length) ?? 0);
+      appendFileSync(process.env.MERGE_FIXTURE + "/calls", JSON.stringify(args) + "\\n");
+      const field = scenario === "labels" ? "labels" : "reviewThreads";
+      const entry = (i) => field === "labels" ? { name: "label-" + i } : { isResolved: !(scenario === "unresolved" && i === 140) };
+      const page = (from, count, more) => ({
+        nodes: Array.from({ length: count }, (_, i) => entry(from + i + 1)),
+        pageInfo: { hasNextPage: more, endCursor: String(after + 1) },
+      });
+      const none = { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } };
+      if (after) {
+        const pull = { headRefOid: scenario === "wrong-head" ? "b".repeat(40) : head, [field]: page(after * 100, 40, scenario === "capped") };
+        console.log(JSON.stringify({ data: { repository: { pull }, rateLimit: { cost: 1, remaining: 99, limit: 100 } } }));
+        process.exit(0);
+      }
+      const check = { __typename: "CheckRun", databaseId: 1, name: "AI review", status: "COMPLETED", conclusion: "SUCCESS", isRequired: false, checkSuite: { app: { slug: "example-review" } } };
+      const pr7 = {
+        number: 7, headRefOid: head, isDraft: false, mergeable: "MERGEABLE", mergeStateStatus: "CLEAN", reviewDecision: "APPROVED",
+        authorAssociation: "MEMBER", labels: none, reviewThreads: none, reviewRequests: none,
+        latestReviews: { ...none, nodes: [{ state: "APPROVED", authorAssociation: "MEMBER", author: { __typename: "User", login: "maintainer" }, commit: { oid: head } }] },
+        commits: { nodes: [{ commit: { oid: head, statusCheckRollup: { contexts: { ...none, nodes: [check] } } } }] },
+      };
+      pr7[field] = page(0, 100, true);
+      console.log(JSON.stringify({ data: { repository: { squashMergeAllowed: true, pr7 }, rateLimit: { cost: 1, remaining: 100, limit: 100 } } }));
+      `,
+    );
+    expectSpawnExit(r, 0);
+    const result = JSON.parse(r.stdout);
+    const calls = r.calls.trim().split("\n");
+    expect(result.cost).toBe(calls.length);
+    if (scenario === "capped" || scenario === "wrong-head") {
+      expect(calls).toHaveLength(scenario === "capped" ? 3 : 2);
+      expect(result.placed).toMatchObject({ place: "stay", lane: null });
+      expect(result.partial).toContain("review threads");
+      if (scenario === "capped") expect(result.partial).toContain("3-page cap");
+      else expect(result.partial).toContain("original head");
+      return;
+    }
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toContain("after=1");
+    expect(result.partial).toBeNull();
+    if (scenario === "unresolved") {
+      expect(result.threads).toBe(1);
+      expect(result.placed.place).not.toBe("ready");
+      expect(result.placed.says).toContain("1 review thread(s)");
+    } else {
+      expect(result.placed).toMatchObject({
+        place: "ready",
+        lane: "merge-now",
+      });
+      if (scenario === "labels") expect(result.labels).toBe(140);
+    }
+  });
+}

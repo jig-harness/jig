@@ -404,8 +404,10 @@ budget with them:
   number: the converged pull requests, the ones in Needs you, and any whose
   rollup is failing. Per pull request: its head commit's id, its head's
   check contexts (100 per page, each with whether it is required, its app and
-  its link), its labels (for the `hold` and CI hold labels), its review
-  requests and its reviewers' latest reviews (up to 20 each). The same
+  its link), its labels (for the `hold` and CI hold labels; 100 on the
+  first page), its review threads' resolution (100 on the first page), its
+  review requests and its reviewers' latest reviews (20 each on the first
+  page). The same
   query reads, by the ids the listing found, the first comment's author
   (`login` and `__typename`) of each unresolved thread the board has not
   seen before, for the split of the thread mark, within the author cap
@@ -458,12 +460,19 @@ measured, not assumed. When the budget left is below a fifth of the
 hour's, the tick skips the board read, and the cards say "not read: the
 forge budget is kept for the drives".
 
-Only check contexts receive follow-up queries: the reader follows up to four
-pages of 100 entries, including the first, for each pull request. Every other
-connection is limited to the first page and a continuation marks the pull
-request partial. A partial pull request is never in merge now or approve
-first, since an unread failing check, thread, approval or reviewer cannot be
-ruled out. It never fails the read of its repository.
+Every connection whose first page has a continuation is followed by cursor,
+one query a page, under the same deadline as the rest of the board read:
+check contexts against the head commit, up to four pages including the
+first; labels, review threads, review requests and latest reviews on the
+pull request, up to three pages including the first, the later pages 100
+entries each, and each page only while the pull request's head is still the
+one the first page was read on. Each follow-up query costs about one point,
+recorded with the board read's cost. A connection still incomplete at its
+cap, past the deadline, on a moved head or with an unreadable page marks the
+pull request partial, and the card names the connection and the reason. A
+partial pull request is never in merge now or approve first, since an unread
+failing check, thread, approval or reviewer cannot be ruled out. It never
+fails the read of its repository.
 
 A pull request whose mergeability reads `UNKNOWN` (the forge recomputes it
 for every open pull request after its base moves, so after every merge) is
