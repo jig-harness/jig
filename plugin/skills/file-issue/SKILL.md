@@ -371,9 +371,11 @@ each delivers, its labels and the order between them.
 ### 8. Validate every label set
 
 **exact** — Run the `--check-tracker` mode of `validate-labels.ts` (rule 1) on the
-parent's issue and on each child's, each with its facets. A child's JSON
-file carries `"parentPending": true` while its parent is not filed yet, so
-its placement is checked as a child's. Every one passes before step 9.
+parent's issue and on each child's, each with its facets. While a child's
+parent is not filed yet, check a copy of its JSON file that carries
+`"parentPending": true`, so its placement is checked as a child's; that key
+belongs to the check alone, so step 10 files the child from the file
+without it (`create` refuses unknown keys). Every one passes before step 9.
 
 ### 9. Confirm
 

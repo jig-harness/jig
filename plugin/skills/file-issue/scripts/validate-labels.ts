@@ -173,16 +173,7 @@ function stdinIssue(text: string): IssueRead | string {
   if (value === null || typeof value !== "object") return STDIN_SHAPE;
   const issue = value as Record<string, unknown>;
   const labels = issue.labels ?? [];
-  const optionalText = (v: unknown) =>
-    v === undefined || v === null || typeof v === "string";
-  if (
-    !names(labels) ||
-    !optionalText(issue.type) ||
-    !optionalText(issue.size) ||
-    !optionalText(issue.nativeType) ||
-    !(issue.priority === undefined || Number.isInteger(issue.priority))
-  )
-    return STDIN_SHAPE;
+  if (!names(labels) || !validFacetShape(issue)) return STDIN_SHAPE;
   const facets = {
     type: (issue.type as string | null | undefined) ?? null,
     size: (issue.size as string | null | undefined) ?? null,
@@ -195,6 +186,18 @@ function stdinIssue(text: string): IssueRead | string {
     filing: filingDraft(issue, labels, facets),
     ...(issue.parentPending === true ? { parentPending: true } : {}),
   };
+}
+
+/** Whether the facet fields of a stdin issue have their expected shapes. */
+function validFacetShape(issue: Record<string, unknown>): boolean {
+  const optionalText = (v: unknown) =>
+    v === undefined || v === null || typeof v === "string";
+  return (
+    optionalText(issue.type) &&
+    optionalText(issue.size) &&
+    optionalText(issue.nativeType) &&
+    (issue.priority === undefined || Number.isInteger(issue.priority))
+  );
 }
 
 /** Only a create payload supplies the text and optional parent for placement. */
