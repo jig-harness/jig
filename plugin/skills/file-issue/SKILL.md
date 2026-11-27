@@ -97,9 +97,13 @@ labels, since the tracker keeps each where the repository's configuration
 says (labels, its own issue type, or a field) and refuses a facet's label
 among `labels` or `addLabels`. Priority is `1` (urgent), `2` (high), `3`
 (medium) or `4` (low); `0` (none) is for a correction only. Every filing is
-checked inside the tracker: one without a type, a priority or a size (an
-epic needs no size), or without a label of a required group, is refused
-before anything is written (exit `2`), naming what it lacks. Write each
+checked inside the tracker for its applicable facets and required group
+labels. An epic needs no size. On Jira, omit a facet kept in a custom field
+when the selected issue type’s create screen lacks that field. Supplying it
+produces a refusal naming the field and issue type. The weekly sweep reports
+how many issues it passed over for each facet absent from both screens.
+The tracker refuses an incomplete filing before writing (exit `2`) and
+names what it lacks. Write each
 file with the Write tool under `.context/scratch/`, never by interpolating
 text into a shell command. A draft whose tracker write failed is the only
 copy of its findings: move it out of `.context/scratch/` (to
@@ -151,7 +155,8 @@ level, which the level itself answers.
    field leaves the native type as it is, so an epic keeps meeting a
    `requires` naming the epic label when its label-backed type changes.
 
-   It asks for a priority as it asks for a type and a size. Exit `0`:
+   For a Jira filing draft, the check uses the selected issue type’s create
+   screen to determine which custom-field facets it requires. Exit `0`:
    valid (read any `WARNING` and act on it or say why not). Exit
    `3`: invalid; fix the labels it names and run it again. Exit `1`: the
    taxonomy is missing or fails its lint, or the tracker could not be read;
@@ -204,8 +209,8 @@ a recurring pattern's label.
 **judgment** — From the conversation (and `$ARGUMENTS`, when given), extract:
 the problem and for whom; why it matters now; what done looks like; the
 approach discussed, if any; open questions. Draft a title (imperative, one
-line), the type, a size (when the taxonomy has a size group; an epic needs
-none), a priority, and a category. Every issue gets a priority: an issue
+line), the type, any applicable size, a priority,
+and a category. Every issue gets a priority: an issue
 filed without one is not low, it is unranked, and no pool can work it in
 order.
 
@@ -330,7 +335,7 @@ taxonomy's `apply_when` and `do_not_apply_when` for every flag and the
 
 Then complete the issue, in both cases:
 
-- exactly one **type**, its size (unless it is an epic) and its
+- exactly one **type**, its size when applicable and its
   **priority**, given as the issue's facets rather than labels;
 - one label of every other **required group** (a repository), and at most
   one of any group;
@@ -366,8 +371,11 @@ each delivers, its labels and the order between them.
 ### 8. Validate every label set
 
 **exact** — Run the `--check-tracker` mode of `validate-labels.ts` (rule 1) on the
-parent's issue and on each child's, each with its facets. Every one passes
-before step 9.
+parent's issue and on each child's, each with its facets. While a child's
+parent is not filed yet, check a copy of its JSON file that carries
+`"parentPending": true`, so its placement is checked as a child's; that key
+belongs to the check alone, so step 10 files the child from the file
+without it (`create` refuses unknown keys). Every one passes before step 9.
 
 ### 9. Confirm
 
@@ -587,8 +595,8 @@ bun "${CLAUDE_SKILL_DIR}/scripts/check-fields.ts" check
 ```
 
 It prints each facet's store and the tracker's counts, then, by key only,
-every issue not yet started that lacks a type, a priority or a size (an
-epic needs no size) or carries a retired label (a facet's label where the
+every issue not yet started that lacks an applicable facet or carries a
+retired label (a facet's label where the
 repository keeps that facet in the tracker's own field), and the started
 ones apart. With the user's go-ahead, or when they asked for it, run it
 again with `--yes`: it moves each listed issue that is not yet started back

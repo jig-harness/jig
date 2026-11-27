@@ -404,6 +404,30 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.314.3] - 2026-11-27
+
+### Fixed
+
+- Jira filing accepts an omitted facet when the selected issue type's create
+  screen lacks its custom field. The weekly sweep reports how many issues
+  it passes over for each facet absent from both screens.
+  **Consumer action:** none.
+
+## [0.314.2] - 2026-11-27
+
+### Fixed
+
+- A pickup hold whose dependency the dispatcher reads itself (a pull request
+  to merge, an item to close) is a held row under Queue, and `jig ask
+  --waiting` no longer lists it as a hold to release: nothing waits on a
+  person while the dependency is open. A hold with no dependency, one whose
+  stored dependency cannot be read, and one whose pull request closed
+  unmerged still wait on a person.
+- The members of an ended batch whose pass asked a question about the whole
+  batch are released when an open pull request carries the batch's anchor
+  (or the anchor's item is in `pr_open`, whether or not its pull request is matched), so they are picked up instead of waiting
+  on an answer the anchor cannot take; the anchor keeps its claim.
+
 ## [0.314.1] - 2026-11-27
 
 ### Fixed
@@ -11391,7 +11415,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.314.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.314.3...HEAD
+[0.314.3]: https://github.com/jig-harness/jig/compare/v0.314.2...v0.314.3
+[0.314.2]: https://github.com/jig-harness/jig/compare/v0.314.1...v0.314.2
 [0.314.1]: https://github.com/jig-harness/jig/compare/v0.314.0...v0.314.1
 [0.314.0]: https://github.com/jig-harness/jig/compare/v0.313.4...v0.314.0
 [0.313.4]: https://github.com/jig-harness/jig/compare/v0.313.3...v0.313.4
