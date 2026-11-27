@@ -333,6 +333,7 @@ export async function writeLabels(
     }
     const of = { key, kind: "label" as const, target: base.target };
     let refusal = await attempt(change);
+    let emitted = false;
     // A single edit can name its missing labels one at a time.  Retry no more
     // often than the labels this edit adds, preserving creation de-duplication
     // and the tick's deadline/freshness guard between remote calls.
@@ -350,18 +351,20 @@ export async function writeLabels(
           outcome: "failed",
           detail: `${describe(change)} was refused, and a later tick tries again: ${uncreated}`,
         });
+        emitted = true;
         refusal = null;
         break;
       }
       const retryWait = await waitsFor(change, key, mode);
       if (retryWait !== null) {
         out.push({ ...base, outcome: "waits", detail: retryWait });
+        emitted = true;
         refusal = null;
         break;
       }
       refusal = await attempt(change);
     }
-    if (refusal === null && out.at(-1)?.target === base.target) continue;
+    if (emitted) continue;
     if (refusal === null) {
       out.push({ ...base, outcome: "written", detail: describe(change) });
       mode.book?.ran(of, null);

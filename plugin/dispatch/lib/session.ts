@@ -462,8 +462,12 @@ function unattendedLines(record: LaunchRecord): string[] {
     : null;
   const drafted = offered.has("drafted-items")
     ? `Filing the follow-up items you drafted needs nobody's leave${owed === null ? "" : " either"}.`
-    : "Filing the follow-up items you drafted needs a person's leave: ask before you file them.";
-  return [owed === null ? drafted : `${owed} ${drafted}`];
+    : "Filing the follow-up items you drafted needs a person's leave, whatever the skill's authority table says: do not file them; carry out the rest, then stop on a question that asks for that leave.";
+  const withheld =
+    owed === null
+      ? "A step only a person can take or authorize is not settled by reporting or filing it, whatever the skill's directions say: carry out the rest, then stop on a question about it."
+      : null;
+  return [[owed, withheld, drafted].filter((l) => l !== null).join(" ")];
 }
 
 /** The prompt a follow-up's headless pass starts with. */

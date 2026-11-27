@@ -564,18 +564,20 @@ async function sessionsFree(
     return held.workspace === undefined
       ? { wait: held.reason }
       : { wait: held.reason, workspace: held.workspace };
-  if (held.kind === "running")
-    return {
-      never: `a session is joined to its pull request: ${held.workspaces.map((w) => w.path).join(", ")}`,
-    };
-  // An agent the runtime reports holds the pull request, but a terminal it
-  // cannot report beside it is an uncertainty, not a verdict: wait.
+  // A terminal the runtime cannot report beside a joined workspace is an
+  // uncertainty, not a verdict, even when a reported agent is working: wait
+  // for it to clear rather than marking the record never replayable.
   const unread = sessions.ok
     ? sessions.workspaces.find((w) => joined(w) && w.unverifiableTerminals > 0)
     : undefined;
   if (unread !== undefined)
     return {
       wait: `workspace ${unread.path} has ${unread.unverifiableTerminals} terminal(s) whose agents the runtime cannot report`,
+      workspace: unread.path,
+    };
+  if (held.kind === "running")
+    return {
+      never: `a session is joined to its pull request: ${held.workspaces.map((w) => w.path).join(", ")}`,
     };
   return null;
 }
