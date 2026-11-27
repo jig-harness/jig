@@ -226,7 +226,7 @@ function findingText(
       `The reasons given most often: ${reasons}.`,
       `The occurrences counted: ${listed(counted, OCCURRENCES_LISTED, occurrenceText)}.`,
       ...(settlesByRedrive(r) ? [settledText(settled)] : []),
-      `The dashboard's History view shows these rows with the filter ${dashboardFilter(r, nowMs, timeZone)}, added to the address jig dispatch dashboard prints.`,
+      `The dashboard's History view shows these rows${settled.length > 0 ? ", and the stalls left out," : ""} with the filter ${dashboardFilter(r, nowMs, timeZone)}, added to the address jig dispatch dashboard prints.`,
       `The dispatcher records a class that recurs once per week (this is ${week}); a class still recurring in a later week is a new finding.`,
     ].join(" "),
     suggested_fix: `Read the occurrences listed and the rows the filter shows, then decide what makes the ${r.stage} stage end this way on this repository: a dispatcher limit or expectation, a skill's step, or the repository's own instructions, gates or configuration. When the cause is the repository's, move the finding to its scaffolding. The dispatcher changes nothing itself.`,

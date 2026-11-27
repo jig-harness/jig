@@ -153,6 +153,37 @@ describe("a drive's stall the re-drive followed", () => {
       stalled(f.root, WEDNESDAY).map((r) => [r.stage, r.rows, r.nights]),
     ).toEqual([["rearm", 3, [false, false, false, false, true, true, true]]]);
   });
+  it("still counts a round limit and a takeover, even when a stall re-drive came next", () => {
+    const f = fixture();
+    for (const back of [0, 1, 2]) {
+      const pr = 30 + back;
+      const at = WEDNESDAY - back * DAY - 2 * HOUR;
+      launch(f.root, `drive-${pr}`, pr, at - HOUR);
+      ended(
+        f.root,
+        `drive-${pr}`,
+        pr,
+        at,
+        "stalled",
+        back === 1 ? "taken over (exit 14)" : "exit 7 (round limit)",
+      );
+      launch(f.root, `redrive-${pr}`, pr, at + HOUR / 2, true);
+    }
+    expect(stalled(f.root, WEDNESDAY).map((r) => r.rows)).toEqual([3]);
+  });
+
+  it("counts a stall whose next launch was not its re-drive, such as a takeover launched before it ended", () => {
+    const f = fixture();
+    for (const back of [0, 1, 2]) {
+      const pr = 40 + back;
+      const at = WEDNESDAY - back * DAY - 2 * HOUR;
+      launch(f.root, `drive-${pr}`, pr, at - HOUR);
+      launch(f.root, `takeover-${pr}`, pr, at - HOUR / 2);
+      ended(f.root, `drive-${pr}`, pr, at);
+      launch(f.root, `redrive-${pr}`, pr, at + HOUR / 2, true);
+    }
+    expect(stalled(f.root, WEDNESDAY).map((r) => r.rows)).toEqual([3]);
+  });
 });
 
 describe("the finding of a recurring class", () => {

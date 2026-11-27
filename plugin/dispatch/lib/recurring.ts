@@ -71,9 +71,12 @@ export function recurringClasses(
       groups.set(key, group);
     }
   });
+  const recurs = (g: RecurringClass) =>
+    g.nights.filter(Boolean).length >= RECURRENCE_AT_LEAST;
   return [...groups.values()]
+    .filter(recurs)
     .map((g) => (settlesByRedrive(g) ? unsettled(db, g, starts, nowMs) : g))
-    .filter((g) => g.nights.filter(Boolean).length >= RECURRENCE_AT_LEAST)
+    .filter(recurs)
     .sort((a, b) => b.rows - a.rows);
 }
 

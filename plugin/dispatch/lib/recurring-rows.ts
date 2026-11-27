@@ -11,11 +11,15 @@
  * did not follow (a re-drive that stalled again on its head, a stall with
  * no head to key a re-drive on, a round limit or a takeover) is. A stall
  * whose launch records have expired cannot be told handled, and counts.
+ * The head a row names comes from the launch records too: the change the
+ * re-drive that followed it re-drove, else the one its own launch re-drove,
+ * else the head its launch recorded.
  */
 import type { Database } from "bun:sqlite";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import { parseMs } from "../../shared/time.ts";
+import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import type { RecurringClass } from "./dashboard-contract.ts";
 import { prHeadOf } from "./failed-rearms.ts";
 import { OUTCOME_CLASSES, type OutcomeClass } from "./log.ts";
@@ -134,19 +138,27 @@ function concludedOf(concluded: unknown): string | null {
     : text;
 }
 
+const PR_TARGET = /^PR #(\d+)$/;
+/** A drive's stall as its ended row's reason gives it (`log.ts`): a round limit or a takeover is not one. */
+const STALL_EXIT = new RegExp(`^exit ${DRIVE_EXIT.STALLED}\\b`);
+
 /**
- * Where a drive's row stands against the re-drive: the head it names, and
- * the re-drive that followed it when the next drive launched for its pull
- * request after the row re-drove a stall.
+ * Where a drive's row stands against the re-drive: the head it names, and,
+ * for a stall (`exit 14`), the re-drive that followed it when the next drive
+ * launched for its pull request after the row's own launch re-drove a stall.
+ * The next launch is looked for after the row's own launch where its record
+ * is kept, so a takeover launched before the replaced drive ended is the one
+ * that followed it; after the row's time where the record has expired.
  */
 function againstRedrive(
   launches: readonly Launch[],
-  record: unknown,
-  atMs: number,
+  row: { record: unknown; atMs: number; reason: string },
 ): Pick<Occurrence, "head" | "redrive"> {
-  const own = launches.find((l) => l.id === record) ?? null;
-  const next = launches.find((l) => l.createdMs > atMs);
-  const redrove = next?.redroveStall === true ? next : null;
+  const own = launches.find((l) => l.id === row.record) ?? null;
+  const after = own?.createdMs ?? row.atMs;
+  const next = launches.find((l) => l.createdMs > after && l !== own);
+  const redrove =
+    next?.redroveStall === true && STALL_EXIT.test(row.reason) ? next : null;
   return { head: short(headOf(redrove, own)), redrive: redrove?.id ?? null };
 }
 
@@ -156,8 +168,6 @@ function headOf(redrove: Launch | null, own: Launch | null): string | null {
   if (stopped !== null) return stopped;
   return headOfChange(own?.change) ?? prHeadOf(own?.heads);
 }
-
-const PR_TARGET = /^PR #(\d+)$/;
 
 /**
  * Every row of `r` within `[fromMs, toMs]` that a recurrence would count,
@@ -201,7 +211,11 @@ export function occurrences(
     const placed =
       pr === undefined
         ? { head: null, redrive: null }
-        : againstRedrive(launchesOf(Number(pr)), text.record, row.at_ms);
+        : againstRedrive(launchesOf(Number(pr)), {
+            record: text.record,
+            atMs: row.at_ms,
+            reason: row.reason,
+          });
     return {
       atMs: row.at_ms,
       at: row.at,
