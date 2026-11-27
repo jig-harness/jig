@@ -219,6 +219,7 @@ describe("GitHub adapter: fleet metrics", () => {
         createdAt: at(1),
         trusted: true,
         association: "OWNER",
+        self: false,
         author: null,
         editedAt: null,
       },
