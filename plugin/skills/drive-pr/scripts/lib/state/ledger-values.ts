@@ -15,7 +15,7 @@ export const DECISION_CLASSES = [
 ] as const;
 
 export const EVENT_CAUSES = {
-  restart: ["pass-deadline", "stall"],
+  restart: ["pass-deadline", "background-pending", "stall"],
   rearm: [
     "quota-account",
     "quota-reset",

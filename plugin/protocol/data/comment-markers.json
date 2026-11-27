@@ -1327,7 +1327,11 @@
                             "const": "restart"
                           },
                           "cause": {
-                            "enum": ["pass-deadline", "stall"]
+                            "enum": [
+                              "pass-deadline",
+                              "background-pending",
+                              "stall"
+                            ]
                           },
                           "leftWork": false,
                           "tree": false
@@ -2187,7 +2191,7 @@
                         "const": "restart"
                       },
                       "cause": {
-                        "enum": ["pass-deadline", "stall"]
+                        "enum": ["pass-deadline", "background-pending", "stall"]
                       },
                       "leftWork": false,
                       "tree": false
