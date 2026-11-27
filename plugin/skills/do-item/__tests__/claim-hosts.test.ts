@@ -818,6 +818,7 @@ describe("two hosts racing for one item", () => {
           },
           assignee: s.item.assignee,
           labels: { pageInfo: { hasNextPage: false }, nodes: [] },
+          allChildren: { nodes: [] },
           children: { pageInfo: { hasNextPage: false }, nodes: [] },
         },
       };

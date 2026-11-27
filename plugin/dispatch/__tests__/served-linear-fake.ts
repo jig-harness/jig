@@ -126,6 +126,7 @@ export class FakeLinear {
         pageInfo: { hasNextPage: false },
         nodes: i.labels.map((name) => ({ name })),
       },
+      allChildren: { nodes: [] },
       children: {
         pageInfo: { hasNextPage: false },
         nodes: [...this.issues.values()]

@@ -97,11 +97,10 @@ export function parsePoolIssue(raw: unknown): WithEstimate<CorePoolIssue> {
     typeof children.pageInfo.hasNextPage !== "boolean"
   )
     throw new ShapeError(`${where}.children: unreadable`);
-  // Older saved queue rows carry only the open-children connection.
-  const allChildren =
-    n.allChildren === undefined
-      ? []
-      : record(n.allChildren, `${where}.allChildren`).nodes;
+  // This is a fresh tracker read, so missing child-presence data is not a
+  // compatible legacy row: accepting it could turn a closed-child epic into
+  // a leaf and let a pickup claim it.
+  const allChildren = record(n.allChildren, `${where}.allChildren`).nodes;
   if (!Array.isArray(allChildren))
     throw new ShapeError(`${where}.allChildren: unreadable`);
   const state = record(n.state, `${where}.state`);

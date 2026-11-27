@@ -701,6 +701,7 @@ describe("Linear adapter: candidate pools", () => {
     state: { id: "s-backlog", name: "Backlog", type: "backlog" },
     assignee: null,
     labels: labels("small", "area:docs"),
+    allChildren: { nodes: [] },
     children: { pageInfo: { hasNextPage: false }, nodes: [] },
     ...extra,
   });
@@ -750,6 +751,7 @@ describe("Linear adapter: candidate pools", () => {
         poolNode("ENG-1", {
           assignee: { id: "u-1", name: "Sam" },
           labels: { pageInfo: { hasNextPage: true }, nodes: [{ name: "xs" }] },
+          allChildren: { nodes: [{ id: "c" }] },
           children: { pageInfo: { hasNextPage: false }, nodes: [{ id: "c" }] },
         }),
         poolNode("ENG-2"),

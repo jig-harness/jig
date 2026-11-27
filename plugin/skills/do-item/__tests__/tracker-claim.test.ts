@@ -173,6 +173,43 @@ describe("claimIssue", () => {
     expect(log).toEqual(["transition in_progress"]);
   });
 
+  it("refuses a parent that gained children before the claim writes", async () => {
+    const { tracker, log } = memory("Todo", []);
+    const poolIssue = tracker.poolIssue;
+    let reads = 0;
+    tracker.poolIssue = async (key) => {
+      const issue = await poolIssue(key);
+      reads += 1;
+      return issue === null || reads !== 2
+        ? issue
+        : { ...issue, hasChildren: true };
+    };
+    expect(await claimIssue(tracker, "#5")).toMatchObject({
+      outcome: "refused",
+      why: "epic",
+    });
+    expect(log).toEqual([]);
+  });
+
+  it("stands down before transition when the assigned issue gains children", async () => {
+    const { tracker, log } = memory("Todo", []);
+    const poolIssue = tracker.poolIssue;
+    let reads = 0;
+    tracker.poolIssue = async (key) => {
+      const issue = await poolIssue(key);
+      reads += 1;
+      return issue === null || reads !== 3
+        ? issue
+        : { ...issue, hasChildren: true };
+    };
+    expect(await claimIssue(tracker, "#5")).toEqual({
+      outcome: "stood_down",
+      issue: "#5",
+      reason: "epics are worked through their children",
+    });
+    expect(log).toEqual(["assign factory"]);
+  });
+
   it("stands down when the re-read shows another assignee", async () => {
     const { tracker } = memory("Todo", [], (held) => {
       // Another session's claim lands between this one's writes and its re-read.
@@ -742,6 +779,7 @@ describe("Linear adapter: claiming", () => {
     stateName: string,
     assignee: TrackerUser | null,
     race = false,
+    omitAllChildren = false,
   ) {
     let state = { stateName, assignee };
     const calls: string[] = [];
@@ -774,6 +812,7 @@ describe("Linear adapter: claiming", () => {
               },
               assignee: user(state.assignee),
               labels: { pageInfo: { hasNextPage: false }, nodes: [] },
+              ...(omitAllChildren ? {} : { allChildren: { nodes: [] } }),
               children: { pageInfo: { hasNextPage: false }, nodes: [] },
             },
           };
@@ -841,6 +880,15 @@ describe("Linear adapter: claiming", () => {
     expect(await claimIssue(world("Todo", ME, true).t, "ENG-4")).toMatchObject({
       outcome: "stood_down",
     });
+  });
+
+  it("rejects a fresh response that omits child-presence data before writing", async () => {
+    const w = world("Todo", null, false, true);
+    await expect(claimIssue(w.t, "ENG-4")).rejects.toThrow(
+      "pool issue ENG-4.allChildren: expected an object",
+    );
+    expect(w.calls).not.toContain("TrackerAssign");
+    expect(w.calls).not.toContain("TrackerUpdate");
   });
 });
 

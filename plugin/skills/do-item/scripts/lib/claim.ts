@@ -181,8 +181,32 @@ export async function claimIssue(
       reason: `${key} is assigned to ${names(others)}, not to ${me.name}`,
     };
 
+  // The first read can be stale while the assignee lookup runs. Re-check all
+  // admission conditions immediately before changing the issue.
+  const beforeWrite = await tracker.poolIssue(key);
+  if (beforeWrite === null)
+    return {
+      outcome: "stood_down",
+      issue: key,
+      reason: `another change landed first: ${key} is gone`,
+    };
+  const beforeWriteAdmission = startAdmission(tracker, key, beforeWrite, rules);
+  if ("refusal" in beforeWriteAdmission) return beforeWriteAdmission.refusal;
+
   // The assignment first: a claim racing this one then reads it and refuses.
   if (!holders.some((u) => u.id === me.id)) await tracker.assign(key, me);
+
+  // An item can become an epic after assignment but before transition. Keep
+  // the assignment's race protection, but do not start work on that parent.
+  const beforeTransition = await tracker.poolIssue(key);
+  if (beforeTransition === null)
+    return {
+      outcome: "stood_down",
+      issue: key,
+      reason: `another change landed first: ${key} is gone`,
+    };
+  if (isEpicPickup(beforeTransition))
+    return { outcome: "stood_down", issue: key, reason: EPIC_PICKUP_REASON };
   await tracker.transition(key, "in_progress");
 
   const now = await tracker.assignees(key);

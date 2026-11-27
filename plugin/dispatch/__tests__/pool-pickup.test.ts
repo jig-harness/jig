@@ -293,6 +293,7 @@ describe("a pool pickup across two hosts", () => {
       },
       assignee: item.assignee,
       labels: { pageInfo: { hasNextPage: false }, nodes: [] },
+      allChildren: { nodes: [] },
       children: { pageInfo: { hasNextPage: false }, nodes: [] },
     });
     const transport: LinearTransport = async (query, variables) => {
