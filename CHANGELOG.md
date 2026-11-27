@@ -404,6 +404,53 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.315.0] - 2026-11-27
+
+### Added
+
+- `/jig:resolve-conflicts` starts a base merge with its new
+  `start-merge.ts`. When the pull request was stacked on another branch that
+  has since been squash- or rebase-merged into its base, the merge takes the
+  point where the branch left that earlier base as its merge base. Only the
+  pull request's own changes can then conflict, and the earlier branch's
+  changes no longer conflict with their own squashed copy, which used to
+  spend a drive's conflict-resolve round. The merge commit records the
+  earlier branch and the merge base, and `conflict-map.ts` maps the conflicts
+  against that base. In every other case the merge is Git's own, as before.
+
+### Fixed
+
+- **Steward:** an `order` record the queue cannot take is now refused with its
+  reason instead of being kept unapplied and unexplained. The tick refuses one
+  whose targets are not all wanted, or do not tie on every ranking key (the
+  exact creation time included), keeps why on the record, and lists the
+  refusal in the steward's next digest under `refused` while the targets read
+  as they did; an order naming the same targets is then not kept again. The
+  steward skill now says what a tie is. The dispatcher's state database gains
+  one column for the refusal. **Consumer action:** none.
+- Drive review waits now pace optional forge reads against both GitHub REST core and GraphQL quotas. The limiting window appears in the outbound cost ledger, and the waits respect their existing deadlines. Each drive process also reuses its signed-in GitHub identity.
+- A fixed batch's pass decides whether a member whose priority was cleared
+  after the tick may start with the `dispatch.missing_priority` the
+  dispatcher read from the default branch, not with the setting in its
+  workspace's `.config/jig.yaml`, which a reused workspace could carry
+  unreviewed. A batch's launch record gains an optional `missingPriority`
+  field (`hold` or `start`), written only on a batch's record; a record
+  without it reads as before, and its pass decides as under `hold`. The
+  pass's prompt hands the value to `work-batch`'s proposal as
+  `candidates.ts --fixed … --missing-priority <value>`, and the proposal now
+  names the member to work alone when fewer than two stay (`alone` in its
+  JSON form, with each left-out member's `noPriority`), or none, with the
+  members held for their missing priority.
+
+## [0.314.3] - 2026-11-27
+
+### Fixed
+
+- Jira filing accepts an omitted facet when the selected issue type's create
+  screen lacks its custom field. The weekly sweep reports how many issues
+  it passes over for each facet absent from both screens.
+  **Consumer action:** none.
+
 ## [0.314.2] - 2026-11-27
 
 ### Fixed
@@ -11406,7 +11453,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.314.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.315.0...HEAD
+[0.315.0]: https://github.com/jig-harness/jig/compare/v0.314.3...v0.315.0
+[0.314.3]: https://github.com/jig-harness/jig/compare/v0.314.2...v0.314.3
 [0.314.2]: https://github.com/jig-harness/jig/compare/v0.314.1...v0.314.2
 [0.314.1]: https://github.com/jig-harness/jig/compare/v0.314.0...v0.314.1
 [0.314.0]: https://github.com/jig-harness/jig/compare/v0.313.4...v0.314.0

@@ -657,7 +657,7 @@ not resolve it either.
 | `drive.load_guard_command` | shell command | No load guard | drive-pr | Waits until the machine can take a round's heavy checks. The [repository commands chapter](protocol/repo-commands.md) gives its invocation, input, answer, exits and deadline. |
 | `drive.dependency_install` | map of recognized lockfile names to shell commands | Use the built-in frozen install for each recognized lockfile | drive-pr, resolve-conflicts | Replaces the command run from the lockfile's directory before validating a base merge that changed dependency inputs. Use a command that fails if the lockfile would need rewriting. A driver pass reads this setting from its trusted policy. The [repository commands chapter](protocol/repo-commands.md) gives the invocation and deadline. |
 | `drive.change_areas_catalog` | path, relative to the root or absolute | No catalog: `--area` unchecked, no area-based agent routing, no serialized areas | drive-pr, do-item, review, decide, work-batch, change-areas, resolve-conflicts, resolve-review-comments, dispatch | The repository's [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (YAML with an `areas:` map). The [change-areas](skills/change-areas/README.md) skill validates the whole catalog against [its schema](skills/change-areas/README.md#the-catalog) and resolves a change against it. The plugin reads each area's `paths` and `generated[].source` globs, `labels`, `tracker.labels` and `tracker.flags` (`linear:` is the older spelling of the `tracker:` block), `serialize` and `agent`, through one reader that refuses an area whose globs, labels, `tracker` block or `serialize` are malformed, with the field at fault; `agent` and the rest of the area are passed through unchecked. `resolve-conflicts` also reads each area's `generated[].outputs` and `command` (see `resolve_conflicts.generated`), and its history report proposes `serialize` for the areas its conflict hotspots lie in (`history.ts --propose-serialize`). The dispatcher reads the catalog from the default branch as the forge holds it, as it reads its `dispatch` section, so it must be a repository-relative path there; an area marked `serialize: true` has its pull requests driven one at a time, and no pickup whose footprint reaches it starts while other work in flight touches it ([`dispatch`](#dispatch)). `file-deferred.ts` (resolve-review-comments) reads each area's `tracker.labels` for the label of each group the label taxonomy requires beyond the size, from the areas covering the file a deferred finding's review thread is on. `determine_agent.ts --catalog` overrides it for one run |
-| `drive.status_poll.waiting_share` | number from 0 to 1 | `0.25` | drive-pr | Fraction of the GitHub GraphQL limit against which the waiting status probe paces its reads. As the remaining balance falls below this fraction, the probe increases its interval. When the remaining fraction is at or below one fifth of this share (5% of the limit by default), the probe defers polling until the window resets or the probe's deadline expires. Set the share to `0` to disable budget-based delays. It reads the existing local budget for the quota owner and uses the lower balance when active windows disagree. When no usable balance is recorded, the probe still backs off on unchanged evidence. |
+| `drive.status_poll.waiting_share` | number from 0 to 1 | `0.25` | drive-pr | Fraction of each GitHub quota below which waiting reads slow down. The status probe and the driver's optional final-CI and takeover polls use the more restrictive of REST core and GraphQL in the quota owner's local budget. Below the share, polling slows. At or below one fifth of the share (5% of either quota by default), optional polls wait for reset within their existing deadlines. Set the share to `0` to disable budget-based delays. The outbound cost ledger attributes the delay to the limiting window. Without a usable balance, unchanged evidence still backs off. |
 | `drive.status_poll.max_interval_seconds` | whole number of seconds from 5 to 3600 | `300` | drive-pr | Maximum interval for an unchanged pull request or a low balance, subject to the base interval set by `--interval`. A change in the observed head, checks, review or threads restores the base cadence, subject to the budget. A pause for a nearly exhausted budget may last longer, within the probe's wall-clock timeout. |
 | `drive.reviews_drafts` | `true`, `false` | Unknown | drive-pr, do-item | Whether the AI reviewer reviews draft pull requests. The drive uses it to explain a draft waiting for a review; `false` also makes new pull requests open Ready unless `pull_requests.open_as` says otherwise |
 | `drive.max_rounds` | whole number ≥ 1 | `10` | drive-pr | The default round budget of a drive: how many review rounds it runs before it stops with [`MAX_ROUNDS`](protocol/drive-exits.md). The `--max-rounds` flag overrides it for one run. A re-arm a person asks for after a `MAX_ROUNDS` stop (`jig send … rearm`, or `--rearm-budget`) grants one more budget of this size, never past the pull request's round ceiling (`drive.max_total_rounds`); the steward's and the tick's re-drives never do. A value that is not a whole number of at least 1 stops the drive, unless the flag names the budget |
@@ -1000,7 +1000,11 @@ context labels from `review`, the labels that name an area from
 `solo_flags` to form fixed batches of served items. An urgent item, and one
 with no priority, which the proposal holds back as a labelling gap, never
 joins a fixed batch; a member whose priority is cleared after the batch is
-formed is left for its own pickup by the batch's pass. The most expensive
+formed is left for its own pickup by the batch's pass. When fewer than two
+members remain, whether such a member may be the one the pass starts is
+`dispatch.missing_priority` as the dispatcher read it from the default
+branch: the batch's launch record carries that value, and the pass hands it
+to its proposal rather than reading the workspace's configuration. The most expensive
 batchable size (`medium` by default; none when every size costs the same) needs
 a person's verdict to stay in a batch, so it never joins a fixed batch: such an
 item is picked up on its own, with no question, and the other items go on as
@@ -2679,7 +2683,7 @@ drive:
   change_areas_catalog: docs/change-areas.yaml
   reviews_drafts: true
   status_poll:
-    waiting_share: 0.25                  # waiting probes slow below this fraction of the GraphQL limit
+    waiting_share: 0.25                  # waiting polls slow below this fraction of either REST core or GraphQL
     max_interval_seconds: 300
   max_rounds: 10                         # default round budget of a drive; --max-rounds overrides
   max_total_rounds: 8                    # round ceiling per pull request, across re-arms; at most 50
@@ -2995,10 +2999,12 @@ key configured`), with how many calls and which callers had no key
 own login's, labelled as such (`credentialLabel`), never shown as a hashed
 key.
 Waiting drive status probes record `drive-status poll wait` and
-`drive-status poll skipped` in the `polls` unit. The wait rows include
-elapsed time. The skipped count estimates how many polls the base cadence
-would have made during those waits. Both report zero requests and spend no
-GraphQL points.
+`drive-status poll skipped` in the `polls` unit. Budget delays append
+`(REST core)` or `(GraphQL)` to the operation and name the limiting
+window. The driver's optional final-CI and takeover polls have their own
+operation names. The wait rows record time and the skipped rows estimate
+how many polls the base cadence would have made. Both report zero requests
+and spend zero quota.
 
 The dispatch receipt's outbound section shows the tick's own spending and
 costliest operations per system. Linear reports measured complexity points;

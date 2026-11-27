@@ -54,6 +54,7 @@ import {
 } from "../steward-backlog.ts";
 import { parkClassesOf } from "../steward-resume.ts";
 import { unreportedRuns } from "../steward-causes.ts";
+import { refusedOrders, unshownRefusals } from "../steward-orders.ts";
 import type { StationContext } from "../line-station.ts";
 import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
 import type { PoolIssue } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
@@ -73,6 +74,27 @@ import {
   readRoomMs,
 } from "./launch.ts";
 import { currentIso, currentMs, parseMs } from "../../../shared/time.ts";
+
+/** A refusal no pass was shown is owed one, though no backlog member stands for it. */
+function triggerWithRefusals(
+  base: StewardTrigger,
+  owed: number,
+): StewardTrigger {
+  if (base.kind === "due" || owed === 0) return base;
+  return {
+    kind: "due",
+    members: base.kind === "empty" ? 0 : base.members,
+    unjudged: owed,
+  };
+}
+
+function triggerReason(
+  trigger: Extract<StewardTrigger, { kind: "due" }>,
+): string {
+  return trigger.members === 0
+    ? `${trigger.unjudged} refused order(s) wait on the steward's reading`
+    : `${trigger.unjudged} of the judgment backlog's ${trigger.members} members, or refused orders, wait on the steward's judgment`;
+}
 
 /**
  * Start the steward when the judgment backlog holds a member no earlier pass
@@ -111,7 +133,15 @@ export async function applySteward(
   const found = await backlogOf(state, observation, station, judged);
   if (!found.ok) return skip(found.failure.reason);
   const backlog = found.value.backlog;
-  const trigger = stewardTrigger(backlog.members, judged);
+  const trigger = triggerWithRefusals(
+    stewardTrigger(backlog.members, judged),
+    unshownRefusals(
+      repo.slug,
+      observation.tracked.pickups,
+      undefined,
+      state.root,
+    ),
+  );
   if (trigger.kind !== "due" && request === null) {
     report.steward = notStarted(trigger);
     return;
@@ -125,7 +155,7 @@ export async function applySteward(
     stage: "steward",
     target: "the steward",
     record: "runtime",
-    reason: `${request === null ? "" : `${request.by} requested a steward pass; `}${counts.unjudged} of the judgment backlog's ${counts.members} members wait on the steward's judgment`,
+    reason: `${request === null ? "" : `${request.by} requested a steward pass; `}${trigger.kind === "due" ? triggerReason(trigger) : `${counts.unjudged} of the judgment backlog's ${counts.members} members wait on the steward's judgment`}`,
     evidence: { hash },
   };
   const admitted = await admitAccount(
@@ -414,7 +444,11 @@ function stewardStatus(
       ...by,
     };
   return {
-    status: `started ${request === null ? "" : `on ${request.by}'s request, `}for ${counts.unjudged} unjudged of ${counts.members} in the judgment backlog`,
+    status: `started ${request === null ? "" : `on ${request.by}'s request, `}${
+      counts.members === 0 && counts.unjudged > 0
+        ? `for ${counts.unjudged} refused order(s) awaiting the steward's reading`
+        : `for ${counts.unjudged} unjudged of ${counts.members} in the judgment backlog`
+    }`,
     hash,
     trigger: "started",
     ...by,
@@ -584,6 +618,7 @@ async function digestOf(
     failures: readFailures(repo.slug, state.root),
     load: state.load === undefined ? null : loadReport(state.load),
     history: stewardHistory(repo.slug, state.root),
+    refused: refusedOrders(repo.slug, observation.tracked.pickups, state.root),
   });
 }
 

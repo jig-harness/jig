@@ -661,6 +661,11 @@ export const MIGRATIONS: readonly Migration[] = [
     sql: "CREATE INDEX need_leaves_identity ON need_leaves (repo, target, cause, at_ms);",
   },
   {
+    // Why the tick refused a steward record and the facts it read then, as JSON (`refuseStewardRecord`): the next digest lists a refused order while those facts hold. `NULL` on a record judged before it was kept.
+    additive: true,
+    sql: "ALTER TABLE steward_records ADD COLUMN refusal TEXT;",
+  },
+  {
     // A person's request for one steward pass of a repository (`steward-requests.ts`): `jig send steward@… start` writes it, the tick takes it.
     additive: true,
     sql: `CREATE TABLE steward_requests (

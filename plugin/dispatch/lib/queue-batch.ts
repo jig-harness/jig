@@ -23,7 +23,12 @@ import {
   facetsOf,
 } from "../../skills/do-item/scripts/lib/tracker/config.ts";
 import { facetValueOf } from "../../skills/do-item/scripts/lib/tracker/facets/config.ts";
-import type { Action, WantedItem } from "./types.ts";
+import type {
+  Action,
+  DispatchSection,
+  MissingPriority,
+  WantedItem,
+} from "./types.ts";
 
 export interface BatchItem {
   key: string;
@@ -31,6 +36,22 @@ export interface BatchItem {
   ancestor?: string;
   /** The epics the late hold check reads for the member (`WantedItem.ancestors`). */
   ancestors?: string[];
+}
+
+/**
+ * A batch launch record's own fields: its members, and the default branch's
+ * `dispatch.missing_priority` the tick read, which the pass hands its
+ * proposal instead of reading its workspace's file. None for a single pickup.
+ */
+export function batchRecordFields(
+  batch: BatchItem[] | undefined,
+  section: Pick<DispatchSection, "missingPriority">,
+): { batchItems?: BatchItem[]; missingPriority?: MissingPriority } {
+  if (batch === undefined) return {};
+  return {
+    batchItems: batch,
+    missingPriority: section.missingPriority ?? "hold",
+  };
 }
 
 /** Only launchable actions join: held, running and unreadable items never enter a batch. */

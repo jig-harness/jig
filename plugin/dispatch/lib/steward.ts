@@ -84,6 +84,20 @@ export interface StewardDigest {
   targets?: StewardTargetEvidence[];
   /** Current targets are always first; only this many additional historical targets are read. */
   targetHistoryLimit?: number;
+  /** The earlier order records the tick refused whose targets still read as they did then: proposing one again is not kept. */
+  refused?: RefusedOrder[];
+}
+/** An order record the tick refused, while the facts it was refused on still hold. */
+export interface RefusedOrder {
+  record: number;
+  kind: "order";
+  targets: string[];
+  refusal: string;
+}
+/** Why the tick refused a record, and the facts it read when it did. */
+export interface StewardRefusal {
+  reason: string;
+  facts: string;
 }
 export interface StewardRun {
   id: string;
@@ -96,6 +110,8 @@ export interface KeptStewardRecord {
   value: StewardRecord;
   applied: boolean;
   effect: string | null;
+  /** Why the tick refused the record, where it kept a reason. */
+  refusal: StewardRefusal | null;
 }
 export type SubmitStewardResult =
   | "submitted"
@@ -396,8 +412,9 @@ function isStewardDigest(value: unknown): value is StewardDigest {
       value.passes,
       value.failures,
     ].every(Array.isArray) &&
-    (value.history === undefined || Array.isArray(value.history)) &&
-    (value.unreported === undefined || Array.isArray(value.unreported))
+    [value.history, value.refused, value.unreported].every(
+      (v) => v === undefined || Array.isArray(v),
+    )
   );
 }
 export function submitStewardRecords(
@@ -411,11 +428,15 @@ export function submitStewardRecords(
     const db = stateDb(root);
     return inTransaction(db, () => {
       const row = db
-        .query("SELECT submitted FROM steward_runs WHERE id = ?")
-        .get(run) as { submitted: number } | null;
+        .query("SELECT submitted, digest FROM steward_runs WHERE id = ?")
+        .get(run) as { submitted: number; digest: string } | null;
       if (row === null) return "missing-run" as const;
       if (row.submitted) return "already-submitted" as const;
-      for (const record of checked.value)
+      const kept = keptDigest(row.digest);
+      const refused = kept?.refused ?? [];
+      for (const record of checked.value.filter(
+        (r) => !refusedAgain(r, refused, kept),
+      ))
         db.query(
           "INSERT INTO steward_records (run, repo, value) SELECT id, repo, ? FROM steward_runs WHERE id = ?",
         ).run(JSON.stringify(record), run);
@@ -427,6 +448,46 @@ export function submitStewardRecords(
     });
   });
 }
+/** The digest a run kept; none when it does not read. */
+function keptDigest(digest: string): StewardDigest | null {
+  const got = attempt("unreadable", "the steward digest does not read", () =>
+    JSON.parse(digest),
+  );
+  return got.ok && isStewardDigest(got.value) ? got.value : null;
+}
+
+/** The refusal an order meets when it names an item outside its own digest. */
+export const OUTSIDE_DIGEST_REASON =
+  "the order names an item outside its own digest";
+
+/** A list of targets as a set: the refusals that read the targets alone do not depend on their order. */
+export function targetSetKey(targets: readonly string[]): string {
+  return JSON.stringify(
+    [...new Set(targets)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
+  );
+}
+
+/**
+ * An order naming the same targets, in any order, as one its digest lists
+ * refused on facts that still hold. A refusal for naming an item outside its
+ * own digest holds only while the new order is outside the new digest too.
+ */
+function refusedAgain(
+  record: StewardRecord,
+  refused: readonly RefusedOrder[],
+  digest: StewardDigest | null,
+): boolean {
+  if (record.kind !== "order") return false;
+  const same = targetSetKey(record.targets);
+  return refused.some(
+    (r) =>
+      targetSetKey(r.targets) === same &&
+      (r.refusal !== OUTSIDE_DIGEST_REASON ||
+        digest === null ||
+        !recordBelongsToDigest(record, digest)),
+  );
+}
+
 export function stewardRecords(
   repo: string,
   root = stateRoot(),
@@ -434,7 +495,7 @@ export function stewardRecords(
   return (
     stateDb(root)
       .query(
-        "SELECT id, run, value, applied, effect FROM steward_records WHERE repo = ? ORDER BY id",
+        "SELECT id, run, value, applied, effect, refusal FROM steward_records WHERE repo = ? ORDER BY id",
       )
       .all(repo) as Array<{
       id: number;
@@ -442,6 +503,7 @@ export function stewardRecords(
       value: string;
       applied: number;
       effect: string | null;
+      refusal: string | null;
     }>
   ).flatMap((r) => {
     const value: unknown = JSON.parse(r.value);
@@ -449,8 +511,28 @@ export function stewardRecords(
     const record = checked.ok ? checked.value[0] : undefined;
     return record === undefined
       ? []
-      : [{ ...r, value: record, applied: r.applied === 1 }];
+      : [
+          {
+            ...r,
+            value: record,
+            applied: r.applied === 1,
+            refusal: refusalOf(r.refusal),
+          },
+        ];
   });
+}
+
+function refusalOf(text: string | null): StewardRefusal | null {
+  if (text === null) return null;
+  const got = attempt("unreadable", "the refusal does not read", () =>
+    JSON.parse(text),
+  );
+  return got.ok &&
+    isMapping(got.value) &&
+    typeof got.value.reason === "string" &&
+    typeof got.value.facts === "string"
+    ? { reason: got.value.reason, facts: got.value.facts }
+    : null;
 }
 /** A resume refused for a fact its ended pass fixes: the pass is settled. */
 export const STEWARD_REFUSED = "refused";
@@ -513,6 +595,37 @@ export function markStewardEffect(
       "UPDATE steward_records SET effect = ?, effect_at_ms = ? WHERE id = ? AND effect IS NULL",
     )
     .run(effect, currentMs(), id);
+}
+
+/**
+ * Claim an unjudged record and keep its accepted effect in one write, so an
+ * interrupted tick never leaves it claimed with no verdict.
+ */
+export function takeStewardRecord(
+  id: number,
+  effect: string,
+  root = stateRoot(),
+): boolean {
+  return (
+    stateDb(root)
+      .query(
+        "UPDATE steward_records SET applied = 1, effect = ?, effect_at_ms = ? WHERE id = ? AND applied = 0 AND effect IS NULL",
+      )
+      .run(effect, currentMs(), id).changes === 1
+  );
+}
+
+/** Refuse an unjudged record for good, keeping why and the facts it was refused on. */
+export function refuseStewardRecord(
+  id: number,
+  refusal: StewardRefusal,
+  root = stateRoot(),
+): void {
+  stateDb(root)
+    .query(
+      "UPDATE steward_records SET applied = 1, effect = ?, effect_at_ms = ?, refusal = ? WHERE id = ? AND effect IS NULL",
+    )
+    .run(STEWARD_REFUSED, currentMs(), JSON.stringify(refusal), id);
 }
 
 export function releaseStewardRecord(id: number, root = stateRoot()): void {
