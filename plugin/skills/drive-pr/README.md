@@ -677,8 +677,8 @@ recorded: the refusal that stops the round now. When every stalled pass's
 `finish-round.ts` ended on the same state (`CI_HOLD_WAIT`, say), the stop and
 its closing report name that state and its reason, and the report's cause
 follows from it (`environment` for `CI_HOLD_WAIT`) instead of `unknown`; the
-drive's ledger names them too. Whether or not the passes agree, the stop names
-the last reasons they recorded and counts each pass that recorded none, and the
+drive's ledger names them too. When they did not all end on one state, the stop
+names the last reasons they recorded instead and counts each pass that recorded none, and the
 ledger, the closing report and the dispatcher's account of the stall (which the
 steward reads) carry that tally. A failed push's reason says why it failed (a
 pre-push gate, the remote's rejection, the connection, a timeout) with the

@@ -7,6 +7,7 @@
  * read; every other exit says what the terminal-state registry's
  * `report.stop` says for it.
  */
+import { redactReportText } from "../../../../../shared/closing-report.ts";
 import type { ParkedItem } from "../state/park-frame.ts";
 import type { DriveState } from "../state/schema.ts";
 import { diagnosisDetail, latestDiagnosedPark } from "../state/ci-actions.ts";
@@ -101,7 +102,8 @@ function forgeLimitStop(
 /**
  * The line for a stall: the state every stalled pass ended on when they
  * agree, else how they finished as the stop recorded it; `null` when the
- * stop recorded neither.
+ * stop recorded neither. The passes wrote the reasons, so they are redacted
+ * here for every reader of the line, the Orca card's comment included.
  */
 function stallStop(
   pr: string,
@@ -110,12 +112,12 @@ function stallStop(
   stall: StallFinish | null,
 ): string | null {
   if (stall !== null)
-    return `PR #${pr}'s drive stalled: every stalled pass's round ended ${stall.state}: ${oneLine(stall.reason)} (exit ${code})`;
+    return `PR #${pr}'s drive stalled: every stalled pass's round ended ${stall.state}: ${oneLine(redactReportText(stall.reason))} (exit ${code})`;
   const reasons =
     driverRuntime.stallReasons ?? stopReasons(state?.events, code);
   return reasons === null
     ? null
-    : `PR #${pr}'s drive stalled, its passes changing nothing: ${stallReasonsLine(reasons)} (exit ${code})`;
+    : `PR #${pr}'s drive stalled, its passes changing nothing: ${redactReportText(stallReasonsLine(reasons))} (exit ${code})`;
 }
 
 /**

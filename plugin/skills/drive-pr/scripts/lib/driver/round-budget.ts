@@ -106,7 +106,12 @@ export async function checkRoundStall(
     ];
   if (stallRounds > 0 && context.noopRounds >= stallRounds) {
     const held = sharedFinish(context.stallFinishes ?? []);
-    const reasons = stallReasonsOf(context.stallFinishes ?? []) ?? null;
+    // Passes that agree are named by their shared finish; a tally beside it
+    // would repeat the same reason.
+    const reasons =
+      held === null
+        ? (stallReasonsOf(context.stallFinishes ?? []) ?? null)
+        : null;
     const diagnostics = [
       ...stallDiagnostics(status, context),
       ...passFinishLines(held, reasons),
