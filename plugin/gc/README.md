@@ -204,8 +204,8 @@ and the line names each registration it retired.
 A scheduled run exits nonzero when the store remains over its limit and the
 run retires no registrations, and the failure is the scratch kind's alone:
 the receipt marks `scratch` as `failed` in its kinds, with the reason, and the
-run's failure and exit name it. Every other kind runs and collects as usual,
-worktrees first, whether the run collects or only reports. A run whose
+run's failure and exit name it. Every other kind runs in both modes, worktrees first,
+and collects only on a collecting run. A run whose
 selection does not include scratch (`--kind worktrees`) never reads the
 registry.
 

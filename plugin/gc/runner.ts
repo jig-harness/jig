@@ -205,11 +205,20 @@ export function recordFailedRun(
  */
 function failKind(receipt: Receipt, { kind, failure }: KindFailure): void {
   const reason = `${kind}: ${failure.reason}`;
+  let named = false;
   for (const entry of receipt.kinds)
     if (entry.name === kind) {
       entry.status = "failed";
       entry.reason = failure.reason;
+      named = true;
     }
+  if (!named)
+    receipt.kinds.push({
+      name: kind,
+      declaration: "none: no repository declares this kind",
+      status: "failed",
+      reason: failure.reason,
+    });
   receipt.failure = { code: failure.code, reason, kind };
   receipt.exitStatus = stopped({ ...failure, reason });
 }

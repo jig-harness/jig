@@ -14,7 +14,7 @@ import { idle, setup } from "./orca-fixture.ts";
 
 const script = resolve(import.meta.dir, "../../jig.ts");
 
-/** The installed job's command line, run on a day the machine file collects (or does not) with a registry of two registrations against a limit of one. */
+/** The scheduled job's command line (`gc --scheduled` through the checkout's entry point, not an installed launcher), run on a day the machine file collects (or does not) with a registry of two registrations against a limit of one. */
 function scheduledRun(
   f: ReturnType<typeof setup>,
   collects: boolean,
@@ -109,8 +109,9 @@ describe.skipIf(
     expectSpawnExit(result, 1);
     const receipt = JSON.parse(result.stdout.toString()) as Receipt;
     expect(existsSync(f.tree)).toBe(false);
-    expect(receipt.kinds.map((kind) => kind.name)).not.toContain("scratch");
-    for (const kind of receipt.kinds) expect(kind.status).toBe("run");
+    for (const kind of receipt.kinds)
+      expect(kind.status).toBe(kind.name === "scratch" ? "failed" : "run");
+    expect(receipt.kinds.map((kind) => kind.name)).toContain("scratch");
     expect(receipt.failure).toMatchObject({
       code: "fixture-registry-over-limit",
       kind: "scratch",

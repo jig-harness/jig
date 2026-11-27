@@ -80,8 +80,8 @@ export function fixtureRegistryCheck(): DoctorCheck {
     : {
         id,
         status: "fail",
-        detail: `${detail} and exceeds its limit, so the scratch kind of jig gc fails each scheduled run`,
-        fix: "Run jig gc --kind scratch --collect and inspect the receipt for retained registrations",
+        detail: `${detail} and exceeds its limit, so the scratch kind of jig gc fails a scheduled run that retires no registration`,
+        fix: "Run jig gc --kind scratch --collect and inspect the receipt for retained registrations; when no registered repository declares the scratch kind, add it to that repository's gc.kinds first, since nothing else plans scratch inventory",
       };
 }
 
