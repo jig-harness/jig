@@ -200,6 +200,18 @@ describe("checkConfiguration", () => {
     );
   });
 
+  it("refuses a label taxonomy that fails its lint, which leaves type and size unreadable", () => {
+    const findings = checkConfiguration(
+      rootWith({
+        ".config/jig.yaml": "issue_tracker:\n  adapter: github\n",
+        "label-taxonomy.yaml": "groups: [unclosed\n",
+      }),
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.part).toBe("tracker");
+    expect(findings[0]?.message).toContain("fails its lint");
+  });
+
   it("refuses a size facet the label taxonomy has no group for", () => {
     const findings = checkConfiguration(
       rootWith({

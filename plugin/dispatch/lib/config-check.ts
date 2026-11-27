@@ -16,7 +16,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { attempt } from "../../shared/outcome.ts";
+import { attempt, Defect } from "../../shared/outcome.ts";
 import { loadCatalogText } from "../../skills/drive-pr/scripts/lib/change-areas-catalog.ts";
 import { facetsOf } from "../../skills/do-item/scripts/lib/tracker/config.ts";
 import { openTracker } from "../../skills/do-item/scripts/lib/tracker/index.ts";
@@ -52,27 +52,35 @@ function fileText(root: string, path: string) {
   );
 }
 
+/**
+ * A throw no configuration causes: a broken invariant or a programming
+ * error in a reader. The check lets it travel, so a bug in the plugin is
+ * reported as one and never as a fault of the repository's configuration.
+ */
+function isDefect(error: unknown): boolean {
+  return (
+    error instanceof Defect ||
+    error instanceof TypeError ||
+    error instanceof ReferenceError
+  );
+}
+
 /** The tracker and its facets, as the tick opens them. */
 function trackerFindings(
   values: Record<string, unknown>,
   root: string,
 ): ConfigFinding[] {
-  const opened = attempt("invalid", "the tracker", () => {
+  let problem: string | null;
+  try {
     const config = trackerConfigOf(values, UNSENT_SLUG);
     openTracker(config, root);
-    return facetsOf(config, root).taxonomy.problem;
-  });
-  if (!opened.ok)
-    return [
-      {
-        part: "tracker",
-        message: trackerRefusal(failureText(opened.failure.cause)),
-      },
-    ];
-  // A taxonomy that fails its lint leaves type and size unreadable; the tick's facet record carries this line.
-  return opened.value === null
-    ? []
-    : [{ part: "tracker", message: opened.value }];
+    problem = facetsOf(config, root).taxonomy.problem;
+  } catch (error) {
+    if (isDefect(error)) throw error;
+    return [{ part: "tracker", message: trackerRefusal(failureText(error)) }];
+  }
+  // A taxonomy that fails its lint leaves type and size unreadable: the tick's facet record names this problem.
+  return problem === null ? [] : [{ part: "tracker", message: problem }];
 }
 
 /** The change-area catalog, as the tick reads it for serialized areas. */
