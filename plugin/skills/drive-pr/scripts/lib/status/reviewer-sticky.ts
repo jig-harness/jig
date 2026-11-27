@@ -178,13 +178,15 @@ export function reviewerStickyBody(
   // are not reviewer evidence. Requiring byte zero rejected valid configured
   // summaries; accepting every trimmed line lets an example replace one.
   let fence: Fence = null;
+  let prev = "";
   let quotedFence: { character: "`" | "~"; length: number } | null = null;
   const structural: string[] = [];
   for (const line of body.split(/\r?\n/)) {
     // Fenced blocks are structural only at Markdown's permitted indentation.
     // Remember their delimiter length: three backticks inside a four-backtick
     // block are content, not its closing fence.
-    const step = fenceStep(line, fence);
+    const step = fenceStep(line, fence, paragraphBefore(prev, fence));
+    prev = line;
     fence = step.fence;
     if (step.delimiter || fence !== null || step.columns >= 4) continue;
     // Finding-count declarations are intentionally rendered as blockquotes by
@@ -245,6 +247,15 @@ export function reviewerStickyBody(
     : null;
 }
 
+/** Whether the previous line was paragraph text a following line could continue. */
+function paragraphBefore(prev: string, fence: Fence): boolean {
+  return (
+    fence === null &&
+    prev.trim() !== "" &&
+    !/^ {0,3}([-+*]|\d{1,9}[.)])[ \t]/.test(prev)
+  );
+}
+
 type Fence = {
   character: "`" | "~";
   length: number;
@@ -253,7 +264,12 @@ type Fence = {
 } | null;
 
 /** The text a fence delimiter is read from, and its offset from the fence's item content column. */
-function fenceFrame(line: string, fence: Fence, columns: number) {
+function fenceFrame(
+  line: string,
+  fence: Fence,
+  columns: number,
+  afterText: boolean,
+) {
   if (fence !== null)
     return {
       text: line,
@@ -262,6 +278,14 @@ function fenceFrame(line: string, fence: Fence, columns: number) {
     };
   const item = /^( {0,3})([-+*]|\d{1,9}[.)])([ \t]+)(?=\S)/.exec(line);
   if (item === null) return { text: line, indent: 0, relative: columns };
+  // An ordered marker other than 1 cannot interrupt a paragraph, so the line
+  // stays paragraph text and opens no list item.
+  if (
+    afterText &&
+    /^\d/.test(item[2] as string) &&
+    parseInt(item[2] as string, 10) !== 1
+  )
+    return { text: line, indent: 0, relative: columns };
   return {
     text: line.slice(item[0].length),
     indent: item[0].length,
@@ -280,6 +304,7 @@ function fenceFrame(line: string, fence: Fence, columns: number) {
 function fenceStep(
   line: string,
   fence: Fence,
+  afterText = false,
 ): { fence: Fence; delimiter: boolean; columns: number } {
   const { columns } = markdownIndentation(line);
   // A line dedented below the content column of the list item a fence opened
@@ -290,8 +315,13 @@ function fenceStep(
     line.trim() !== "" &&
     columns < fence.indent
   )
-    return fenceStep(line, null);
-  const { text, indent, relative } = fenceFrame(line, fence, columns);
+    return fenceStep(line, null, afterText);
+  const { text, indent, relative } = fenceFrame(
+    line,
+    fence,
+    columns,
+    afterText,
+  );
   const token =
     relative >= 0 && relative <= 3
       ? (/^\s*(`{3,}|~{3,})/.exec(text)?.[1] ?? "")
@@ -327,12 +357,14 @@ export function structuralSkipNotices(body: string, marker: string): string {
   const opener = new RegExp(`^ {0,3}<!--\\s*${escaped}\\s*-->\\s*$`);
   const closer = new RegExp(`^ {0,3}<!--\\s*/\\s*${escaped}\\s*-->\\s*$`);
   let fence: Fence = null;
+  let prev = "";
   let open = false;
   const kept: string[] = [];
   for (const line of body.split(/\r?\n/)) {
     // A fence delimiter is never skip-notice payload. Treat opener and
     // closer symmetrically so neither can leak into the decoder.
-    const step = fenceStep(line, fence);
+    const step = fenceStep(line, fence, paragraphBefore(prev, fence));
+    prev = line;
     fence = step.fence;
     if (step.delimiter) continue;
     if (fence !== null || step.columns >= 4 || /^ {0,3}>/.test(line)) {

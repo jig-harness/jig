@@ -28,4 +28,11 @@ describe("sticky structure", () => {
     expect(kept).toContain("<!-- real -->");
     expect(kept).not.toContain("fake");
   });
+
+  it("reads a backtick run after a non-1 ordered marker in a paragraph as a code span", () => {
+    const body = `${MARKER}\ntext\n2. \`\`\`\n<!-- fake -->\nend \`\`\`\n`;
+    const kept = reviewerStickyBody(comment(body), () => true, MARKER);
+    expect(kept).toContain("2. ```");
+    expect(kept).not.toContain("<!-- fake");
+  });
 });
