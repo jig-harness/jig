@@ -339,6 +339,7 @@ describe("GitHub adapter: candidate pools", () => {
     expect(pool[1]).toMatchObject({
       state: { id: "in_progress" },
       hasOpenChildren: true,
+      hasChildren: true,
     });
     await expect(t.openIssues({ withSomeOf: [] })).rejects.toThrow(
       "non-empty label list",
