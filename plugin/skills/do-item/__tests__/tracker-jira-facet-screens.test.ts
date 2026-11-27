@@ -165,8 +165,10 @@ describe("Jira: a facet field missing from an issue type's screen", () => {
             fields: { customfield_10016: 2 },
           }),
         ),
-        "GET issue/ENG-1/editmeta": { fields: {} },
-        "GET issue/ENG-4/editmeta": { fields: { customfield_10016: {} } },
+        "GET issue/ENG-1/editmeta": { fields: { summary: {} } },
+        "GET issue/ENG-4/editmeta": {
+          fields: { summary: {}, customfield_10016: {} },
+        },
       }),
       POINTED(),
     );
@@ -185,6 +187,20 @@ describe("Jira: a facet field missing from an issue type's screen", () => {
       "size: passed over 1 open issue(s) whose Jira screens lack the field",
     );
     expect(calls.filter((c) => c.route.endsWith("/editmeta"))).toHaveLength(2);
+  });
+
+  it("fails the census rather than exempt a facet from a permission-filtered edit screen", async () => {
+    const { t } = jira(
+      routes({
+        ...site("t1"),
+        "POST search/jql": page(issue({ key: "ENG-1", type: "Bug" })),
+        "GET issue/ENG-1/editmeta": { fields: {} },
+      }),
+      POINTED(),
+    );
+    await expect(
+      sweep(t, { apply: false, retired: () => [], writer: pacedWriter() }),
+    ).rejects.toThrow("lists no summary");
   });
 
   it("refuses to set or clear a size whose field is not on the issue's edit screen, naming its issue type", async () => {
@@ -228,7 +244,7 @@ describe("Jira: a facet field missing from an issue type's screen", () => {
       unavailable: false,
       error:
         "size is kept in the field 'Story Points' (customfield_10016), which is not on the create screens of Sub-task and Bug in ENG; add it to those screens, or keep size in labels (store: label)",
-      fails: "filing a Sub-task or a Bug fails",
+      fails: "filing a Sub-task or a Bug with the facet set fails",
     });
     // An epic type is asked no size, so its screen may lack the field.
     expect(
@@ -244,7 +260,7 @@ describe("Jira: a facet field missing from an issue type's screen", () => {
     ).toMatchObject({
       status: "failed",
       error: expect.stringContaining("not on the create screen of Epic in ENG"),
-      fails: "filing an Epic fails",
+      fails: "filing an Epic with the facet set fails",
     });
   });
 
@@ -326,7 +342,7 @@ describe("Jira: a facet field missing from an issue type's screen", () => {
       status: "failed",
       unavailable: false,
       error: expect.stringContaining("which has Small, Medium"),
-      fails: "filing a Sub-task fails",
+      fails: "filing a Sub-task with the facet set fails",
     });
     // A screen without the field does not hide the restricted screens.
     expect(
@@ -337,7 +353,7 @@ describe("Jira: a facet field missing from an issue type's screen", () => {
     ).toMatchObject({
       status: "failed",
       error: expect.stringContaining("not on the create screen of Bug"),
-      fails: "filing a Bug or a Sub-task fails",
+      fails: "filing a Bug or a Sub-task with the facet set fails",
     });
   });
 });

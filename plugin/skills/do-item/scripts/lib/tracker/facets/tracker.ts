@@ -371,7 +371,8 @@ export function withFacets(
   const filedAs =
     coreFiledAs === undefined
       ? undefined
-      : (issue: NewIssue) => coreFiledAs(forCore(issue));
+      : (issue: NewIssue, options?: { parentPending?: boolean }) =>
+          coreFiledAs(forCore(issue), options);
 
   /** The label changes a patch's label-kept facets make, from the issue's labels. */
   async function facetLabels(

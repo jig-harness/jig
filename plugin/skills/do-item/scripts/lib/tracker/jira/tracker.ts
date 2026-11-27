@@ -552,14 +552,21 @@ export function jiraTracker(client: Client): Tracker {
     ...claimOperations(client),
     ...jiraAttachments(transport),
 
-    async filedAs(issue) {
+    async filedAs(issue, options) {
+      // A child drafted before its parent exists is placed as the child of a
+      // standard parent, the type the parent is filed as.
+      const pending =
+        options?.parentPending === true && issue.parent === undefined;
       const parent =
         issue.parent === undefined
           ? null
           : await client.mustIssue(issue.parent);
       const facet = await stores.create(issue, {
-        issueType: await issueTypeUnder(parent),
-        top: parent === null,
+        issueType: pending
+          ? (settings.subtaskType ??
+            onlySubtaskType(await client.issueTypes(), project))
+          : await issueTypeUnder(parent),
+        top: parent === null && !pending,
       });
       return {
         labels: [...new Set([...issue.labels, ...facet.add])],

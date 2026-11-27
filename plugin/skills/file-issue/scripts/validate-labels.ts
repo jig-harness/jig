@@ -154,6 +154,8 @@ interface IssueRead {
   facets?: IssueFacetInput;
   nativeType?: string | null;
   filing?: NewIssue | undefined;
+  /** The draft is a child whose parent is filed after this check. */
+  parentPending?: boolean;
 }
 
 /** The labels, and with an issue its facets and type, that stdin names; or a usage message. */
@@ -191,6 +193,7 @@ function stdinIssue(text: string): IssueRead | string {
     facets,
     nativeType: (issue.nativeType as string | null | undefined) ?? null,
     filing: filingDraft(issue, labels, facets),
+    ...(issue.parentPending === true ? { parentPending: true } : {}),
   };
 }
 
@@ -341,17 +344,21 @@ async function validateFiling(
   if (
     filing === undefined ||
     nativeType != null ||
-    missing.length === 0 ||
     tracker.filedAs === undefined ||
     tracker.unavailableFacets === undefined
   )
     return initial;
   try {
-    const placement = await tracker.filedAs(filing);
-    const unavailable = await tracker.unavailableFacets(
-      placement.nativeType,
-      missing,
+    // Placement decides the native type, which can satisfy a rule by itself,
+    // so it is resolved even when no facet is missing.
+    const placement = await tracker.filedAs(
+      filing,
+      issue.parentPending ? { parentPending: true } : undefined,
     );
+    const unavailable =
+      missing.length === 0
+        ? []
+        : await tracker.unavailableFacets(placement.nativeType, missing);
     return validateLabels(
       labels,
       taxonomy,

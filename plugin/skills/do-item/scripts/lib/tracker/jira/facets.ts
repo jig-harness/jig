@@ -270,7 +270,7 @@ function lackingHealth(
     fails: `filing ${listed(
       [...lacking, ...restricted].map((n) => `${article(n)} ${n}`),
       "or",
-    )} fails`,
+    )} with the facet set fails`,
   };
 }
 
@@ -655,7 +655,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
       fails: `filing ${listed(
         [...restricted.keys()].map((n) => `${article(n)} ${n}`),
         "or",
-      )} fails`,
+      )} with the facet set fails`,
     };
   }
 
@@ -868,15 +868,25 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
       );
       if (nativeType === null || relevant.length === 0) return [];
       const create = await createScreen(nativeType, signal)();
-      if (create === null) return [];
+      // An existing issue's type need not be in the create metadata; its
+      // edit screen still decides. A draft has no edit screen to ask.
+      if (create === null && key === undefined) return [];
       let edit: Promise<FieldMeta> | undefined;
       const unavailable: Facet[] = [];
       for (const slot of relevant) {
         const field = await fieldOf(slot, signal);
-        if (create.screen.has(field.id)) continue;
+        if (create?.screen.has(field.id) === true) continue;
         if (key !== undefined) {
           edit ??= client.editMeta(key, signal);
-          if ((await edit).has(field.id)) continue;
+          const screen = await edit;
+          // Edit metadata is filtered by the caller's permissions: a screen
+          // with no summary is not a screen's answer, so nothing is exempt.
+          if (!screen.has("summary"))
+            throw new TrackerRequestError(
+              "unresolved",
+              `the edit screen of ${key} lists no summary, so it may be filtered by the caller's permissions and cannot show whether ${field.name} is absent from it`,
+            );
+          if (screen.has(field.id)) continue;
         }
         unavailable.push(slot.facet);
       }

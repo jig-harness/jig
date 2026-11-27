@@ -942,7 +942,10 @@ export interface Tracker
    * without writing. Optional: a tracker that files the type the caller
    * names, as given, omits it.
    */
-  filedAs?(issue: NewIssue): Promise<{
+  filedAs?(
+    issue: NewIssue,
+    options?: { parentPending?: boolean },
+  ): Promise<{
     labels: string[];
     nativeType: string | null;
   }>;
