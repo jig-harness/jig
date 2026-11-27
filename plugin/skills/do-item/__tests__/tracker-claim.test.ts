@@ -249,6 +249,22 @@ describe("claimIssue", () => {
     expect(log).toEqual(["assign factory"]);
   });
 
+  it("stands down before transition when its assignment disappeared", async () => {
+    const { tracker, log } = memory("Todo", []);
+    const assignees = tracker.assignees;
+    let reads = 0;
+    tracker.assignees = async (key) => {
+      reads += 1;
+      return reads === 3 ? [] : assignees(key);
+    };
+    expect(await claimIssue(tracker, "#5")).toEqual({
+      outcome: "stood_down",
+      issue: "#5",
+      reason: "another claim landed first: #5 is no longer assigned to factory",
+    });
+    expect(log).toEqual(["assign factory"]);
+  });
+
   it("stands down when the re-read shows another assignee", async () => {
     const { tracker } = memory("Todo", [], (held) => {
       // Another session's claim lands between this one's writes and its re-read.

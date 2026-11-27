@@ -256,6 +256,12 @@ export async function claimIssue(
       issue: key,
       reason: `${key} is assigned to ${names(beforeTransitionOthers)}, not to ${me.name}`,
     };
+  if (!beforeTransitionHolders.some((u) => u.id === me.id))
+    return {
+      outcome: "stood_down",
+      issue: key,
+      reason: `another claim landed first: ${key} is no longer assigned to ${me.name}`,
+    };
   const beforeTransitionAssignee = freshAssigneeRefusal(
     key,
     beforeTransition,
