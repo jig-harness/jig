@@ -213,6 +213,66 @@ export class FakeLinear {
     );
   }
 
+  private relations(key: string, inverse: boolean) {
+    const nodes = inverse
+      ? (this.issues.get(key)?.blockedBy ?? []).map((k) => ({
+          id: `${k}>${key}`,
+          type: "blocks",
+          issue: { identifier: k },
+        }))
+      : [...this.issues.values()]
+          .filter((o) => o.blockedBy.includes(key))
+          .map((o) => ({
+            id: `${key}>${o.identifier}`,
+            type: "blocks",
+            relatedIssue: { identifier: o.identifier },
+          }));
+    return {
+      issue: { [inverse ? "inverseRelations" : "relations"]: page(nodes) },
+    };
+  }
+
+  private changes(
+    all: FakeIssue[],
+    query: string,
+    filter: Record<string, unknown>,
+  ) {
+    const [{ updatedAt }, { or }] = filter.and as [
+      { updatedAt: { gt: string } },
+      { or: Array<Record<string, unknown>> },
+    ];
+    const nodes = all.filter((i) => {
+      if (i.updatedAt <= updatedAt.gt) return false;
+      return or.some((c) => {
+        const clauses = c.and as Array<Record<string, unknown>> | undefined;
+        if (clauses?.some((x) => "assignee" in x))
+          return clauses.every((x) =>
+            "assignee" in x
+              ? this.assignedTo(i, x)
+              : this.inGroup(i, { and: [x] }),
+          );
+        if ("parent" in c) {
+          const parent =
+            i.parent === null ? undefined : this.issues.get(i.parent);
+          return (
+            parent !== undefined &&
+            this.inGroup(parent, c.parent as Record<string, unknown>)
+          );
+        }
+        return this.inGroup(i, c);
+      });
+    });
+    const size = Number(/issues\(first: (\d+)/.exec(query)?.[1] ?? 50);
+    return {
+      issues: {
+        pageInfo: { hasNextPage: nodes.length > size },
+        nodes: nodes
+          .slice(0, size)
+          .map((i) => ({ identifier: i.identifier, updatedAt: i.updatedAt })),
+      },
+    };
+  }
+
   readonly transport: LinearTransport = async (query, variables) => {
     if (/\bpriorityestimate\b/.test(query))
       throw new Error("unknown Linear field priorityestimate");
@@ -255,61 +315,10 @@ export class FakeLinear {
       case "TrackerInverseRelations": {
         const key = String(variables.id);
         const inverse = op === "TrackerInverseRelations";
-        const nodes = inverse
-          ? (this.issues.get(key)?.blockedBy ?? []).map((k) => ({
-              id: `${k}>${key}`,
-              type: "blocks",
-              issue: { identifier: k },
-            }))
-          : all
-              .filter((o) => o.blockedBy.includes(key))
-              .map((o) => ({
-                id: `${key}>${o.identifier}`,
-                type: "blocks",
-                relatedIssue: { identifier: o.identifier },
-              }));
-        return {
-          issue: { [inverse ? "inverseRelations" : "relations"]: page(nodes) },
-        };
+        return this.relations(key, inverse);
       }
-      case "TrackerChanges": {
-        const [{ updatedAt }, { or }] = filter.and as [
-          { updatedAt: { gt: string } },
-          { or: Array<Record<string, unknown>> },
-        ];
-        const since = updatedAt.gt;
-        const nodes = all.filter((i) => {
-          if (i.updatedAt <= since) return false;
-          return or.some((c) => {
-            const clauses = c.and as Array<Record<string, unknown>> | undefined;
-            if (clauses?.some((x) => "assignee" in x))
-              return clauses.every((x) =>
-                "assignee" in x
-                  ? this.assignedTo(i, x)
-                  : this.inGroup(i, { and: [x] }),
-              );
-            if ("parent" in c) {
-              const parent =
-                i.parent === null ? undefined : this.issues.get(i.parent);
-              return (
-                parent !== undefined &&
-                this.inGroup(parent, c.parent as Record<string, unknown>)
-              );
-            }
-            return this.inGroup(i, c);
-          });
-        });
-        const size = Number(/issues\(first: (\d+)/.exec(query)?.[1] ?? 50);
-        return {
-          issues: {
-            pageInfo: { hasNextPage: nodes.length > size },
-            nodes: nodes.slice(0, size).map((i) => ({
-              identifier: i.identifier,
-              updatedAt: i.updatedAt,
-            })),
-          },
-        };
-      }
+      case "TrackerChanges":
+        return this.changes(all, query, filter);
       case "TrackerPoolIssues": {
         const groups = (filter.or ?? []) as Array<Record<string, unknown>>;
         const nodes = all.filter((i) => groups.some((g) => this.inGroup(i, g)));

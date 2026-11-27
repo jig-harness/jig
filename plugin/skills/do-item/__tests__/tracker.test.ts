@@ -687,7 +687,6 @@ describe("Linear adapter: fleet metrics", () => {
     }
   });
 });
-
 describe("Linear adapter: candidate pools", () => {
   const poolNode = (
     identifier: string,
@@ -705,7 +704,6 @@ describe("Linear adapter: candidate pools", () => {
     children: { pageInfo: { hasNextPage: false }, nodes: [] },
     ...extra,
   });
-
   it("filters an open pool by team, open state and each label clause", async () => {
     const { t, calls } = tracker(() => ({ issues: page([poolNode("ENG-4")]) }));
     const got = await t.openIssues({
@@ -733,7 +731,6 @@ describe("Linear adapter: candidate pools", () => {
       labels: { every: { name: { nin: ["xs", "small", "large"] } } },
     });
   });
-
   it("refuses a pool query that would read every open issue", async () => {
     const { t, calls } = tracker(() => ({ issues: page([]) }));
     await expect(t.openIssues({ withSomeOf: [] })).rejects.toThrow(
@@ -744,7 +741,6 @@ describe("Linear adapter: candidate pools", () => {
     );
     expect(calls).toHaveLength(0);
   });
-
   it("reads ids beside names, open children, and a truncated label page", async () => {
     const { t } = tracker(() => ({
       issues: page([

@@ -94,8 +94,8 @@ describe("claimIssue", () => {
       const { tracker, log } = memory("Todo", []);
       const poolIssue = tracker.poolIssue;
       tracker.poolIssue = async (key) => {
-        const before = await poolIssue(key);
-        return before === null ? null : { ...before, ...facts };
+        const issue = await poolIssue(key);
+        return issue === null ? null : { ...issue, ...facts };
       };
       expect(await claimIssue(tracker, "#5")).toMatchObject({
         outcome: "refused",
@@ -173,81 +173,43 @@ describe("claimIssue", () => {
     expect(log).toEqual(["transition in_progress"]);
   });
 
-  it("refuses a parent that gained children before the claim writes", async () => {
-    const { tracker, log } = memory("Todo", []);
-    const poolIssue = tracker.poolIssue;
-    let reads = 0;
-    tracker.poolIssue = async (key) => {
-      const issue = await poolIssue(key);
-      reads += 1;
-      return issue === null || reads !== 2
-        ? issue
-        : { ...issue, hasChildren: true };
-    };
-    expect(await claimIssue(tracker, "#5")).toMatchObject({
-      outcome: "refused",
-      why: "epic",
-    });
-    expect(log).toEqual([]);
-  });
-
-  it("stands down before transition when the assigned issue gains children", async () => {
-    const { tracker, log } = memory("Todo", []);
-    const poolIssue = tracker.poolIssue;
-    let reads = 0;
-    tracker.poolIssue = async (key) => {
-      const issue = await poolIssue(key);
-      reads += 1;
-      return issue === null || reads !== 3
-        ? issue
-        : { ...issue, hasChildren: true };
-    };
-    expect(await claimIssue(tracker, "#5")).toEqual({
-      outcome: "stood_down",
-      issue: "#5",
-      reason: "#5 is an epic; epics are worked through their children",
-    });
-    expect(log).toEqual(["assign factory"]);
-  });
-
-  it("refuses when another user is assigned before the claim writes", async () => {
-    const { tracker, log } = memory("Todo", []);
-    const poolIssue = tracker.poolIssue;
-    let reads = 0;
-    tracker.poolIssue = async (key) => {
-      const issue = await poolIssue(key);
-      reads += 1;
-      return issue === null || reads !== 2
-        ? issue
-        : { ...issue, assignee: DANA };
-    };
-    expect(await claimIssue(tracker, "#5")).toEqual({
-      outcome: "refused",
-      issue: "#5",
-      why: "assigned",
-      reason: "#5 is assigned to dana, not to factory",
-    });
-    expect(log).toEqual([]);
-  });
-
-  it("stands down before transition when another user is assigned", async () => {
-    const { tracker, log } = memory("Todo", []);
-    const poolIssue = tracker.poolIssue;
-    let reads = 0;
-    tracker.poolIssue = async (key) => {
-      const issue = await poolIssue(key);
-      reads += 1;
-      return issue === null || reads !== 3
-        ? issue
-        : { ...issue, assignee: DANA };
-    };
-    expect(await claimIssue(tracker, "#5")).toEqual({
-      outcome: "stood_down",
-      issue: "#5",
-      reason: "#5 is assigned to dana, not to factory",
-    });
-    expect(log).toEqual(["assign factory"]);
-  });
+  it.each([
+    [2, { hasChildren: true }, { outcome: "refused", why: "epic" }, []],
+    [
+      3,
+      { hasChildren: true },
+      {
+        outcome: "stood_down",
+        reason: "#5 is an epic; epics are worked through their children",
+      },
+      ["assign factory"],
+    ],
+    [2, { assignee: DANA }, { outcome: "refused", why: "assigned" }, []],
+    [
+      3,
+      { assignee: DANA },
+      {
+        outcome: "stood_down",
+        reason: "#5 is assigned to dana, not to factory",
+      },
+      ["assign factory"],
+    ],
+  ])(
+    "refuses or stands down when a fresh read changes",
+    async (at, change, outcome, log) => {
+      const { tracker, log: writes } = memory("Todo", []);
+      const poolIssue = tracker.poolIssue;
+      let reads = 0;
+      tracker.poolIssue = async (key) => {
+        const issue = await poolIssue(key);
+        return issue === null || ++reads !== at
+          ? issue
+          : { ...issue, ...change };
+      };
+      expect(await claimIssue(tracker, "#5")).toMatchObject(outcome);
+      expect(writes).toEqual(log);
+    },
+  );
 
   it("stands down before transition when its assignment disappeared", async () => {
     const { tracker, log } = memory("Todo", []);

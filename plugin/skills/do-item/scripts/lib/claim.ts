@@ -182,97 +182,21 @@ export async function claimIssue(
   rules: ClaimRules = { claimFrom: null },
 ): Promise<ClaimResult> {
   const me = await tracker.viewer();
-  const before = await tracker.poolIssue(key);
-  if (before === null)
-    throw new TrackerRequestError("unresolved", `issue ${key} does not exist`);
-  const admission = startAdmission(tracker, key, before, rules);
-  if ("refusal" in admission) return admission.refusal;
-  const started = admission.started;
-  const holders = await tracker.assignees(key);
-  const others = holders.filter((u) => u.id !== me.id);
-  if (others.length > 0)
-    return {
-      outcome: "refused",
-      issue: key,
-      why: "assigned",
-      reason: `${key} is assigned to ${names(others)}, not to ${me.name}`,
-    };
-
-  // The first read can be stale while the assignee lookup runs. Re-check all
-  // admission conditions immediately before changing the issue.
-  const beforeWrite = await tracker.poolIssue(key);
-  if (beforeWrite === null)
-    return {
-      outcome: "stood_down",
-      issue: key,
-      reason: `another change landed first: ${key} is gone`,
-    };
-  const beforeWriteAdmission = startAdmission(tracker, key, beforeWrite, rules);
-  if ("refusal" in beforeWriteAdmission) return beforeWriteAdmission.refusal;
-  const beforeWriteHolders = await tracker.assignees(key);
-  const beforeWriteOthers = beforeWriteHolders.filter((u) => u.id !== me.id);
-  if (beforeWriteOthers.length > 0)
-    return {
-      outcome: "refused",
-      issue: key,
-      why: "assigned",
-      reason: `${key} is assigned to ${names(beforeWriteOthers)}, not to ${me.name}`,
-    };
-  const beforeWriteAssignee = freshAssigneeRefusal(key, beforeWrite, me);
-  if (beforeWriteAssignee !== null) return beforeWriteAssignee;
+  const prepared = await prepareClaim(tracker, key, rules, me);
+  if ("outcome" in prepared) return prepared;
+  const { started, holders } = prepared;
 
   // The assignment first: a claim racing this one then reads it and refuses.
-  if (!beforeWriteHolders.some((u) => u.id === me.id))
-    await tracker.assign(key, me);
+  if (!holders.some((u) => u.id === me.id)) await tracker.assign(key, me);
 
-  // Keep the assignment's race protection, but do not transition an item
-  // whose admission changed between assignment and the state write.
-  const beforeTransition = await tracker.poolIssue(key);
-  if (beforeTransition === null)
-    return {
-      outcome: "stood_down",
-      issue: key,
-      reason: `another change landed first: ${key} is gone`,
-    };
-  const beforeTransitionAdmission = startAdmission(
+  const transitionReason = await transitionStillAllowed(
     tracker,
     key,
-    beforeTransition,
     rules,
-  );
-  if ("refusal" in beforeTransitionAdmission)
-    return {
-      outcome: "stood_down",
-      issue: key,
-      reason: beforeTransitionAdmission.refusal.reason,
-    };
-  const beforeTransitionHolders = await tracker.assignees(key);
-  const beforeTransitionOthers = beforeTransitionHolders.filter(
-    (u) => u.id !== me.id,
-  );
-  if (beforeTransitionOthers.length > 0)
-    return {
-      outcome: "stood_down",
-      issue: key,
-      reason: `${key} is assigned to ${names(beforeTransitionOthers)}, not to ${me.name}`,
-    };
-  if (!beforeTransitionHolders.some((u) => u.id === me.id))
-    return {
-      outcome: "stood_down",
-      issue: key,
-      reason: `another claim landed first: ${key} is no longer assigned to ${me.name}`,
-    };
-  const beforeTransitionAssignee = freshAssigneeRefusal(
-    key,
-    beforeTransition,
     me,
   );
-  if (beforeTransitionAssignee !== null)
-    return {
-      outcome: "stood_down",
-      issue: key,
-      reason: beforeTransitionAssignee.reason,
-    };
+  if (transitionReason !== null)
+    return { outcome: "stood_down", issue: key, reason: transitionReason };
   await tracker.transition(key, "in_progress");
 
   const now = await tracker.assignees(key);
@@ -296,6 +220,76 @@ export async function claimIssue(
       reason: `another change landed first: ${key} is now ${after?.state.name ?? "gone"}, not ${started}`,
     };
   return { outcome: "claimed", issue: key, claimant: me, state: started };
+}
+
+/** Read the state and assignees again immediately before a claim writes. */
+async function prepareClaim(
+  tracker: ClaimTracker,
+  key: string,
+  rules: ClaimRules,
+  me: TrackerUser,
+): Promise<{ started: string; holders: TrackerUser[] } | ClaimResult> {
+  const before = await tracker.poolIssue(key);
+  if (before === null)
+    throw new TrackerRequestError("unresolved", `issue ${key} does not exist`);
+  const admission = startAdmission(tracker, key, before, rules);
+  if ("refusal" in admission) return admission.refusal;
+  const holders = await tracker.assignees(key);
+  const others = holders.filter((u) => u.id !== me.id);
+  if (others.length > 0) return assignedRefusal(key, others, me);
+
+  const beforeWrite = await tracker.poolIssue(key);
+  if (beforeWrite === null) return goneStandDown(key);
+  const beforeWriteAdmission = startAdmission(tracker, key, beforeWrite, rules);
+  if ("refusal" in beforeWriteAdmission) return beforeWriteAdmission.refusal;
+  const beforeWriteHolders = await tracker.assignees(key);
+  const beforeWriteOthers = beforeWriteHolders.filter((u) => u.id !== me.id);
+  if (beforeWriteOthers.length > 0)
+    return assignedRefusal(key, beforeWriteOthers, me);
+  const beforeWriteAssignee = freshAssigneeRefusal(key, beforeWrite, me);
+  if (beforeWriteAssignee !== null) return beforeWriteAssignee;
+  return { started: admission.started, holders: beforeWriteHolders };
+}
+
+function assignedRefusal(
+  key: string,
+  holders: TrackerUser[],
+  me: TrackerUser,
+): ClaimRefusal {
+  return {
+    outcome: "refused",
+    issue: key,
+    why: "assigned",
+    reason: `${key} is assigned to ${names(holders)}, not to ${me.name}`,
+  };
+}
+
+function goneStandDown(key: string): ClaimResult {
+  return {
+    outcome: "stood_down",
+    issue: key,
+    reason: `another change landed first: ${key} is gone`,
+  };
+}
+
+/** Keep assignment-race protection before changing the issue's state. */
+async function transitionStillAllowed(
+  tracker: ClaimTracker,
+  key: string,
+  rules: ClaimRules,
+  me: TrackerUser,
+): Promise<string | null> {
+  const issue = await tracker.poolIssue(key);
+  if (issue === null) return `another change landed first: ${key} is gone`;
+  const admission = startAdmission(tracker, key, issue, rules);
+  if ("refusal" in admission) return admission.refusal.reason;
+  const holders = await tracker.assignees(key);
+  const others = holders.filter((u) => u.id !== me.id);
+  if (others.length > 0)
+    return `${key} is assigned to ${names(others)}, not to ${me.name}`;
+  if (!holders.some((u) => u.id === me.id))
+    return `another claim landed first: ${key} is no longer assigned to ${me.name}`;
+  return freshAssigneeRefusal(key, issue, me)?.reason ?? null;
 }
 
 /**
