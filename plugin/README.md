@@ -1671,9 +1671,10 @@ layer, the repository's own read from its default branch), a tick with
 launches, as one finding per week in the reflection store: an error about
 the dispatcher as a Jig tool, its class `dispatch-recurring-<class>` (such
 as `dispatch-recurring-gates-failed`), with the repository, the stage, the
-days, the row count, the reasons the rows give most often, each row it
+days, the row count, the reasons the rows give most often, up to ten rows it
 counted (the pull request or item, when, the head commit where a launch
-record names it, the reason and what the run's closing report concluded)
+record names it, the reason and what the run's closing report concluded; any
+remaining rows are counted and appear in History)
 and the dashboard filter that shows them. A drive's stall that the
 once-per-head re-drive followed is that re-drive's to settle: it is left
 out of the count, so stalls the dispatcher already handles never recur as a

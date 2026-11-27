@@ -184,6 +184,33 @@ describe("a drive's stall the re-drive followed", () => {
     }
     expect(stalled(f.root, WEDNESDAY).map((r) => r.rows)).toEqual([3]);
   });
+
+  it("counts a stall when its launch record has expired", () => {
+    const f = fixture();
+    for (const back of [0, 1, 2]) {
+      const pr = 50 + back;
+      const at = WEDNESDAY - back * DAY - 2 * HOUR;
+      ended(f.root, `expired-${pr}`, pr, at);
+      launch(f.root, `redrive-${pr}`, pr, at + HOUR / 2, true);
+    }
+    expect(stalled(f.root, WEDNESDAY).map((r) => r.rows)).toEqual([3]);
+  });
+
+  it("counts a stall when an unreadable launch intervenes before its re-drive", () => {
+    const f = fixture();
+    for (const back of [0, 1, 2]) {
+      const pr = 60 + back;
+      const at = WEDNESDAY - back * DAY - 2 * HOUR;
+      launch(f.root, `drive-${pr}`, pr, at - HOUR);
+      ended(f.root, `drive-${pr}`, pr, at);
+      const db = stateDb(f.root);
+      db.query(
+        "INSERT INTO launches (id, repo, action, pr, created_at, record) VALUES (?, ?, ?, ?, ?, ?)",
+      ).run(`unreadable-${pr}`, REPO, "rearm", pr, iso(at), "not json");
+      launch(f.root, `redrive-${pr}`, pr, at + HOUR / 2, true);
+    }
+    expect(stalled(f.root, WEDNESDAY).map((r) => r.rows)).toEqual([3]);
+  });
 });
 
 describe("the finding of a recurring class", () => {

@@ -7,10 +7,11 @@
  * A drive's stall is settled by its own next step: the dispatcher re-drives
  * it once per head commit. A stall the next drive launched for its pull
  * request re-drove is that re-drive's to settle, so it carries the re-drive
- * (`redrive`) and is not counted toward a recurrence; a stall the re-drive
- * did not follow (a re-drive that stalled again on its head, a stall with
- * no head to key a re-drive on, a round limit or a takeover) is. A stall
- * whose launch records have expired cannot be told handled, and counts.
+ * (`redrive`) and is not counted toward a recurrence. That needs an intact,
+ * immediately succeeding launch record: a missing or unreadable record makes
+ * the relationship uncertain, and the stall counts. A stall the re-drive did
+ * not follow (a re-drive that stalled again on its head, a stall with no head
+ * to key a re-drive on, a round limit or a takeover) is likewise counted.
  * The head a row names comes from the launch records too: the change the
  * re-drive that followed it re-drove, else the one its own launch re-drove,
  * else the head its launch recorded.
@@ -80,6 +81,12 @@ interface Launch {
   heads: string | null;
 }
 
+/** A launch-table row, including one whose record cannot establish succession. */
+interface LaunchRow {
+  launch: Launch | null;
+  createdMs: number | null;
+}
+
 const textOf = (value: unknown): string | null =>
   typeof value === "string" ? value : null;
 
@@ -108,18 +115,20 @@ function launchOf(text: string): Launch | null {
   };
 }
 
-/** A pull request's drive launches, oldest first, as the launches table keeps them. */
-function drivesOfPr(db: Database, repo: string, pr: number): Launch[] {
+/** A pull request's drive launches, oldest first, retaining unreadable records as uncertainty. */
+function drivesOfPr(db: Database, repo: string, pr: number): LaunchRow[] {
   const rows = db
     .query(
-      `SELECT record FROM launches WHERE repo = ? AND pr = ?
-         AND action IN (${quoted(DRIVE_STAGES)})`,
+      `SELECT record, created_at FROM launches WHERE repo = ? AND pr = ?
+         AND action IN (${quoted(DRIVE_STAGES)}) ORDER BY created_at`,
     )
-    .all(repo, pr) as Array<{ record: string }>;
+    .all(repo, pr) as Array<{ record: string; created_at: string }>;
   return rows
-    .map((r) => launchOf(r.record))
-    .filter((l): l is Launch => l !== null)
-    .sort((a, b) => a.createdMs - b.createdMs);
+    .map((r) => ({
+      launch: launchOf(r.record),
+      createdMs: parseMs(r.created_at),
+    }))
+    .sort((a, b) => (a.createdMs ?? Infinity) - (b.createdMs ?? Infinity));
 }
 
 const SHORT = 7;
@@ -145,18 +154,19 @@ const STALL_EXIT = new RegExp(`^exit ${DRIVE_EXIT.STALLED}\\b`);
 /**
  * Where a drive's row stands against the re-drive: the head it names, and,
  * for a stall (`exit 14`), the re-drive that followed it when the next drive
- * launched for its pull request after the row's own launch re-drove a stall.
- * The next launch is looked for after the row's own launch where its record
- * is kept, so a takeover launched before the replaced drive ended is the one
- * that followed it; after the row's time where the record has expired.
+ * launched for its pull request immediately after the row's own launch
+ * re-drove a stall. The own launch and its successor must both be readable;
+ * otherwise an intervening launch could make the relationship false.
  */
 function againstRedrive(
-  launches: readonly Launch[],
+  launches: readonly LaunchRow[],
   row: { record: unknown; atMs: number; reason: string },
 ): Pick<Occurrence, "head" | "redrive"> {
-  const own = launches.find((l) => l.id === row.record) ?? null;
-  const after = own?.createdMs ?? row.atMs;
-  const next = launches.find((l) => l.createdMs > after && l !== own);
+  const ownIndex = launches.findIndex((l) => l.launch?.id === row.record);
+  if (ownIndex < 0) return { head: null, redrive: null };
+  const own = launches[ownIndex]?.launch ?? null;
+  const successor = launches[ownIndex + 1] ?? null;
+  const next = successor?.launch ?? null;
   const redrove =
     next?.redroveStall === true && STALL_EXIT.test(row.reason) ? next : null;
   return { head: short(headOf(redrove, own)), redrive: redrove?.id ?? null };
@@ -194,7 +204,7 @@ export function occurrences(
     row: string;
     target: string | null;
   }>;
-  const drives = new Map<number, Launch[]>();
+  const drives = new Map<number, LaunchRow[]>();
   const launchesOf = (pr: number) => {
     const known = drives.get(pr);
     if (known !== undefined) return known;
