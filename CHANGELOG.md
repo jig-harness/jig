@@ -404,6 +404,65 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.314.1] - 2026-11-27
+
+### Fixed
+
+- When Jira's changelog has no record of the current assignment, Jig explains that Jira omits assignments made at issue creation and asks a trusted person to unassign and reassign the issue to start a pickup.
+- The working-directory probe that dispatch, the idle-worktree checks and
+  `jig gc` use no longer reports every worktree as unknowable while a
+  container runs under the host user's uid: a process whose directory its
+  owner cannot read is now accepted when it runs in a nested PID namespace
+  (more than one pid on `NStgid:` in its `/proc/<pid>/status`), as one
+  holding privileges its owner lacks already was. A process of the probe's
+  own PID namespace whose directory cannot be read still makes the answer
+  unknown.
+
+## [0.314.0] - 2026-11-27
+
+The dispatcher's outcome log now records a need's life, and every record names the release that ran it.
+
+The dispatch dashboard serves a scoreboard by release and the live checks.
+
+### Added
+
+- The outcome log gets a `need-opened` row when a need first appears on the line and a `need-closed` row when it has left, written whatever the notify stage did. A need absent from a single tick (a read that failed, a forge that did not answer) stays open: it closes only when it is absent from two ticks in a row, timed at the first, and its close row says how long it was open and how it left. The log's text copy and `jig dispatch log --jsonl` print the rows. **Consumer action:** none.
+- Every tick receipt, launch record and outcome log row carries a `release` field, the plugin version that wrote it. A run counts under the release in effect when it was launched: its ended row names the launch record's release, not the release installed when it ended. Records written before the field read without it. The log table gets a `release` column for counting by release. **Consumer action:** none.
+- `jig upgrade --scheduled` appends each upgrade that updated the plugin or failed to `~/.local/state/jig/upgrade/history.jsonl`, one line each. The upgrade never rewrites or prunes the file, so the releases a machine ran, and when each began, stay readable after the receipts that held them expire. **Consumer action:** none.
+- `GET /scoreboard` gives six numbers for each release that ran something in the last 7 or 30 days: merged pull requests, answers per merge, median need age, session-hours not converged, idle slot-hours and median rounds. A record counts under the release it names; records that name none count under `null`. It also names an end cause that no run had in the 14 days before, once three runs under one release ended with it.
+- `GET /checks` serves the live-check report, and answers `checks-unavailable` while this release has none.
+- Both only read, and answer under the dashboard's token and host checks.
+
+## [0.313.4] - 2026-11-27
+
+### Fixed
+
+- A scratch admission token left by a process that died no longer blocks
+  every scratch collection until a person removes it. When a token's record
+  names this host and the host proves its process gone (no process has that
+  pid with that start time, or the host restarted since), the collector
+  removes the token and logs it; the scratch collector likewise takes over
+  the `writer` file of a collector that was killed. A token that may still be
+  held, or that gc cannot prove gone (no record, a record written before
+  records named a host, another host, an unreadable process table), still
+  blocks and is kept, and `jig doctor gc` and the dispatch dashboard now
+  raise one host need naming it, with the check a person makes.
+
+## [0.313.3] - 2026-11-27
+
+### Fixed
+
+- drive-pr's divergence stop parked drives that were converging. A round now
+  diverges only when it raises more review findings than it fixes, so a round
+  that raises as many as it fixes no longer counts. Backlog findings the
+  reviewer renders in its not-blocking *Beyond this PR* section are no longer
+  counted, even when that section abbreviates them. Convergence still asks for
+  an answer to such an entry. The status JSON lists these entries under
+  `work.summaryNotBlockingKeys`. The round ceiling and the two diverging rounds
+  that park are unchanged.
+  A drive that was counting under the earlier rule starts its count again at
+  its next round.
+
 ## [0.313.2] - 2026-11-27
 
 The drive doctor asks its forge client who it is once per run, and the dispatcher's line now shows a caller whose credentials never succeed.
@@ -11332,7 +11391,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.313.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.314.1...HEAD
+[0.314.1]: https://github.com/jig-harness/jig/compare/v0.314.0...v0.314.1
+[0.314.0]: https://github.com/jig-harness/jig/compare/v0.313.4...v0.314.0
+[0.313.4]: https://github.com/jig-harness/jig/compare/v0.313.3...v0.313.4
+[0.313.3]: https://github.com/jig-harness/jig/compare/v0.313.2...v0.313.3
 [0.313.2]: https://github.com/jig-harness/jig/compare/v0.313.1...v0.313.2
 [0.313.1]: https://github.com/jig-harness/jig/compare/v0.313.0...v0.313.1
 [0.313.0]: https://github.com/jig-harness/jig/compare/v0.312.3...v0.313.0

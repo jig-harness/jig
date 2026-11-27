@@ -1,7 +1,7 @@
 /**
  * The circuit breaker's parks: `round-ceiling`, when a pull request has spent
  * its round ceiling or its wall-clock cap, and `divergence-stop`, when its
- * rounds raise as many review findings as they fix. Each is a framed
+ * rounds raise more review findings than they fix. Each is a framed
  * decision for a person, recorded in the drive state the way the
  * converged-CI park is, and the drive stops `HITL_PARKED` on it.
  */
@@ -121,7 +121,7 @@ export function divergenceDecision(
     class: "human-decision",
     call: {
       id: "a",
-      question: `How should PR #${pr}, whose last ${rounds} rounds each raised as many review findings as they fixed, proceed?`,
+      question: `How should PR #${pr}, whose last ${rounds} rounds each raised more review findings than they fixed, proceed?`,
       options: [
         {
           id: CONTINUE_OPTION,
@@ -129,7 +129,7 @@ export function divergenceDecision(
           summary:
             "Re-arm the drive; the count of diverging rounds starts again from zero.",
           pay: [
-            "More rounds that may keep raising findings as fast as they fix them.",
+            "More rounds that may keep raising findings faster than they fix them.",
           ],
         },
         {
@@ -148,7 +148,7 @@ export function divergenceDecision(
         },
       ],
       recommended: "hand",
-      why: "Rounds whose fixes raise as many findings as they resolve do not converge on their own; a person can tell whether the reviewer or the change is the cause.",
+      why: "Rounds whose fixes raise more findings than they resolve do not converge on their own; a person can tell whether the reviewer or the change is the cause.",
     },
     steps: [
       ...counts,

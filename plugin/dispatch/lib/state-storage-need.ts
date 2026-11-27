@@ -1,4 +1,5 @@
 import {
+  admissionTokenCheck,
   fixtureRegistryCheck,
   stateInodeCheck,
 } from "../../shared/fixture-health.ts";
@@ -43,5 +44,5 @@ export function stateStorageNeeds(
 }
 
 export function readStateStorage(): DoctorCheck[] {
-  return [stateInodeCheck(), fixtureRegistryCheck()];
+  return [stateInodeCheck(), fixtureRegistryCheck(), admissionTokenCheck()];
 }

@@ -1764,12 +1764,13 @@ recorded, so after changing the limit run `jig install gc --yes` and
 writer on that host must
 use the admission check for the limit to apply across test runs.
 
-`jig doctor gc` reports the registry count and the free inode share of the
-filesystem containing Jig's state directory. An
+`jig doctor gc` reports the registry count, the free inode share of the
+filesystem containing Jig's state directory and any admission token that
+blocks collection and that gc cannot prove its holder gone. An
 [inode](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is a
-filesystem record needed for each file or directory. An over-limit registry or
-less than 10% free inodes fails the check and raises a host need in the dispatch
-dashboard. The inode check is skipped when the filesystem does not report an
+filesystem record needed for each file or directory. An over-limit registry,
+less than 10% free inodes or an unprovable admission token fails its check and
+raises a host need in the dispatch dashboard. The inode check is skipped when the filesystem does not report an
 inode count. A scheduled collector that can only report an over-limit registry
 exits with a failure receipt.
 
@@ -2270,6 +2271,21 @@ prints the installed reader's private URL, or the front's address and its QR
 code when `dashboard.front` names one; `--uninstall --yes` removes it.
 See [the dashboard's availability and host checks](README.md#the-dispatcher)
 and [opening it from a phone](phone-access.md).
+
+The dashboard only reads. Besides the page, `GET /state`, `GET /rows`,
+`GET /receipt` and `GET /pr`, it answers two reads over what the host
+recorded, each as `{ok: true, value}` or a coded failure, under the same token
+and host checks:
+
+- `GET /scoreboard[?window=7d|30d]`: six numbers per release that ran
+  something in the window (merged pull requests, answers per merge, median need
+  age, session-hours not converged, idle slot-hours, median rounds), the newest
+  release first, and the end causes new under a release (absent for 14 days,
+  then three runs under one release). A record counts under the release it
+  names; those that name none count under `null`. Idle slot-hours are an
+  estimate from the accounts' caps in the newest line.
+- `GET /checks`: the live-check report, or the failure `checks-unavailable`
+  while this release has none.
 
 Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
 under `~/.local/state/jig/dispatch/`. The files there are `receipts/` (one

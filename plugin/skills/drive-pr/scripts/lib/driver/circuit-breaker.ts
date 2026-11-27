@@ -9,7 +9,8 @@
  *   - the wall-clock cap, `drive.max_wall_clock_hours` from the first launch,
  *     which parks the same way;
  *   - the divergence stop, checked at every round gate: rounds that each
- *     raise as many review findings as they fix park `divergence-stop`.
+ *     raise more review findings than they fix park `divergence-stop`,
+ *     not counting those the reviewer renders as not blocking.
  *
  * Only a person raises a spent ceiling: `--past-ceiling` on the launch, or an
  * answer to the `round-ceiling` park that chooses the override.
@@ -27,6 +28,7 @@ import {
   byCodeUnit,
   DIVERGENCE_ROUNDS,
   divergenceStops,
+  FINDING_RULE,
   findingMovement,
   USED_OVERRIDES_KEPT,
   hoursDriven,
@@ -375,8 +377,12 @@ export async function checkDivergence(
   const store = await openStore(pr);
   let history: CircuitBreakerState["roundFindings"] = [];
   await store.update((s) => {
-    const moved = findingMovement(s.openFindings, keys);
-    const next = { ...s, openFindings: keys };
+    // History recorded under another counting rule is not comparable:
+    // rebaseline it rather than read the rule change as findings moving.
+    const current = s.findingRule === FINDING_RULE;
+    const moved = findingMovement(current ? s.openFindings : undefined, keys);
+    const next = { ...s, openFindings: keys, findingRule: FINDING_RULE };
+    if (!current) delete next.roundFindings;
     if (moved !== null)
       next.roundFindings = withRoundFindings(s.roundFindings, {
         round: s.rounds,
@@ -389,7 +395,7 @@ export async function checkDivergence(
   });
   if (!divergenceStops(history, DIVERGENCE_ROUNDS)) return null;
   console.error(
-    `divergence stop on PR #${pr}: the last ${DIVERGENCE_ROUNDS} rounds each raised as many review findings as they fixed; parking ${DIVERGENCE_PARK} for a person.`,
+    `divergence stop on PR #${pr}: the last ${DIVERGENCE_ROUNDS} rounds each raised more review findings than they fixed; parking ${DIVERGENCE_PARK} for a person.`,
   );
   return await parked(
     pr,
