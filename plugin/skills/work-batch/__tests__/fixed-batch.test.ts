@@ -225,6 +225,26 @@ describe("the member a fixed batch with fewer than two kept works alone", () => 
     expect(renderTable(started, P)).toContain("work ENG-1 alone");
   });
 
+  it("starts no member that lost its priority as well as its size, whichever reason its exclusion shows", async () => {
+    const both = issue("ENG-2", {
+      priority: 0,
+      labels: relabel(base, ["small"], ["large"]),
+    });
+    const p = await propose([unranked("ENG-1"), both], "ENG-1", [
+      "ENG-1",
+      "ENG-2",
+    ]);
+    expect(p.leftOut.map((l) => [l.identifier, l.size, l.noPriority])).toEqual([
+      ["ENG-1", null, true],
+      ["ENG-2", "large", true],
+    ]);
+    expect(p.alone).toEqual({
+      missingPriority: "hold",
+      claim: null,
+      heldForPriority: ["ENG-1", "ENG-2"],
+    });
+  });
+
   it("is no part of a proposal that names no fixed batch", async () => {
     const p = await propose([issue("ENG-1")], "ENG-1");
     expect(p.alone).toBeUndefined();

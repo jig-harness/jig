@@ -19,8 +19,10 @@ import type {
 import {
   batchableSizeOf,
   describeReason,
+  type EligibilityOptions,
   type Excluded,
   type ExclusionReason,
+  partition,
   sanitizeForDisplay,
 } from "./eligibility.ts";
 import { Refusal } from "./errors.ts";
@@ -99,13 +101,23 @@ export async function readFixedMembers(
   return members;
 }
 
-/** `parts` narrowed to the named members, with those their size or missing priority takes out set apart, in the named order. */
+/**
+ * `issues` partitioned, and under `fixed` narrowed to the named members, with
+ * those their size or missing priority takes out set apart, in the named
+ * order. A member left out for its size that also lost its priority is
+ * marked `noPriority` too, since one reason is all its exclusion shows.
+ */
 export function splitFixed(
-  parts: Parts,
+  issues: readonly PoolIssue[],
   policy: BatchPolicy,
-  fixed: ReadonlySet<string> | undefined,
+  opts: EligibilityOptions & { fixed?: ReadonlySet<string> },
 ): Parts & { leftOut: LeftOut[] } {
+  const parts = partition(issues, policy, opts);
+  const fixed = opts.fixed;
   if (fixed === undefined) return { ...parts, leftOut: [] };
+  const unranked = new Set(
+    issues.filter((i) => i.priority === 0).map((i) => i.identifier),
+  );
   const verdict = verdictSizes(policy);
   const sizeOf = (i: PoolIssue) => batchableSizeOf(i, policy) ?? "";
   const leftOut: LeftOut[] = [];
@@ -118,7 +130,7 @@ export function splitFixed(
       title: i.title,
       size,
       why: `${size} is the most expensive batchable size, which a fixed batch leaves to its own pull request`,
-      noPriority: false,
+      noPriority: unranked.has(i.identifier),
     });
     return false;
   });
@@ -130,7 +142,7 @@ export function splitFixed(
       title: e.title,
       size: e.reason.kind === "not-batchable-size" ? e.reason.size : null,
       why: describeReason(e.reason, policy),
-      noPriority: e.reason.kind === "no-priority",
+      noPriority: unranked.has(e.identifier),
     });
     return false;
   });

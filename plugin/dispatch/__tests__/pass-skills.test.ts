@@ -99,9 +99,9 @@ describe("a fixed served batch's prompt", () => {
     expect(started).toContain("--fixed '#1' --missing-priority start:");
   });
 
-  it("lets the first member left out be claimed when none stays", () => {
+  it("works alone the member the proposal names when fewer than two stay", () => {
     expect(prompt).toContain(
-      "(the first member left out whose priority is set when none stays)",
+      "claim and work alone the member the proposal names to work alone",
     );
     expect(prompt).toContain("claim none and record those refusals");
   });

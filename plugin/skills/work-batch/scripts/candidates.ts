@@ -65,7 +65,6 @@ import {
   type ExclusionReason,
   excludeReason,
   isKnownAreaLabel,
-  partition,
   sanitizeForDisplay,
   soloFlagOf,
   stateStanding,
@@ -456,7 +455,7 @@ export function buildProposal(
   warnings: string[],
   sizeGaps: readonly PoolIssue[],
 ): Proposal {
-  const parts = splitFixed(partition(issues, policy, opts), policy, opts.fixed);
+  const parts = splitFixed(issues, policy, opts);
   const ranked = rank(parts.eligible, policy, anchor.sharedLabels);
   // An issue held back for no priority is a labelling gap, not a refusal.
   const unranked = unrankedOf(issues, parts.excluded);
