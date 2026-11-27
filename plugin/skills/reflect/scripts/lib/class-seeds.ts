@@ -141,6 +141,11 @@ function components(path: string): string[] {
   return path.split(COMPONENT_SEPARATOR).filter(Boolean);
 }
 
+/** The components behind an absolute path's root, which is kept whole (`C:\`, `/`). */
+function componentsBehindRoot(path: string): string[] {
+  return components(path.slice(parse(path).root.length));
+}
+
 /**
  * Resolve a path the way the system would, one component at a time, using
  * the host's separators. `resolved` only ever holds a path whose own
@@ -153,7 +158,7 @@ function components(path: string): string[] {
 function verifiedLocalPath(path: string): string {
   if (!isAbsolute(path)) throw new SettingError("is not an absolute path");
   let resolved = parse(path).root;
-  const pending = components(path);
+  const pending = componentsBehindRoot(path);
   let hops = 0;
   while (pending.length > 0) {
     const part = pending.shift() as string;
@@ -163,8 +168,13 @@ function verifiedLocalPath(path: string): string {
     if (!lstatSync(resolved).isSymbolicLink()) continue;
     if (++hops > MAX_LINK_HOPS) throw new SettingError("has too many links");
     const target = localLinkTarget(resolved);
-    resolved = isAbsolute(target) ? parse(target).root : dirname(resolved);
-    pending.unshift(...components(target));
+    if (isAbsolute(target)) {
+      resolved = parse(target).root;
+      pending.unshift(...componentsBehindRoot(target));
+    } else {
+      resolved = dirname(resolved);
+      pending.unshift(...components(target));
+    }
   }
   return resolved;
 }
