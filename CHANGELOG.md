@@ -404,6 +404,15 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.314.3] - 2026-11-27
+
+### Fixed
+
+- Jira filing accepts an omitted facet when the selected issue type's create
+  screen lacks its custom field. The weekly sweep reports how many issues
+  it passes over for each facet absent from both screens.
+  **Consumer action:** none.
+
 ## [0.314.2] - 2026-11-27
 
 ### Fixed
@@ -11406,7 +11415,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.314.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.314.3...HEAD
+[0.314.3]: https://github.com/jig-harness/jig/compare/v0.314.2...v0.314.3
 [0.314.2]: https://github.com/jig-harness/jig/compare/v0.314.1...v0.314.2
 [0.314.1]: https://github.com/jig-harness/jig/compare/v0.314.0...v0.314.1
 [0.314.0]: https://github.com/jig-harness/jig/compare/v0.313.4...v0.314.0

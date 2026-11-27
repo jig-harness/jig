@@ -419,6 +419,8 @@ export interface IncompleteIssue {
   cursor: string;
 }
 
+type FacetCount = { required: number; lacking: number; unavailable?: number };
+
 /**
  * One page of `incompleteIssues`, and the tracker's counts over every open
  * issue outside triage, never over the page: per facet, how many must carry
@@ -428,7 +430,7 @@ export interface IncompletePage {
   issues: IncompleteIssue[];
   /** The cursor of the next page; `null` after the last. */
   next: string | null;
-  counts: Partial<Record<Facet, { required: number; lacking: number }>>;
+  counts: Partial<Record<Facet, FacetCount>>;
 }
 
 /** Where a tracker keeps a facet. */
@@ -942,10 +944,17 @@ export interface Tracker
    * without writing. Optional: a tracker that files the type the caller
    * names, as given, omits it.
    */
-  filedAs?(issue: NewIssue): Promise<{
-    labels: string[];
-    nativeType: string | null;
-  }>;
+  filedAs?(
+    issue: NewIssue,
+    options?: { parentPending?: boolean },
+  ): Promise<{ labels: string[]; nativeType: string | null }>;
+  /** Candidate facets absent from the type's create screen and, for an existing issue, its edit screen. */
+  unavailableFacets?(
+    nativeType: string | null,
+    facets: readonly Facet[],
+    issueKey?: string,
+    signal?: AbortSignal,
+  ): Promise<Facet[]>;
   /** Change an issue. Throws on an empty patch, and as `createIssue` does. */
   updateIssue(
     key: string,
