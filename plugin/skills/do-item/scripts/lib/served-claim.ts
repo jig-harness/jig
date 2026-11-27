@@ -1,3 +1,4 @@
+import { isEpicPickup } from "../../../../shared/epic-pickup.ts";
 /** Served pickups preserve the person's assignment and revalidate inherited authority live. */
 import {
   type ClaimResult,
@@ -113,7 +114,7 @@ async function readNode(
     return { reason: `${current} needs a person to start` };
   if (child && blockedStateRefusal(tracker, current, issue.state.name, issue))
     return { reason: `${current} is in the blocked state` };
-  if (!child && !issue.isEpic)
+  if (!child && !issue.isEpic && !isEpicPickup(pool))
     return { reason: `${current} is no longer an epic` };
   const blocked = await blockedReasonForNode(tracker, current, child, options);
   return blocked ? { reason: blocked } : { issue };
@@ -232,7 +233,7 @@ async function validateAssignment(
 /** An epic, or an item with open children: a queue never pulls one forward. */
 async function isEpic(tracker: Tracker, key: string): Promise<boolean> {
   const item = await tracker.poolIssue(key);
-  return item !== null && (item.hasOpenChildren || item.isEpic);
+  return item !== null && isEpicPickup(item);
 }
 
 /** The reason an item's epic plans hold it, else null; an unreadable plan holds. */
@@ -267,7 +268,7 @@ async function passable(
       item.state.name,
       item.nativeType ?? null,
     ) === null &&
-    !(await isEpic(tracker, key)) &&
+    !isEpicPickup(item) &&
     !hold(item.labels, options) &&
     (await planHold(tracker, item, options)) === null
   );
