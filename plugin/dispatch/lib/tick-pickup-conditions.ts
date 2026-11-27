@@ -236,7 +236,10 @@ function settleCondition(
     return hold;
   }
   const state = observation.value;
-  if (!input.apply || state === "open") return hold;
+  if (state === "open") return hold;
+  // A terminal observation the tick does not persist is still what it saw.
+  if (!input.apply)
+    return state === "closed-unmerged" ? { ...hold, settled: state } : hold;
   const remove = removesOnClear(hold, state, input);
   if (settlePickupHold(input.slug, hold, input.root, remove ? "remove" : state))
     return remove ? null : { ...hold, settled: state };

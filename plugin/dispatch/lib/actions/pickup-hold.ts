@@ -299,8 +299,15 @@ function endedWhy(
  * member is about the whole batch and keeps every member while its anchor
  * (the record's first item) is held; answering it on the anchor settles them
  * all (`releaseRecord`), and so does the anchor's release any other way.
+ * An anchor an open pull request carries (`carried`) cannot take that answer
+ * (its claim belongs to the pull request), so the question no longer holds
+ * the members the pass never claimed.
  */
-function leftUnclaimed(r: ReadRecord, item: string): boolean {
+function leftUnclaimed(
+  r: ReadRecord,
+  item: string,
+  carried: ReadonlySet<string> = NONE,
+): boolean {
   const { record } = r;
   const members = record.batchItems?.map((i) => i.key) ?? [];
   const claimed = record.claimedItems ?? [];
@@ -315,8 +322,14 @@ function leftUnclaimed(r: ReadRecord, item: string): boolean {
   if (named.length > 0) return !named.includes(item);
   // A whole-batch question waits on its anchor: once that is released, nothing holds the rest.
   const anchor = record.item;
-  return anchor !== null && anchor !== item && !holdsItem(record, anchor);
+  return (
+    anchor !== null &&
+    anchor !== item &&
+    (!holdsItem(record, anchor) || carried.has(anchor))
+  );
 }
+
+const NONE: ReadonlySet<string> = new Set();
 
 /**
  * The workspaces of ended batch pickups that left `item` unclaimed. A batch
@@ -424,6 +437,10 @@ export function recordsWanted(
  *
  * With `partial`, the read left some wanted items out, so an item missing
  * from `wanted` may still be wanted: only that return releases a record.
+ *
+ * `carried` holds the items an open pull request carries this tick: a
+ * whole-batch question on such an anchor releases the members its pass never
+ * claimed, and the anchor keeps its claim.
  */
 export function releaseEnded(
   records: ReadRecord[],
@@ -434,6 +451,7 @@ export function releaseEnded(
   root?: string,
   served: ReadonlySet<string> = new Set(),
   partial = false,
+  carried: ReadonlySet<string> = NONE,
 ): void {
   for (const r of records) {
     const { record } = r;
@@ -454,7 +472,7 @@ export function releaseEnded(
     const unclaimed = members.filter((key) => !claimedMembers.includes(key));
     const dropped = unclaimed.filter(
       (key) =>
-        leftUnclaimed(r, key) ||
+        leftUnclaimed(r, key, carried) ||
         !wantsRecord(record, key, partial ? null : wanted, returned),
     );
     if (dropped.length === 0) continue;
