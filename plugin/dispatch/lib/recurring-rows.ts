@@ -83,7 +83,7 @@ interface Launch {
 
 /** A launch-table row, including one whose record cannot establish succession. */
 interface LaunchRow {
-  /** Stable launch-record key, used when timestamps have millisecond ties. */
+  /** Stable launch-record key. It identifies a row but does not order a time tie. */
   id: string;
   launch: Launch | null;
   createdMs: number | null;
@@ -129,7 +129,10 @@ function drivesOfPr(db: Database, repo: string, pr: number): LaunchRow[] {
     .map((r) => ({
       id: r.id,
       launch: launchOf(r.record),
-      createdMs: parseMs(r.created_at),
+      createdMs: (() => {
+        const createdMs = parseMs(r.created_at);
+        return Number.isFinite(createdMs) ? createdMs : null;
+      })(),
     }))
     .sort(
       (a, b) =>
@@ -173,6 +176,16 @@ function againstRedrive(
   if (ownIndex < 0) return { head: null, redrive: null };
   const own = launches[ownIndex]?.launch ?? null;
   const successor = launches[ownIndex + 1] ?? null;
+  // Launch records have millisecond precision. A record at the same instant
+  // could have been inserted on either side of `own`, so it cannot establish
+  // which launch followed it.
+  const tied =
+    own !== null &&
+    launches.some(
+      (launch, index) =>
+        index !== ownIndex && launch.createdMs === own.createdMs,
+    );
+  if (tied) return { head: short(headOf(null, own)), redrive: null };
   const next = successor?.launch ?? null;
   const redrove =
     next?.redroveStall === true && STALL_EXIT.test(row.reason) ? next : null;
