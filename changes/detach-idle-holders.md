@@ -14,8 +14,9 @@ release: minor
   tree. With `rescue_unpushed` as well, the open also detaches a checkout
   whose commits the remote lacks. It first keeps those commits on a
   [rescue branch](../GLOSSARY.md), a local branch
-  `jig-rescue/<tree>-<time>` that nothing pushes or collects, then moves the
-  branch back to the remote's copy so the open can check it out. The launch's receipt and a
+  `jig-rescue/<tree>-<time>` that the dispatcher never pushes and `jig gc`
+  never collects. Where the remote has the branch, it then moves the branch
+  back to the remote's copy so the open can check it out. The launch's receipt and a
   comment on the pull request name the rescue branch and its clone. A rescue
   that fails leaves the checkout as it was, and a person is asked as before.
   A checkout that a process, a drive or a session uses is never touched.

@@ -21,7 +21,7 @@ function rescueCommentBody(
   return [
     `The dispatcher freed \`${detached.branch}\` for this pull request's workspace: the checkout at \`${detached.path}\` held it with commits the remote lacked.`,
     "",
-    `Those commits are kept on the local branch \`${detached.rescue.branch}\` in the clone at \`${detached.rescue.clone}\`. Nothing pushes or collects that branch; the checkout was left detached at \`${detached.head.slice(0, 12)}\` with its files as they were, and where the remote has the branch, the local branch was moved back to the remote's copy.`,
+    `Those commits are kept on the local branch \`${detached.rescue.branch}\` in the clone at \`${detached.rescue.clone}\`. The dispatcher never pushes that branch and \`jig gc\` never collects it; the checkout was left detached at \`${detached.head.slice(0, 12)}\` with its files as they were, and where the remote has the branch, the local branch was moved back to the remote's copy.`,
     "",
     `To carry the work on, push the rescue branch or cherry-pick its commits; delete it with \`git -C ${shellQuote(detached.rescue.clone)} branch -D ${detached.rescue.branch}\` once nothing on it is needed.`,
   ].join("\n");

@@ -841,10 +841,13 @@ async function launchOne(
   const { slots, workspace, detached } = got;
   const pastDeadline = outOfTime(state);
   if (pastDeadline !== null)
-    return waits(action, pastDeadline, slots.account.name);
+    return leftBehind(
+      waits(action, pastDeadline, slots.account.name),
+      detached,
+    );
   const heads = await launchHeads(repo.slug, pr, undefined, timeLeftMs(state));
   const moved = await requestMovedSince(action, pr, drive);
-  if (moved !== null) return waits(action, moved);
+  if (moved !== null) return leftBehind(waits(action, moved), detached);
   const result = await startCheckedRecovery(
     state,
     action,

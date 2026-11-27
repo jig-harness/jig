@@ -3354,8 +3354,8 @@ make, use the entry's term instead.
   ([the implementation plan](design/need-classes.md#ci-repair-spent-or-a-ci-verdict-misread)).
 - **Rescue branch** — a local branch, `jig-rescue/<tree>-<time>`, that the
   *dispatcher* keeps a worktree's unpushed commits on before it detaches
-  that worktree, so freeing a held checkout loses no work. It is never
-  pushed or collected by `jig gc`; the launch's receipt and a comment on the
+  that worktree, so freeing a held checkout loses no work. The dispatcher
+  never pushes it and `jig gc` never collects it; the launch's receipt and a comment on the
   pull request name it. Only a host that turns on `rescue_unpushed` gets one
   ([the machine file](plugin/CONFIGURATION.md#the-machines-dispatch-file)).
 - **Act (of a need)** — the one thing a person does to settle something

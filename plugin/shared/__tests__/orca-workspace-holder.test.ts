@@ -344,6 +344,27 @@ describe("openBranch with the host's holder policy", () => {
     expect(rescues(clone)).toEqual([]);
   });
 
+  test("a detach that fails after the rescue removes the rescue branch it no longer needs", () => {
+    const { root, clone, holder, head } = unpushedTree();
+    const { port } = withPolicy(
+      root,
+      clone,
+      RESCUE,
+      () => [],
+      (ctx) => ({
+        ...ctx,
+        run: (argv, options) =>
+          argv.includes("update-ref") && argv.includes("HEAD")
+            ? { status: 1, stdout: "", stderr: "fatal: cannot lock ref 'HEAD'" }
+            : ctx.run(argv, options),
+      }),
+    );
+    expect(() => open(port, clone)).toThrow("could not detach the checkout");
+    expect(symbolic(holder)).toBe(BRANCH);
+    expect(git(clone, "rev-parse", `refs/heads/${BRANCH}`)).toBe(head);
+    expect(rescues(clone)).toEqual([]);
+  });
+
   test("a busy holder is never touched, whatever the policy", () => {
     const { root, clone, holder, head } = unpushedTree();
     writeFileSync(join(holder, "draft.txt"), "draft\n");

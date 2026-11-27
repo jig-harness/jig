@@ -138,6 +138,21 @@ function keepOnRescue(
   return { branch, clone };
 }
 
+/** Delete the rescue branch a detach that failed did not need, only while it is still at `head`; a delete that fails leaves it, which loses nothing. */
+function dropRescue(port: OpenPort, rescue: RescueBranch, head: string): void {
+  port.host.run([
+    "git",
+    "-c",
+    "core.hooksPath=/dev/null",
+    "-C",
+    rescue.clone,
+    "update-ref",
+    "-d",
+    `refs/heads/${rescue.branch}`,
+    head,
+  ]);
+}
+
 /**
  * Move `branch` in `clone` back to the remote's copy, only while it is still
  * at `head`: its own commits are on the rescue branch, and the open can then
@@ -159,8 +174,14 @@ function backToRemote(
     "--quiet",
     `refs/remotes/${REMOTE}/${branch}^{commit}`,
   ]);
+  // `--verify --quiet` exits 1, printing nothing, only for a ref that is not there.
+  if (remote.status === 1 && remote.stdout.trim() === "") return;
   const tip = remote.stdout.trim();
-  if (remote.status !== 0 || tip === "" || tip === head) return;
+  if (remote.status !== 0 || tip === "")
+    throw new OrcaError(
+      `kept the commits of ${branch} on a rescue branch and detached its checkout, but ${REMOTE}/${branch} could not be read to move ${branch} back to it: ${output(remote) || `exit ${remote.status}`}`,
+    );
+  if (tip === head) return;
   const moved = port.host.run([
     "git",
     "-c",
@@ -256,7 +277,7 @@ function detachAt(
       port.where,
     );
   throw new OrcaError(
-    `could not detach the idle checkout at ${path} from ${branch}: ${output(detached)}`,
+    `could not detach the checkout at ${path} from ${branch}: ${output(detached)}`,
   );
 }
 
@@ -331,7 +352,13 @@ export function releaseHiddenHolder(
     drivers: port.drivers,
   });
   const { head, rescue } = detachable(port, clone, branch, path, verdict);
-  detachAt(port, branch, path, head);
+  try {
+    detachAt(port, branch, path, head);
+  } catch (error) {
+    // The holder stays on its branch with its commits, so the rescue branch is not needed.
+    if (rescue !== null) dropRescue(port, rescue, head);
+    throw error;
+  }
   const left: DetachedHolder = {
     path,
     branch,

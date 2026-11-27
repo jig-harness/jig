@@ -266,6 +266,49 @@ describe("jig dispatch with detach_idle_holders", () => {
     expect(comment).toContain(w.repo);
   }, 120_000);
 
+  it("with rescue_unpushed leaves the tree as it is and frames the holder when the rescue fails", async () => {
+    const { w, holder } = heldRearm({
+      detach_idle_holders: true,
+      rescue_unpushed: true,
+    });
+    writeFileSync(join(w.dir, "pr-head-from-origin"), "");
+    git(
+      w,
+      "-C",
+      holder,
+      ...AUTHOR,
+      "commit",
+      "-q",
+      "--allow-empty",
+      "-m",
+      "local work",
+    );
+    const head = git(w, "-C", holder, "rev-parse", "HEAD");
+    // A branch named jig-rescue leaves no room for any jig-rescue/<name> beside it.
+    git(w, "-C", w.repo, "branch", "jig-rescue", "main");
+
+    const receipt = await tick(w);
+    const [refused] = launches(receipt);
+    expect(refused).toMatchObject({
+      target: "PR #7",
+      outcome: "refused",
+      holder: { path: holder, branch: BRANCH },
+    });
+    expect(refused?.holder?.reasons.at(-1)).toContain(
+      "its unpushed commits could not be kept on a rescue branch, so it was left as it is",
+    );
+    expect(notifications(receipt)).toMatchObject([
+      { target: "PR #7", cause: "needs-person" },
+    ]);
+    expect(isDetached(w, holder)).toBe(false);
+    expect(git(w, "-C", holder, "rev-parse", "HEAD")).toBe(head);
+    expect(git(w, "-C", w.repo, "rev-parse", `refs/heads/${BRANCH}`)).toBe(
+      head,
+    );
+    expect(rescueBranches(w)).toEqual([]);
+    expect(prComments(w)).toEqual([]);
+  }, 120_000);
+
   it("with rescue_unpushed leaves a holder a process works in as it is, and frames it", async () => {
     const { w, holder } = heldRearm({
       detach_idle_holders: true,
