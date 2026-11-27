@@ -10,6 +10,7 @@ import {
   chmodSync,
   existsSync,
   lstatSync,
+  mkdirSync,
   mkdtempSync,
   rmSync,
   writeFileSync,
@@ -21,6 +22,7 @@ import { serveDashboard, type Dashboard } from "../dashboard.ts";
 import { funnelExposure } from "../dashboard-funnel.ts";
 import { readerSettings } from "../dashboard-reader.ts";
 import {
+  ancestorProblem,
   parentProblem,
   socketProblem,
   socketAnswers,
@@ -162,6 +164,18 @@ describe("the private socket", () => {
     expect(
       parentProblem({ isDirectory: true, mode: 0o40700, uid: 6 }, 5),
     ).toContain("owned by");
+  });
+
+  it("refuses a directory under an ancestor others can write to, but allows a sticky one", () => {
+    const outer = scratch();
+    const inner = join(outer, "inner");
+    mkdirSync(inner, { mode: 0o700 });
+    const uid = process.getuid?.();
+    expect(ancestorProblem(inner, uid)).toBeNull();
+    chmodSync(outer, 0o777);
+    expect(ancestorProblem(inner, uid)).toContain("others can write");
+    chmodSync(outer, 0o1777);
+    expect(ancestorProblem(inner, uid)).toBeNull();
   });
 
   it("is created under a tight umask, so no mode is wider than 0600 to begin with", () => {

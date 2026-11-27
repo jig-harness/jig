@@ -10,7 +10,14 @@
  * rebinds to this host cannot reach it, which is why the server asks it for
  * neither the token nor a `Host` allowlist.
  */
-import { chmodSync, lstatSync, mkdirSync, renameSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  lstatSync,
+  mkdirSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+} from "node:fs";
 import { dirname } from "node:path";
 import { attempt, failed, ok, type Outcome } from "../shared/outcome.ts";
 import { SOCKET_MODE } from "./lib/listen.ts";
@@ -33,17 +40,45 @@ export function parentProblem(
   return null;
 }
 
-/** Whether something accepts connections at the socket path; a refused connection is a stale file. */
+/**
+ * The first ancestor of the socket's directory that another user could rename
+ * or replace, so the path could be made to name their socket; `null` when the
+ * whole chain is the reader's, root's, or a sticky directory (which only an
+ * entry's owner may rename within).
+ */
+export function ancestorProblem(
+  directory: string,
+  uid: number | undefined,
+): string | null {
+  let current = directory;
+  for (;;) {
+    const parent = dirname(current);
+    if (parent === current) return null;
+    const read = attempt("socket-unreadable", "", () => lstatSync(parent));
+    if (!read.ok) return `has an ancestor that cannot be read (${parent})`;
+    const facts = read.value;
+    if (!facts.isDirectory())
+      return `has an ancestor that is not a directory (${parent})`;
+    if (uid !== undefined && facts.uid !== uid && facts.uid !== 0)
+      return `has an ancestor owned by user ${facts.uid} (${parent})`;
+    const sticky = (facts.mode & 0o1000) !== 0;
+    if ((facts.mode & 0o022) !== 0 && !sticky)
+      return `has an ancestor directory that others can write to (${parent})`;
+    current = parent;
+  }
+}
+
+/** Whether the socket path may hold a live listener: only a refused connection (or a missing file) proves it stale; any other outcome counts as live. */
 function socketIsLive(path: string): boolean {
   const probe = Bun.spawnSync(
     [
       process.execPath,
       "-e",
-      'const s=require("node:net").connect(process.env.JIG_PROBE_SOCKET);s.on("connect",()=>process.exit(0));s.on("error",()=>process.exit(1));setTimeout(()=>process.exit(1),2000)',
+      'const s=require("node:net").connect(process.env.JIG_PROBE_SOCKET);s.on("connect",()=>process.exit(0));s.on("error",(e)=>process.exit(e.code==="ECONNREFUSED"||e.code==="ENOENT"?3:1));setTimeout(()=>process.exit(1),2000)',
     ],
     { env: { ...process.env, JIG_PROBE_SOCKET: path }, timeout: 5000 },
   );
-  return probe.exitCode === 0;
+  return probe.exitCode !== 3;
 }
 
 /**
@@ -77,6 +112,13 @@ export function bindSocket(
     process.getuid?.(),
   );
   if (placed !== null) return unusable(placed);
+  const resolved = attempt("socket-unusable", "", () =>
+    realpathSync(dirname(path)),
+  );
+  if (!resolved.ok)
+    return unusable("cannot be prepared", resolved.failure.cause);
+  const chain = ancestorProblem(resolved.value, process.getuid?.());
+  if (chain !== null) return unusable(chain);
   const found = readSocketFacts(path);
   if (!found.ok) return unusable("cannot be prepared", found.failure.cause);
   if (found.value !== null) {
@@ -101,12 +143,13 @@ export function bindSocket(
     // Bun unlinks the path when a server stops, whatever is there now, so a
     // socket another reader put in this one's place is moved aside meanwhile.
     const replaced = inode !== null && lstatIno(path) !== inode;
-    const aside = `${path}.${process.pid}.aside`;
-    const parked =
-      replaced &&
-      attempt("socket-unusable", "", () => renameSync(path, aside)).ok;
+    const asidePath = replaced ? parkReplacement(path) : null;
+    const parked = asidePath !== null;
+    // When the replacement cannot be moved aside, the listener is left to die
+    // with the process: stopping it would unlink the other reader's socket.
+    if (replaced && !parked) return;
     server.stop(true);
-    if (parked) renameSync(aside, path);
+    if (asidePath !== null) renameSync(asidePath, path);
     else if (!replaced) rmSync(path, { force: true });
   };
   const moded = attempt("socket-unusable", "", () =>
@@ -117,6 +160,16 @@ export function bindSocket(
     return unusable("cannot be set to mode 0600", moded.failure.cause);
   }
   return ok({ stop });
+}
+
+/** Move whatever replaced the socket aside under the first free name; its new path, or `null` when none works. */
+function parkReplacement(path: string): string | null {
+  for (const n of [0, 1, 2]) {
+    const aside = `${path}.${process.pid}.${n}.aside`;
+    if (attempt("socket-unusable", "", () => renameSync(path, aside)).ok)
+      return aside;
+  }
+  return null;
 }
 
 function lstatIno(path: string): number | null {

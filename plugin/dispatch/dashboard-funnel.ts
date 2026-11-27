@@ -77,6 +77,14 @@ export function funnelExposure(
       isRecord(entry) && isRecord(entry.Handlers)
         ? Object.values(entry.Handlers)
         : [];
+    if (
+      handlers.some(
+        (handler) =>
+          !isRecord(handler) ||
+          (!absent(handler.Proxy) && typeof handler.Proxy !== "string"),
+      )
+    )
+      return unreadable(`handler entries for ${route}`);
     const slot = tcp[route.slice(route.lastIndexOf(":") + 1)];
     if (!absent(slot) && !isRecord(slot))
       return unreadable(`TCP entry for ${route}`);
@@ -88,6 +96,8 @@ export function funnelExposure(
     );
     const port = route.slice(route.lastIndexOf(":") + 1);
     const forward = isRecord(tcp[port]) ? tcp[port].TCPForward : undefined;
+    if (!absent(forward) && typeof forward !== "string")
+      return unreadable(`TCP forward for ${route}`);
     const forwarded =
       typeof forward === "string" && reachesDashboard(forward, mine);
     if (proxied || forwarded) exposed.push(route);

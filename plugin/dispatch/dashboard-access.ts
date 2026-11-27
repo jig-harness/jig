@@ -85,9 +85,14 @@ function frontReport(
   reader: Outcome<{ url: string; configuration?: string }, string>,
   terminal: AccessTerminal,
   configurationMatches: boolean,
+  hasSocket = false,
 ): AccessReport {
   const code = drawnCode(front, terminal);
-  const stderr = [...code.note, ...hostHint(front, allowedHosts)];
+  // A front targeting the private socket sends no Host the socket checks.
+  const stderr = [
+    ...code.note,
+    ...(hasSocket ? [] : hostHint(front, allowedHosts)),
+  ];
   if (!reader.ok)
     stderr.push(
       `The dashboard reader behind the front is not confirmed running (${reader.failure.reason}), so the address may show no page yet; check it with jig dispatch dashboard --status.`,
@@ -153,6 +158,7 @@ export function accessReport(
       reader,
       terminal,
       configurationMatches,
+      config.dashboardSocket != null,
     );
   const report: AccessReport = reader.ok
     ? { stdout: [reader.value.url], stderr: [], code: 0 }
