@@ -28,7 +28,7 @@ import {
   removeThroughOrca,
   removeWithGit,
 } from "../worktree-removal.ts";
-import { processHolder } from "./worktree-git.ts";
+import { holderOf } from "./worktree-git.ts";
 import {
   type Collected,
   goneClaims,
@@ -491,12 +491,14 @@ async function checkProcessOwner(
 }
 /** Kept when a process holds the worktree, or holders could not be read. */
 async function unheld(worktree: string): Promise<Outcome<undefined, string>> {
-  if ((await processHolder(worktree)) !== false)
-    return failed(
-      "held",
-      "kept after the hook: a process holds the worktree, or holders could not be read",
-    );
-  return ok(undefined);
+  const holders = await holderOf(worktree);
+  if (holders.held === false) return ok(undefined);
+  return failed(
+    "held",
+    holders.held === null
+      ? `kept after the hook: holders could not be read: ${holders.unknown}`
+      : "kept after the hook: a process holds the worktree",
+  );
 }
 /**
  * The last admission before a worktree goes, after its hook and park: what

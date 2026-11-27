@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import {
   existsSync,
   mkdirSync,
@@ -11,7 +11,11 @@ import { delimiter, join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import { gcGit, gitEnvironment } from "../git.ts";
-import { ancestry, onlyUnrelatedMountWarnings } from "../kinds/worktree-git.ts";
+import {
+  ancestry,
+  holderReading,
+  onlyUnrelatedMountWarnings,
+} from "../kinds/worktree-git.ts";
 import {
   classifyIgnored,
   detachedSource,
@@ -623,4 +627,100 @@ test("lsof's warnings set aside only mounts that neither hold the worktree nor l
     ),
   ).toBe(false);
   expect(unrelated("lsof: no pwd entry for UID 1001\n")).toBe(false);
+});
+
+describe("the holder reading of one lsof run", () => {
+  const tree = "/home/dev/trees/app";
+  const warning = (type: string, mount: string) =>
+    `lsof: WARNING: can't stat() ${type} file system ${mount}\n      Output information may be incomplete.\n`;
+  // The standard error of `lsof -nP -F pfn +D <worktree>` on a host with a
+  // desktop session and a container runtime: it exits 1 on these alone.
+  const unrelated = [
+    warning("fuse.portal", "/run/user/1000/doc"),
+    warning("fuse.portal", "/run/user/1001/doc"),
+    warning("nsfs", "/run/docker/netns/default"),
+    warning(
+      "overlay",
+      "/var/lib/docker/rootfs/overlayfs/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    ),
+  ].join("");
+  const listing = `p4242\nfcwd\nn${tree}\n`;
+  const reading = (
+    over: Partial<Parameters<typeof holderReading>[0]>,
+    resolved: string | null = tree,
+  ) =>
+    holderReading(
+      {
+        code: 1,
+        stdout: "",
+        stderr: "",
+        timedOut: false,
+        bufferExceeded: false,
+        ...over,
+      },
+      () => resolved,
+      tree,
+    );
+
+  test("a listed holder is held, and no listing is not held, whatever the exit status over unrelated warnings", () => {
+    expect(reading({ stdout: listing, stderr: unrelated })).toEqual({
+      held: true,
+    });
+    expect(reading({ code: 0, stdout: listing })).toEqual({ held: true });
+    expect(reading({ code: 2, stdout: listing, stderr: unrelated })).toEqual({
+      held: true,
+    });
+    expect(reading({ stderr: unrelated })).toEqual({ held: false });
+    expect(reading({})).toEqual({ held: false });
+  });
+
+  test("a listed holder stays held beside a warning about the worktree's own mount", () => {
+    expect(
+      reading({
+        stdout: listing,
+        stderr: unrelated + warning("ext4", "/home/dev"),
+      }),
+    ).toEqual({ held: true });
+  });
+
+  test("no listing beside a warning that could hide a holder is unknown, and says why", () => {
+    for (const stderr of [
+      unrelated + warning("ext4", "/home/dev"),
+      unrelated + warning("ext4", `${tree}/node_modules/.cache`),
+      unrelated + warning("fuse.portal", "/run/user/1000/my\\040doc"),
+      "lsof: no pwd entry for UID 1001\n",
+    ])
+      expect(reading({ stderr })).toEqual({
+        held: null,
+        unknown: expect.stringContaining("more than warnings about unrelated"),
+      });
+    expect(reading({ stderr: unrelated }, null)).toEqual({
+      held: null,
+      unknown: "the worktree path could not be resolved",
+    });
+  });
+
+  test("a killed, timed-out or cut-off run is unknown even with unrelated warnings and a listing", () => {
+    expect(
+      reading({ stderr: unrelated, stdout: listing, signal: "SIGKILL" }),
+    ).toEqual({ held: null, unknown: "lsof was killed by SIGKILL" });
+    expect(reading({ stderr: unrelated, code: 124, timedOut: true })).toEqual({
+      held: null,
+      unknown: "lsof ran past its deadline",
+    });
+    expect(
+      reading({ stderr: unrelated, stdout: listing, bufferExceeded: true }),
+    ).toEqual({ held: null, unknown: "lsof's output was cut off" });
+  });
+
+  test("an exit status that is no listing is unknown", () => {
+    expect(reading({ code: 0, stderr: unrelated })).toEqual({
+      held: null,
+      unknown: "lsof exited 0 without listing a process",
+    });
+    expect(reading({ code: 127, stderr: unrelated })).toEqual({
+      held: null,
+      unknown: "lsof exited 127 without a listing",
+    });
+  });
 });

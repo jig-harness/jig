@@ -307,3 +307,15 @@ export function driverRecordRow(
     .query("SELECT * FROM driver_records WHERE clone = ? AND pr = ?")
     .get(drive.clone, pr) as Record<string, unknown> | null;
 }
+
+/** A CI hold nobody released, as a drive's state keeps it after its driver stopped. */
+export function retainedCiHold() {
+  return {
+    phase: "held" as const,
+    eventId: "42",
+    actor: "operator",
+    addedAtHead: "a".repeat(40),
+    createdAt: new Date().toISOString(),
+    checkRunWatermark: 1,
+  };
+}

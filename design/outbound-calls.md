@@ -524,12 +524,17 @@ sends calls which never succeed, such as one started with a configuration
 directory holding no login, would otherwise repeat them unseen: each run is
 a new credential, so no single key shows a count. The tick reads the ledger
 it already reads for the quota forecast and raises one `calls-failing` host
-need per caller and system whose calls to it were all refused, as
-`unauthorized` or `invalid`, under credentials that never succeeded (at least
-20 in all), naming the caller, the classes and
-the number of credentials. The cure is the caller's: a login, or not running.
+need per caller and system with credentials whose every call to it was
+refused, as `unauthorized` or `invalid` (at least 20 calls in all), naming the
+caller, the classes and the number of credentials. A credential is judged by
+its own calls, so another credential of the same caller that works does not
+hide it: a skill is the caller of every run that uses it. The cure is the caller's: a login, or not running.
 A caller of the forge asks once who the client is and, when it cannot say,
-sends nothing more (ADR-0021: reuse an answer before sending).
+sends nothing more (ADR-0021: reuse an answer before sending). The drive
+doctor asks once per run, whatever it was asked to do: the recovery of every
+leftover record and the diagnosis of every CI hold share the answer, and a
+run whose client names no login ends with that one failing call, one line on
+standard error and exit `4`.
 
 **What is reported.** `jig budget` and the tick report add a line per
 provider account: the day's spend against the cap, the passes it paid for and

@@ -354,7 +354,7 @@ function listingFailure(
   r: RunResult,
 ): Outcome<never, "unreadable"> {
   if (r.code === 4)
-    // The listing declined because reading would have migrated or imported into the drive's database.
+    // The listing declined: reading would have migrated or imported into the drive's database, or the doctor's forge client names no login.
     return failed(
       "unreadable",
       r.stderr.replace(/^drives-read-only\.ts: /, "").trim() ||
