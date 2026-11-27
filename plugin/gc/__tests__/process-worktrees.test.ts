@@ -59,7 +59,7 @@ test.skipIf(
     writeWorktreeOwner(admin, owner);
     const tip = command(["git", "rev-parse", "HEAD"]);
     const orca = join(f.bin, "orca");
-    const orcaList = { ok: true, result: { truncated: false, worktrees: [{ id: "external", path: tree }] } };
+    const orcaList = { ok: true, result: { truncated: false, hostScope: { hostIds: ["local"], omittedHostIds: [] }, worktrees: [{ id: "external", path: tree }] } };
     writeFileSync(orca, '#!/bin/sh\\necho ' + JSON.stringify(JSON.stringify(orcaList)) + '\\n'); chmodSync(orca, 0o755);
     const overlap = worktreesKind(repo, [], "base @ " + tip, 0, { remote: "origin", base: "main" }, orca);
     rmSync(join(admin, "jig-process-owner.json"));
