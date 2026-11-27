@@ -103,8 +103,15 @@ const SERVER = /HTTP 5\d\d|Bad Gateway|Service Unavailable|Gateway Time-?out/i;
 /** GitHub ran out of time on the request. */
 const OUT_OF_TIME = /\bHTTP 50[24]\b/;
 
+/**
+ * A refused or missing credential. Includes the refusal of a client that
+ * picks its account by repository and holds no token for the account a call
+ * addresses ("no <account> token in gh's hosts.yml; refusing to run as
+ * another account"): the call never left, and no other credential may stand
+ * in for it.
+ */
 const UNAUTHORIZED =
-  /HTTP 401|HTTP 403|bad credentials|gh auth login|not logged in|authentication|Resource not accessible|must have (admin|push|write)|forbidden/i;
+  /HTTP 401|HTTP 403|bad credentials|gh auth login|not logged in|authentication|Resource not accessible|must have (admin|push|write)|forbidden|refusing to run as another account/i;
 
 const NOT_FOUND =
   /HTTP 404|HTTP 410|Not Found|Could not resolve to|no pull requests found|no commit found|not found/i;

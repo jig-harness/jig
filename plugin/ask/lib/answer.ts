@@ -67,6 +67,7 @@ export const PERSON_ACTS = [
   "investigate the account's startup failures",
   "inspect the quota spending",
   "inspect Jig state storage",
+  "inspect the failing caller",
   "settle the launch that holds the drive",
   "release the pickup hold",
 ] as const;
@@ -102,6 +103,7 @@ const ACT_OF_PERSON: Record<PersonAct, NeedAct> = {
   "investigate the account's startup failures": "Investigate",
   "inspect the quota spending": "Investigate",
   "inspect Jig state storage": "Investigate",
+  "inspect the failing caller": "Investigate",
   "settle the launch that holds the drive": "Investigate",
   "release the pickup hold": "Authorize",
 };

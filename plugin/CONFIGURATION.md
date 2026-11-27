@@ -2978,6 +2978,12 @@ estimates and an unknown window shown as such. The ledger contains no request pa
 or raw credentials. A caller identifies one tick, one pass and its stage,
 or a skill a person ran.
 
+A `calls-failing` need appears once per caller and system when a caller
+outside the tick and its passes has at least 20 calls to the system, in the
+ledger's last hours, that were all refused as `unauthorized` or `invalid`
+under credentials that never succeeded;
+it is withdrawn once the ledger holds no such calls.
+
 A `low-quota` need appears once per quota when the prior hour's spending would
 empty the balance before refill and is withdrawn when that projection clears.
 Forecasting weights partial hourly buckets assuming uniform spending, credits

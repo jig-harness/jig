@@ -130,6 +130,7 @@ export type NeedCause =
   | "account-sign-in"
   | "account-startup"
   | "low-quota"
+  | "calls-failing"
   | "state-storage";
 
 /** One thing the line waits on a person for. */
