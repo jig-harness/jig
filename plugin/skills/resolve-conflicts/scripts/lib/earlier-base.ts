@@ -109,6 +109,14 @@ export function askForge(cwd: string): AskForge {
  * was retargeted onto `base`.
  */
 export function earlierRef(answer: unknown, base: string): string | null {
+  return earlierRetarget(answer, base)?.ref ?? null;
+}
+
+/** The latest retarget onto `base`: the branch left and when. */
+export function earlierRetarget(
+  answer: unknown,
+  base: string,
+): { ref: string; at: string | null } | null {
   const nodes = valueAt(
     answer,
     "data",
@@ -127,7 +135,10 @@ export function earlierRef(answer: unknown, base: string): string | null {
       previous !== "" &&
       previous !== base
     )
-      return previous;
+      return {
+        ref: previous,
+        at: isString(node.createdAt) ? node.createdAt : null,
+      };
   }
   return null;
 }
@@ -138,7 +149,10 @@ function isObjectId(value: unknown): value is string {
 }
 
 /** The most recently merged of the listed pull requests that carries both commits. */
-export function landingOf(answer: unknown): Omit<Landing, "ref"> | null {
+export function landingOf(
+  answer: unknown,
+  retargetedAt: string | null = null,
+): Omit<Landing, "ref"> | null {
   const nodes = valueAt(answer, "data", "repository", "pullRequests", "nodes");
   if (!Array.isArray(nodes)) return null;
   const landings = nodes.flatMap((node) => {
@@ -148,7 +162,11 @@ export function landingOf(answer: unknown): Omit<Landing, "ref"> | null {
     const mergedAt = valueAt(node, "mergedAt");
     if (!isObjectId(tip) || !isObjectId(landed) || typeof pr !== "number")
       return [];
-    return [{ pr, tip, landed, mergedAt: isString(mergedAt) ? mergedAt : "" }];
+    const at = isString(mergedAt) ? mergedAt : "";
+    // The forge retargets when the earlier base lands, so a pull request
+    // merged after the retarget is a later reuse of the branch name.
+    if (retargetedAt !== null && (at === "" || at > retargetedAt)) return [];
+    return [{ pr, tip, landed, mergedAt: at }];
   });
   landings.sort((a, b) => b.mergedAt.localeCompare(a.mergedAt));
   const first = landings[0];
@@ -171,8 +189,9 @@ export async function readLanding(
       "unreadable",
       `the forge's answer lists no base changes of #${pr}`,
     );
-  const ref = earlierRef(retarget.value, base);
-  if (ref === null) return ok(null);
+  const retargeted = earlierRetarget(retarget.value, base);
+  if (retargeted === null) return ok(null);
+  const { ref } = retargeted;
   const answer = await ask("landing", { head: ref, base });
   if (!answer.ok) return answer;
   if (
@@ -184,7 +203,7 @@ export async function readLanding(
       "unreadable",
       `the forge's answer lists no merged pull requests of ${ref}`,
     );
-  const landing = landingOf(answer.value);
+  const landing = landingOf(answer.value, retargeted.at);
   return ok(landing === null ? null : { ref, ...landing });
 }
 

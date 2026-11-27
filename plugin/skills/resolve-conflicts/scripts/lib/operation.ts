@@ -93,17 +93,23 @@ function replayInputs(
   return { theirs: mergeHead, base: mergeBaseOf(root, head, mergeHead) };
 }
 
+/** The file in git's directory where `start-merge.ts` records its chosen merge base. */
+export const MERGE_BASE_RECORD = "JIG_MERGE_BASE";
+
 /**
- * The merge base an open merge's prepared message records
- * (`Merge-base: <commit>`, written by `start-merge.ts` when the branch's
- * earlier base landed by squash or rebase), while it is an ancestor of
- * `head`; null when there is none.
+ * The merge base `start-merge.ts` chose for the open merge, read from its own
+ * record (`<base> <MERGE_HEAD>`, never from the editable merge message), while
+ * the record names the merge's current `MERGE_HEAD` and the base is an
+ * ancestor of `head`; null when there is none.
  */
 export function recordedMergeBase(root: string, head: string): string | null {
-  const recorded = read(gitPath(root, "MERGE_MSG"))?.match(
-    /^Merge-base: ([0-9a-f]{40}|[0-9a-f]{64})$/m,
-  )?.[1];
+  const parts = read(gitPath(root, MERGE_BASE_RECORD))?.trim().split(" ");
+  const mergeHead = resolveCommit(root, "MERGE_HEAD");
+  const recorded = parts?.[0];
   return recorded !== undefined &&
+    /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(recorded) &&
+    mergeHead !== null &&
+    parts?.[1] === mergeHead &&
     gitRaw(root, ["merge-base", "--is-ancestor", recorded, head]).code === 0
     ? recorded
     : null;

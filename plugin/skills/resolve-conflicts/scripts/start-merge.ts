@@ -37,6 +37,7 @@ import {
   mergeBaseAfter,
   readLanding,
 } from "./lib/earlier-base.ts";
+import { MERGE_BASE_RECORD } from "./lib/operation.ts";
 import { gitPath, gitRaw, resolveCommit, topLevel } from "./lib/git.ts";
 
 export const START_MERGE_SCHEMA = "start-merge/v1";
@@ -185,6 +186,9 @@ function preparedMessage(
   ].join("\n");
 }
 
+/** Longest a merge or its commit may run, as the documented command deadline. */
+const MERGE_TIMEOUT_MS = 3600 * 1000;
+
 /** Run git's own merge of `ref`. */
 function gitMerge(
   root: string,
@@ -199,8 +203,15 @@ function gitMerge(
     ["-c", "merge.conflictStyle=zdiff3", "merge", "--no-edit", ref],
     undefined,
     { ...process.env, GIT_MERGE_AUTOEDIT: "no" },
+    MERGE_TIMEOUT_MS,
   );
   const fields = { head, theirs, detection, earlierBase: landing };
+  if (r.timedOut)
+    return report({
+      ...fields,
+      outcome: "failed",
+      reason: `git merge timed out and was stopped; the tree may hold part of the merge, so check git status and restore it with git merge --abort or git reset --merge: ${r.stderr}`,
+    });
   if (r.code === 0)
     return report({ ...fields, outcome: "merged", reason: `merged ${ref}` });
   const conflicts = unmerged(root);
@@ -262,7 +273,14 @@ function mergeWithBase(
     ],
     undefined,
     { ...process.env, [`GITHEAD_${theirs}`]: ref },
+    MERGE_TIMEOUT_MS,
   );
+  if (r.timedOut)
+    return report({
+      ...fields,
+      outcome: "failed",
+      reason: `git merge-recursive timed out and was stopped, and the tree may hold part of the merge; restore it with git reset --merge: ${r.stderr}`,
+    });
   if (r.code !== 0 && r.code !== 1) {
     const said = `${r.stderr}${r.stdout}`.trim();
     // git refuses before writing anything when local changes stand in the
@@ -288,6 +306,7 @@ function mergeWithBase(
     gitPath(root, "MERGE_MSG"),
     preparedMessage(root, ref, base, landing, mergeBase),
   );
+  writeFileSync(gitPath(root, MERGE_BASE_RECORD), `${mergeBase} ${theirs}\n`);
   const conflicts = unmerged(root);
   if (r.code === 1 || conflicts.length > 0)
     return report({
@@ -296,10 +315,13 @@ function mergeWithBase(
       conflicts,
       reason: `the merge of ${ref} stopped on conflicts in this branch's own changes`,
     });
-  const commit = gitRaw(root, ["commit", "--quiet", "--no-edit"], undefined, {
-    ...process.env,
-    GIT_MERGE_AUTOEDIT: "no",
-  });
+  const commit = gitRaw(
+    root,
+    ["commit", "--quiet", "--no-edit"],
+    undefined,
+    { ...process.env, GIT_MERGE_AUTOEDIT: "no" },
+    MERGE_TIMEOUT_MS,
+  );
   return commit.code === 0
     ? report({ ...fields, outcome: "merged", reason: `merged ${ref}` })
     : report({

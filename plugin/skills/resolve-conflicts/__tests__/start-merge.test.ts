@@ -400,6 +400,13 @@ describe("reading the forge's answers", () => {
       landed: oid("2"),
     });
     expect(landingOf({ data: {} })).toBeNull();
+    // A pull request merged after the retarget is a later reuse of the name.
+    expect(landingOf(answer, "2026-10-15T00:00:00Z")).toEqual({
+      pr: 3,
+      tip: oid("a"),
+      landed: oid("1"),
+    });
+    expect(landingOf(answer, "2026-09-01T00:00:00Z")).toBeNull();
     const nodes = answer.data.repository.pullRequests.nodes;
     const notAnId = {
       data: {
