@@ -6,11 +6,21 @@
  * with the sentence the tick's receipt carries.
  */
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
-import { checkConfiguration } from "../lib/config-check.ts";
+import { checkMain, printable } from "../check-command.ts";
+import {
+  checkConfiguration,
+  INLINE_CONTENT_LIMIT,
+} from "../lib/config-check.ts";
 import type { TickReceipt } from "../receipts.ts";
 import { SLUG, type World, world } from "./fixtures.ts";
 
@@ -51,11 +61,11 @@ function failedDetail(
   return record.detail;
 }
 
-/** Run the check in the world's checkout; it must fail, and its stderr is returned. */
-async function failedCheck(w: World): Promise<string> {
+/** Run the check in the world's checkout; it must fail, and its diagnostics, one per line, are returned. */
+async function failedCheck(w: World): Promise<string[]> {
   const run = await w.dispatch(["check"]);
   expectSpawnExit(run, 1);
-  return run.stderr;
+  return run.stderr.trim().split("\n");
 }
 
 describe("jig dispatch check fails with the tick's message", () => {
@@ -69,7 +79,9 @@ describe("jig dispatch check fails with the tick's message", () => {
         "the dispatch section on the default branch cannot be read",
       );
       checkout(w, { ".config/jig.yaml": yaml });
-      expect(await failedCheck(w)).toContain(`dispatch: ${refused}`);
+      expect(await failedCheck(w)).toEqual([
+        `jig dispatch check: dispatch: ${refused}`,
+      ]);
     } finally {
       w.close();
     }
@@ -85,9 +97,9 @@ describe("jig dispatch check fails with the tick's message", () => {
       const reason = refused.split("thrown in the plan phase: ")[1];
       expect(reason).toContain("one label would set two facts");
       checkout(w, { ".config/jig.yaml": yaml });
-      expect(await failedCheck(w)).toContain(
-        `tracker: the issue service cannot be opened: ${reason}`,
-      );
+      expect(await failedCheck(w)).toEqual([
+        `jig dispatch check: tracker: the issue service cannot be opened: ${reason}`,
+      ]);
     } finally {
       w.close();
     }
@@ -104,7 +116,9 @@ describe("jig dispatch check fails with the tick's message", () => {
       );
       expect(detail).toContain(`names ${CATALOG}`);
       checkout(w, { ".config/jig.yaml": yaml });
-      expect(await failedCheck(w)).toContain(`catalog: ${detail}`);
+      expect(await failedCheck(w)).toEqual([
+        `jig dispatch check: catalog: ${detail}`,
+      ]);
     } finally {
       w.close();
     }
@@ -123,9 +137,9 @@ describe("jig dispatch check fails with the tick's message", () => {
       );
       expect(detail).toContain(`${SLUG}@main:${CATALOG} is not valid`);
       checkout(w, { ".config/jig.yaml": yaml, [CATALOG]: catalog });
-      expect(await failedCheck(w)).toContain(
-        `catalog: ${detail.replace(`${SLUG}@main:`, "")}`,
-      );
+      expect(await failedCheck(w)).toEqual([
+        `jig dispatch check: catalog: ${detail.replace(`${SLUG}@main:`, "")}`,
+      ]);
     } finally {
       w.close();
     }
@@ -220,5 +234,72 @@ describe("checkConfiguration", () => {
     );
     expect(findings).toHaveLength(1);
     expect(findings[0]?.message).toContain("has no size group");
+  });
+});
+
+describe("checkConfiguration reads only what the tick can read", () => {
+  const roots: string[] = [];
+  const dir = (files: Record<string, string> = {}): string => {
+    const root = mkdtempSync(join(tmpdir(), "config-check-"));
+    roots.push(root);
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(root, path)), { recursive: true });
+      writeFileSync(join(root, path), text);
+    }
+    return root;
+  };
+  afterAll(() => {
+    for (const root of roots) rmSync(root, { recursive: true, force: true });
+  });
+  const withCatalog = (path: string) =>
+    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\ndrive:\n  change_areas_catalog: ${path}\n`;
+
+  it("refuses a catalog path with a backslash", () => {
+    const findings = checkConfiguration(
+      dir({ ".config/jig.yaml": withCatalog("..\\outside.yaml") }),
+    );
+    expect(findings.map((f) => f.part)).toEqual(["catalog"]);
+    expect(findings[0]?.message).toContain("repository-relative path");
+  });
+
+  it("refuses a catalog that is a link leaving the checkout, without reading it", () => {
+    const outside = dir({ "secret.yaml": "SECRET-BYTES: [" });
+    const root = dir({ ".config/jig.yaml": withCatalog("catalog.yaml") });
+    symlinkSync(join(outside, "secret.yaml"), join(root, "catalog.yaml"));
+    const findings = checkConfiguration(root);
+    expect(findings.map((f) => f.part)).toEqual(["catalog"]);
+    expect(findings[0]?.message).not.toContain("SECRET-BYTES");
+  });
+
+  it("refuses a catalog past the forge's inline limit", () => {
+    const root = dir({
+      ".config/jig.yaml": withCatalog("catalog.yaml"),
+      "catalog.yaml": `areas:\n  docs:\n    paths: [docs/**]\n#${"x".repeat(INLINE_CONTENT_LIMIT)}\n`,
+    });
+    const findings = checkConfiguration(root);
+    expect(findings.map((f) => f.part)).toEqual(["catalog"]);
+  });
+
+  it("reads a configuration path that is not a file as unreadable, not as absent", () => {
+    const findings = checkConfiguration(dir({ ".config": "a file" }));
+    expect(findings.map((f) => f.part)).toEqual(["dispatch"]);
+  });
+});
+
+describe("jig dispatch check's command", () => {
+  it("writes control characters and line breaks as escapes", () => {
+    expect(printable("a\n::error::b\r\u001b[0m")).toBe(
+      "a\\n::error::b\\r\\u001b[0m",
+    );
+  });
+
+  it("refuses a root that is not a directory, or not a git checkout", () => {
+    const empty = mkdtempSync(join(tmpdir(), "config-check-empty-"));
+    try {
+      expect(checkMain(join(empty, "missing"))).toBe(1);
+      expect(checkMain(empty)).toBe(1);
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
+    }
   });
 });

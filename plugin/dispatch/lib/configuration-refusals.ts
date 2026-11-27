@@ -6,8 +6,10 @@
  * would print.
  */
 
+import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
+
 /** The configuration file the tick reads, relative to the repository's root. */
-export const CONFIGURATION_FILE = ".config/jig.yaml";
+export const CONFIGURATION_FILE = OVERLAY_RELPATH;
 
 /** The repository's dispatch section does not read: the tick plans nothing for it. */
 export function sectionRefusal(why: string): string {

@@ -367,7 +367,7 @@ const check = command(
   }),
   {
     brief: message`Check the configuration a tick reads from a repository, for its CI.`,
-    description: message`Reads the checkout's .config/jig.yaml with the tick's own readers: its dispatch section, the tracker it names with the issue facets, and the change-area catalog drive.change_areas_catalog names. Prints each reading the tick would refuse with the tick's message and exits 1; exits 0 when the tick reads it whole. Reads files only: nothing is sent to the tracker or the forge.`,
+    description: message`Reads the checkout's .config/jig.yaml with the tick's own readers: its dispatch section, the tracker it names with the issue facets, and the change-area catalog drive.change_areas_catalog names. Prints each reading the tick would refuse with the tick's message and exits 1; exits 0 when the tick reads it whole. The tick resolves the label taxonomy from the host's checkout, which is current only once the host has updated, so a taxonomy change must reach the dispatch hosts too. Refuses a path that is not a git checkout. Reads files only: nothing is sent to the tracker or the forge.`,
   },
 );
 

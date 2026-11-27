@@ -14,9 +14,15 @@
  * so what only those can say (a field the organization lacks, a facet's
  * detected store) is left to the tick.
  */
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { attempt, Defect } from "../../shared/outcome.ts";
+import { readFileSync, realpathSync, statSync } from "node:fs";
+import { isAbsolute, join, relative } from "node:path";
+import {
+  attempt,
+  Defect,
+  failed,
+  ok,
+  type Outcome,
+} from "../../shared/outcome.ts";
 import { loadCatalogText } from "../../skills/drive-pr/scripts/lib/change-areas-catalog.ts";
 import { facetsOf } from "../../skills/do-item/scripts/lib/tracker/config.ts";
 import { openTracker } from "../../skills/do-item/scripts/lib/tracker/index.ts";
@@ -44,12 +50,42 @@ export interface ConfigFinding {
  */
 const UNSENT_SLUG = "checkout/repository";
 
-/** A file of the checkout as text; `null` when it is not there. */
-function fileText(root: string, path: string) {
-  const full = join(root, path);
-  return attempt("unreadable", `${path} could not be read`, () =>
-    existsSync(full) ? readFileSync(full, "utf8") : null,
-  );
+/**
+ * The most bytes the forge's contents answer carries inline: a larger file
+ * comes back without content, which the tick refuses, so the check refuses
+ * it too.
+ */
+export const INLINE_CONTENT_LIMIT = 1024 * 1024;
+
+/**
+ * A file of the checkout as text; `null` only when it is confirmed absent
+ * (ENOENT). Any other way the lookup fails, a link that leaves the checkout
+ * and a file past the forge's inline limit are unreadable, never absent.
+ */
+function fileText(
+  root: string,
+  path: string,
+): Outcome<string | null, "unreadable"> {
+  const read = attempt("unreadable", `${path} could not be read`, () => {
+    const base = realpathSync(root);
+    let real: string;
+    try {
+      real = realpathSync(join(base, path));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+    const inside = relative(base, real);
+    if (inside.startsWith("..") || isAbsolute(inside))
+      return { refused: `${path} resolves outside the checkout` };
+    if (statSync(real).size > INLINE_CONTENT_LIMIT)
+      return { refused: `${path} is larger than the forge's inline limit` };
+    return { text: readFileSync(real, "utf8") };
+  });
+  if (!read.ok) return read;
+  if (read.value === null) return ok(null);
+  if ("refused" in read.value) return failed("unreadable", read.value.refused);
+  return ok(read.value.text);
 }
 
 /**

@@ -297,7 +297,9 @@ A repository's CI runs `jig dispatch check` to refuse, before the merge, a
 configuration the tick would refuse at every turn: it reads the checkout's
 dispatch section, issue facets and change-area catalog with the tick's own
 readers and prints the tick's message for each reading that fails
-([configuration](CONFIGURATION.md#dispatch)).
+([configuration](CONFIGURATION.md#dispatch)). The tick reads the label
+taxonomy from the host's checkout, so a taxonomy change reaches the tick
+only once the dispatch hosts have it too.
 
 The machine file can select [`runtime: process`](CONFIGURATION.md#the-machines-dispatch-file)
 on Linux and macOS to run without Orca. The dispatcher opens plain Git
