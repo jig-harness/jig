@@ -5,9 +5,20 @@
  * listing is accepted only when every error it reported names a process
  * that ended while it was read, or one whose working directory the kernel
  * hides from its owner because the process holds privileges its owner lacks
- * (a service manager, say), which no session started in a worktree does.
- * Any other error, a process whose directory cannot be read for another
+ * (a service manager, say) or runs in a nested PID namespace (a container
+ * whose runtime started it as root and dropped to the owner's uid), which
+ * no session started in a worktree does. Any other error, a process of the
+ * host's own PID namespace whose directory cannot be read for another
  * reason included, means a process in the tree could have been missed.
+ *
+ * The nested-namespace boundary: a container's processes live in a mount
+ * namespace of their own, so a working directory read from one names a path
+ * inside the container and could not be compared with a host tree anyway.
+ * A sandbox an agent starts itself (an unprivileged user namespace, as
+ * bubblewrap makes) stays readable by its owner and is listed like any other
+ * process, and the agent that started it runs in the host's namespace with
+ * its own working directory. A container sharing the host's PID namespace
+ * (`--pid=host`) shows one pid and is still no answer.
  */
 import type { RunResult } from "./orca-workspace/runner.ts";
 import { currentMs } from "./time.ts";
@@ -188,16 +199,25 @@ function sortCwdErrors(
   return { denied };
 }
 
-/** Why the process whose `/proc/<pid>/status` read gave `status` may still be in the tree; `null` when it ended or holds privileges its owner lacks. */
+/**
+ * Why the process whose `/proc/<pid>/status` read gave `status` may still be
+ * in the tree; `null` when it ended, holds permitted capabilities its owner
+ * lacks (a non-zero `CapPrm`), or runs in a nested PID namespace (more than
+ * one pid on `NStgid:`, a container's). A process of the host's own PID
+ * namespace (one pid on `NStgid:`, or no such line) with no permitted
+ * capabilities is the reason.
+ */
 function deniedReason(pid: string, status: RunResult): string | null {
   if (status.status !== 0)
     return /No such (?:file or directory|process)/.test(status.stderr)
       ? null
       : `process ${pid}'s working directory and status cannot be read`;
   const permitted = /^CapPrm:\s*([0-9a-f]+)$/m.exec(status.stdout)?.[1];
-  return permitted !== undefined && /[1-9a-f]/.test(permitted)
-    ? null
-    : `process ${pid}'s working directory cannot be read`;
+  if (permitted !== undefined && /[1-9a-f]/.test(permitted)) return null;
+  const nested = /^NStgid:[ \t]*(\d+(?:[ \t]+\d+)+)[ \t]*$/m.test(
+    status.stdout,
+  );
+  return nested ? null : `process ${pid}'s working directory cannot be read`;
 }
 
 /** The probe's listing, or why it is no answer, with the pids its errors say it could not read. */
