@@ -93,6 +93,9 @@ function selectionAdvances<T>(
 ): boolean {
   return (
     state.selected === undefined ||
+    // An unstamped, finding-free selection reviewed nothing: any later
+    // comment that passed the filters above supersedes it.
+    (!state.carriesFindings && state.reviewedSha === "") ||
     (round !== null && (state.round === null || round > state.round)) ||
     (replaces &&
       (round === null || state.round === null || round === state.round))
@@ -135,7 +138,15 @@ function considerComment<T extends { body?: string | null | undefined }>(
   // An unstamped, finding-free comment after a selection is auxiliary: it
   // reviewed nothing, so it neither replaces the selection nor raises the
   // ordering watermark that would hide a later finding-bearing summary.
-  if (!carries && reviewedSha === "" && state.selected !== undefined) return;
+  if (!carries && reviewedSha === "") {
+    if (state.selected === undefined) {
+      state.selected = comment;
+      state.round = round;
+      state.reviewedSha = reviewedSha;
+      state.carriesFindings = carries;
+    }
+    return;
+  }
   // A round number alone never retires findings: a clean replacement of a
   // finding-bearing summary must carry its own reviewed-head stamp.
   if (state.carriesFindings && !carries && reviewedSha === "") return;
