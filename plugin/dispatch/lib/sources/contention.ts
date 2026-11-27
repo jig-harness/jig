@@ -55,7 +55,6 @@ export function repositoryPath(value: string): Outcome<string, "invalid"> {
   if (
     value.trim() === "" ||
     value.startsWith("/") ||
-    value.includes("\\") ||
     /^[A-Za-z]:/.test(value) ||
     value.split("/").includes("..")
   )

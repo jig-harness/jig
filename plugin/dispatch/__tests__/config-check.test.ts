@@ -6,9 +6,11 @@
  * with the sentence the tick's receipt carries.
  */
 import { afterAll, describe, expect, it } from "bun:test";
+import { execFileSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -254,12 +256,58 @@ describe("checkConfiguration reads only what the tick can read", () => {
   const withCatalog = (path: string) =>
     `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\ndrive:\n  change_areas_catalog: ${path}\n`;
 
-  it("refuses a catalog path with a backslash", () => {
+  it("reads a catalog path with a literal backslash as the tick does: a name, here absent", () => {
     const findings = checkConfiguration(
       dir({ ".config/jig.yaml": withCatalog("..\\outside.yaml") }),
     );
     expect(findings.map((f) => f.part)).toEqual(["catalog"]);
-    expect(findings[0]?.message).toContain("repository-relative path");
+    expect(findings[0]?.message).not.toContain("repository-relative path");
+  });
+
+  it("reads a catalog whose name starts with two dots inside the checkout", () => {
+    const root = dir({
+      ".config/jig.yaml": withCatalog("..catalog.yaml"),
+      "..catalog.yaml": "areas:\n  docs:\n    paths: [docs/**]\n",
+    });
+    expect(checkConfiguration(root)).toEqual([]);
+  });
+
+  it("refuses a configuration that is a link to nothing, rather than reading defaults", () => {
+    const root = dir();
+    mkdirSync(join(root, ".config"));
+    symlinkSync(join(root, "nowhere.yaml"), join(root, ".config/jig.yaml"));
+    expect(checkConfiguration(root).map((f) => f.part)).toEqual(["dispatch"]);
+  });
+
+  it("refuses a label taxonomy outside the checkout before the tracker reads it", () => {
+    const outside = dir({ "taxonomy.yaml": "SECRET-BYTES: [" });
+    const root = dir({
+      ".config/jig.yaml": `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\n  taxonomy: ${join(outside, "taxonomy.yaml")}\n`,
+    });
+    const findings = checkConfiguration(root);
+    expect(findings.map((f) => f.part)).toEqual(["tracker"]);
+    expect(findings[0]?.message).not.toContain("SECRET-BYTES");
+  });
+
+  it("measures a catalog by its committed bytes, so a checkout's line endings do not refuse it", () => {
+    const body = "areas:\n  docs:\n    paths: [docs/**]\n";
+    const root = dir({
+      ".config/jig.yaml": withCatalog("catalog.yaml"),
+      "catalog.yaml": `${body}#${"x".repeat(INLINE_CONTENT_LIMIT - body.length - 2 - 20)}\n${"\n".repeat(19)}`,
+    });
+    const git = (...args: string[]) =>
+      execFileSync("git", ["-C", root, ...args], { stdio: "ignore" });
+    git("init", "-q");
+    git("add", "-A");
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x");
+    // The same file as a checkout with CRLF conversion would write it.
+    const crlf = readFileSync(join(root, "catalog.yaml"), "utf8").replace(
+      /\n/g,
+      "\r\n",
+    );
+    writeFileSync(join(root, "catalog.yaml"), crlf);
+    expect(Buffer.byteLength(crlf)).toBeGreaterThan(INLINE_CONTENT_LIMIT);
+    expect(checkConfiguration(root)).toEqual([]);
   });
 
   it("refuses a catalog that is a link leaving the checkout, without reading it", () => {
@@ -291,6 +339,12 @@ describe("jig dispatch check's command", () => {
     expect(printable("a\n::error::b\r\u001b[0m")).toBe(
       "a\\n::error::b\\r\\u001b[0m",
     );
+  });
+
+  it("breaks the legacy workflow-command marker wherever it stands", () => {
+    const out = printable("x ##[error]y ##[add-mask]z");
+    expect(out).not.toContain("##[");
+    expect(out).toContain("error]y");
   });
 
   it("refuses a root that is not a directory, or not a git checkout", () => {

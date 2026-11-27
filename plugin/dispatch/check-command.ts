@@ -15,15 +15,17 @@ const CHECK_FAILED_EXIT = 1;
 /**
  * Text for a line of output: control characters, line breaks included, are
  * written as escapes. A configuration-controlled value can then neither
- * start a workflow command on a line of its own nor forge another line.
+ * start a workflow command (`::` at the start of a line, or the legacy `##[` marker anywhere in one) nor forge another line.
  */
 export function printable(text: string): string {
-  return text.replace(/[\p{Cc}\u2028\u2029]/gu, (c) => {
-    if (c === "\n") return "\\n";
-    if (c === "\r") return "\\r";
-    if (c === "\t") return "\\t";
-    return `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`;
-  });
+  return text
+    .replace(/[\p{Cc}\u2028\u2029]/gu, (c) => {
+      if (c === "\n") return "\\n";
+      if (c === "\r") return "\\r";
+      if (c === "\t") return "\\t";
+      return `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`;
+    })
+    .replace(/##\[/g, "#\\u0023[");
 }
 
 /** Why `root` is not a checkout the check can read, or `null` when it is one. */

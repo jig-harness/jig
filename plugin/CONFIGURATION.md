@@ -1850,19 +1850,21 @@ pull request merges; the label taxonomy is the exception a host must
 receive too, since the tick reads it from the host's own checkout. The
 command refuses a `--repo` path (or an implicit root) that is not a git
 checkout, reads only files inside it, and refuses a file larger than the
-forge's inline content limit (1 MiB), which the tick could not read either. It reads files only and sends nothing to the tracker
+forge's inline content limit (1 MiB, measured on the committed blob), which the tick could not read either; the label taxonomy must be a path inside the checkout. It reads files only and sends nothing to the tracker
 or the forge, so what only they can say (a field the organization lacks,
 the store detection finds for a facet) is still the tick's to find. The
 readers take the environment the tick takes: a dispatch host that sets
 `JIRA_ALLOWED_HOSTS` for a Jira site outside Atlassian Cloud needs the same
 value in the CI job. The plugin runs from any copy of its directory with
 Bun alone, so a CI job can run a release the hosts run that includes the
-command. Run Bun from the plugin's own copy, so the checkout under review
+command. Name the Bun version in the workflow itself, since the action otherwise reads it from the checkout under review. Run Bun from the plugin's own copy, so the checkout under review
 cannot supply its Bun configuration or preloads, and name the checkout with
 `--repo`:
 
 ```yaml
 - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+  with:
+    bun-version: "X.Y.Z" # replace with the Bun version the chosen Jig release pins (`packageManager` in its root `package.json`); set it here, never from the checkout under review
 - name: Check what the dispatcher reads
   env:
     JIG_VERSION: "X.Y.Z" # replace with a plugin version that includes `dispatch check`, the one the dispatch hosts run

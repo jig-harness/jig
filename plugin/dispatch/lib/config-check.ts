@@ -14,8 +14,9 @@
  * so what only those can say (a field the organization lacks, a facet's
  * detected store) is left to the tick.
  */
-import { readFileSync, realpathSync, statSync } from "node:fs";
-import { isAbsolute, join, relative } from "node:path";
+import { execFileSync } from "node:child_process";
+import { lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { isAbsolute, join, relative, sep } from "node:path";
 import {
   attempt,
   Defect,
@@ -58,9 +59,37 @@ const UNSENT_SLUG = "checkout/repository";
 export const INLINE_CONTENT_LIMIT = 1024 * 1024;
 
 /**
- * A file of the checkout as text; `null` only when it is confirmed absent
- * (ENOENT). Any other way the lookup fails, a link that leaves the checkout
- * and a file past the forge's inline limit are unreadable, never absent.
+ * The size of the file as the tick's forge read counts it: the committed
+ * blob, which a checkout's line-ending conversion does not change. Where git
+ * cannot name the blob (an untracked or modified file, no git), the size of
+ * the file on disk stands.
+ */
+function committedSize(root: string, path: string, onDisk: number): number {
+  try {
+    const out = execFileSync("git", ["cat-file", "-s", `HEAD:${path}`], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 10_000,
+    });
+    const size = Number(out.trim());
+    return Number.isSafeInteger(size) && size >= 0 ? size : onDisk;
+  } catch {
+    return onDisk;
+  }
+}
+
+/** Whether `inside` (a path relative to the checkout) leaves it: a whole `..` component, or another root. */
+function leavesCheckout(inside: string): boolean {
+  return inside === ".." || inside.startsWith(`..${sep}`) || isAbsolute(inside);
+}
+
+/**
+ * A file of the checkout as text; `null` only when it is confirmed absent:
+ * the entry itself does not exist (ENOENT on the entry, not on a link's
+ * target). Any other way the lookup fails, a link whose target is missing,
+ * a link that leaves the checkout and a file past the forge's inline limit
+ * are unreadable, never absent.
  */
 function fileText(
   root: string,
@@ -68,17 +97,27 @@ function fileText(
 ): Outcome<string | null, "unreadable"> {
   const read = attempt("unreadable", `${path} could not be read`, () => {
     const base = realpathSync(root);
-    let real: string;
+    const entry = join(base, path);
     try {
-      real = realpathSync(join(base, path));
+      lstatSync(entry);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
     }
-    const inside = relative(base, real);
-    if (inside.startsWith("..") || isAbsolute(inside))
+    let real: string;
+    try {
+      real = realpathSync(entry);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT")
+        return { refused: `${path} is a link whose target does not exist` };
+      throw error;
+    }
+    if (leavesCheckout(relative(base, real)))
       return { refused: `${path} resolves outside the checkout` };
-    if (statSync(real).size > INLINE_CONTENT_LIMIT)
+    const onDisk = statSync(real).size;
+    if (committedSize(base, path, onDisk) > INLINE_CONTENT_LIMIT)
+      return { refused: `${path} is larger than the forge's inline limit` };
+    if (onDisk > 2 * INLINE_CONTENT_LIMIT)
       return { refused: `${path} is larger than the forge's inline limit` };
     return { text: readFileSync(real, "utf8") };
   });
@@ -101,6 +140,14 @@ function isDefect(error: unknown): boolean {
   );
 }
 
+/** Why the label taxonomy at `path` may not be read from the checkout, or `null` when it may (a missing file is the tracker's to report). */
+function boundedTaxonomy(root: string, path: string): string | null {
+  if (isAbsolute(path) || path.split(/[\\/]/).includes(".."))
+    return `issue_tracker.taxonomy ${path} is not a path inside the checkout`;
+  const text = fileText(root, path);
+  return text.ok ? null : text.failure.reason;
+}
+
 /** The tracker and its facets, as the tick opens them. */
 function trackerFindings(
   values: Record<string, unknown>,
@@ -109,6 +156,11 @@ function trackerFindings(
   let problem: string | null;
   try {
     const config = trackerConfigOf(values, UNSENT_SLUG);
+    // The tracker reads the taxonomy itself; read it here first under the
+    // checkout's bounds, so a path outside it never reaches that reader.
+    const taxonomy = boundedTaxonomy(root, config.taxonomy);
+    if (taxonomy !== null)
+      return [{ part: "tracker", message: trackerRefusal(taxonomy) }];
     openTracker(config, root);
     problem = facetsOf(config, root).taxonomy.problem;
   } catch (error) {
