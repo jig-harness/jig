@@ -112,3 +112,15 @@ test("an order's facts change when a target's ranking or wantedness does", () =>
   later.queueIssue.createdAt = "2026-02-01";
   expect(orderFacts([item("#1"), later], ["#1", "#2"])).not.toBe(facts);
 });
+
+test("an order whose targets tie only in part is refused as a whole", () => {
+  const apart = item("#3");
+  apart.queueIssue.priority = 1;
+  const items = [item("#1"), item("#2"), apart];
+  expect(orderRefusal(items, ["#2", "#1", "#3"])).toBe(
+    "#2 and #3 do not tie: their priorities differ",
+  );
+  expect(
+    applyStewardOrder(items, [{ ...orderRecord, targets: ["#2", "#1", "#3"] }]),
+  ).toEqual(items);
+});

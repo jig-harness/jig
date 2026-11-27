@@ -7,9 +7,11 @@ import {
   keepStewardRun,
   stewardRecords,
   submitStewardRecords,
+  type RefusedOrder,
   type StewardDigest,
 } from "../lib/steward.ts";
 import {
+  judgesOrders,
   orderByStewardRecords,
   refusedOrders,
   STEWARD_ORDERED,
@@ -58,7 +60,21 @@ function submitOrder(
   run: string,
   keys: string[],
   targets: string[],
-  refused: StewardDigest["refused"] = [],
+  refused: RefusedOrder[] = [],
+): void {
+  keepRun(run, keys, refused);
+  const kept = submitStewardRecords(
+    run,
+    [{ kind: "order", targets, reason: "only age separates them" }],
+    root,
+  );
+  expect(kept).toEqual({ ok: true, value: "submitted" });
+}
+
+function keepRun(
+  run: string,
+  keys: string[],
+  refused: RefusedOrder[] = [],
 ): void {
   const digest: StewardDigest = {
     version: 1,
@@ -72,12 +88,6 @@ function submitOrder(
     refused,
   };
   keepStewardRun(run, digest, Date.now(), root);
-  const kept = submitStewardRecords(
-    run,
-    [{ kind: "order", targets, reason: "only age separates them" }],
-    root,
-  );
-  expect(kept).toEqual({ ok: true, value: "submitted" });
 }
 
 test("an order for two wanted items created seconds apart is refused with its reason", () => {
@@ -153,4 +163,50 @@ test("the next digest marks the refused order, and the same order on the same fa
   expect(refusedOrders(REPO, changed, root)).toEqual([]);
   submitOrder("run-3", ["#924", "#925"], ["#925", "#924"], []);
   expect(stewardRecords(REPO, root)).toHaveLength(2);
+});
+
+test("only an applying tick with a complete read of the queue keeps its verdict", () => {
+  expect(judgesOrders(true, { claimed: [] })).toBe(true);
+  expect(judgesOrders(false, { claimed: [] })).toBe(false);
+  expect(judgesOrders(true, { claimed: null })).toBe(false);
+  expect(judgesOrders(true, { claimed: [], partial: true })).toBe(false);
+});
+
+test("an order outside its own digest is refused, and a later tick never changes a verdict", () => {
+  submitOrder("run-1", ["#1"], ["#2", "#1"]);
+  const items = [item("#1"), item("#2")];
+  orderByStewardRecords(REPO, items, true, root);
+  expect(stewardRecords(REPO, root)[0]).toMatchObject({
+    effect: "refused",
+    refusal: { reason: "the order names an item outside its own digest" },
+  });
+  orderByStewardRecords(REPO, [item("#1")], true, root);
+  expect(stewardRecords(REPO, root)[0]?.refusal?.reason).toBe(
+    "the order names an item outside its own digest",
+  );
+});
+
+test("a taken order that stops tying stays taken and orders nothing while it does not tie", () => {
+  submitOrder("run-1", ["#1", "#2"], ["#2", "#1"]);
+  orderByStewardRecords(REPO, [item("#1"), item("#2")], true, root);
+  const apart = [item("#1"), item("#2", "2026-02-01T00:00:00Z")];
+  expect(
+    orderByStewardRecords(REPO, apart, true, root).map((i) => i.key),
+  ).toEqual(["#1", "#2"]);
+  expect(stewardRecords(REPO, root)[0]).toMatchObject({
+    effect: STEWARD_ORDERED,
+    refusal: null,
+  });
+});
+
+test("the digest lists the latest refusal per list of targets, and none once no target is wanted", () => {
+  submitOrder("run-1", ["#1", "#2"], ["#2", "#1"]);
+  submitOrder("run-2", ["#1", "#2"], ["#2", "#1"]);
+  const items = [item("#1"), item("#2", "2026-01-01T00:00:03Z")];
+  orderByStewardRecords(REPO, items, true, root);
+  expect(refusedOrders(REPO, items, root).map((r) => r.record)).toEqual([2]);
+  submitOrder("run-3", ["#7", "#8"], ["#8", "#7"]);
+  orderByStewardRecords(REPO, items, true, root);
+  expect(stewardRecords(REPO, root)[2]?.effect).toBe("refused");
+  expect(refusedOrders(REPO, items, root).map((r) => r.record)).toEqual([2]);
 });

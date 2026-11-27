@@ -30,6 +30,18 @@ type OrderRecord = Extract<StewardRecord, { kind: "order" }>;
 export const STEWARD_ORDERED = "ordered";
 
 /**
+ * Whether this tick keeps its verdict on an order: only a tick that applies,
+ * and only against a complete read of the queue, since one the tracker left
+ * short would refuse an order for a target it merely did not read.
+ */
+export function judgesOrders(
+  apply: boolean,
+  read: { claimed: unknown; partial?: boolean },
+): boolean {
+  return apply && read.claimed !== null && read.partial !== true;
+}
+
+/**
  * The wanted items in the order the repository's steward records give their
  * ties. With `write` (a tick that applies), an order judged for the first
  * time is kept as taken or refused; without it nothing is written.
@@ -76,7 +88,11 @@ function judgeOrder(
   return [];
 }
 
-/** The refused order records whose targets still read as they did when the tick refused them, one per list of targets, the latest. */
+/**
+ * The refused order records whose targets still read as they did when the
+ * tick refused them, and one of which is still wanted: one per list of
+ * targets, the latest.
+ */
 export function refusedOrders(
   repo: string,
   items: readonly WantedItem[],
@@ -88,6 +104,7 @@ export function refusedOrders(
       kept.value.kind !== "order" ||
       kept.effect !== STEWARD_REFUSED ||
       kept.refusal === null ||
+      !kept.value.targets.some((key) => items.some((i) => i.key === key)) ||
       kept.refusal.facts !== orderFacts(items, kept.value.targets)
     )
       continue;

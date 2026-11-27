@@ -43,7 +43,7 @@ it, are in [the steward records chapter](../../protocol/steward-records.md).
 | `resume` | `record` | A dispatched pickup or follow-up ended on a question outside the repository's human-decision classes and explicitly recommended an option. `record` is the ended launch id |
 | `need` | `target`, `act`, `ask` | A need in the digest's `needs` (one with no framing) stays a person's: frame one sentence asking for the action. A target in `framed` already carries its decision; leave it, a record for it is refused |
 | `facet` | `target`, `facet`, `value` | An assigned issue, its key the `target`, lacks `priority`, `type` or `size`; explain the proposed value from the work's evidence |
-| `order` | `targets` | These items are tied: in the digest's queue, equal on every ranking key (priority, unblocking, epic order, size and the exact creation time, so two items filed seconds apart are not tied). `targets` lists their issue keys in the desired order. Propose none the digest's `refused` list names with the same targets |
+| `order` | `targets` | These items are tied: in the digest's queue, equal on every ranking key (priority, unblocking, epic order, size and the exact creation time, so two items filed seconds apart are not tied). The digest's queue shows priority, size and creation time; the tick also checks unblocking and epic order, which it does not show. `targets` lists their issue keys in the desired order. Propose none the digest's `refused` list names with the same targets |
 | `cause` | `record`, `cause`, `summary` | A run ended without a closing report: `record` is its launch id in `unreported`; say why it fell short and what it had got to, from its excerpt and output |
 
 The tick refuses an `order` whose targets are not all in the queue it wants,

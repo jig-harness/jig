@@ -35,7 +35,7 @@ import type { SessionsReport } from "./runtime/port.ts";
 import { deadlineOf, type TickContext } from "./tick-context.ts";
 import type { RepoObservation } from "./tick-observe.ts";
 import type { RepoReport } from "./types.ts";
-import { orderByStewardRecords } from "./steward-orders.ts";
+import { judgesOrders, orderByStewardRecords } from "./steward-orders.ts";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { bodyLinker } from "../../skills/do-item/scripts/lib/linked-pr.ts";
 import type { StalledPrInput } from "./stalled-pr.ts";
@@ -61,7 +61,7 @@ function orderTracked(
     tracked.pickups = orderByStewardRecords(
       repo.slug,
       tracked.pickups,
-      context.options.apply === true,
+      judgesOrders(context.options.apply === true, tracked),
     );
   }
 }
