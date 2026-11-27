@@ -340,6 +340,30 @@ export class FakeLinear {
           },
         };
       }
+      case "TrackerChildren": {
+        const children = all.filter(
+          (child) => child.parent === String(variables.id),
+        );
+        return {
+          issue: {
+            children: paged(
+              children,
+              query,
+              variables,
+              "children",
+              (child) => ({
+                identifier: child.identifier,
+                title: child.identifier,
+                state: child.state,
+                labels: {
+                  pageInfo: { hasNextPage: false },
+                  nodes: child.labels.map((name) => ({ name })),
+                },
+              }),
+            ),
+          },
+        };
+      }
       case "TrackerPoolIssue": {
         const i = this.issues.get(String(variables.id));
         return { issue: i === undefined ? null : this.pool(i) };
@@ -347,6 +371,9 @@ export class FakeLinear {
       case "TrackerIssue": {
         const i = this.issues.get(String(variables.id));
         if (i === undefined) return { issue: null };
+        const children = [...this.issues.values()].filter(
+          (child) => child.parent === i.identifier,
+        );
         return {
           issue: {
             id: i.identifier,
@@ -365,7 +392,18 @@ export class FakeLinear {
               i.parent === null
                 ? null
                 : { identifier: i.parent, title: i.parent },
-            children: page([]),
+            children: firstPage(
+              children.map((child) => ({
+                identifier: child.identifier,
+                title: child.identifier,
+                state: child.state,
+                labels: {
+                  pageInfo: { hasNextPage: false },
+                  nodes: child.labels.map((name) => ({ name })),
+                },
+              })),
+              25,
+            ),
             assignee: i.assignee === null ? null : { name: i.assignee },
             project: null,
           },
