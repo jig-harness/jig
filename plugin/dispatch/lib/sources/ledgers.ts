@@ -403,6 +403,13 @@ function diagnosedStopWhy(
     : `stopped ${exit} after escalating CI repair on head ${short(head)}: ${detail}`;
 }
 
+/** What a stall's passes recorded, as a suffix of the stop's `why`; `""` for any other exit. */
+function stalledNote(ledger: Ledger, exit: number): string {
+  return exit === DRIVE_EXIT.STALLED
+    ? stallPassesNote(ledger.events, exit)
+    : "";
+}
+
 /** A `STALLED`, `CI_REPAIR_SPENT` or `PASS_DEADLINE` stop: `stale`, keyed on the pull request's head and the exit, `unplaced` while the head is unknown. */
 function mechanicalStopClass(
   ledger: Ledger,
@@ -443,7 +450,7 @@ function mechanicalStopClass(
       : stop.words;
   return {
     class: "stale",
-    why: `stopped ${exit} (${words})${exit === DRIVE_EXIT.STALLED ? stallPassesNote(ledger.events, exit) : ""}: re-drive ${rearmTree(tree, last?.leftWork)}, once for head ${short(head)}`,
+    why: `stopped ${exit} (${words})${stalledNote(ledger, exit)}: re-drive ${rearmTree(tree, last?.leftWork)}, once for head ${short(head)}`,
     stale: {
       cause: `stopped ${exit}, ${words}`,
       change: `head ${head}, stopped ${exit}`,
