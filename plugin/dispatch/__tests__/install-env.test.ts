@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
-import { launchdEnvironment } from "../../runtime/installed-job.ts";
+import { launchdEnvironment } from "../../runtime/job-environment.ts";
 import { jobFiles } from "../../runtime/scheduler.ts";
 import { dispatchJobSpec } from "../install.ts";
 

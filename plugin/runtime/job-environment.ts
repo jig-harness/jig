@@ -15,7 +15,34 @@
  * Either way a value is never shown: a preview names the variables only.
  */
 import { failed, ok, type Outcome } from "../shared/outcome.ts";
-import { launchdEnvironment } from "./installed-job.ts";
+
+/** A plist string's text, its XML escapes undone. */
+export function unxml(value: string): string {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+/**
+ * A launchd job's `EnvironmentVariables`: the form `jobFiles` writes, or the
+ * same keys laid out on lines of their own, as a person's edit with a plist
+ * tool leaves them.
+ */
+export function launchdEnvironment(plist: string): Record<string, string> {
+  const variables =
+    /<key>EnvironmentVariables<\/key>\s*<dict>(.*?)<\/dict>/s.exec(
+      plist,
+    )?.[1] ?? "";
+  const env: Record<string, string> = {};
+  for (const match of variables.matchAll(
+    /<key>(.*?)<\/key>\s*<string>(.*?)<\/string>/gs,
+  ))
+    env[unxml(match[1] as string)] = unxml(match[2] as string);
+  return env;
+}
 
 /** What a preview shows in place of a value it must not print. */
 export const HIDDEN_VALUE = "(hidden)";

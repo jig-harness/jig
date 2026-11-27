@@ -4,11 +4,11 @@
  * installing shell, and how a preview hides their values.
  */
 import { describe, expect, test } from "bun:test";
-import { launchdEnvironment } from "../installed-job.ts";
 import {
   capturedEnvironment,
   carriedEnvironment,
   HIDDEN_VALUE,
+  launchdEnvironment,
   maskedEnvironment,
 } from "../job-environment.ts";
 import { jobFiles } from "../scheduler.ts";

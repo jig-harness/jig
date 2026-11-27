@@ -369,26 +369,31 @@ function upgradeOf(args: Upgrade, context: VerbContext): Promise<number> {
   return scheduledUpgradeVerb(programs, context);
 }
 
-/** `jig install`: the opt-out when asked, each component's job, then the `jig` command. */
-async function installVerb(
+/**
+ * `--env` captures credentials the dispatcher's runs need, so it is refused
+ * (exit 2) unless `dispatch` is the only component named: no other job gets them.
+ */
+function refuseEnvBeyondDispatch(
   args: Extract<VerbArguments, { verb: "install" }>,
-  context: VerbContext,
-): Promise<number> {
-  const { components, script } = context;
-  // The variables are credentials the dispatcher's runs need: no other job gets them.
+): void {
+  if (args.env.length === 0) return;
   if (
-    args.env.length > 0 &&
+    args.components.length === 0 ||
     args.components.some((name) => name !== "dispatch")
   )
     throw new ExitError(
       USAGE_EXIT,
       "--env captures a variable for the dispatcher's jobs only: name it alone, jig install dispatch --env NAME",
     );
-  if (args.env.length > 0 && args.components.length === 0)
-    throw new ExitError(
-      USAGE_EXIT,
-      "--env captures a variable for the dispatcher's jobs only: name it, jig install dispatch --env NAME",
-    );
+}
+
+/** `jig install`: the opt-out when asked, each component's job, then the `jig` command. */
+async function installVerb(
+  args: Extract<VerbArguments, { verb: "install" }>,
+  context: VerbContext,
+): Promise<number> {
+  const { components, script } = context;
+  refuseEnvBeyondDispatch(args);
   const free = checkCommandPath();
   if (!free.ok) return failureExit(free.failure);
   const jobless = withoutJobs(args, context);

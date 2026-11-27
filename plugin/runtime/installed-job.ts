@@ -7,6 +7,7 @@
  * never what the install recorded, and `jig doctor` checks the programs a job
  * names.
  */
+import { launchdEnvironment, unxml } from "./job-environment.ts";
 import type { JobSpec } from "./job-spec.ts";
 import { installedSchedule } from "./job-status.ts";
 import type { SchedulerSnapshot } from "./scheduler.ts";
@@ -115,15 +116,6 @@ function systemdJob(files: Record<string, string>): InstalledJob | null {
   };
 }
 
-function unxml(value: string): string {
-  return value
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, "&");
-}
-
 function launchdJob(plist: string): InstalledJob | null {
   const program = /<key>ProgramArguments<\/key><array>(.*?)<\/array>/s.exec(
     plist,
@@ -137,24 +129,6 @@ function launchdJob(plist: string): InstalledJob | null {
     env: launchdEnvironment(plist),
     schedule: installedSchedule("launchd", plist),
   };
-}
-
-/**
- * A launchd job's `EnvironmentVariables`: the form `jobFiles` writes, or the
- * same keys laid out on lines of their own, as a person's edit with a plist
- * tool leaves them.
- */
-export function launchdEnvironment(plist: string): Record<string, string> {
-  const variables =
-    /<key>EnvironmentVariables<\/key>\s*<dict>(.*?)<\/dict>/s.exec(
-      plist,
-    )?.[1] ?? "";
-  const env: Record<string, string> = {};
-  for (const match of variables.matchAll(
-    /<key>(.*?)<\/key>\s*<string>(.*?)<\/string>/gs,
-  ))
-    env[unxml(match[1] as string)] = unxml(match[2] as string);
-  return env;
 }
 
 /** The crontab line marked `# <name>`: `<schedule> 'env' 'K=V'… <command>`. */
