@@ -55,16 +55,31 @@ export function funnelExposure(
       "funnel-unreadable",
       "the serve status lists AllowFunnel in a form this check cannot read",
     );
+  const unreadable = (what: string) =>
+    failed(
+      "funnel-unreadable",
+      `the serve status lists an enabled Funnel route whose ${what} this check cannot read`,
+    );
+  const absent = (value: unknown) => value === undefined || value === null;
+  if (!absent(status.Web) && !isRecord(status.Web)) return unreadable("Web");
+  if (!absent(status.TCP) && !isRecord(status.TCP)) return unreadable("TCP");
   const web = isRecord(status.Web) ? status.Web : {};
   const tcp = isRecord(status.TCP) ? status.TCP : {};
   const exposed: string[] = [];
   for (const [route, on] of Object.entries(open)) {
     if (on !== true) continue;
     const entry = web[route];
+    if (!absent(entry) && !isRecord(entry))
+      return unreadable(`Web entry ${route}`);
+    if (isRecord(entry) && !absent(entry.Handlers) && !isRecord(entry.Handlers))
+      return unreadable(`handlers for ${route}`);
     const handlers =
       isRecord(entry) && isRecord(entry.Handlers)
         ? Object.values(entry.Handlers)
         : [];
+    const slot = tcp[route.slice(route.lastIndexOf(":") + 1)];
+    if (!absent(slot) && !isRecord(slot))
+      return unreadable(`TCP entry for ${route}`);
     const proxied = handlers.some(
       (handler) =>
         isRecord(handler) &&
@@ -88,9 +103,9 @@ export type FunnelFinding =
   | { state: "unknown"; reason: string };
 
 /**
- * Ask Tailscale what it publishes. No `tailscale` command, or a daemon that
- * does not answer, publishes nothing and is not a finding; an answer this
- * check cannot read is `unknown`, which `--status` reports as a failure.
+ * Ask Tailscale what it publishes. No `tailscale` command publishes nothing and
+ * is not a finding; a command that ran but timed out, failed or answered
+ * with something this check cannot read is `unknown`, which `--status` reports as a failure.
  */
 export async function funnelFinding(
   mine: DashboardTargets,
@@ -99,7 +114,14 @@ export async function funnelFinding(
     timeoutSec: 10,
   });
   if (result.spawnFailed === true) return { state: "no-tailscale" };
-  if (result.code !== 0) return { state: "clear" };
+  if (result.timedOut === true || result.code !== 0)
+    return {
+      state: "unknown",
+      reason:
+        result.timedOut === true
+          ? "tailscale serve status timed out"
+          : `tailscale serve status exited ${result.code}`,
+    };
   let parsed: unknown;
   try {
     parsed = JSON.parse(result.stdout.trim() === "" ? "{}" : result.stdout);

@@ -10,7 +10,7 @@
  * rebinds to this host cannot reach it, which is why the server asks it for
  * neither the token nor a `Host` allowlist.
  */
-import { chmodSync, lstatSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 import { attempt, failed, ok, type Outcome } from "../shared/outcome.ts";
 import { SOCKET_MODE } from "./lib/listen.ts";
@@ -20,10 +20,38 @@ export interface BoundSocket {
   stop(): void;
 }
 
+/** The parent directory's own problem as a place for the socket: not the reader's own, or open to writes by others; `null` when it is private. */
+export function parentProblem(
+  facts: { isDirectory: boolean; mode: number; uid: number },
+  uid: number | undefined,
+): string | null {
+  if (!facts.isDirectory) return "has a parent that is not a directory";
+  if (uid !== undefined && facts.uid !== uid && facts.uid !== 0)
+    return `has a parent owned by user ${facts.uid}, not the reader's ${uid}`;
+  if ((facts.mode & 0o022) !== 0)
+    return "has a parent directory that others can write to; use a private one (mode 0700)";
+  return null;
+}
+
+/** Whether something accepts connections at the socket path; a refused connection is a stale file. */
+function socketIsLive(path: string): boolean {
+  const probe = Bun.spawnSync(
+    [
+      process.execPath,
+      "-e",
+      'const s=require("node:net").connect(process.env.JIG_PROBE_SOCKET);s.on("connect",()=>process.exit(0));s.on("error",()=>process.exit(1));setTimeout(()=>process.exit(1),2000)',
+    ],
+    { env: { ...process.env, JIG_PROBE_SOCKET: path }, timeout: 5000 },
+  );
+  return probe.exitCode === 0;
+}
+
 /**
- * Bind `path` mode 0600 and answer from `fetch`. A socket file a stopped
- * reader left behind is replaced; anything else at the path is refused and
- * left alone. The caller binds the dashboard's TCP address first, so a
+ * Bind `path` mode 0600 and answer from `fetch`. The parent directory must be the
+ * reader's own and closed to writes by others. A socket file a stopped
+ * reader left behind is replaced; a live listener's or any other file at the
+ * path is refused and left alone, and stopping removes only the socket this
+ * call bound. The caller binds the dashboard's TCP address first, so a
  * second reader on the same configuration fails there before it can touch
  * a live reader's socket.
  */
@@ -36,11 +64,26 @@ export function bindSocket(
   const made = attempt("socket-unusable", "", () =>
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 }),
   );
-  const found = made.ok ? readSocketFacts(path) : made;
+  const parent = made.ok
+    ? attempt("socket-unusable", "", () => lstatSync(dirname(path)))
+    : made;
+  if (!parent.ok) return unusable("cannot be prepared", parent.failure.cause);
+  const placed = parentProblem(
+    {
+      isDirectory: parent.value.isDirectory(),
+      mode: parent.value.mode,
+      uid: parent.value.uid,
+    },
+    process.getuid?.(),
+  );
+  if (placed !== null) return unusable(placed);
+  const found = readSocketFacts(path);
   if (!found.ok) return unusable("cannot be prepared", found.failure.cause);
   if (found.value !== null) {
     if (!found.value.isSocket)
       return unusable("names a file that is not a socket; nothing was removed");
+    if (socketIsLive(path))
+      return unusable("is in use by a running listener; nothing was removed");
     rmSync(path, { force: true });
   }
   // The socket is born under a umask that grants the group and others
@@ -52,9 +95,19 @@ export function bindSocket(
   process.umask(before);
   if (!bound.ok) return unusable("cannot be bound", bound.failure.cause);
   const server = bound.value;
+  const own = readSocketFacts(path);
+  const inode = own.ok ? lstatIno(path) : null;
   const stop = () => {
+    // Bun unlinks the path when a server stops, whatever is there now, so a
+    // socket another reader put in this one's place is moved aside meanwhile.
+    const replaced = inode !== null && lstatIno(path) !== inode;
+    const aside = `${path}.${process.pid}.aside`;
+    const parked =
+      replaced &&
+      attempt("socket-unusable", "", () => renameSync(path, aside)).ok;
     server.stop(true);
-    rmSync(path, { force: true });
+    if (parked) renameSync(aside, path);
+    else if (!replaced) rmSync(path, { force: true });
   };
   const moded = attempt("socket-unusable", "", () =>
     chmodSync(path, SOCKET_MODE),
@@ -64,6 +117,11 @@ export function bindSocket(
     return unusable("cannot be set to mode 0600", moded.failure.cause);
   }
   return ok({ stop });
+}
+
+function lstatIno(path: string): number | null {
+  const read = attempt("socket-unreadable", "", () => lstatSync(path).ino);
+  return read.ok ? read.value : null;
 }
 
 /** What `--status` reads of the socket file. */

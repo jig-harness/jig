@@ -35,6 +35,7 @@ export function dashboardAllowedHosts(value: unknown): Checked<string[]> {
 export function dashboardFront(
   value: unknown,
   requireToken: boolean,
+  hasSocket = false,
 ): Checked<string | null> {
   const given = isMapping(value) ? value.front : undefined;
   if (given === undefined || given === null) return ok(null);
@@ -49,9 +50,11 @@ export function dashboardFront(
     invalid(`dashboard.front: ${shownFront(url)} ${why}`);
   const broken = FRONT_RULES.find(([holds]) => !holds(url, address.value));
   if (broken !== undefined) return refuse(broken[1]);
-  if (requireToken)
+  // The private socket answers without the token, so a front that targets it
+  // may sit beside a dashboard whose loopback port still asks for one.
+  if (requireToken && !hasSocket)
     return refuse(
-      "needs dashboard.require_token: false, since a front's address carries no token and only a dashboard that asks for none answers it",
+      "needs dashboard.require_token: false (or dashboard.socket, which a front targets without a token), since a front's address carries no token and only a listener that asks for none answers it",
     );
   return ok(url.href);
 }

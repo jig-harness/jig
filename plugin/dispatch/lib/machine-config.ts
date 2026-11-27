@@ -779,10 +779,14 @@ function surfaces(
   if (!requireToken.ok) return requireToken;
   const allowedHosts = dashboardAllowedHosts(top.dashboard);
   if (!allowedHosts.ok) return allowedHosts;
-  const front = dashboardFront(top.dashboard, requireToken.value);
-  if (!front.ok) return front;
   const socket = dashboardSocket(top.dashboard, dashboardListen.value);
   if (!socket.ok) return socket;
+  const front = dashboardFront(
+    top.dashboard,
+    requireToken.value,
+    socket.value !== null,
+  );
+  if (!front.ok) return front;
   const sharedRecords = records(top.records);
   if (!sharedRecords.ok) return sharedRecords;
   const send = flag(top.send, "send", true);

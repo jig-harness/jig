@@ -20,7 +20,11 @@ import { currentMs } from "../../shared/time.ts";
 import { serveDashboard, type Dashboard } from "../dashboard.ts";
 import { funnelExposure } from "../dashboard-funnel.ts";
 import { readerSettings } from "../dashboard-reader.ts";
-import { socketProblem, socketAnswers } from "../dashboard-socket.ts";
+import {
+  parentProblem,
+  socketProblem,
+  socketAnswers,
+} from "../dashboard-socket.ts";
 import { parseMachineConfigText } from "../lib/machine-config.ts";
 
 const LISTEN = { host: "127.0.0.1", port: null } as const;
@@ -118,6 +122,46 @@ describe("the private socket", () => {
       serveDashboard({ listen: LISTEN, port: 0, root: dir, socket }),
     ).toThrow("not a socket");
     expect(existsSync(socket)).toBe(true);
+  });
+
+  it("refuses a socket a live listener holds and leaves it answering", async () => {
+    const dir = scratch();
+    const socket = join(dir, "d.sock");
+    serve(socket);
+    expect(() =>
+      serveDashboard({ listen: LISTEN, port: 0, root: dir, socket }),
+    ).toThrow("running listener");
+    expect((await overSocket(socket)).ok).toBe(true);
+  });
+
+  it("removes only its own socket when it stops", () => {
+    const dir = scratch();
+    const socket = join(dir, "d.sock");
+    const served = serve(socket);
+    rmSync(socket);
+    const other = Bun.serve({ unix: socket, fetch: () => new Response("x") });
+    cleanups.push(() => other.stop(true));
+    served.stop();
+    expect(existsSync(socket)).toBe(true);
+  });
+
+  it("refuses a parent directory that others can write to", () => {
+    const dir = scratch();
+    chmodSync(dir, 0o777);
+    expect(() =>
+      serveDashboard({
+        listen: LISTEN,
+        port: 0,
+        root: dir,
+        socket: join(dir, "d.sock"),
+      }),
+    ).toThrow("others can write");
+    expect(
+      parentProblem({ isDirectory: true, mode: 0o40700, uid: 5 }, 5),
+    ).toBeNull();
+    expect(
+      parentProblem({ isDirectory: true, mode: 0o40700, uid: 6 }, 5),
+    ).toContain("owned by");
   });
 
   it("is created under a tight umask, so no mode is wider than 0600 to begin with", () => {
@@ -218,6 +262,14 @@ describe("Funnel", () => {
   it("fails on a status it cannot read, never as no Funnel", () => {
     expect(funnelExposure("nope", mine).ok).toBe(false);
     expect(funnelExposure({ AllowFunnel: [true] }, mine).ok).toBe(false);
+    for (const bad of [
+      { AllowFunnel: { "h:443": true }, Web: [] },
+      { AllowFunnel: { "h:443": true }, TCP: "x" },
+      { AllowFunnel: { "h:443": true }, Web: { "h:443": "x" } },
+      { AllowFunnel: { "h:443": true }, Web: { "h:443": { Handlers: [] } } },
+      { AllowFunnel: { "h:443": true }, TCP: { "443": "x" } },
+    ])
+      expect(funnelExposure(bad, mine).ok).toBe(false);
   });
 });
 
