@@ -3352,10 +3352,12 @@ make, use the entry's term instead.
   spending repair passes (`ci.advisory_checks`). Not the same as an *advisory
   gate*, which never blocks
   ([the implementation plan](design/need-classes.md#ci-repair-spent-or-a-ci-verdict-misread)).
-- **Rescue branch** — a planned local branch the *dispatcher* would keep a
-  worktree's unpushed commits on before detaching that worktree, so freeing
-  a held checkout would not lose work. It would never be pushed or collected
-  by `jig gc` ([the implementation plan](design/need-classes.md#a-checkout-an-unlisted-tree-holds)).
+- **Rescue branch** — a local branch, `jig-rescue/<tree>-<time>`, that the
+  *dispatcher* keeps a worktree's unpushed commits on before it detaches
+  that worktree, so freeing a held checkout loses no work. It is never
+  pushed or collected by `jig gc`; the launch's receipt and a comment on the
+  pull request name it. Only a host that turns on `rescue_unpushed` gets one
+  ([the machine file](plugin/CONFIGURATION.md#the-machines-dispatch-file)).
 - **Act (of a need)** — the one thing a person does to settle something
   that waits on them, from a closed list: Merge, Decide, Authorize, Reply,
   Do or Investigate. Each need on the *dispatch board* opens with its act,
