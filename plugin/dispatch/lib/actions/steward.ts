@@ -97,22 +97,17 @@ export async function applySteward(
   if (!opened.owner) return skip("another host owns this repository");
   if (!opened.stages.has("steward") || !config?.enabled)
     return skip("steward is disabled on this host");
-  const replayed = await replayPending(state, repo.slug, report);
+  await replayPending(state, repo.slug, report);
   const request = pendingStewardRequest(stateDb(state.root), repo.slug);
   if (request !== null) {
-    // The request is reconciled against its own replay first: a replay that
-    // started the pass answers it; one still pending keeps it for a later tick.
-    if (replayed.started !== null) {
-      takeRequestWith(state, repo.slug, request, replayed.started);
-      return skip(
-        `${request.by}'s request is answered by steward pass ${replayed.started}, started by its replay`,
-      );
-    }
-    if (replayed.unsettled)
+    // Only a launch created after the request, and past pending, answers it
+    // (`answerRequest`); a launch still pending may belong to another trigger or
+    // hold an acknowledgment nobody claimed yet, so the request waits for it.
+    if (answerRequest(state, repo.slug, request, skip)) return;
+    if (pendingLaunch(state, repo.slug))
       return skip(
         `${request.by}'s request is kept: a pending steward launch is not settled yet`,
       );
-    if (answerRequest(state, repo.slug, request, skip)) return;
   }
   if (!mayStart(state, observation, request)) return;
   const judged = judgedMembers(
@@ -398,14 +393,22 @@ function stewardStatus(
   };
 }
 
+/** Whether a steward launch of `slug` is still pending: it may or may not have started a pass. */
+function pendingLaunch(state: ApplyState, slug: string): boolean {
+  return state.records.some(
+    (r) =>
+      r.record.action === "steward" &&
+      r.record.repo.toLowerCase() === slug.toLowerCase() &&
+      r.state.kind === "pending",
+  );
+}
+
 /** Retry each pending steward launch under its token; one the runtime refused started no pass, so its run is taken back. */
 async function replayPending(
   state: ApplyState,
   slug: string,
   report: RepoReport,
-): Promise<{ started: string | null; unsettled: boolean }> {
-  let started: string | null = null;
-  let unsettled = false;
+): Promise<void> {
   for (const record of replayable(state, slug, ["steward"])) {
     const action: Action = {
       stage: "steward",
@@ -423,11 +426,7 @@ async function replayPending(
     report.launches.push(launch);
     if (!state.records.some((r) => r.record.id === record.id))
       forgetStewardRun(record.id, state.root);
-    else if (launch.outcome === "launched" || launch.outcome === "retried")
-      started ??= record.id;
-    else unsettled = true;
   }
-  return { started, unsettled };
 }
 
 /** The judgment backlog, derived from the whole queue: a queued item the tick did not read is read now. */
