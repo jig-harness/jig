@@ -794,7 +794,7 @@ export function repoRow(
     ...r.notes,
   ];
   return {
-    slug: r.slug ?? r.path,
+    slug: r.slug ?? retainedSlug(r) ?? r.path,
     note: [r.stages.join(", "), ...details].filter((x) => x !== "").join(". "),
     kept: trackerKeptNote(r, clockNow),
   };

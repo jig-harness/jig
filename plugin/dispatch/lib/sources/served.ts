@@ -52,7 +52,11 @@ import {
   type OpenBlocker,
   type PullOrigin,
 } from "./served-pull.ts";
-import { childPlanHold, type PlanNeeds } from "./epic-plan-needs.ts";
+import {
+  childPlanHold,
+  notePlanNeed,
+  type PlanNeeds,
+} from "./epic-plan-needs.ts";
 import {
   type PassOver,
   parkedOnPerson,
@@ -385,6 +389,8 @@ interface Pending {
   by: string | undefined;
   epicOrder: number | undefined;
   planHold: string | undefined;
+  /** Notes the epic's need once this node is placed held by `planHold`, never while it is only queued for the walk. */
+  planNote?: (() => void) | undefined;
   /** Set for a blocker pulled forward: the item whose authority it is worked on. */
   pull?: PullOrigin | undefined;
 }
@@ -562,7 +568,8 @@ async function enqueueChildren(
       epicOrder: selection.present
         ? selection.order.indexOf(child.identifier)
         : undefined,
-      planHold: childPlanHold(selection, child, issue, planNeeds),
+      planHold: childPlanHold(selection, child, issue),
+      planNote: () => notePlanNeed(planNeeds, issue, selection, child),
     });
   }
 }
@@ -768,7 +775,10 @@ function nodeHold(
   options: ServedOptions,
   tracker: Pick<Tracker, "stateName">,
 ): string | null {
-  if (node.planHold) return node.planHold;
+  if (node.planHold) {
+    node.planNote?.();
+    return node.planHold;
+  }
   if (parkedOnPerson(node.issue, tracker, options, true)) return PERSON_HOLD;
   if (
     node.ancestor === undefined &&

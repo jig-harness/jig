@@ -22,7 +22,10 @@ import {
   type NeedAct,
 } from "../../plugin/shared/acts.ts";
 import { uniqueLogins } from "../../plugin/shared/forge-logins.ts";
-import { refusedRepos } from "../../plugin/dispatch/lib/line-unread.ts";
+import {
+  keptTrackerRepos,
+  refusedRepos,
+} from "../../plugin/dispatch/lib/line-unread.ts";
 import { answerStateWords } from "../../plugin/shared/decision-card.ts";
 import { ago, clock, plural } from "./format.ts";
 import type { EveryoneAnswerState } from "./icons.ts";
@@ -712,6 +715,17 @@ function boardLimitText(line: LineSnapshot): string | null {
 }
 
 /** The answer when no need is open: sessions not moving still count, a repository not read is named, and a quiet line says what runs and what waits. */
+/** Whether some of the line is unread, limited or kept from an earlier reading, so a quiet answer covers only what was read. */
+function partialReading(
+  line: LineSnapshot,
+  unread: string | null,
+  boardLimit: string | null,
+): boolean {
+  return (
+    unread !== null || boardLimit !== null || keptTrackerRepos(line).length > 0
+  );
+}
+
 function quietBand(
   line: LineSnapshot,
   nowMs: number,
@@ -742,8 +756,8 @@ function quietBand(
       sub,
       loud: true,
     };
-  // A repository the line could not read may hold a need it cannot show, so the answer does not say nothing does.
-  if (unread !== null || boardLimit !== null)
+  // A repository the line could not read, or whose tracker part it kept from an earlier reading, may hold a need it cannot show, so the answer does not say nothing does.
+  if (partialReading(line, unread, boardLimit))
     return {
       title: pastTense
         ? `Nothing needed a person in what the ${tickClock} tick read.`

@@ -45,7 +45,7 @@ function heldBack(child: PlanChild): boolean {
 }
 
 /** Notes the epic's need when the plan cannot place `child`; a reading without a sink notes nothing. */
-function notePlanNeed(
+export function notePlanNeed(
   needs: PlanNeeds | undefined,
   epic: PlanEpic,
   selection: ServedPlan,

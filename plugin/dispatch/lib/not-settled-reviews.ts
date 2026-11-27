@@ -38,6 +38,22 @@ function latestOf(
   return latest;
 }
 
+/** Forge reads in flight at once: a long waiting list never fans out into one request each. */
+const READS_AT_ONCE = 4;
+
+/** `each` over `items`, at most `READS_AT_ONCE` at a time, in order. */
+async function inBatches<T, R>(
+  items: readonly T[],
+  each: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const out: R[] = [];
+  for (let i = 0; i < items.length; i += READS_AT_ONCE)
+    out.push(
+      ...(await Promise.all(items.slice(i, i + READS_AT_ONCE).map(each))),
+    );
+  return out;
+}
+
 /** Each drive held back by its `NOT_SETTLED` backoff, with when its head was last reviewed, or why its reviews did not read. */
 export async function withHeadReviews(
   slug: string,
@@ -48,27 +64,25 @@ export async function withHeadReviews(
   read: ReviewReader = submittedReviews,
 ): Promise<DrivenPr[]> {
   const own = records.filter((r) => r.record.repo === slug);
-  return Promise.all(
-    drives.map(async (pr) => {
-      const head = pr.evidence.headSha;
-      if (
-        typeof head !== "string" ||
-        !notSettledWaiting(pr, own, settings, nowMs)
-      )
-        return pr;
-      const reviews = await read(slug, pr.number);
-      if (!reviews.ok)
-        return {
-          ...pr,
-          evidence: {
-            ...pr.evidence,
-            headReviewsUnread: reviews.failure.reason,
-          },
-        };
-      const at = latestOf(reviews.value, head);
-      return at === null
-        ? pr
-        : { ...pr, evidence: { ...pr.evidence, headReviewedAt: at } };
-    }),
-  );
+  return inBatches(drives, async (pr) => {
+    const head = pr.evidence.headSha;
+    if (
+      typeof head !== "string" ||
+      !notSettledWaiting(pr, own, settings, nowMs)
+    )
+      return pr;
+    const reviews = await read(slug, pr.number);
+    if (!reviews.ok)
+      return {
+        ...pr,
+        evidence: {
+          ...pr.evidence,
+          headReviewsUnread: reviews.failure.reason,
+        },
+      };
+    const at = latestOf(reviews.value, head);
+    return at === null
+      ? pr
+      : { ...pr, evidence: { ...pr.evidence, headReviewedAt: at } };
+  });
 }

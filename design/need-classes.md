@@ -389,9 +389,10 @@ written for another epic, or the tracker's `blocks` relations contradict
 it), or it does not name the child, such as a sub-issue added after the plan
 was written. Only a person settles either, by re-running the planner or
 removing the plan, so the epic raises one need of cause `epic-plan`, act
-Do, once per reading and cause, framed with both choices (#1144). Each
-child it holds says, in its Queue line, that it waits on that need; a child
-the plan leaves out reads "not in" the epic's plan, never as a wait. A plan
+Do, once per reading and cause, framed as one manual action: re-run the
+planner or remove the plan (#1144). Each child it holds says, in its Queue
+line, that it waits on that need; a child the plan leaves out reads "not in"
+the epic's plan and says it waits on the need raised. A plan
 step waiting on its predecessors is a wait that ends by itself: it names
 each predecessor and its state ("waiting on #12 (in progress)") and raises
 no need. Repositories that read the same tracker report the need once.

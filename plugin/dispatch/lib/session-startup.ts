@@ -108,11 +108,12 @@ function transcriptAbsent(record: LaunchRecord, started: number): boolean {
  * never arbitrary output.
  */
 function quotaNotice(output: string): string | null {
+  let found: string | null = null;
   for (const line of output.split(/\r?\n/)) {
     const clause = noticeClause(line);
-    if (clause !== null) return clause;
+    if (clause !== null) found = clause;
   }
-  return null;
+  return found;
 }
 
 /** The `resets …` clause of `line` when the line is the vendor's usage notice, else `null`. */
@@ -139,10 +140,19 @@ function assistantTexts(entry: Record<string, unknown>): string[] {
   );
 }
 
+/** The text of a rate-limit error entry that holds one text part and no line break; `undefined` for any other entry. */
+function noticeText(entry: Record<string, unknown>): string | undefined {
+  if (entry.error !== "rate_limit") return undefined;
+  const texts = assistantTexts(entry);
+  const text = texts.length === 1 ? (texts[0] ?? "").trim() : "";
+  return /[\r\n]/.test(text) ? undefined : text;
+}
+
 /**
  * The usage notice a Claude Code session's transcript ends on: its last user
- * or assistant entry is an assistant entry whose text is the notice and
- * nothing else. A notice in a user entry, in a tool's output or call, or
+ * or assistant entry is an assistant entry the vendor marked as a rate-limit
+ * error (`error: "rate_limit"`) whose text is the notice and nothing else;
+ * ordinary model output that reads like the notice is none. A notice in a user entry, in a tool's output or call, or
  * inside longer text is none. Only the notice is returned, never other
  * content.
  */
@@ -157,11 +167,8 @@ function transcriptUsageNotice(record: LaunchRecord): string | undefined {
     if (entry === undefined) continue;
     if (entry.type === "user") return undefined;
     if (entry.type !== "assistant") continue;
-    const texts = assistantTexts(entry);
-    const text = texts.length === 1 ? (texts[0] ?? "").trim() : "";
-    return !/[\r\n]/.test(text) && noticeClause(text) !== null
-      ? text
-      : undefined;
+    const text = noticeText(entry);
+    return text !== undefined && noticeClause(text) !== null ? text : undefined;
   }
   return undefined;
 }
@@ -195,11 +202,19 @@ function transcriptTail(
   }
 }
 
-/** A standalone usage notice in the output, else the one the session's transcript ends on. */
+/**
+ * The usage notice the session's transcript ends on (the vendor's own error
+ * entry), else the last standalone notice in the output: an earlier notice
+ * never outranks a later one, and the transcript's verified entry outranks
+ * the output.
+ */
 function noticeOf(record: LaunchRecord, output: string): string | undefined {
-  for (const line of output.split(/\r?\n/))
-    if (noticeClause(line) !== null) return line.trim();
-  return transcriptUsageNotice(record);
+  const verified = transcriptUsageNotice(record);
+  if (verified !== undefined) return verified;
+  const notices = output
+    .split(/\r?\n/)
+    .filter((line) => noticeClause(line) !== null);
+  return notices.pop()?.trim();
 }
 
 /**
@@ -216,7 +231,6 @@ function usageNotice(
   if (
     !ownSession(record) ||
     harnessNamed(record.vendor)?.capabilities.signInProbe !== true ||
-    typeof record.sessionId !== "string" ||
     code === null ||
     code === 0
   )
@@ -264,7 +278,7 @@ export function startupWall(
   let source = `${from}; wall_backoff`;
   if (notice?.resetAt != null) source = `${from}; the usage notice's reset`;
   else if (notice != null)
-    source = `${from}; the notice's "${notice.clause.slice(0, 80)}" did not read; wall_backoff`;
+    source = `${from}; the notice's reset did not read; wall_backoff`;
   return {
     account: record.account,
     vendor: record.vendor,
@@ -398,12 +412,12 @@ export function failedStartup(
     return usageNotice(record, code, output) === undefined
       ? undefined
       : "quota";
+  if (usageNotice(record, code, output) !== undefined) return "quota";
   const phrase = signInPhrase(output) ?? transcriptSignIn(record);
   if (phrase !== undefined) {
     keepPhrase?.(phrase);
     return "sign-in";
   }
-  if (usageNotice(record, code, output) !== undefined) return "quota";
   return transcriptAbsent(record, started) ? "unstarted" : undefined;
 }
 

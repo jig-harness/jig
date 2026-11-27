@@ -72,7 +72,7 @@ import {
   accountBlock,
   readRoomMs,
 } from "./launch.ts";
-import { currentIso, currentMs } from "../../../shared/time.ts";
+import { currentIso, currentMs, parseMs } from "../../../shared/time.ts";
 
 /**
  * Start the steward when the judgment backlog holds a member no earlier pass
@@ -99,6 +99,8 @@ export async function applySteward(
     return skip("steward is disabled on this host");
   await replayPending(state, repo.slug, report);
   const request = pendingStewardRequest(stateDb(state.root), repo.slug);
+  if (request !== null && answerRequest(state, repo.slug, request, skip))
+    return;
   if (!mayStart(state, observation, request)) return;
   const judged = judgedMembers(
     repo.slug,
@@ -185,6 +187,35 @@ export async function applySteward(
       requestRow(request, repo.slug, { started: record.id }),
       state.root,
     );
+}
+
+/**
+ * A tick interrupted after it launched the pass and before it took the
+ * request: the pass the request asked for already exists, so the request is
+ * taken with it. Whether it was.
+ */
+function answerRequest(
+  state: ApplyState,
+  slug: string,
+  request: StewardRequest,
+  skip: (status: string) => void,
+): boolean {
+  const answered = state.records.find(
+    (r) =>
+      r.record.action === "steward" &&
+      r.record.repo.toLowerCase() === request.repo &&
+      parseMs(r.record.createdAt) >= parseMs(request.at),
+  );
+  if (answered === undefined) return false;
+  takeStewardRequest(
+    request,
+    requestRow(request, slug, { started: answered.record.id }),
+    state.root,
+  );
+  skip(
+    `${request.by}'s request is answered by steward pass ${answered.record.id}, started since it was sent`,
+  );
+  return true;
 }
 
 /**

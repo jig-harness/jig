@@ -340,7 +340,7 @@ export function settleOwnDrives(
   );
   return settleNoCauseStops(
     settleFailedTakeovers(
-      settleRepeatedNotSettled(failed, own, notSettled),
+      settleRepeatedNotSettled(failed, own, notSettled, currentMs()),
       own,
     ),
     own,

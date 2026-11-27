@@ -87,8 +87,9 @@ describe("jig ask --waiting from a line with a kept tracker part", () => {
 
     const text = await w.ask(["--waiting"], w.away);
     expectSpawnExit(text, 0);
+    expect(text.stdout).toContain("  none in what was read");
     expect(text.stdout).toContain(
-      "the tracker part is kept: the newest tick had no credential for 2 repositories' trackers",
+      "the tracker part is kept from an earlier reading: a tick since had no credential for 2 repositories' trackers",
     );
     expect(text.stdout).toContain(
       `${REPO}: as read at ${KEPT_AT} (tick ${KEPT_RUN}); ${REASON}`,

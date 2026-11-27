@@ -160,6 +160,7 @@ export function notSettledWaiting(
   if (found == null || last === undefined || found.head === UNREAD_HEAD)
     return false;
   const count = found.run.length;
+  if (changeSince(pr, last) !== null) return false;
   return (
     count < settings.notifyAfter &&
     parseMs(notBefore(last, count, settings.backoffMs)) > nowMs
@@ -181,7 +182,12 @@ function reportedStates(pr: DrivenPr, run: readonly ReadRecord[]): string[] {
     if (state !== null) states.add(state);
   }
   const ledger = pr.evidence.probeState;
-  if (states.size === 0 && typeof ledger === "string") states.add(ledger);
+  const last = run[0];
+  if (
+    typeof ledger === "string" &&
+    (states.size === 0 || (last !== undefined && recordedState(last) === null))
+  )
+    states.add(ledger);
   return [...states];
 }
 
@@ -202,6 +208,20 @@ function changeSince(pr: DrivenPr, last: ReadRecord): string | null {
   return null;
 }
 
+/** A drive whose backoff has ended holds nothing: it is launched, so no reason says it waits. */
+function endedBackoff(
+  pr: DrivenPr,
+  stopped: string,
+  until: string,
+  evidence: DrivenPr["evidence"],
+): DrivenPr {
+  return {
+    ...pr,
+    why: `${pr.why}; ${stopped}, and its backoff ended at ${until}, so it is re-armed now`,
+    evidence,
+  };
+}
+
 /**
  * Each `NOT_SETTLED` ledger whose latest re-arms stopped `NOT_SETTLED` again
  * at the head it shows now: waiting out its backoff under the cap unless the
@@ -211,6 +231,7 @@ export function settleRepeatedNotSettled(
   drives: readonly DrivenPr[],
   own: readonly ReadRecord[],
   settings: NotSettledSettings = NOT_SETTLED_DEFAULTS,
+  nowMs?: number,
 ): DrivenPr[] {
   return drives.map((pr) => {
     const found = notSettledRun(pr, own);
@@ -244,6 +265,8 @@ export function settleRepeatedNotSettled(
         evidence,
       };
     const until = notBefore(last, run.length, settings.backoffMs);
+    if (nowMs !== undefined && parseMs(until) <= nowMs)
+      return endedBackoff(pr, stopped, until, evidence);
     const unread =
       typeof pr.evidence.headReviewsUnread === "string"
         ? ` (its head's reviews did not read this tick: ${pr.evidence.headReviewsUnread})`

@@ -175,6 +175,10 @@ describe("which ended sessions stopped on a usage notice", () => {
       [assistantText(`The vendor says:\n${notice}\nso I stop.`)],
     ],
     [
+      "the notice as ordinary assistant text with no vendor error",
+      [assistantText(notice)],
+    ],
+    [
       "the notice in an earlier assistant entry",
       [limitEntry(notice), userEntry("go on"), assistantText("Carrying on.")],
     ],
@@ -183,6 +187,22 @@ describe("which ended sessions stopped on a usage notice", () => {
     writeTranscript(record.configDir, SESSION, entries);
     expect(failedStartup(record, 1, started, "", quick)).toBeUndefined();
     expect(failedStartup(record, 1, started, "", late)).toBeUndefined();
+  });
+
+  it("classes a notice in the output of a pass with no session id as quota", () => {
+    const record = recordOf({ sessionId: null });
+    expect(failedStartup(record, 1, started, `${notice}\n`, late)).toBe(
+      "quota",
+    );
+  });
+
+  it("prefers the transcript's quota error over an earlier sign-in line", () => {
+    const record = recordOf();
+    writeTranscript(record.configDir, SESSION, [
+      assistantText("Please run /login"),
+      limitEntry(notice),
+    ]);
+    expect(failedStartup(record, 1, started, "", quick)).toBe("quota");
   });
 
   it.each([{ action: "pickup" }, { action: "rearm" }])(
@@ -216,7 +236,8 @@ describe("which ended sessions stopped on a usage notice", () => {
     );
     const unread = startupWall(record, "quota", "", nowMs);
     expect(unread.resetAt).toBe(isoFromMs(nowMs + 30 * 60_000));
-    expect(unread.source).toContain('"resets whenever" did not read');
+    expect(unread.source).toContain("the notice's reset did not read");
+    expect(unread.source).not.toContain("whenever");
     expect(unread.source).toContain("wall_backoff");
     expect(startupWall(record, "unstarted", "", nowMs).source).toBe(
       "session could not start (unstarted); wall_backoff",

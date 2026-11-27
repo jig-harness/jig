@@ -186,7 +186,9 @@ export function renderWaiting(w: WaitingAnswer): string {
   if (w.waiting.length === 0)
     return [
       head,
-      w.incomplete.length === 0 ? "  nothing" : "  none in what was read",
+      w.incomplete.length === 0 && w.trackerKept.length === 0
+        ? "  nothing"
+        : "  none in what was read",
       ...unread,
     ].join("\n");
   return [
@@ -251,7 +253,7 @@ function trackerKeptLines(kept: WaitingAnswer["trackerKept"]): string[] {
       ? "1 repository's tracker"
       : `${kept.length} repositories' trackers`;
   return [
-    `the tracker part is kept: the newest tick had no credential for ${count}, so ${kept.length === 1 ? "its" : "their"} item cards and the needs about items are as of the reading named, or none:`,
+    `the tracker part is kept from an earlier reading: a tick since had no credential for ${count}, so ${kept.length === 1 ? "its" : "their"} item cards and the needs about items are as of the reading named, or none:`,
     ...kept.map((r) =>
       printable(
         `  ${r.repo}: ${r.readAt === null ? "never read with a credential" : `as read at ${r.readAt}${r.runId === null ? "" : ` (tick ${r.runId})`}`}; ${r.reason}`,

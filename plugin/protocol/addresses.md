@@ -15,8 +15,9 @@ chapter is for a program that forms addresses or sends verbs: a dashboard,
 a chat bridge, a workspace app, a script of a repository's own.
 
 An address is derived from the records the station leaves, never declared,
-so nothing registers one and an address nobody holds is still valid: `jig
-ask` answers that nobody holds it
+so nothing registers one and an address nobody holds is still valid: for
+the stations `jig ask` answers (a steward address is not one), it answers
+that nobody holds it
 ([ADR-0014](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0014-addresses-are-derived-and-requests-are-records.md)).
 
 ## The form of an address

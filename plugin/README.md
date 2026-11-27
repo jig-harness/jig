@@ -1946,6 +1946,10 @@ jig send <station>@<owner>/<name>#<key> <verb> [arguments] [--dry-run] [--as <lo
 **It checks before it writes.** It reads the address first, through `jig
 ask`'s readers, and refuses (exit `1`) a request the station cannot take:
 
+- `start` on a steward, which `jig ask` does not read (it refuses a steward
+  address): it checks locally that this host owns the repository, that the
+  steward stage is enabled, that no pass holds the repository and that the
+  hourly budget is not spent;
 - `assign` on an item already assigned to anyone, claimed, in progress or
   closed, or in a repository that names no factory identity;
 - `drive` on a pull request that is not open, already has a drive ledger, or
