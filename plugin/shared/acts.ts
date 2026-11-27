@@ -184,6 +184,7 @@ const CAUSE_ACTS: Readonly<Record<string, NeedAct>> = {
   "assigner-cannot-write": "Do",
   "tracker-unreachable": "Authorize",
   "low-quota": "Investigate",
+  "calls-failing": "Investigate",
 };
 
 /**

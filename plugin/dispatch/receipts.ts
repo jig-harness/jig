@@ -53,7 +53,11 @@ import {
 } from "../shared/liveness.ts";
 import type { LastRun } from "../runtime/component.ts";
 import type { ScheduledUpgrade } from "../runtime/upgrade-record.ts";
-import type { QuotaRisk, SystemSpending } from "./lib/outbound-report.ts";
+import type {
+  FailingCaller,
+  QuotaRisk,
+  SystemSpending,
+} from "./lib/outbound-report.ts";
 import type { NotAdmitted } from "./lib/accounts.ts";
 import type { FailureEntry } from "./lib/failures.ts";
 import type { LineLoad } from "./lib/dashboard-contract.ts";
@@ -133,6 +137,8 @@ export interface TickReceipt {
   outboundUnavailable?: boolean;
   /** Quotas the last hour's estimated spending empties before their refill horizon. */
   quotaRisks?: QuotaRisk[];
+  /** Callers outside the tick and its passes whose calls to a system all failed in the last hours. */
+  failingCallers?: FailingCaller[];
   repos: RepoReport[];
 }
 

@@ -60,6 +60,7 @@ const NEED_LABEL: Record<LineNeed["cause"], string> = {
   "assigner-cannot-write": "Assigned by someone who cannot write",
   "tracker-unreachable": "An account cannot reach the repository's issues",
   "low-quota": "Quota projected to run out",
+  "calls-failing": "A caller's calls all fail",
   "account-sign-in": "An account needs to sign in again",
   "account-startup": "An account repeatedly failed to start",
   "state-storage": "Jig state storage needs attention",

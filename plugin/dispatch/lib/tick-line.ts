@@ -42,6 +42,7 @@ import type { ReadRecord } from "./launches.ts";
 import {
   buildLine,
   type HoldSeen,
+  type LineInput,
   type RepoLineInput,
   type RepoStored,
 } from "./line.ts";
@@ -462,6 +463,20 @@ export function writeTickLine(
   receipt.exitStatus = 1;
 }
 
+/** What the ledger gave the tick, as the line takes it: a finding the ledger did not give is left out. */
+function ledgerFindingsOf(
+  receipt: TickReceipt,
+): Pick<LineInput, "quotaRisks" | "failingCallers"> {
+  return {
+    ...(receipt.quotaRisks === undefined
+      ? {}
+      : { quotaRisks: receipt.quotaRisks }),
+    ...(receipt.failingCallers === undefined
+      ? {}
+      : { failingCallers: receipt.failingCallers }),
+  };
+}
+
 /** The merge of the line before with this tick's, read and written under the line's write lock. */
 function writeKept(
   receipt: TickReceipt,
@@ -515,9 +530,7 @@ function writeKept(
           hostDrivers: driversPart(machine, records, tick.drivers),
           lastAccount: lastAccount(records),
           previousNeeds: before?.needs ?? [],
-          ...(receipt.quotaRisks === undefined
-            ? {}
-            : { quotaRisks: receipt.quotaRisks }),
+          ...ledgerFindingsOf(receipt),
           recentTicksMs: before?.recentTicksMs ?? [],
         }),
         receipt.runId,
