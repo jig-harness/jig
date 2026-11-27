@@ -12,5 +12,5 @@ release: patch
   unmerged still wait on a person.
 - The members of an ended batch whose pass asked a question about the whole
   batch are released when an open pull request carries the batch's anchor
-  (or the anchor is in `pr_open`), so they are picked up instead of waiting
+  (or the anchor's item is in `pr_open`, whether or not its pull request is matched), so they are picked up instead of waiting
   on an answer the anchor cannot take; the anchor keeps its claim.

@@ -18,6 +18,7 @@
  * against the work in flight (`overlap-plan.ts`), to order their launch attempts.
  */
 import { slotTable } from "./accounts.ts";
+import { inPrOpen } from "./stalled-pr.ts";
 import { driversOf } from "./host-drivers.ts";
 import { planSteers, readNudges, settlePending } from "./actions/steer.ts";
 import {
@@ -437,6 +438,14 @@ function planRepo(
           (q) => q.class === "claimed-carried" || q.class === "claimed-pr-open",
         )
         .map((q) => q.target),
+    ).union(
+      new Set(
+        input.prOpen === undefined
+          ? []
+          : input.claimed
+              .filter((c) => inPrOpen(c, input.prOpen as StalledPrInput))
+              .map((c) => c.key),
+      ),
     ),
   );
 }

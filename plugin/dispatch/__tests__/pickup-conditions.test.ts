@@ -31,6 +31,7 @@ import {
   readPickupConditions,
   linkPickupConditions,
 } from "../lib/tick-pickup-conditions.ts";
+import type { TickReceipt } from "../receipts.ts";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 
 let current: World | null = null;
@@ -390,3 +391,14 @@ it("releases a conditional hold whose dependency closed unmerged", () => {
   if (!after.ok) throw new Error(after.failure.reason);
   expect(after.value.map((h) => h.item)).not.toContain("#15");
 });
+
+it("a tick that does not apply still reports a hold whose pull request closed unmerged as waiting on a person", async () => {
+  const { w } = await waitingPickup();
+  dependency(w, "CLOSED");
+  const r = await w.dispatch(["--json"]);
+  expectSpawnExit(r, 0);
+  const repo = (JSON.parse(r.stdout) as TickReceipt).repos[0];
+  const held = repo?.unplaced?.find((u) => u.target === "#12");
+  expect(held?.reason).toContain("PR #42 closed without merging");
+  expect(held?.pickupHold).toBeDefined();
+}, 30_000);
