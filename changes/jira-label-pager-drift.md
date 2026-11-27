@@ -7,11 +7,12 @@ release: patch
 - On Jira, listing the site's labels (`tracker.ts available-labels`, and
   `validate-labels.ts --check-tracker` under `/jig:file-issue`) no longer
   fails with `labels: <name> repeated across pages` when someone adds a label
-  on the site during the read. Jira pages its labels by offset without a
-  snapshot, so a new label shifts the next page by one; the repeated name is
-  now kept once. Labels are read 1,000 to a page, Jira's own default, instead
-  of 100, so a large site takes a few requests where it took many. Every
-  other Jira listing still fails a read that repeats an item.
+  on the site during the read. Jira counts its label pages from the live
+  list, so a label added between two pages pushes the last name of one page
+  onto the start of the next; that name is now kept once. Labels are read
+  1,000 to a page, Jira's own default, instead of 100, so a large site takes
+  a few requests where it took many. Every other Jira listing still fails a
+  read that repeats an item.
   **Consumer action:** none.
 - `validate-labels.ts --check-tracker` reports a label set the taxonomy
   refuses with exit 3 and its taxonomy errors, without reading the tracker's

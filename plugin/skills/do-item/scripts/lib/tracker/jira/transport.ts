@@ -728,12 +728,18 @@ export interface OffsetOptions {
   dropRepeats?: boolean;
 }
 
+/** An item's id as a key, `null` for an id that tells nothing apart. */
+function idKey(id: unknown): string | null {
+  const key = typeof id === "number" ? String(id) : id;
+  return typeof key === "string" ? key : null;
+}
+
 /** Remembers the ids a read has seen, refusing one seen before. */
 function idGuard(where: string): (id: unknown) => void {
   const seen = new Set<string>();
   return (id) => {
-    const key = typeof id === "number" ? String(id) : id;
-    if (typeof key !== "string") return;
+    const key = idKey(id);
+    if (key === null) return;
     if (seen.has(key)) throw shape(where, `${key} repeated across pages`);
     seen.add(key);
   };
@@ -779,11 +785,12 @@ function repeatFilter(opts: OffsetOptions): (id: unknown) => boolean {
       return true;
     };
   }
-  const seen = new Set<unknown>();
+  const seen = new Set<string>();
   return (id) => {
-    if (id === undefined) return true;
-    if (seen.has(id)) return false;
-    seen.add(id);
+    const key = idKey(id);
+    if (key === null) return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   };
 }

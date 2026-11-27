@@ -342,7 +342,9 @@ export function jiraTracker(client: Client): Tracker {
    * The site's label names. Jira pages them by offset without a snapshot,
    * so a label added elsewhere mid-read repeats a name across a page edge:
    * the repeat is dropped, and the pages are Jira's own default size, which
-   * leaves few page edges for a shift to land on.
+   * leaves few page edges for a shift to land on. A label deleted mid-read
+   * shifts the other way and one name can go unread; nothing in the listing
+   * shows it.
    */
   async function siteLabels(): Promise<string[]> {
     const values = await offsetPages(
