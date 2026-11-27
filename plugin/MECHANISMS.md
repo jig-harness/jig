@@ -977,7 +977,16 @@ stops a model. A team that runs passes unattended should know which:
   same login as the person, or holding the person's tracker credential, can
   therefore post a comment those scripts would trust, and one holding the
   dispatcher's own login or tracker credential, shared or dedicated, can write
-  that record; only the instructions say it must not.
+  that record; only the instructions say it must not. A pickup's reuse of a
+  Scout Findings comment is the same rule on an issue: `list_comments.ts`
+  reports each comment's author login and the tracker's association for them
+  (a workspace member's is `MEMBER` on Linear and Jira), and
+  `select_scout_finding.ts` selects a comment only when
+  `shared/trusted-authors.ts` trusts that association, listing any other
+  findings comment as untrusted and ignoring it. What the pickup does with the
+  rest of an issue's comments is instruction-only: `do-item` reads a comment
+  from an untrusted author as data and names it as such, and no script stops
+  the session from following one.
 - **The machine's state folders.** Launch records, walls, receipts, the
   outcome log and the drive's state are files under `~/.local/state/jig/`,
   writable by every session the same user runs. Leases and tokens fence the

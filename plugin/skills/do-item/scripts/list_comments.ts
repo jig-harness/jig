@@ -5,8 +5,13 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *
  * Type: Discovery
  * Input: an issue key in the configured tracker's shape (`ENG-123`, `#123`)
- * Output: JSON array of `{ body, createdAt }`, oldest first, which feeds
- *   straight into `select_scout_finding.ts --current-hash <hash>` on stdin.
+ * Output: JSON array of `{ body, createdAt, author, authorAssociation }`,
+ *   oldest first, which feeds straight into
+ *   `select_scout_finding.ts --current-hash <hash>` on stdin. `author` is the
+ *   comment author's login and `authorAssociation` what the tracker vouches
+ *   for about them (GitHub's `OWNER`, `MEMBER`, `COLLABORATOR`, `NONE`, or
+ *   the adapter's nearest equivalent, `UNKNOWN` when it cannot say); both are
+ *   the tracker's own words, never read from the comment's text.
  *
  * Usage:
  *     bun list_comments.ts <issue-key>
@@ -30,7 +35,12 @@ export async function listComments(
   try {
     return (await tracker.listComments(issueId)).map((c) => ({
       body: c.body,
-      ...definedFields({ createdAt: c.createdAt }),
+      ...definedFields({
+        createdAt: c.createdAt,
+        author: c.author,
+        authorAssociation: c.authorAssociation,
+        self: c.self,
+      }),
     }));
   } catch (err) {
     console.error(
