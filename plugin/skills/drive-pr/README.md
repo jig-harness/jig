@@ -402,7 +402,8 @@ Local mailbox stop, hold and resume and the provisional-decision sweep
 retain a ten-second idle cadence, independent of bulk CI observation.
 After a complete round-boundary takeover read, the drive waits at least
 sixty seconds between read starts. If the listing cannot be read, the next
-round checkpoint retries it. The drive still reads claims fresh before
+round checkpoint retries it, and the drive's log says why, once for each run of
+rejections with the same reason. The drive still reads claims fresh before
 dispatching a pass and before writing the ledger. The mailbox runs before
 remote reads. In-flight work adds its helper deadline;
 GitHub's Retry-After and primary reset holds still take precedence. These

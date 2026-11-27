@@ -508,7 +508,8 @@ the wait cache and restores responsive probing. The mailbox runs first and keeps
 its ten-second idle cadence, as does the provisional-decision sweep. A
 complete round-boundary takeover read defers the next to the first checkpoint
 at least sixty seconds later. An unread listing is retried at the next
-checkpoint. The pre-pass and ledger-write claim checks still read fresh.
+checkpoint, and the driver log names why it was rejected once per run of
+rejections for the same reason. The pre-pass and ledger-write claim checks still read fresh.
 These are scheduling bounds: an
 in-flight helper adds its configured deadline and a GitHub rate-limit hold
 remains authoritative. Age and witness expiry force fresh evidence before
