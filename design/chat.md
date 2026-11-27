@@ -205,18 +205,37 @@ owner starts new threads.
 - **Channels.** The machine file names a default channel and, optionally,
   one per repository, by its forge name, and one for host faults.
 - **People.** A notice that waits on a person mentions them, and is also
-  sent to them as a direct message when `chat.direct` is on. The person
-  comes from the notice (`waitsOn`, `assignedBy`, the drive's arming
-  person), mapped from a forge login to a chat user by
+  sent to them as a direct message when direct messages are on for them.
+  The person comes from the notice (`waitsOn`, `assignedBy`, the drive's
+  arming person), mapped from a forge login to a chat user by
   `serve[].chat.slack` in the machine file, or by the link each person
   makes on the hub (below), which the owner reads from the hub. A person
-  with no mapping is named by login, not mentioned.
-- **Quiet hours.** `chat.quiet`, in `chat.timezone` (the host's zone when
-  unset), holds mentions and direct messages, never posts. A notice posted
-  in quiet hours mentions nobody, and the tick replies once with the held
-  mention at the first tick after quiet hours end, if its cause still
-  stands; a cause sent once for the life of its key keeps its mention that
-  way.
+  with no mapping is named by login, not mentioned. `serve[].chat.slack`
+  is the host's authorization, not a preference: it says whose clicks the
+  host turns into writes under its login
+  ([ADR-0022](../docs/adr/ADR-0022-a-chat-bridge-turns-a-click-into-one-request.md)).
+- **Each person's own settings.** A person's time zone, quiet hours and
+  `direct` come from their **person profile** ([glossary](../GLOSSARY.md)),
+  the host-local file that holds a person's preferences
+  ([ADR-0028](../docs/adr/ADR-0028-a-person-profile-stays-on-the-host.md)):
+  `$JIG_HOME/person.yaml` on a machine one person uses, or the file
+  `serve[].profile` names on a host serving several. The host-level
+  `chat.timezone`, `chat.quiet` and `chat.direct` are the defaults for a
+  person with no profile, or whose profile leaves a field out, and
+  `chat.timezone` and `chat.quiet` alone govern the shared channels.
+- **Quiet hours.** Quiet hours hold mentions and direct messages, never
+  posts. A notice posted in a person's quiet hours does not mention them,
+  and the tick replies once with the held mention at the first tick after
+  their quiet hours end, if its cause still stands; a cause sent once for
+  the life of its key keeps its mention that way. A person's quiet hours
+  are the modes of their routine (#1403) whose interrupt policy is
+  `digest` or `none`; with no routine, the `quiet` window list of their
+  profile; with neither, the host's `chat.quiet`. Every quiet-hours
+  setting is a list of weekly windows in the shared schedule grammar
+  (`<days> [HH:MM-HH:MM]`, `22:00-07:00` alone meaning every day), read in
+  an [IANA time zone](../GLOSSARY.md) (`Europe/Berlin`, never a fixed offset such as
+  `+02:00`, which would ignore daylight saving): the person's, else
+  `chat.timezone`, else the host's own.
 
 ### The chat bridge
 
@@ -484,9 +503,9 @@ chat:
     repositories:
       example-org/web: C0234567890
     host_channel: C0345678901 # host faults and the digest
-  timezone: Europe/Berlin # quiet hours and the digest's date
-  direct: true # a direct message to the person a need waits on
-  quiet: "20:00-08:00" # posts, no mentions until it ends
+  timezone: Europe/Berlin # shared channels, the digest's date, people with no profile
+  direct: true # the default for a person whose profile does not say
+  quiet: ["Mon-Fri 20:00-08:00", "Sat-Sun"] # shared channels; people with no profile
   digest_at: "09:00"
   unfurl: false
   bridge: true # run `jig chat serve` on this host
@@ -495,7 +514,23 @@ serve:
   - name: alice
     forge: [alice]
     chat: { slack: U0123456789 } # a host's map; the hub links people instead
+    profile: /home/example/.jig/people/alice.yaml # the person profile, on a host serving several
 ```
+
+A person's own settings are in their person profile, never in `serve[]`,
+which stays the host's authorization and identity list
+([ADR-0028](../docs/adr/ADR-0028-a-person-profile-stays-on-the-host.md)).
+On a machine one person uses, the profile is `$JIG_HOME/person.yaml`:
+
+```yaml
+timezone: Europe/Berlin # IANA only; a fixed offset is refused
+chat:
+  direct: true
+  quiet: ["Mon-Fri 19:00-08:00", "Sat-Sun"] # used when no routine is set
+```
+
+Its fields arrive with the features that read them, through the one
+reader that refuses unknown keys, a dangling link and a file Git tracks.
 
 A repository says which bridge identities may answer for it, in its own
 configuration, read at the head of its base branch:
