@@ -183,6 +183,7 @@ describe("cwdHolders", () => {
 
 describe("detachedCarriers", () => {
   const ENTRY = "JIG_HOOK_WORKTREE=/w/a";
+  const LATEST = 4_000_000_000;
 
   test("passes only numeric pids to one probe, and reads a failed probe as none", async () => {
     const calls: string[][] = [];
@@ -192,17 +193,25 @@ describe("detachedCarriers", () => {
       return result(2, "", "sh: broken");
     };
     expect(
-      await detachedCarriers(failing, ["12", "../self", "13"], ENTRY),
+      await detachedCarriers(failing, ["12", "../self", "13"], ENTRY, LATEST),
     ).toEqual(new Set());
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.slice(3)).toEqual(["sh", ENTRY, "12", "13"]);
-    expect(await detachedCarriers(failing, ["x"], ENTRY)).toEqual(new Set());
+    expect(calls[0]?.slice(3)).toEqual([
+      "sh",
+      ENTRY,
+      String(LATEST),
+      "12",
+      "13",
+    ]);
+    expect(await detachedCarriers(failing, ["x"], ENTRY, LATEST)).toEqual(
+      new Set(),
+    );
     expect(calls).toHaveLength(1);
   });
 
   test("keeps only the pids it was asked about", async () => {
     const run: AsyncProbeRun = async () => result(0, "12\n99\n");
-    expect(await detachedCarriers(run, ["12", "13"], ENTRY)).toEqual(
+    expect(await detachedCarriers(run, ["12", "13"], ENTRY, LATEST)).toEqual(
       new Set(["12"]),
     );
   });
@@ -235,9 +244,9 @@ describe("detachedCarriers", () => {
         ["setsid", "script", "-qec", "exec sleep 600", "/dev/null"],
         true,
       );
+      let shell: string | undefined;
       try {
         const until = performance.now() + 10_000;
-        let shell: string | undefined;
         while (shell === undefined && performance.now() < until) {
           const children = Bun.spawnSync([
             "ps",
@@ -255,13 +264,20 @@ describe("detachedCarriers", () => {
         const pids = [String(daemon.pid), String(other.pid), shell];
         let found = new Set<string>();
         while (performance.now() < until) {
-          found = await detachedCarriers(run, pids, ENTRY);
+          found = await detachedCarriers(run, pids, ENTRY, LATEST);
           if (found.has(String(daemon.pid))) break;
           await Bun.sleep(20);
         }
         expect(found).toEqual(new Set([String(daemon.pid)]));
+        // Work that started after the bound inherited the entry from elsewhere.
+        const early = Date.now() / 1000 - 3600;
+        expect(
+          await detachedCarriers(run, [String(daemon.pid)], ENTRY, early),
+        ).toEqual(new Set());
       } finally {
         for (const child of [daemon, other, typed]) child.kill("SIGKILL");
+        // SIGKILL does not reach the child `script` started.
+        if (shell !== undefined) Bun.spawnSync(["kill", "-KILL", shell]);
       }
     },
     20_000,

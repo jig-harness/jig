@@ -1,5 +1,6 @@
 /** A local session runtime whose runs are witnessed by process identity. */
-import { resolve } from "node:path";
+import { statSync } from "node:fs";
+import { join, resolve } from "node:path";
 import {
   detachedCarriers,
   holdersIn,
@@ -7,7 +8,11 @@ import {
   type AsyncProbeRun,
   type CwdScan,
 } from "../../../shared/process-cwd.ts";
-import { HOOK_WORKTREE_ENV, realPath } from "../../../shared/worktree-hooks.ts";
+import {
+  HOOK_TIMEOUT_MS,
+  HOOK_WORKTREE_ENV,
+  realPath,
+} from "../../../shared/worktree-hooks.ts";
 import {
   judge,
   thisHost,
@@ -30,6 +35,7 @@ import { branchTargets } from "./branch-targets.ts";
 import { launchProcess } from "./process-launch.ts";
 import { processOpen } from "./process-workspaces.ts";
 import type { ProcessSettings } from "./process-environment.ts";
+import { attempt } from "../../../shared/outcome.ts";
 import { parseMs } from "../../../shared/time.ts";
 
 const SOURCE = "git worktree list and dispatcher launch records";
@@ -105,6 +111,20 @@ function activity(records: ReadRecord[], rows: ProcessRow[] | null) {
 }
 
 /**
+ * The latest moment, in seconds since the epoch, a process the tree's create
+ * hook started can have started: the worktree's creation plus the hook's
+ * time limit. Work started after it inherited the marker from something else.
+ */
+function preparationEndsAt(tree: string): number {
+  const born = attempt(
+    "tree-unreadable",
+    "the worktree's creation time",
+    () => statSync(join(tree, ".git")).mtimeMs,
+  );
+  return born.ok ? born.value / 1000 + HOOK_TIMEOUT_MS / 1000 + 15 : 0;
+}
+
+/**
  * How many of the processes working in `tree` the runtime cannot account
  * for: every one but a run's recorded processes and their descendants
  * (`known`), and those a worktree hook run for this tree left behind: a
@@ -126,6 +146,7 @@ async function unaccounted(
     run,
     unknown,
     `${HOOK_WORKTREE_ENV}=${realPath(tree)}`,
+    preparationEndsAt(tree),
   );
   return unknown.filter((pid) => !prepared.has(pid)).length;
 }

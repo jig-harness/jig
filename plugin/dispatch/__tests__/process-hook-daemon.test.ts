@@ -42,10 +42,18 @@ dispatch:
 /**
  * A create hook that starts a daemon in a session of its own, so it leaves
  * the hook's process group and outlives it, working in the new worktree,
- * and records the daemon's pid where the test can end it.
+ * and records the daemon's pid where the test can end it. The hook waits for
+ * that record before it exits.
  */
 const DAEMON_HOOK = `#!/bin/sh
 setsid sh -c 'echo $$ > "$HOOK_DAEMON_PIDS/daemon-$$"; exec sleep 600' </dev/null >/dev/null 2>&1 &
+# The hook ends only once the daemon is running, so the tick that follows
+# necessarily sees it.
+n=0
+while [ -z "$(ls "$HOOK_DAEMON_PIDS" 2>/dev/null)" ] && [ "$n" -lt 500 ]; do
+  sleep 0.02
+  n=$((n + 1))
+done
 exit 0
 `;
 
