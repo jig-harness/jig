@@ -84,6 +84,15 @@ export function parseLaunchdEnvironment(
     entries.push([unxml(match[1] as string), unxml(match[2] ?? "")]);
     at = entry.lastIndex;
   }
+  const seen = new Set<string>();
+  for (const [name] of entries) {
+    if (seen.has(name))
+      return failed(
+        "unreadable",
+        `EnvironmentVariables names ${name} more than once, so which value it holds is unclear; keep one entry, then install again`,
+      );
+    seen.add(name);
+  }
   // Own data properties, so a variable named `__proto__` stays a variable.
   return ok(Object.fromEntries(entries));
 }

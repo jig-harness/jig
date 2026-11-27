@@ -157,6 +157,16 @@ describe("an environment read whole or not at all", () => {
     expect(parseLaunchdEnvironment(text).ok).toBe(false);
   });
 
+  test("refuses a name given twice without repeating either value", () => {
+    const text = wrap(
+      "<dict><key>A</key><string>first-secret</string><key>A</key><string>second-secret</string></dict>",
+    );
+    const read = parseLaunchdEnvironment(text);
+    expect(read.ok).toBe(false);
+    expect(JSON.stringify(read)).not.toContain("secret");
+    expect(carriedEnvironment(text, managed).ok).toBe(false);
+  });
+
   test("keeps a variable named __proto__ as an own entry", () => {
     const read = parseLaunchdEnvironment(
       wrap("<dict><key>__proto__</key><string>v</string></dict>"),
