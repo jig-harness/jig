@@ -158,7 +158,8 @@ test("refuses an epic and a held blocker", async () => {
     await claimServedIssue(w.tracker, "#2", { person: "dana", blocking: "#1" }),
   ).toMatchObject({
     outcome: "refused",
-    reason: "#2 is an epic and is not pulled forward",
+    why: "epic",
+    reason: "#2 is an epic; epics are worked through their children",
   });
   w.labels.set("#2", ["jig:hold"]);
   expect(

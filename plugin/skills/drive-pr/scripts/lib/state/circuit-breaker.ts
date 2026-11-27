@@ -15,11 +15,12 @@
  * moves it on by one more cap.
  *
  * The divergence stop compares each round gate's open review findings (the
- * unresolved threads and unaddressed summary findings the gate reports)
- * with the previous gate's: `newFindings` were not open before, and
- * `fixedFindings` are no longer open. A round diverges when it raised at
- * least one finding and no fewer than it fixed. A gate whose open set did
- * not move records nothing: no progress is the stall stop's to judge.
+ * unresolved threads and unaddressed summary findings the gate reports,
+ * less the summary findings the reviewer renders as not blocking) with the
+ * previous gate's: `newFindings` were not open before, and `fixedFindings`
+ * are no longer open. A round diverges when it raised more findings than it
+ * fixed; a tie does not. A gate whose open set did not move records nothing:
+ * no progress is the stall stop's to judge.
  *
  * Every field is optional in a stored state: a file written before it
  * existed reads as no raise, no first launch and no history.
@@ -58,6 +59,8 @@ export interface CircuitBreakerState {
   firstDrivenAt?: string;
   /** Hours a person's override added to the wall-clock cap; never lowered. */
   wallClockRaisedHours?: number;
+  /** The counting rule `openFindings` and `roundFindings` were recorded under; absent, or another number, means an earlier rule. */
+  findingRule?: number;
   /** The open findings the last round gate reported, by key. */
   openFindings?: string[];
   /** The last rounds' finding movement, oldest first. */
@@ -119,12 +122,16 @@ function isRoundFindings(v: unknown): v is RoundFindings {
   );
 }
 
+/** The rule that counts open findings (not-blocking backlog left out); recorded history under another rule is not comparable. */
+export const FINDING_RULE = 2;
+
 /** The circuit breaker's fields: each absent, or well-formed. */
 export function isOptionalCircuit(s: Record<string, unknown>): boolean {
   return (
     (s.ceilingRaised === undefined || isCount(s.ceilingRaised)) &&
     (s.firstDrivenAt === undefined || isMoment(s.firstDrivenAt)) &&
     (s.wallClockRaisedHours === undefined || isHours(s.wallClockRaisedHours)) &&
+    (s.findingRule === undefined || isCount(s.findingRule)) &&
     (s.openFindings === undefined ||
       (Array.isArray(s.openFindings) &&
         s.openFindings.every((k) => typeof k === "string"))) &&
@@ -258,7 +265,12 @@ export function raisedWallClock(
   return Math.max(raisedHours, driven);
 }
 
-/** The open findings a round gate reports, by key; `null` when it published no keys. */
+/**
+ * The open findings a round gate reports, by key, less the summary findings
+ * the reviewer renders as not blocking (`summaryNotBlockingKeys`, absent from
+ * a status written before it existed); `null` when it published no keys or a
+ * malformed list.
+ */
 export function openFindingKeys(
   status: Record<string, unknown>,
 ): string[] | null {
@@ -266,10 +278,20 @@ export function openFindingKeys(
   if (!isRecord(work)) return null;
   const threads = work.unresolvedThreadKeys;
   const summary = work.summaryUnaddressedKeys;
-  if (!Array.isArray(threads) || !Array.isArray(summary)) return null;
+  const notBlocking = work.summaryNotBlockingKeys ?? [];
+  if (
+    !Array.isArray(threads) ||
+    !Array.isArray(summary) ||
+    !Array.isArray(notBlocking)
+  )
+    return null;
   const keys = [...threads, ...summary];
-  if (!keys.every((k) => typeof k === "string")) return null;
-  return [...new Set(keys as string[])].sort(byCodeUnit);
+  if (![...keys, ...notBlocking].every((k) => typeof k === "string"))
+    return null;
+  const held = new Set(notBlocking as string[]);
+  return [...new Set(keys as string[])]
+    .filter((k) => !held.has(k))
+    .sort(byCodeUnit);
 }
 
 /**
@@ -289,9 +311,9 @@ export function findingMovement(
   return { newFindings, fixedFindings };
 }
 
-/** Whether a round raised at least one finding and no fewer than it fixed. */
+/** Whether a round raised more findings than it fixed. */
 export function diverges(r: RoundFindings): boolean {
-  return r.newFindings >= 1 && r.newFindings >= r.fixedFindings;
+  return r.newFindings > r.fixedFindings;
 }
 
 /** The diverging rounds at the end of the history. */

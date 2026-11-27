@@ -279,6 +279,7 @@ describe("Linear adapter: ready-pool reads", () => {
           state: { id: "s-todo", name: "Todo", type: "unstarted" },
           assignee: null,
           labels: { pageInfo: { hasNextPage: false }, nodes: [] },
+          allChildren: { nodes: [] },
           children: { pageInfo: { hasNextPage: false }, nodes: [] },
         },
       ]),

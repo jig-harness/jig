@@ -32,6 +32,7 @@ import {
   slurpCheckRuns,
 } from "./paged-read.ts";
 import { ghCall } from "./proc.ts";
+import { readLogin } from "./state/ledger-forge.ts";
 import type { CiHoldState } from "./state/schema.ts";
 import { openStore } from "./state/store.ts";
 
@@ -205,23 +206,17 @@ export async function readBeforeMutation(
     HoldReadFailure["code"]
   >
 > {
-  const who = await ghCall(["api", "user", "-q", ".login"]);
-  const login = who.stdout.trim();
-  if (who.code !== 0)
+  const who = await readLogin();
+  if (!who.ok)
     return failed(
-      "unreadable",
-      `cannot identify the authenticated GitHub actor: gh api exited ${who.code}: ${(who.stderrTail || who.stderr).trim().slice(-500)}`,
-    );
-  if (login === "")
-    return failed(
-      "malformed",
-      "cannot identify the authenticated GitHub actor: the answer names no login",
+      who.failure.code,
+      `cannot identify the authenticated GitHub actor: ${who.failure.reason}`,
     );
   const live = await readPrSnapshot(pr, holdLabel);
   if (!live.ok) return live;
   const timeline = await readHoldTransitions(pr, holdLabel ?? "");
   if (!timeline.ok) return timeline;
-  return ok({ login: login, live: live.value, timeline: timeline.value });
+  return ok({ login: who.value, live: live.value, timeline: timeline.value });
 }
 
 /** A read's value, or `null` after saying why it failed. */

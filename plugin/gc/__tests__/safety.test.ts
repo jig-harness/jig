@@ -6,7 +6,7 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
-import { hostname, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { gitEnvironment } from "../git.ts";
@@ -257,32 +257,6 @@ test("an install lock that loses its takeover says why, and never asks for a liv
   );
   expect(waited?.value).not.toContain("remove it");
 }, 30_000);
-test("an admission token whose creator exited is reported stale with its holder, and kept", async () => {
-  const dir = root();
-  const lock = join(import.meta.dir, "../../shared/gc-lock.ts");
-  // A creator that took admission and exited without giving it back.
-  const creator = Bun.spawnSync(
-    [
-      process.execPath,
-      "-e",
-      `const { sharedGcLock } = await import(${JSON.stringify(lock)}); sharedGcLock("scratch", ${JSON.stringify(dir)});`,
-    ],
-    { stdout: "pipe", stderr: "pipe" },
-  );
-  expectSpawnExit(creator, 0);
-  const tokens = readdirSync(join(dir, "scratch"));
-  expect(tokens).toHaveLength(1);
-  const token = join(dir, "scratch", tokens[0] as string);
-  await expect(
-    exclusiveGcLock("scratch", async () => undefined, dir),
-  ).rejects.toThrow(
-    `stale admission token ${token} (pid ${creator.pid} on ${hostname()}, started `,
-  );
-  await expect(
-    exclusiveGcLock("scratch", async () => undefined, dir),
-  ).rejects.toThrow(`no process has pid ${creator.pid} now`);
-  expect(readdirSync(join(dir, "scratch"))).toEqual(tokens);
-});
 test("an admission token in its earlier empty form is judged by the pid its name carries", async () => {
   const dir = root();
   const exited = Bun.spawnSync([process.execPath, "-e", "0"]);

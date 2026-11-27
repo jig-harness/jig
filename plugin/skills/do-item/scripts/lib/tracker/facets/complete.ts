@@ -23,7 +23,12 @@ import {
   missingGroups,
   SIZE_GROUP,
 } from "../../../../../file-issue/scripts/lib/validate.ts";
-import { type NewIssue, type Tracker, TrackerRequestError } from "../port.ts";
+import {
+  FACETS,
+  type NewIssue,
+  type Tracker,
+  TrackerRequestError,
+} from "../port.ts";
 import { isEpic } from "../../../../../../shared/tracker-labels.ts";
 import { type Facets, usable } from "./config.ts";
 import { canonical } from "./values.ts";
@@ -142,14 +147,23 @@ export function checkedTracker(
       );
       if (problems.length > 0)
         throw new TrackerRequestError("invalid", problems.join("; "));
-      const missing = incompleteness(
+      // The adapter resolves a child's type and a type kept as a label.
+      const filed = await tracker.filedAs?.(issue);
+      let missing = incompleteness(
         issue,
         facets,
         typeof taxonomy === "function" ? taxonomy() : taxonomy,
-        // The adapter's own resolution of the write: a child's issue type
-        // and a type kept as a label differ from the facet's plain value.
-        await tracker.filedAs?.(issue),
+        filed,
       );
+      if (filed !== undefined && tracker.unavailableFacets !== undefined) {
+        const unavailable = new Set<string>(
+          await tracker.unavailableFacets(
+            filed.nativeType,
+            FACETS.filter((facet) => missing.includes(facet)),
+          ),
+        );
+        missing = missing.filter((name) => !unavailable.has(name));
+      }
       if (missing.length > 0)
         throw new TrackerRequestError("invalid", incompleteRefusal(missing));
       return tracker.createIssue(issue);

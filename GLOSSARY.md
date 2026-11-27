@@ -1466,9 +1466,10 @@ make, use the entry's term instead.
   explicit override raises it, by one round budget
   ([drive-pr](plugin/skills/drive-pr/README.md#the-round-ceiling-and-the-divergence-stop)).
 - **Divergence stop** — the *PR drive loop* parking for a person once two
-  rounds in a row each raised at least as many new review findings as they
-  fixed, with findings still open: a sign the fixes create work as fast as
-  they settle it, which more rounds do not cure
+  rounds in a row each raised more new review findings than they fixed, with
+  findings still open, not counting the findings the reviewer marks not
+  blocking: a sign the fixes create work faster than they settle it, which
+  more rounds do not cure
   ([drive-pr](plugin/skills/drive-pr/README.md#the-round-ceiling-and-the-divergence-stop)).
 - **Re-drive** — the *dispatcher* starting a *PR drive loop* again on a pull
   request whose drive converged, once that pull request has gone stale: the
@@ -3351,10 +3352,12 @@ make, use the entry's term instead.
   spending repair passes (`ci.advisory_checks`). Not the same as an *advisory
   gate*, which never blocks
   ([the implementation plan](design/need-classes.md#ci-repair-spent-or-a-ci-verdict-misread)).
-- **Rescue branch** — a planned local branch the *dispatcher* would keep a
-  worktree's unpushed commits on before detaching that worktree, so freeing
-  a held checkout would not lose work. It would never be pushed or collected
-  by `jig gc` ([the implementation plan](design/need-classes.md#a-checkout-an-unlisted-tree-holds)).
+- **Rescue branch** — a local branch, `jig-rescue/<tree>-<time>`, that the
+  *dispatcher* keeps a worktree's unpushed commits on before it detaches
+  that worktree, so freeing a held checkout loses no work. The dispatcher
+  never pushes it and `jig gc` never collects it; the launch's receipt names it, and, for a launch on a
+  pull request, so does a comment on it, unless the forge refuses the comment. Only a host that turns on `rescue_unpushed` gets one
+  ([the machine file](plugin/CONFIGURATION.md#the-machines-dispatch-file)).
 - **Act (of a need)** — the one thing a person does to settle something
   that waits on them, from a closed list: Merge, Decide, Authorize, Reply,
   Do or Investigate. Each need on the *dispatch board* opens with its act,

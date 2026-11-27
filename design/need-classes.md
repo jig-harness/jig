@@ -73,7 +73,7 @@ below is a gap, and its weekly reflection finding proposes a row.
 | Someone else's work read as a stalled pickup | `stalled` on items no launch claimed | at the source |
 | A pass deadline, or edits a pass left unshipped | a drive handed to a person (exit `15` or `12`) | at the source; by the tick |
 | The dispatcher's own turn failing | `ticks-failing`, `repository-failing` | at the source; the repair by a person alone, once per cause |
-| A checkout an unlisted tree holds | a launch refused for a busy holder | at the source; by the tick where the host opts in; by an answer |
+| A checkout an unlisted tree holds | a launch refused for a busy holder | at the source; by the tick where the host opts in (built); by an answer |
 | A step a person owes after a merge | a failed follow-up asking about a step | at the source; by an answer for the rest |
 | A follow-up that cannot reach the tracker | a failed follow-up on every merge of one repository | at the source; the credential by a person alone, once per account |
 | A pickup's scope or batch question | a pickup's question | by an answer |
@@ -333,13 +333,18 @@ branch.
   therefore idle, so a follow-up detaches it, keeps its branch and lists
   both in its launch outcome rather than asking a person. A busy holder's
   reason names the commits that keep it busy.
-- With `detach_idle_holders` on, the tick detaches a holder no process uses
-  and whose every commit is on the remote. With `rescue_unpushed` on as
-  well, a holder with unpushed commits first has them kept on a
+- A holder with nothing in its tree, no unpushed commit and nothing using it
+  is detached by the open itself, on every host. With `detach_idle_holders`
+  on, so is a holder busy only with changes in its tree or index: no
+  process, drive or session uses it and every commit is on the remote, and
+  its changes stay in its tree. With `rescue_unpushed` on as well, a holder
+  whose commits the remote lacks first has them kept on a
   [rescue branch](../GLOSSARY.md), a local branch the tick never pushes and
-  `jig gc` never collects, and is then detached rather than asked about
-  (#964). Off, the need stays framed: **Detach the checkout**,
-  **I'll handle it — hide this card**.
+  `jig gc` never collects; the branch then moves back to the remote's copy
+  where the remote has one, and the receipt and a comment on the pull request
+  name the rescue branch and its clone. A rescue that fails leaves the tree as
+  it is. Off, the need stays framed: **Detach the checkout**,
+  **I'll handle it — hide this card** (#964).
 - The busy-holder notice has a cause of its own (#629).
 
 #### A step a person owes after a merge
@@ -377,7 +382,16 @@ them (a claimed member keeps its own rule), so the queue picks them up and no
 need is raised for them. A question that names no member is about the whole
 batch: it is one need, on the batch's anchor, the other members wait on it
 with no need of their own, and its answer releases every member the record
-still holds that the pass never claimed.
+still holds that the pass never claimed. When an open pull request carries
+the anchor (or the anchor is in `pr_open`), its claim stays with that pull
+request and the answer cannot be taken there, so the tick releases the members
+the pass never claimed and the anchor keeps its claim.
+
+A pickup hold with a dependency (a pull request to merge, an item to close)
+is not a need while the tick reads that dependency every tick: the item is a
+held row under Queue, and the hold lists nothing among what waits on a person.
+A hold with no dependency, one whose stored dependency cannot be read, and one
+whose pull request closed unmerged is a person's to release or settle.
 
 #### A label write failing
 

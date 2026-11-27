@@ -20,6 +20,7 @@ import {
 } from "../scripts/lib/driver/circuit-park.ts";
 import {
   atRoundCeiling,
+  diverges,
   divergenceStops,
   findingMovement,
   hoursDriven,
@@ -131,6 +132,36 @@ describe("the divergence stop", () => {
     expect(openFindingKeys({ work: { unresolvedThreadKeys: [] } })).toBeNull();
   });
 
+  it("leaves out the summary findings the reviewer holds as not blocking", () => {
+    expect(
+      openFindingKeys({
+        work: {
+          unresolvedThreadKeys: ["PRRT_a"],
+          summaryUnaddressedKeys: ["f1", "held1", "held2"],
+          summaryNotBlockingKeys: ["held2", "held1"],
+        },
+      }),
+    ).toEqual(["PRRT_a", "f1"]);
+    expect(
+      openFindingKeys({
+        work: {
+          unresolvedThreadKeys: [],
+          summaryUnaddressedKeys: ["held1"],
+          summaryNotBlockingKeys: ["held1"],
+        },
+      }),
+    ).toEqual([]);
+    expect(
+      openFindingKeys({
+        work: {
+          unresolvedThreadKeys: [],
+          summaryUnaddressedKeys: ["f1"],
+          summaryNotBlockingKeys: "f1",
+        },
+      }),
+    ).toBeNull();
+  });
+
   it("counts what is newly open and what is no longer open, and nothing for a gate that did not move", () => {
     expect(findingMovement(["a", "b"], ["b", "c", "d"])).toEqual({
       newFindings: 2,
@@ -143,9 +174,16 @@ describe("the divergence stop", () => {
     expect(findingMovement(undefined, ["a"])).toBeNull();
   });
 
-  it("parks after two rounds in a row that each raised at least as many findings as they fixed", () => {
-    expect(divergenceStops([round(1, 3, 3), round(2, 2, 1)])).toBe(true);
+  it("parks after two rounds in a row that each raised more findings than they fixed", () => {
+    expect(divergenceStops([round(1, 4, 3), round(2, 2, 1)])).toBe(true);
     expect(divergenceStops([round(1, 1, 0)])).toBe(false);
+  });
+
+  it("does not count a round that raised as many findings as it fixed", () => {
+    expect(diverges(round(1, 8, 8))).toBe(false);
+    expect(diverges(round(1, 9, 8))).toBe(true);
+    expect(divergenceStops([round(1, 3, 3), round(2, 2, 2)])).toBe(false);
+    expect(divergenceStops([round(1, 3, 2), round(2, 6, 6)])).toBe(false);
   });
 
   it("does not park when findings strictly decrease", () => {
@@ -156,13 +194,13 @@ describe("the divergence stop", () => {
 
   it("does not park when a diverging round is followed by a converging one", () => {
     expect(
-      divergenceStops([round(1, 2, 2), round(2, 0, 1), round(3, 2, 1)]),
+      divergenceStops([round(1, 3, 2), round(2, 0, 1), round(3, 2, 1)]),
     ).toBe(false);
   });
 
   it("does not count a round that raised nothing, and needs a finding still open", () => {
     expect(divergenceStops([round(1, 0, 0), round(2, 0, 0)])).toBe(false);
-    expect(divergenceStops([round(1, 2, 2), round(2, 2, 2, 0)])).toBe(false);
+    expect(divergenceStops([round(1, 3, 2), round(2, 3, 2, 0)])).toBe(false);
   });
 
   it("keeps the last rounds only", () => {
@@ -384,6 +422,96 @@ describe("the settings", () => {
       );
     },
   );
+});
+
+describe("the divergence stop at the round gates", () => {
+  const LIB = join(SCRIPTS, "lib");
+  /** Run `checkDivergence` on each status in turn, then print the exits and the stored state. */
+  const PROBE = `
+import { checkDivergence } from ${JSON.stringify(join(LIB, "driver", "circuit-breaker.ts"))};
+import { openStore } from ${JSON.stringify(join(LIB, "state", "store.ts"))};
+const statuses = JSON.parse(await Bun.stdin.text());
+const exits = [];
+for (const status of statuses) exits.push(await checkDivergence("12", status, false));
+const state = (await openStore("12")).read().state;
+console.log(JSON.stringify({ exits, history: state.roundFindings ?? [], parked: state.parked.map((p) => p.key) }));
+`;
+
+  async function gates(
+    statuses: Record<string, unknown>[],
+    seed: Record<string, unknown> = {},
+  ) {
+    const forge = fakeForge();
+    writeState(forge.stateDir, "12", { ...freshState(12), ...seed });
+    const file = join(forge.dir, "probe.ts");
+    writeFileSync(file, PROBE);
+    const r = await runIn(forge, file, [], {
+      stdin: JSON.stringify(statuses),
+      env: { DRIVE_PR_TARGET: "12" },
+    });
+    expectSpawnExit(r, 0);
+    return JSON.parse(r.stdout) as {
+      exits: (number | null)[];
+      history: RoundFindings[];
+      parked: string[];
+    };
+  }
+
+  /** A gate whose open summary findings are `open`, of which `held` are rendered not blocking. */
+  const gate = (open: string[], held: string[], n: number) => ({
+    head: { api: String(n).repeat(40) },
+    work: {
+      unresolvedThreadKeys: [],
+      summaryUnaddressedKeys: open,
+      summaryNotBlockingKeys: held,
+    },
+  });
+
+  it("rebaselines findings recorded under an earlier counting rule", async () => {
+    const r = await gates([gate(["a", "b", "c"], [], 1)], {
+      openFindings: ["a", "b", "c", "x"],
+      roundFindings: [
+        {
+          round: 1,
+          head: "1".repeat(40),
+          newFindings: 3,
+          fixedFindings: 0,
+          open: 4,
+        },
+      ],
+    });
+    expect(r.history.length).toBe(0);
+    expect(r.exits).toEqual([null]);
+  });
+
+  it("records open 0 and never parks when only not-blocking findings churn", async () => {
+    const churn = [
+      ["h1"],
+      ["h2", "h3"],
+      ["h4", "h5", "h6"],
+      ["h7", "h8", "h9", "h10"],
+    ];
+    const r = await gates(churn.map((keys, n) => gate(keys, keys, n + 1)));
+    expect(r.exits).toEqual([null, null, null, null]);
+    expect(r.parked).not.toContain("divergence-stop");
+    expect(r.history.every((h) => h.open === 0)).toBe(true);
+  });
+
+  it("still parks when the blocking findings beside them grow", async () => {
+    const r = await gates([
+      gate(["b1", "h1"], ["h1"], 1),
+      gate(["b2", "b3", "h2"], ["h2"], 2),
+      gate(["b4", "b5", "b6", "h3"], ["h3"], 3),
+    ]);
+    expect(r.exits.at(-1)).toBe(8);
+    expect(r.parked).toContain("divergence-stop");
+    expect(
+      r.history.map((h) => [h.newFindings, h.fixedFindings, h.open]),
+    ).toEqual([
+      [2, 1, 2],
+      [3, 2, 3],
+    ]);
+  });
 });
 
 describe("a person's answers to the circuit breaker's parks", () => {

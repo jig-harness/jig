@@ -24,7 +24,7 @@ import { unpushedCountAdvice } from "./../driven-branch.ts";
 import { git, gitCallTimeoutSeconds } from "./../proc.ts";
 
 import {
-  admitDeadlineRestart,
+  admitPassRestart,
   deadlineNotice,
   describeLeftovers,
   inheritedHeadOf,
@@ -110,9 +110,10 @@ async function restartAfterDeadline(
   for (const line of describeLeftovers(leftovers)) console.error(`  ${line}`);
   // Counted in the drive state, so the budget spans every process that
   // drives this PR: a re-arm or a takeover does not get a fresh one.
-  const restart = await admitDeadlineRestart(
+  const restart = await admitPassRestart(
     context.pr,
     context.deadlineRetryBudget,
+    "pass-deadline",
   );
   if (restart === null) {
     console.error(

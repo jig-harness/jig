@@ -53,6 +53,44 @@ function fake() {
   return { tracker, cache, calls };
 }
 describe("served pickups", () => {
+  it.each([
+    { isEpic: true, hasOpenChildren: false },
+    { isEpic: false, hasOpenChildren: false, hasChildren: true },
+  ])("shows why an assigned epic cannot be picked up", async (facts) => {
+    const f = fake();
+    f.tracker.assignedIssues = async (_, states) =>
+      states.includes("in_progress") ? [] : [{ ...issue("#7"), ...facts }];
+    const read = await readServedPickups(f.tracker, people, {
+      cache: f.cache,
+      nowMs: 1,
+      headroom: true,
+    });
+    expect(read.wanted).toEqual([]);
+    expect(read.unplaced).toContainEqual(
+      expect.objectContaining({
+        target: "#7",
+        reason: "epics are worked through their children",
+      }),
+    );
+  });
+
+  it("offers the ready child of an assigned parent without an epic marker", async () => {
+    const f = fake();
+    const parent = { ...issue("#7"), hasOpenChildren: true };
+    const child = issue("#8", [], null);
+    f.tracker.assignedIssues = async (_, states) =>
+      states.includes("in_progress") ? [] : [parent];
+    f.tracker.openChildren = async (key) => (key === "#7" ? [child] : []);
+    f.tracker.poolIssue = async (key) => (key === "#8" ? child : parent);
+    const read = await readServedPickups(f.tracker, people, {
+      cache: f.cache,
+      nowMs: 1,
+      headroom: true,
+    });
+    expect(read.wanted.map((item) => item.key)).toEqual(["#8"]);
+    expect(read.wanted[0]?.ancestorEpic).toBe("#7");
+  });
+
   it("carries configured human labels and plan blocks through the public reader", async () => {
     const f = fake();
     const description =

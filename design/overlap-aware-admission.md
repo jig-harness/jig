@@ -375,14 +375,38 @@ it from, when it asked, how long it waited and how long it held, the newest
 kept for 7 days. From them the tick reads:
 
 - **Run time**: the 90th percentile of how long one run held the lock; 15
-  minutes until there are samples.
-- **Runs at once**: the most runs that held the lock together, which is
-  what its admission allowed; with no samples at all, 1. The lock admits by
-  load, so the number is measured, not configured. Runs that waited do not
-  lower it: a wait behind one holder on a day with few runs says when runs
-  arrived, not how many the lock admits. It errs toward admitting: one
-  moment of high overlap sets it for the samples' seven days, while the
-  lock's own load check still decides each run.
+  minutes until there are samples. It is measured per repository, from the
+  runs its passes made, once it has five of them, and each pass's runs are
+  charged its repository's run time: a repository whose passes make short
+  targeted runs is not charged the longest repository's full gate runs. A
+  repository with no measure of its own (a new one, or one whose lock
+  wrapper records no samples), a run at the lock from no pass in flight and
+  the runs a tick admits are charged every repository's run time, which
+  also counts the runs the lock recorded outside any pass. A run at the lock
+  now may have begun at any time, so it is charged a whole run of its own;
+  which runs at the lock hold and which wait is not read, so the longest
+  are taken to hold. The runs a new pickup reserves for the drive after it
+  are its own repository's.
+- **Runs at once**: at least the slots the lock's own admission allows now,
+  where the forecast can read them, and otherwise the most runs that held
+  the lock together; with neither, 1. The lock admits by load: each run
+  beyond the first only while the host's load, with one more run's cost,
+  stays under its cores times the target and its memory above the floor,
+  never past `LOCK_SLOTS` (`plugin/shared/resource-lock.ts`). The forecast
+  asks the same check of the host's reading, in the environment the passes
+  are launched with, with the cost of the runs holding the lock taken out
+  of the load where the load average shows them (a holder of more than a
+  minute; one holding several slots counts once): a slot they release goes
+  to the next run only while the rest of the host leaves room for it, so a
+  host other work has loaded admits one at a time however many runs hold
+  the lock now. The peak the samples saw may stand above that count: a wait
+  behind one holder on a day with few runs says when runs arrived, not how
+  many the lock admits. It
+  errs toward admitting: one moment of high overlap sets it for the
+  samples' seven days, while the lock's own load check still decides each
+  run. Where the slot count cannot be read (a lock setting the lock
+  refuses, or a lock that does not read), the reason says so beside the
+  peak that stands in.
 - **Runs per pass**: for each kind of pass, the median number of runs a
   finished pass made, from the samples whose worktree is a pass's
   workspace, never under 1. A pass that made no run counts, so one pass of
