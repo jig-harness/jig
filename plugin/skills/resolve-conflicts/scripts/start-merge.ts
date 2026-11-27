@@ -104,10 +104,18 @@ function unmerged(root: string): string[] {
   return r.code === 0 ? r.stdout.split("\0").filter(Boolean) : [];
 }
 
-/** The tracked change in the index and working tree against HEAD; null when unreadable. */
+/** The change in the index and working tree against HEAD, untracked files named; null when unreadable. */
 function workingChange(root: string): string | null {
-  const r = gitRaw(root, ["diff", "--binary", "HEAD"]);
-  return r.code === 0 ? r.stdout : null;
+  const tracked = gitRaw(root, ["diff", "--binary", "HEAD"]);
+  const untracked = gitRaw(root, [
+    "ls-files",
+    "-z",
+    "--others",
+    "--exclude-standard",
+  ]);
+  return tracked.code === 0 && untracked.code === 0
+    ? `${tracked.stdout}\0${untracked.stdout}`
+    : null;
 }
 
 function openOperation(root: string): string | null {

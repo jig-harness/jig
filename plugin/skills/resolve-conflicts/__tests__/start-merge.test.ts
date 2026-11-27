@@ -223,6 +223,17 @@ describe("a pull request whose base was squash-merged", () => {
     expect(check.stdout).toContain(`Merge-base: ${tip}`);
   });
 
+  it("merges as git does when the earlier base's last commit cannot be fetched", () => {
+    const { landed } = stackedOnSquashed();
+    retargetedAfter(landed, "0".repeat(40));
+
+    const r = startMerge(9);
+
+    expect(r.mode).toBe("git");
+    expect(r.detection).toContain("could not be fetched");
+    expect(r.earlierBase).toMatchObject({ ref: "stack", pr: 6 });
+  });
+
   it("merges as git does when the forge cannot be read", () => {
     stackedOnSquashed();
     forge({ fail: true });
