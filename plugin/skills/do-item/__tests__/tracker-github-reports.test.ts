@@ -218,6 +218,7 @@ describe("GitHub adapter: fleet metrics", () => {
         body: "marker: yes",
         createdAt: at(1),
         trusted: true,
+        association: "OWNER",
         author: null,
         editedAt: null,
       },

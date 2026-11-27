@@ -33,6 +33,7 @@ import type {
   TrackerUser,
 } from "../port.ts";
 import { TrackerRequestError } from "../port.ts";
+import { UNKNOWN_ASSOCIATION } from "../comment-port.ts";
 import { namedState } from "../config-error.ts";
 import {
   checkPatch,
@@ -183,6 +184,8 @@ export interface CommentNode {
   body: string;
   createdAt: string;
   trusted: boolean;
+  /** GitHub's `authorAssociation`, as it gave it. */
+  association: string;
   author: TrackerUser | null;
   url?: string;
   editedAt: string | null;
@@ -243,6 +246,11 @@ export function gitHubTracker(client: Client): Tracker {
           trusted:
             TRUSTED.has(String(n.authorAssociation)) ||
             n.viewerDidAuthor === true,
+          association:
+            typeof n.authorAssociation === "string" &&
+            n.authorAssociation !== ""
+              ? n.authorAssociation
+              : UNKNOWN_ASSOCIATION,
           author: authorOf(n.author),
           ...(typeof n.url === "string" && n.url !== "" ? { url: n.url } : {}),
           // A supplied but malformed edit time is kept as written so the
@@ -705,6 +713,8 @@ export function gitHubTracker(client: Client): Tracker {
         (c) => ({
           body: c.body,
           createdAt: c.createdAt,
+          ...(c.author === null ? {} : { author: c.author.name }),
+          authorAssociation: c.association,
         }),
       );
       return out.sort((a, b) =>

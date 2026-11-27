@@ -14,7 +14,21 @@ export interface TrackerUser {
 export interface IssueComment {
   body: string;
   createdAt?: string;
+  /** The author's login (the name the tracker shows, where it has no login); absent when the tracker names none. */
+  author?: string;
+  /**
+   * What the tracker vouches for about the author, in GitHub's
+   * `author_association` words: `OWNER`, `MEMBER` and `COLLABORATOR` can write
+   * to the repository or belong to the tracker workspace and are trusted
+   * (`shared/trusted-authors.ts` decides); another word (`NONE`, `GUEST`) is
+   * not. A tracker without the notion gives its nearest equivalent, and
+   * `UNKNOWN` when it cannot say.
+   */
+  authorAssociation?: string;
 }
+
+/** The association of a comment whose author the tracker cannot vouch for. */
+export const UNKNOWN_ASSOCIATION = "UNKNOWN";
 
 export interface CommentFact {
   /** The tracker's own id for the comment, which `deleteComment` takes. */
@@ -27,6 +41,8 @@ export interface CommentFact {
    * comment could otherwise post a marker-shaped line.
    */
   trusted: boolean;
+  /** The author's association in `IssueComment.authorAssociation`'s words, where the adapter reads it. */
+  association?: string;
   /**
    * Who wrote the comment, where the adapter names comment authors
    * (`Tracker.commentAuthors`); `null` when the tracker names no user (a

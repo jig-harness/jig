@@ -36,6 +36,7 @@
 import { jiraAttachments } from "./attachments.ts";
 import type {
   CanonicalState,
+  IssueComment,
   IssuePatch,
   IssueRelation,
   IssueSummary,
@@ -54,6 +55,7 @@ import {
   requireTitle,
 } from "../requests.ts";
 import { markdownToAdf } from "./adf.ts";
+import { commentAssociation, commentAuthor } from "./comments.ts";
 import { assignerOperations } from "./assigner.ts";
 import { stateChangeOperations } from "./state-change.ts";
 import {
@@ -438,10 +440,20 @@ export function jiraTracker(client: Client): Tracker {
     },
 
     async listComments(key, signal) {
-      return (await client.comments(key, signal)).map((c) => ({
-        body: c.body,
-        createdAt: c.createdAt,
-      }));
+      const out: IssueComment[] = [];
+      for (const c of await client.comments(key, signal)) {
+        const author = commentAuthor(c.author);
+        out.push({
+          body: c.body,
+          createdAt: c.createdAt,
+          ...(author === null ? {} : { author: author.name }),
+          authorAssociation: commentAssociation(
+            c.author,
+            await client.trusted(c.author, signal),
+          ),
+        });
+      }
+      return out;
     },
 
     async listChildren(key) {

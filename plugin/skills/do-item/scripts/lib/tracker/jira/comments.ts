@@ -5,7 +5,7 @@
  */
 import { isRecord } from "../../../../../../shared/guards.ts";
 import { adfToMarkdown } from "./adf.ts";
-import type { TrackerUser } from "../comment-port.ts";
+import { type TrackerUser, UNKNOWN_ASSOCIATION } from "../comment-port.ts";
 import { iso } from "./read.ts";
 
 /** One comment, with its author. */
@@ -52,4 +52,18 @@ export function commentAuthor(
   if (typeof id !== "string" || id === "") return null;
   const name = author?.displayName;
   return { id, name: typeof name === "string" && name !== "" ? name : id };
+}
+
+/**
+ * What Jira vouches for about a comment's author, in GitHub's association
+ * words: a licensed, non-guest Atlassian account that can be assigned issues
+ * in the project is a `MEMBER`, any other known account `NONE`, and a comment
+ * with no author (a deleted account) `UNKNOWN`.
+ */
+export function commentAssociation(
+  author: Record<string, unknown> | null,
+  trusted: boolean,
+): string {
+  if (trusted) return "MEMBER";
+  return commentAuthor(author) === null ? UNKNOWN_ASSOCIATION : "NONE";
 }

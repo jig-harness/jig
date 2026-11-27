@@ -6,6 +6,7 @@ import { TrackerRequestError } from "../scripts/lib/tracker/port.ts";
 import { adfToMarkdown } from "../scripts/lib/tracker/jira/adf.ts";
 import { JiraApiError } from "../scripts/lib/tracker/jira/transport.ts";
 import {
+  assignable,
   type Call,
   comment,
   comments,
@@ -180,18 +181,43 @@ describe("Jira adapter: reading an issue", () => {
     expect((await closed(null))?.state.type).toBe("completed");
   });
 
-  it("lists comments oldest first, bodies in Markdown", async () => {
+  it("lists comments oldest first, bodies in Markdown, each with its author's association", async () => {
+    const outsider = { ...MEMBER, accountId: "5b10ac8d82e05b22cc7d4ef8" };
     const { t } = jira(
       routes({
         "GET issue/ENG-1/comment": comments(
           comment("2", "**second**", MEMBER, "2026-01-05T09:00:00.000+0000"),
           comment("1", "first", MEMBER, "2026-01-04T09:00:00.000+0100"),
+          comment("3", "third", outsider, "2026-01-06T09:00:00.000+0000"),
+          comment("4", "fourth", null, "2026-01-07T09:00:00.000+0000"),
         ),
+        "GET user/assignable/search": assignable(MEMBER.accountId),
       }),
     );
     expect(await t.listComments("ENG-1")).toEqual([
-      { body: "first", createdAt: "2026-01-04T08:00:00.000Z" },
-      { body: "**second**", createdAt: "2026-01-05T09:00:00.000Z" },
+      {
+        body: "first",
+        createdAt: "2026-01-04T08:00:00.000Z",
+        author: MEMBER.displayName,
+        authorAssociation: "MEMBER",
+      },
+      {
+        body: "**second**",
+        createdAt: "2026-01-05T09:00:00.000Z",
+        author: MEMBER.displayName,
+        authorAssociation: "MEMBER",
+      },
+      {
+        body: "third",
+        createdAt: "2026-01-06T09:00:00.000Z",
+        author: outsider.displayName,
+        authorAssociation: "NONE",
+      },
+      {
+        body: "fourth",
+        createdAt: "2026-01-07T09:00:00.000Z",
+        authorAssociation: "UNKNOWN",
+      },
     ]);
   });
 });
