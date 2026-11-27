@@ -113,6 +113,36 @@ const SCENARIOS: Scenario[] = [
     },
   },
   {
+    name: "a listing naming no host keeps it as unverified",
+    registry: quiet,
+    hostScope: { hostIds: [], omittedHostIds: [] },
+    expect: {
+      state: "unverified",
+      reason: "does not cover every host",
+      collected: false,
+    },
+  },
+  {
+    name: "a listing naming an empty host id keeps it as unverified",
+    registry: quiet,
+    hostScope: { hostIds: [""], omittedHostIds: [] },
+    expect: {
+      state: "unverified",
+      reason: "does not cover every host",
+      collected: false,
+    },
+  },
+  {
+    name: "a listing naming a non-string host id keeps it as unverified",
+    registry: quiet,
+    hostScope: { hostIds: [7], omittedHostIds: [] },
+    expect: {
+      state: "unverified",
+      reason: "does not cover every host",
+      collected: false,
+    },
+  },
+  {
     name: "a listing without host coverage keeps it as unverified",
     registry: quiet,
     hostScope: null,

@@ -297,12 +297,18 @@ export async function orcaLiveness(
   }
   return terminals ? terminalLiveness(row, unread) : null;
 }
-/** Whether `hostScope` names its hosts and omits none. */
+/** A host id Orca named: a non-empty string. */
+function isHostId(value: unknown): boolean {
+  return typeof value === "string" && value !== "";
+}
+/** Whether `hostScope` names at least one host, every one well formed, and omits none. */
 function coversEveryHost(result: Record<string, unknown>): boolean {
   const scope = result.hostScope;
   return (
     isMapping(scope) &&
     Array.isArray(scope.hostIds) &&
+    scope.hostIds.length > 0 &&
+    scope.hostIds.every(isHostId) &&
     Array.isArray(scope.omittedHostIds) &&
     scope.omittedHostIds.length === 0
   );
