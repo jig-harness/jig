@@ -28,7 +28,9 @@ test("the checked-in migrations are what the schema generates", () => {
 test("an SQL file edited by hand is found, its snapshot unchanged", () => {
   const copy = join(scratch, "edited");
   cpSync(join(root, MIGRATIONS), copy, { recursive: true });
-  const sql = readdirSync(copy).find((name) => name.endsWith(".sql"));
+  const sql = readdirSync(copy)
+    .sort()
+    .find((name) => name.endsWith(".sql"));
   if (sql === undefined) throw new Error(`no SQL file in ${MIGRATIONS}`);
   appendFileSync(
     join(copy, sql),
@@ -42,7 +44,9 @@ test("an SQL file edited by hand is found, its snapshot unchanged", () => {
 test("a statement that changes rows is found, though the schema it builds is unchanged", () => {
   const copy = join(scratch, "data");
   cpSync(join(root, MIGRATIONS), copy, { recursive: true });
-  const sql = readdirSync(copy).find((name) => name.endsWith(".sql"));
+  const sql = readdirSync(copy)
+    .sort()
+    .find((name) => name.endsWith(".sql"));
   if (sql === undefined) throw new Error(`no SQL file in ${MIGRATIONS}`);
   appendFileSync(
     join(copy, sql),
@@ -56,7 +60,9 @@ test("a statement that changes rows is found, though the schema it builds is unc
 test("a migration the base already holds, edited, is found", () => {
   const copy = join(scratch, "history");
   cpSync(join(root, MIGRATIONS), copy, { recursive: true });
-  const sql = readdirSync(copy).find((name) => name.endsWith(".sql"));
+  const sql = readdirSync(copy)
+    .sort()
+    .find((name) => name.endsWith(".sql"));
   if (sql === undefined) throw new Error(`no SQL file in ${MIGRATIONS}`);
   appendFileSync(join(copy, sql), "\n");
   expect(editedHistory("HEAD", copy)).toEqual([
