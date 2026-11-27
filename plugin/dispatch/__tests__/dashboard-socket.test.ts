@@ -24,6 +24,7 @@ import { funnelExposure } from "../dashboard-funnel.ts";
 import { readerSettings } from "../dashboard-reader.ts";
 import {
   ancestorProblem,
+  linkChainProblem,
   parentProblem,
   socketProblem,
   socketAnswers,
@@ -191,6 +192,23 @@ describe("the private socket", () => {
     expect(ancestorProblem(join(link, "inner"), uid)).toContain(
       "others can write",
     );
+  });
+
+  it("checks every hop of a chain of links, intermediate targets included", () => {
+    const base = scratch();
+    const target = join(base, "target");
+    mkdirSync(target, { mode: 0o700 });
+    const hop = join(base, "hop");
+    symlinkSync(target, hop);
+    const open = join(base, "open");
+    mkdirSync(open, { mode: 0o700 });
+    const link = join(open, "link");
+    symlinkSync(hop, link);
+    const uid = process.getuid?.();
+    expect(linkChainProblem(link, uid)).toBeNull();
+    chmodSync(open, 0o777);
+    expect(linkChainProblem(link, uid)).toContain("others can write");
+    expect(linkChainProblem(join(base, "hop"), uid)).toBeNull();
   });
 
   it("is created under a tight umask, so no mode is wider than 0600 to begin with", () => {

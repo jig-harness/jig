@@ -14,11 +14,12 @@ import {
   chmodSync,
   lstatSync,
   mkdirSync,
+  readlinkSync,
   realpathSync,
   renameSync,
   rmSync,
 } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { attempt, failed, ok, type Outcome } from "../shared/outcome.ts";
 import { SOCKET_MODE } from "./lib/listen.ts";
 
@@ -74,6 +75,46 @@ export function ancestorProblem(
   }
 }
 
+/**
+ * The first problem along the way the kernel resolves `directory`: every link
+ * it meets, intermediate targets included, must be the reader's or root's and
+ * sit in a directory whose own chain only the reader or root can change;
+ * `null` when the whole resolution is trusted.
+ */
+export function linkChainProblem(
+  directory: string,
+  uid: number | undefined,
+): string | null {
+  let resolved = "/";
+  const queue = directory.split("/").filter((part) => part !== "");
+  let hops = 0;
+  while (queue.length > 0) {
+    const name = queue.shift() as string;
+    if (name === ".") continue;
+    if (name === "..") {
+      resolved = dirname(resolved);
+      continue;
+    }
+    const next = join(resolved, name);
+    const read = attempt("socket-unreadable", "", () => lstatSync(next));
+    if (!read.ok) return `has a path component that cannot be read (${next})`;
+    if (!read.value.isSymbolicLink()) {
+      resolved = next;
+      continue;
+    }
+    if (++hops > 40) return "has too many symbolic links in its path";
+    if (uid !== undefined && read.value.uid !== uid && read.value.uid !== 0)
+      return `has a link owned by user ${read.value.uid} (${next})`;
+    const holder = ancestorProblem(join(resolved, "x"), uid);
+    if (holder !== null) return holder;
+    const target = attempt("socket-unreadable", "", () => readlinkSync(next));
+    if (!target.ok) return `has a link that cannot be read (${next})`;
+    if (target.value.startsWith("/")) resolved = "/";
+    queue.unshift(...target.value.split("/").filter((part) => part !== ""));
+  }
+  return null;
+}
+
 /** Whether the socket path may hold a live listener: only a refused connection (or a missing file) proves it stale; any other outcome counts as live. */
 function socketIsLive(path: string): boolean {
   const probe = Bun.spawnSync(
@@ -126,6 +167,7 @@ export function bindSocket(
   // The path as configured is what a front reaches, so its own links are
   // checked as well as the resolved directory's chain.
   const chain =
+    linkChainProblem(dirname(path), process.getuid?.()) ??
     ancestorProblem(dirname(path), process.getuid?.()) ??
     ancestorProblem(resolved.value, process.getuid?.());
   if (chain !== null) return unusable(chain);
