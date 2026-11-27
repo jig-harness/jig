@@ -110,6 +110,11 @@ it("marks a stored record as reading only when the reader's validator accepts it
   expect(reads(bad.id)).toBe(0);
   writeRecord({ ...bad, version: 1 }, dir);
   expect(reads(bad.id)).toBe(1);
+  // A write by anything else (an older plugin) clears the marker.
+  stateDb(dir)
+    .query("UPDATE launches SET record = ? WHERE id = ?")
+    .run('{"damaged":', good.id);
+  expect(reads(good.id)).toBe(0);
 });
 
 it("records a new launch after the greatest ordinal, even when a resume copied an old ordinal", () => {

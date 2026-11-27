@@ -407,7 +407,7 @@ export function writeRecord(record: LaunchRecord, root = stateRoot()): void {
   db.query(
     `INSERT INTO launches (id, repo, action, pr, item, created_at, record, record_reads)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (id) DO UPDATE SET record = excluded.record, record_reads = excluded.record_reads`,
+       ON CONFLICT (id) DO UPDATE SET record = excluded.record`,
   ).run(
     record.id,
     record.repo,
@@ -416,7 +416,12 @@ export function writeRecord(record: LaunchRecord, root = stateRoot()): void {
     record.item,
     record.createdAt,
     JSON.stringify(tick),
+    0,
+  );
+  // A trigger clears the marker when the record changes; mark what this write verified.
+  db.query("UPDATE launches SET record_reads = ? WHERE id = ?").run(
     isLaunchRecord(JSON.parse(JSON.stringify(tick))) ? 1 : 0,
+    record.id,
   );
 }
 

@@ -5,8 +5,8 @@
 /**
  * A pickup whose record is not known to read as a launch record. `record_reads`
  * is written by `writeRecord` from the reader's own validator, so a row nothing
- * has verified (written by an earlier release, or by hand) counts as unreadable
- * and the successor lookup checks it with the reader.
+ * has verified counts as unreadable (a trigger clears the marker whenever the
+ * stored record changes, whoever writes it) and the successor lookup checks it with the reader.
  */
 export const UNREADABLE_PICKUP = `action = 'pickup' AND record_reads = 0`;
 
@@ -43,6 +43,12 @@ export const PICKUP_SUCCESSOR_SCHEMA = `
           '$.batchItems'
         ) AS member
         WHERE CASE WHEN member.type = 'object' THEN json_type(member.value, '$.key') = 'text' END;
+    END;
+
+  CREATE TRIGGER launches_record_reads_reset AFTER UPDATE OF record ON launches
+    WHEN NEW.record IS NOT OLD.record
+    BEGIN
+      UPDATE launches SET record_reads = 0 WHERE id = NEW.id;
     END;
 
   CREATE TRIGGER pickup_batch_members_delete AFTER DELETE ON launches
