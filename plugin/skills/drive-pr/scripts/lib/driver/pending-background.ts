@@ -70,11 +70,34 @@ function procCommand(dir: string): string {
   }
 }
 
+/** A file under `/proc/<pid>/`; `null` when it cannot be read. */
+function procFile(dir: string, file: string): string | null {
+  try {
+    return readFileSync(`${dir}/${file}`, "utf8");
+  } catch (err) {
+    // The process ended since the listing, or belongs to another user, whose
+    // processes cannot have inherited this user's pass.
+    swallow(err, `/proc entry ${dir}/${file} could not be read`);
+    return null;
+  }
+}
+
+/**
+ * Whether the live process at `dir` carries `entry` in its environment or
+ * is in process group `pgid`; a zombie or an unreadable process does not.
+ */
+function carries(dir: string, entry: string | null, pgid?: number): boolean {
+  const text = procFile(dir, "stat");
+  const stat = text === null ? null : parseProcStat(text);
+  if (stat === null || stat.state === "Z") return false;
+  if (pgid !== undefined && stat.pgrp === pgid) return true;
+  if (entry === null) return false;
+  return (procFile(dir, "environ") ?? "").split("\0").includes(entry);
+}
+
 /**
  * The live processes carrying `token` in their environment or in process
- * group `pgid`, read from `/proc`; `null` when `/proc` cannot be listed. A
- * process that ended between the listing and its read, or one this user may
- * not inspect (which cannot have inherited this user's pass), is not one.
+ * group `pgid`, read from `/proc`; `null` when `/proc` cannot be listed.
  */
 export function pendingTasksLinux(
   token: string,
@@ -87,31 +110,14 @@ export function pendingTasksLinux(
     swallow(err, "the process list could not be read from /proc");
     return null;
   }
-  const entry = `${PASS_TOKEN_VARIABLE}=${token}`;
+  const entry = token === "" ? null : `${PASS_TOKEN_VARIABLE}=${token}`;
   const tasks: PendingTask[] = [];
   for (const name of entries) {
-    if (!/^[0-9]+$/.test(name)) continue;
-    const pid = Number.parseInt(name, 10);
-    if (pid === process.pid) continue;
+    const pid = /^[0-9]+$/.test(name) ? Number.parseInt(name, 10) : null;
+    if (pid === null || pid === process.pid) continue;
     const dir = `${procRoot()}/${name}`;
-    let stat: ReturnType<typeof parseProcStat>;
-    try {
-      stat = parseProcStat(readFileSync(`${dir}/stat`, "utf8"));
-    } catch {
-      continue;
-    }
-    if (stat === null || stat.state === "Z") continue;
-    let carries = pgid !== undefined && stat.pgrp === pgid;
-    if (!carries && token !== "") {
-      try {
-        carries = readFileSync(`${dir}/environ`, "utf8")
-          .split("\0")
-          .includes(entry);
-      } catch {
-        continue;
-      }
-    }
-    if (carries) tasks.push({ pid, command: procCommand(dir) });
+    if (carries(dir, entry, pgid))
+      tasks.push({ pid, command: procCommand(dir) });
   }
   return tasks;
 }
@@ -225,7 +231,7 @@ export function backgroundNotice(
 }
 
 /**
- * After a pass that exited `0`: when it left a task running, stop the task
+ * After a pass that exited `0` with `passEnv`: when it left a task running, stop the task
  * and restart the pass within the drive's restart budget (`"continue"`).
  * `null` when it left none, when none can be told, or when the budget is
  * spent: the drive then goes on as for any completed pass. An exit when the
@@ -235,9 +241,10 @@ export function backgroundNotice(
 export async function restartAfterPendingTasks(
   context: DriveRoundContext,
   round: number,
-  token: string,
+  passEnv: NodeJS.ProcessEnv,
   pgid: number | undefined,
 ): Promise<number | "continue" | null> {
+  const token = passEnv[PASS_TOKEN_VARIABLE] ?? "";
   const tasks = await pendingTasks(token, pgid);
   if (tasks === null || tasks.length === 0) return null;
   console.error(

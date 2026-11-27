@@ -18,10 +18,7 @@ import { launchOf } from "../../../../../shared/launched-session.ts";
 import { CHECK_RUNS_UNREADABLE_EXIT } from "./settings.ts";
 import { driverRuntime } from "./runtime.ts";
 import { incompletePassExit } from "./incomplete-pass.ts";
-import {
-  PASS_TOKEN_VARIABLE,
-  restartAfterPendingTasks,
-} from "./pending-background.ts";
+import { restartAfterPendingTasks } from "./pending-background.ts";
 import { measureStop } from "./stop-measure.ts";
 import { recordProbeStop } from "./../status/probe-stop.ts";
 
@@ -138,10 +135,11 @@ export async function runReviewPassPhase(
   if (disposition.kind === "ok") {
     // A task the pass left running in the background reports to nobody:
     // restart the pass rather than stop over the fixes it never shipped.
+    const env = prepared?.env ?? baseEnv;
     const pending = await restartAfterPendingTasks(
       context,
       round,
-      (prepared?.env ?? baseEnv)[PASS_TOKEN_VARIABLE] ?? "",
+      env,
       passHandle?.pid,
     );
     if (pending !== null) return pending;
