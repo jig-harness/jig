@@ -283,7 +283,7 @@ in the tick changes but the new `endRun`. The implementation is
 
 | Method | On the process runtime |
 | --- | --- |
-| `sessions(repo)` | Every worktree of the repository's checkout (`git worktree list --porcelain`), joined to items and pull requests by branch as Orca's are. An agent in state `working` is each launch record that names the worktree and has any recorded process alive under its identity: the wrapper's, or a pass's (below). Any other process with its working directory in a worktree (a person's shell or session, by the idle-holder test the opener uses) counts as one terminal whose state cannot be told, so the tick reads that worktree's target as unknown, never as "no session" |
+| `sessions(repo)` | Every worktree of the repository's checkout (`git worktree list --porcelain`), joined to items and pull requests by branch as Orca's are. An agent in state `working` is each launch record that names the worktree and has any recorded process alive under its identity: the wrapper's, or a pass's (below). Any other process with its working directory in a worktree (a person's shell or session, by the idle-holder test the opener uses) counts as one terminal whose state cannot be told, so the tick reads that worktree's target as unknown, never as "no session", except a process a worktree hook run for that worktree left behind ([below](#a-worktree-hooks-leftovers)) |
 | `openWorkspace` | A git worktree under the runs root, opened by the workspace rules Orca's open uses today (branch choice, an existing checkout first, an idle holder detached, the repository's create hook run once), moved from `plugin/shared/orca-workspace/` to a shared opener both runtimes call |
 | `launch` | The wrapper, `run.ts <record> <token>`, started as a run of its own (below) |
 | `notify` | None: refused, saying the dashboard lists the cause. The `notify` stage writes no Orca card on this runtime and sends its notices through the [notification channels](chat.md#notification-channels) the machine file names under `notify.channels`; a machine file that enables the stage here with no channel is refused, naming the field |
@@ -412,6 +412,43 @@ in the tick changes but the new `endRun`. The implementation is
 
 Neither form needs Orca or a desktop app. On an Orca host the run's tab
 already shows the run, so `attach` is offered on the process runtime only.
+
+#### A worktree hook's leftovers
+
+A repository's create hook often installs dependencies, and an install can
+leave a build tool's daemon running (a monorepo task runner's, a build
+system's, a language server), detached from the hook and working in the new
+worktree. The hook succeeded, so its supervisor leaves what it started
+running (`plugin/shared/worktree-hooks.ts`). That daemon is the
+dispatcher's own preparation of the worktree, not a session someone else
+started there, and it must not hold the pickup it was prepared for.
+
+Every hook run carries `JIG_HOOK_WORKTREE`, the real path of the worktree it
+runs for, in its environment, and every process it starts inherits it, a
+daemon that left the hook's process group or session included.
+`sessions(repo)` leaves out of a worktree's unreportable terminals each
+process whose environment, read from `/proc/<pid>/environ`, names that
+worktree so. A process without it, one naming another worktree, and one
+whose environment cannot be read still count, so a person's shell, an
+editor or an agent started by hand still holds the target. On a host without
+`/proc` nothing is left out, and the count is what it was. The Orca
+runtime's count is Orca's and does not change.
+
+The other ways considered, and why they were not taken:
+
+- **The tick's process tree or control group.** A daemon that detaches is
+  re-parented to the service manager or to `init`, so the tick's
+  descendants miss it. The control group holds it while the tick runs as a
+  service of its own, but a tick run by hand from a person's terminal shares
+  that terminal's group, and the person's shell in the worktree would be
+  left out: the one process the check exists for.
+- **Processes without a controlling terminal.** The runtime's own headless
+  runs have none, and neither has a headless agent a person started by
+  hand, which would be missed.
+- **Ending what a successful hook leaves.** It changes what a create hook
+  may leave running (a daemon the repository wants kept warm), misses a
+  daemon that left the hook's group, and a list of known daemons per tool
+  declares what could not be derived.
 
 ### Choosing an account without Orca's roster
 

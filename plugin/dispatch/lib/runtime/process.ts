@@ -1,6 +1,11 @@
 /** A local session runtime whose runs are witnessed by process identity. */
 import { resolve } from "node:path";
-import { cwdHolders } from "../../../shared/process-cwd.ts";
+import {
+  cwdHolders,
+  environHolds,
+  type ProbeRun,
+} from "../../../shared/process-cwd.ts";
+import { HOOK_WORKTREE_ENV, realPath } from "../../../shared/worktree-hooks.ts";
 import {
   judge,
   thisHost,
@@ -101,6 +106,25 @@ function activity(records: ReadRecord[], rows: ProcessRow[] | null) {
   return { agents, known: descendants(rows ?? [], known), uncertain };
 }
 
+/**
+ * How many of the processes working in `tree` the runtime cannot account
+ * for: every one but a run's recorded processes and their descendants
+ * (`known`), and those a worktree hook run for this tree left behind (their
+ * environment names it under `HOOK_WORKTREE_ENV`): the dispatcher's own
+ * preparation of the tree, never a person's or another agent's session.
+ * A listing that does not read counts as one.
+ */
+function unaccounted(run: ProbeRun, tree: string, known: Set<number>): number {
+  const holders = cwdHolders(run, tree);
+  if ("unknown" in holders) return 1;
+  const prepared = realPath(tree);
+  return holders.pids.filter(
+    (pid) =>
+      !known.has(Number(pid)) &&
+      !environHolds(run, pid, HOOK_WORKTREE_ENV, prepared),
+  ).length;
+}
+
 export function processRuntime(machine: {
   process?: ProcessSettings;
   runtimeTimeoutMs: number;
@@ -150,15 +174,11 @@ export function processRuntime(machine: {
               resolve(record.workspace.path) === resolve(tree.path),
           );
           const act = activity(inTree, rows);
-          const holders = cwdHolders(
+          const unknown = unaccounted(
             (argv, cwd) => ctx.run(argv, cwd === undefined ? {} : { cwd }),
             tree.path,
+            act.known,
           );
-          const unknown =
-            "unknown" in holders
-              ? 1
-              : holders.pids.filter((pid) => !act.known.has(Number(pid)))
-                  .length;
           const branch = tree.branch ?? "";
           const comment = inTree
             .map(({ record }) => record.mark ?? "")

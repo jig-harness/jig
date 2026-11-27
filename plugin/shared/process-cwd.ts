@@ -175,3 +175,23 @@ export function cwdHolders(run: ProbeRun, top: string): CwdAnswer {
   }
   return { pids };
 }
+
+/**
+ * Whether the environment of process `pid` holds the entry `name=value`, as
+ * `/proc/<pid>/environ` tells it: the environment the process started with,
+ * which a daemon keeps when it leaves its process group or session. An
+ * environment that cannot be read (a host without `/proc`, a process that
+ * ended or one its owner may not inspect) holds nothing.
+ */
+export function environHolds(
+  run: ProbeRun,
+  pid: string,
+  name: string,
+  value: string,
+): boolean {
+  if (!/^\d+$/.test(pid)) return false;
+  const read = run(["cat", `/proc/${pid}/environ`]);
+  return (
+    read.status === 0 && read.stdout.split("\0").includes(`${name}=${value}`)
+  );
+}

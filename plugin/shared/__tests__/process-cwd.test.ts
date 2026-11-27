@@ -6,7 +6,12 @@
  * be read included, makes the listing no answer.
  */
 import { describe, expect, test } from "bun:test";
-import { cwdHolders, parseCwdListing, type ProbeRun } from "../process-cwd.ts";
+import {
+  cwdHolders,
+  environHolds,
+  parseCwdListing,
+  type ProbeRun,
+} from "../process-cwd.ts";
 import type { RunResult } from "../orca-workspace/runner.ts";
 
 const TOP = "/w/holder";
@@ -170,5 +175,37 @@ describe("cwdHolders", () => {
     expect(cwdHolders(runner(result(0, "")).run, TOP)).toEqual({
       unknown: "the process listing failed (exit 0): no output",
     });
+  });
+});
+
+describe("environHolds", () => {
+  const environ =
+    (answer: RunResult): ProbeRun =>
+    (argv) => {
+      expect(argv).toEqual(["cat", "/proc/42/environ"]);
+      return answer;
+    };
+
+  test("finds the exact entry among the process's NUL-separated environment", () => {
+    const run = environ(result(0, "HOME=/h\0JIG_HOOK_WORKTREE=/w/a\0LANG=C\0"));
+    expect(environHolds(run, "42", "JIG_HOOK_WORKTREE", "/w/a")).toBe(true);
+    expect(environHolds(run, "42", "JIG_HOOK_WORKTREE", "/w")).toBe(false);
+    expect(environHolds(run, "42", "JIG_HOOK_WORKTREE", "/w/a/b")).toBe(false);
+  });
+
+  test("holds nothing when the environment cannot be read", () => {
+    const run = environ(
+      result(1, "", "cat: /proc/42/environ: Permission denied"),
+    );
+    expect(environHolds(run, "42", "JIG_HOOK_WORKTREE", "/w/a")).toBe(false);
+  });
+
+  test("never reads a pid that is not a number", () => {
+    const run: ProbeRun = () => {
+      throw new Error("read");
+    };
+    expect(environHolds(run, "../self", "JIG_HOOK_WORKTREE", "/w/a")).toBe(
+      false,
+    );
   });
 });

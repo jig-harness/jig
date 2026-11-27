@@ -16,6 +16,7 @@ import {
   constants,
   existsSync,
   mkdtempSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -36,6 +37,25 @@ const HOOK_OUTPUT_BYTES = 256 * 1024 * 1024;
 const SUPERVISOR_SLACK_MS = 10_000;
 
 export type Hook = "create" | "remove";
+
+/**
+ * The variable every hook run carries, naming the worktree it runs for (its
+ * real path). A process the hook leaves running, a build tool's daemon say,
+ * inherits it, even once it has left the hook's process group: it is how
+ * the process runtime tells the dispatcher's own preparation of a worktree
+ * from a session someone else started there
+ * (`dispatch/lib/runtime/process.ts`).
+ */
+export const HOOK_WORKTREE_ENV = "JIG_HOOK_WORKTREE";
+
+/** `path` with its symbolic links resolved, as the kernel reports a working directory; `path` itself when it cannot be resolved. */
+export function realPath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
 
 /** A hook that cannot run: present but not executable. */
 export class WorktreeHookError extends JigError<"hook-not-executable"> {
@@ -209,7 +229,10 @@ export function superviseHook(
     ],
     {
       cwd: worktree,
-      env: withoutSessionOverrides(withoutLeakyGitEnv()),
+      env: {
+        ...withoutSessionOverrides(withoutLeakyGitEnv()),
+        [HOOK_WORKTREE_ENV]: realPath(worktree),
+      },
       timeout: limitMs + SUPERVISOR_SLACK_MS,
       maxBuffer: HOOK_OUTPUT_BYTES,
     },
