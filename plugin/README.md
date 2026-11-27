@@ -1676,8 +1676,9 @@ counted (the pull request or item, when, the head commit where a launch
 record names it, the reason and what the run's closing report concluded; any
 remaining rows are counted and appear in History, subject to History's newest
 5,000 matching rows limit)
-and the dashboard filter that shows them. A drive's stall that the
-once-per-head re-drive followed is that re-drive's to settle: it is left
+and the dashboard filter that shows them. The dashboard counts every matching
+row, while History shows its newest 5,000 matching rows. A drive's stall that
+the once-per-head re-drive followed is that re-drive's to settle: it is left
 out of the count, so stalls the dispatcher already handles never recur as a
 class, and the finding names the stalls it left out. A later tick that week records nothing
 new; a class still recurring the next week is a new occurrence, so the
