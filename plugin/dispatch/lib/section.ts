@@ -19,6 +19,7 @@ import { trustedAutomationOf } from "../../skills/drive-pr/scripts/lib/trusted-a
 import type { LabelConfig } from "./labels.ts";
 import { duration } from "./machine-config.ts";
 import { parseOverlap, unknownKeys } from "./overlap-config.ts";
+import { redriveSection } from "./redrive-config.ts";
 import {
   DEFAULT_REVIEWER_FAILURES_BEFORE_ESCALATION,
   reviewerFailurePolicy,
@@ -72,6 +73,7 @@ const KEYS = [
   "pool",
   "epic_width",
   "overlap",
+  "redrive",
 ];
 const ADOPT_KEYS = ["enabled", "authors", "within", "trusted_automation"];
 /** `adopt.within`'s default: a week. */
@@ -506,8 +508,11 @@ export function dispatchSection(
   if (!reviewerFailureThreshold.ok) return reviewerFailureThreshold;
   const overlap = parseOverlap(section.overlap);
   if (!overlap.ok) return overlap;
+  const redrive = redriveSection(section.redrive);
+  if (!redrive.ok) return redrive;
   return ok({
     ...(ready.value === undefined ? {} : { pool: ready.value }),
+    ...(redrive.value === undefined ? {} : { redrive: redrive.value }),
     ...picked.value,
     ...waits.value,
     ...launching.value,

@@ -353,6 +353,24 @@ fields:
     read_by: [dispatch]
     repository_only: true
     since: 0.298.0
+  dispatch.redrive.stalled:
+    type: integer
+    min: 0
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.314.0
+  dispatch.redrive.conflict:
+    type: integer
+    min: 0
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.314.0
+  dispatch.redrive.ci:
+    type: integer
+    min: 0
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.314.0
   dispatch.labels.enabled:
     type: boolean
     default: false

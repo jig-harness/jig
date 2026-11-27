@@ -139,6 +139,7 @@ import type {
 } from "./types.ts";
 import { currentIso, isoFromMs } from "../../shared/time.ts";
 import { observeTestLockWaits } from "./test-lock-waits.ts";
+import { redriveAllowanceOf } from "./redrive-config.ts";
 import { stateRoot } from "../receipts.ts";
 
 /** What the observe phase needs: the run's options, the runtime, the tick's clock and this machine's launch records. */
@@ -510,6 +511,7 @@ export async function observeRepo(
         nowMs,
         reads,
         context.options.machine?.notSettled,
+        redriveAllowanceOf(section, context.options.machine),
       ),
     ),
     timer.time("runtime", async () => {

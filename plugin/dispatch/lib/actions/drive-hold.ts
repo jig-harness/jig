@@ -12,7 +12,9 @@
  *   of admission until its reset;
  * - a `stale` ledger this machine already re-drove for the same change, however
  *   that launch ended, is not launched again: a re-drive is launched once per
- *   change, so a drive that stops the same way again does not start a loop. A
+ *   change (a stall, a spent CI-repair budget or a stop on a conflict as many
+ *   times as the repository's allowance says, `redrive-config.ts`), so a drive
+ *   that stops the same way again does not start a loop. A
  *   converged one is reported; one that stopped on a conflict, parked on a
  *   pull request that conflicts, stalled or spent its CI-repair budget is a
  *   person's to settle (`settleConflictStops`);
@@ -63,6 +65,7 @@ import {
 } from "../launches.ts";
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { settledWhy, settlesWithPerson } from "../redrive-settle.ts";
+import { redrivesAllowed } from "../redrive-config.ts";
 import type { DrivenPr } from "../types.ts";
 import { currentMs, isoFromMs, parseMs } from "../../../shared/time.ts";
 import {
@@ -76,7 +79,7 @@ export type DriveHold =
   | { kind: "held"; record: ReadRecord; why: string }
   | { kind: "limited"; record: ReadRecord; why: string; class: LedgerClass }
   | { kind: "refused"; record: ReadRecord; why: string }
-  | { kind: "redriven"; record: ReadRecord; why: string }
+  | { kind: "redriven"; record: ReadRecord; why: string; times: number }
   | { kind: "armed"; record: ReadRecord; why: string }
   | { kind: "takeover"; record: ReadRecord };
 
@@ -273,22 +276,42 @@ function armed(pr: DrivenPr, mine: ReadRecord[]): DriveHold | null {
   };
 }
 
-/** The record that already re-drove a stale ledger for the change it shows now, if any. */
-function redriven(pr: DrivenPr, mine: ReadRecord[]): DriveHold | null {
+/** This machine's launches that re-drove a stale ledger for the change it shows now, oldest first. */
+function redrivesOf(pr: DrivenPr, mine: ReadRecord[]): ReadRecord[] {
   const stale = pr.class === "stale" ? pr.stale : undefined;
-  if (stale === undefined) return null;
-  const earlier = mine.findLast(
+  if (stale === undefined) return [];
+  return mine.filter(
     (r) =>
       r.record.redrive != null &&
       redrivenChanges(r.record.redrive).includes(stale.change),
   );
-  return earlier === undefined
-    ? null
-    : {
-        kind: "redriven",
-        record: earlier,
-        why: `stale (${stale.cause}), and launch record ${earlier.record.id} already re-drove it for this change; it is not launched again until its head or its mergeability changes`,
-      };
+}
+
+/** How many times this machine re-drove a stale ledger for the change it shows now; a launch the forge's limit stopped spent none. */
+export function ownRedrives(pr: DrivenPr, records: ReadRecord[]): number {
+  const mine = records.filter(
+    (r) => isDrive(r.record) && r.record.pr === pr.number && !stoppedOnLimit(r),
+  );
+  return redrivesOf(pr, mine).length;
+}
+
+/** The latest record that re-drove a stale ledger for the change it shows now, once the re-drives allowed there are spent. */
+function redriven(pr: DrivenPr, mine: ReadRecord[]): DriveHold | null {
+  const made = redrivesOf(pr, mine);
+  const earlier = made.at(-1);
+  if (pr.stale === undefined || earlier === undefined) return null;
+  if (made.length < redrivesAllowed(pr.stale)) return null;
+  return {
+    kind: "redriven",
+    record: earlier,
+    times: made.length,
+    why: `stale (${pr.stale.cause}), and launch record ${earlier.record.id} already re-drove it for this change${spentWords(made.length)}; it is not launched again until its head or its mergeability changes`,
+  };
+}
+
+/** What a spent allowance of more than one re-drive adds to the words of the latest. */
+export function spentWords(times: number): string {
+  return times > 1 ? `, the last of ${times} re-drives there` : "";
 }
 
 /**
@@ -311,7 +334,7 @@ export function settleConflictStops(
     if (hold.kind !== "redriven") return pr;
     return settledConflict(
       pr,
-      `launch record ${hold.record.record.id} already re-drove it for this change and ${endOf(hold.record)}`,
+      `launch record ${hold.record.record.id} already re-drove it for this change${hold.times > 1 ? `${spentWords(hold.times)},` : ""} and ${endOf(hold.record)}`,
     );
   });
 }

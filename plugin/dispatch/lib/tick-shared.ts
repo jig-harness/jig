@@ -37,6 +37,8 @@ import {
   settleUsageRefusals,
 } from "./actions/drive-hold.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
+import { settleRedriveAllowance } from "./redrive-allowance.ts";
+import { type RedriveCounts, withRedrives } from "./redrive-config.ts";
 import { type ReadRecord, settledEnds } from "./launches.ts";
 import {
   keptClaims,
@@ -255,6 +257,7 @@ export async function readDriveClaims(
   nowMs: number,
   reads: TickReads,
   notSettled: NotSettledSettings = NOT_SETTLED_DEFAULTS,
+  allowance?: RedriveCounts,
 ): Promise<ClaimsRead> {
   const reading = { ...ctx, records: reader };
   const claims: DriveClaims = forge.ok
@@ -271,14 +274,15 @@ export async function readDriveClaims(
   );
   return {
     claims,
-    drives: settleDrives(ctx, weighed, records, claims, notSettled),
+    drives: settleDrives(ctx, weighed, records, claims, notSettled, allowance),
   };
 }
 
 /**
  * Each drive as the plan reads it once this host's records and every host's
- * claims are read beside it: a re-drive already made for the change it shows
- * now is a person's (by this host's records, then by another host's claims),
+ * claims are read beside it: a stop whose re-drives allowed at the change it
+ * shows now are spent is a person's (by this host's records, then by another
+ * host's claims, then by both together, and at once where none is allowed),
  * so is a re-arm that failed at the heads and ledger facts it shows now, a
  * silent driver already taken over on its facts is notified, re-arms that
  * keep stopping `NOT_SETTLED` on one head and takeovers of this host's driver
@@ -293,6 +297,7 @@ export function settleDrives(
   records: readonly ReadRecord[],
   claims: DriveClaims,
   notSettled: NotSettledSettings = NOT_SETTLED_DEFAULTS,
+  allowance?: RedriveCounts,
 ): DrivenPr[] {
   return settleOwnDrives(
     drives,
@@ -300,28 +305,37 @@ export function settleDrives(
     claims,
     ctx.host,
     notSettled,
+    allowance,
   );
 }
 
-/** `settleDrives` over launch records already scoped to the drives' repository. */
+/** `settleDrives` over launch records already scoped to the drives' repository; `allowance`, the repository's re-drives per change as this host caps them (`redrive-config.ts`), once of each when absent. */
 export function settleOwnDrives(
   drives: readonly DrivenPr[],
   own: ReadRecord[],
   claims: DriveClaims,
   host: string,
   notSettled: NotSettledSettings = NOT_SETTLED_DEFAULTS,
+  allowance?: RedriveCounts,
 ): DrivenPr[] {
   const placed = markUnlaunched(
-    settleUnownedTakeovers(drives, own, claims, host),
+    settleUnownedTakeovers(
+      allowance === undefined ? drives : withRedrives(drives, allowance),
+      own,
+      claims,
+      host,
+    ),
     own,
     claims,
     host,
   );
+  const spent = settleSharedConflictStops(
+    settleConflictStops(placed, own),
+    claims,
+    host,
+  );
   const failed = settleFailedRearms(
-    settleUsageRefusals(
-      settleSharedConflictStops(settleConflictStops(placed, own), claims, host),
-      own,
-    ),
+    settleUsageRefusals(settleRedriveAllowance(spent, own, claims, host), own),
     own,
   );
   return settleNoCauseStops(

@@ -45,6 +45,8 @@ export interface DispatchSection {
   stalledScope: StalledScope;
   /** Whether a stalled pickup whose tree holds its unshipped work is relaunched once in that tree to push and record it (`stalled_relaunch`): `finish-once`, or `never`. */
   stalledRelaunch: StalledRelaunch;
+  /** The re-drives per change the repository asks for (`dispatch.redrive`), before the host's `redrive_max` caps them; absent, one of each. */
+  redrive?: import("./redrive-config.ts").RedriveCounts;
   /** What a pickup with no priority does (`missing_priority`): `hold`, absent included, keeps it off the line's starts until it has one; `start` starts it ranked after every low-priority item. */
   missingPriority?: MissingPriority;
   /** How long a dispatched session may wait before it is reported. */
@@ -266,6 +268,8 @@ export interface StaleCause {
   tree?: { actor: string; here: boolean };
   /** Changes an earlier launch of the same record may have acted on before a replay moved `change` on; each counts as re-driven. */
   earlier?: string[];
+  /** For a stall, a spent CI-repair budget or a stop on a conflict: the re-drives allowed at `change` (`redrive-config.ts`); absent, one. */
+  redrives?: number;
 }
 
 /** What the repository clone's drive doctor (`drives.ts --doctor`) reads of a pull request's lock holder. */

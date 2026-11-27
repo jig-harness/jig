@@ -62,7 +62,8 @@ import {
 } from "../../shared/records/shared.ts";
 import { digest, localWriter } from "../../shared/records/writer.ts";
 import { stateRoot } from "../receipts.ts";
-import { factsOf, settledConflict } from "./actions/drive-hold.ts";
+import { factsOf, settledConflict, spentWords } from "./actions/drive-hold.ts";
+import { redrivesAllowed } from "./redrive-config.ts";
 import type { LaunchClaimer } from "./actions/launch.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
 import { retriedDeath, retryableFollowup } from "./session-startup.ts";
@@ -312,14 +313,15 @@ function armedOrRedriven(
         };
   }
   const change = pr.class === "stale" ? pr.stale?.change : undefined;
-  if (change === undefined) return null;
-  const done = theirs.findLast((c) => changesOf(c.says.value).includes(change));
-  return done === undefined
+  if (change === undefined || pr.stale === undefined) return null;
+  const made = theirs.filter((c) => changesOf(c.says.value).includes(change));
+  const done = made.at(-1);
+  return done === undefined || made.length < redrivesAllowed(pr.stale)
     ? null
     : {
         kind: "redriven",
         claim: done,
-        why: `stale (${pr.stale?.cause ?? pr.why}), and ${claimWords(done)} already re-drove it for this change; it is not launched again until its head or its mergeability changes`,
+        why: `stale (${pr.stale.cause}), and ${claimWords(done)} already re-drove it for this change${spentWords(made.length)}; it is not launched again until its head or its mergeability changes`,
       };
 }
 

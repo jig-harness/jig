@@ -383,7 +383,9 @@ stalled (exit `14`) or whose CI-repair passes were spent (exit `21`) is
 re-driven once per head commit, a stall that left work in its tree only in
 that tree, and a person is told when the same head stops the same way again;
 a stop a person is told of says so when its pull request also conflicts with
-its base. A drive whose failing checks kept failing on the CI service's
+its base. A repository may ask for more re-drives of these three stops, or
+for none, with [`dispatch.redrive`](CONFIGURATION.md#dispatch), up to the
+host's `redrive_max`. A drive whose failing checks kept failing on the CI service's
 infrastructure through its re-runs and head moves (exit `23`) is re-driven
 once per stop, after a backoff from the stop that doubles with each such stop
 in a row (15 minutes, at most 4 hours), and a person is told once 7 stand in a
