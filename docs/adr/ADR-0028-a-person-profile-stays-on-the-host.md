@@ -115,8 +115,10 @@ resolves the path to its real target (following symbolic links) and fails
 when resolution fails, so a dangling link fails rather than reading as
 absent; it refuses unknown keys; and it refuses a resolved target that Git
 tracks inside a working tree, so a committed profile is never read. It opens
-the resolved target once and reads from that open file, so a link swapped
-after the check cannot change what is read.
+the resolved target first and reads only from that open file. It then
+compares the open file's device and inode with the resolved path's, and runs
+the Git check on that same path, so a link or parent directory swapped
+between check and open is either the file that was checked or a refusal.
 
 ### 2. One schedule and time-zone primitive (ruling 2A-i)
 
