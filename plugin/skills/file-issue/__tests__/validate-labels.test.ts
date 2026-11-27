@@ -829,9 +829,9 @@ describe("--check-tracker", () => {
     expect(opened).toBe(0);
   });
 
-  test("a draft's unrecoverable taxonomy errors are returned before opening its tracker", async () => {
+  const draftWithoutTracker = async (labels: string[]) => {
     let opened = 0;
-    const { code, out } = await capture(
+    const result = await capture(
       ["--check-tracker", "--json", "--taxonomy", fixture],
       {
         openTracker: () => {
@@ -844,43 +844,39 @@ describe("--check-tracker", () => {
             description: "",
             type: "bug",
             priority: 3,
-            labels: ["app", "website", "unknown"],
+            labels,
           }),
       },
     );
+    return { ...result, opened: () => opened };
+  };
+
+  test("a draft's unrecoverable taxonomy errors are returned before opening its tracker", async () => {
+    const { code, out, opened } = await draftWithoutTracker([
+      "app",
+      "website",
+      "unknown",
+    ]);
     expect(code).toBe(3);
     expect(JSON.parse(out).errors).toEqual([
       "unknown label: unknown (not in the taxonomy)",
       "no size (one of: xs, small, medium, large, xl)",
       "more than one label of group 'repo': app, website (pick one)",
     ]);
-    expect(opened).toBe(0);
+    expect(opened()).toBe(0);
   });
 
   test("a draft with an unrelated error does not open the tracker for an epic flag", async () => {
-    let opened = 0;
-    const { code, out } = await capture(
-      ["--check-tracker", "--json", "--taxonomy", fixture],
-      {
-        openTracker: () => {
-          opened++;
-          throw new Error("Jira configuration is unavailable");
-        },
-        readStdin: async () =>
-          JSON.stringify({
-            title: "Draft",
-            description: "",
-            type: "bug",
-            priority: 3,
-            labels: ["app", "roadmap", "unknown"],
-          }),
-      },
-    );
+    const { code, out, opened } = await draftWithoutTracker([
+      "app",
+      "roadmap",
+      "unknown",
+    ]);
     expect(code).toBe(3);
     expect(JSON.parse(out).errors).toContain(
       "unknown label: unknown (not in the taxonomy)",
     );
-    expect(opened).toBe(0);
+    expect(opened()).toBe(0);
   });
 
   test("a draft's facet the screen does not exempt is exit 3 without listing labels; an exempt one still lists them", async () => {
