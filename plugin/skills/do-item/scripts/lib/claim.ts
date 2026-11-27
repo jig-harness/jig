@@ -209,11 +209,21 @@ export async function claimIssue(
     };
   const beforeWriteAdmission = startAdmission(tracker, key, beforeWrite, rules);
   if ("refusal" in beforeWriteAdmission) return beforeWriteAdmission.refusal;
+  const beforeWriteHolders = await tracker.assignees(key);
+  const beforeWriteOthers = beforeWriteHolders.filter((u) => u.id !== me.id);
+  if (beforeWriteOthers.length > 0)
+    return {
+      outcome: "refused",
+      issue: key,
+      why: "assigned",
+      reason: `${key} is assigned to ${names(beforeWriteOthers)}, not to ${me.name}`,
+    };
   const beforeWriteAssignee = freshAssigneeRefusal(key, beforeWrite, me);
   if (beforeWriteAssignee !== null) return beforeWriteAssignee;
 
   // The assignment first: a claim racing this one then reads it and refuses.
-  if (!holders.some((u) => u.id === me.id)) await tracker.assign(key, me);
+  if (!beforeWriteHolders.some((u) => u.id === me.id))
+    await tracker.assign(key, me);
 
   // Keep the assignment's race protection, but do not transition an item
   // whose admission changed between assignment and the state write.
@@ -235,6 +245,16 @@ export async function claimIssue(
       outcome: "stood_down",
       issue: key,
       reason: beforeTransitionAdmission.refusal.reason,
+    };
+  const beforeTransitionHolders = await tracker.assignees(key);
+  const beforeTransitionOthers = beforeTransitionHolders.filter(
+    (u) => u.id !== me.id,
+  );
+  if (beforeTransitionOthers.length > 0)
+    return {
+      outcome: "stood_down",
+      issue: key,
+      reason: `${key} is assigned to ${names(beforeTransitionOthers)}, not to ${me.name}`,
     };
   const beforeTransitionAssignee = freshAssigneeRefusal(
     key,
