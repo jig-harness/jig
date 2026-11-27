@@ -690,12 +690,13 @@ shell, or a Codex background terminal), and nothing would ever report that
 process's result. The driver gives each pass a token in its environment.
 When the pass exits, the driver waits a moment, then looks for a live process
 that still carries the token or is still in the pass's process group, and
-stops it. If the pass left work in the tree (uncommitted edits, unpushed
-commits, an unfinished git operation), the driver starts the pass again in
-the same tree, with a notice saying what it stopped and what the tree holds.
+stops it. The driver then starts the pass again in the same tree, whether or
+not the pass left work there (uncommitted edits, unpushed commits, an
+unfinished git operation), with a notice saying what it stopped and what the
+tree holds, since the stopped process's result was never read.
 These restarts come out of the same `drive.pass_deadline_retries` budget as
-restarts after a deadline. A pass that left no work, or one past the budget,
-counts as a finished pass. If the process cannot be stopped, the drive keeps
+restarts after a deadline. A pass whose process is stopped once the budget is
+spent counts as a finished pass. If the process cannot be stopped, the drive keeps
 its locks and stops with
 [`INDETERMINATE`](../../protocol/drive-exits.md), for a person to stop the
 process and re-arm. The environment check needs `/proc` (Linux). On other
