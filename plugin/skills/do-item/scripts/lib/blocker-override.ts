@@ -89,8 +89,13 @@ export async function openBlockers(
   return out;
 }
 
+/** Text safe to display in a terminal or Markdown record. */
+const plain = (text: string) => text.replace(/\p{Cc}+/gu, " ").trim();
+
 const named = (b: OpenBlocker) =>
-  b.state === null ? `${b.key} (unreadable)` : `${b.key} (${b.state})`;
+  b.state === null
+    ? `${plain(b.key)} (unreadable)`
+    : `${plain(b.key)} (${plain(b.state)})`;
 
 /** The refusal of a plain claim of an item with open blockers: nothing was written. */
 export function blockersRefusal(
@@ -110,10 +115,11 @@ export function blockersRefusal(
 
 /** One line describing a blocker, for stderr and the comment. */
 function blockerLine(b: OpenBlocker): string {
-  if (b.state === null) return `${b.key}: could not be read`;
-  const title = b.title === null ? "" : ` "${oneLine(b.title)}"`;
-  const who = b.assignee === null ? "unassigned" : `assigned to ${b.assignee}`;
-  return `${b.key}${title}: ${b.state}, ${who}`;
+  if (b.state === null) return `${plain(b.key)}: could not be read`;
+  const title = b.title === null ? "" : ` "${plain(oneLine(b.title))}"`;
+  const who =
+    b.assignee === null ? "unassigned" : `assigned to ${plain(b.assignee)}`;
+  return `${plain(b.key)}${title}: ${plain(b.state)}, ${who}`;
 }
 
 /** What the claim prints on stderr before an overridden claim writes. */
@@ -122,7 +128,7 @@ export function overrideStatement(
   override: BlockerOverride,
 ): string {
   return [
-    `${key} will be claimed ahead of its blockers on ${override.person}'s decision: ${override.reason}`,
+    `${plain(key)} will be claimed ahead of its blockers on ${plain(override.person)}'s decision: ${plain(override.reason)}`,
     ...override.blockers.map((b) => `  blocked by ${blockerLine(b)}`),
     ...(override.preflight === undefined
       ? []
@@ -130,9 +136,6 @@ export function overrideStatement(
     OVERRIDE_CONSEQUENCE,
   ].join("\n");
 }
-
-/** Text with each run of control characters a space: the whole of it, unlike a bounded line. */
-const plain = (text: string) => text.replace(/\p{Cc}+/gu, " ").trim();
 
 /** The comment that records the override on the item. */
 export function overrideComment(
@@ -142,7 +145,7 @@ export function overrideComment(
   return [
     "## Blocker override",
     "",
-    `${override.person} started ${key} ahead of its open blockers: ${plain(override.reason)}`,
+    `${plain(override.person)} started ${plain(key)} ahead of its open blockers: ${plain(override.reason)}`,
     "",
     ...override.blockers.map((b) => `- ${blockerLine(b)}`),
     ...(override.preflight === undefined

@@ -18,6 +18,9 @@
 import { launchOf } from "../../../../shared/launched-session.ts";
 import { UsageError } from "./cli.ts";
 
+/** The text the durable override record can display. */
+const displayReason = (value: string) => value.replace(/\p{Cc}+/gu, " ").trim();
+
 /** The options a claim takes a value for, written `--flag value` or `--flag=value`. */
 const VALUED = [
   "--for",
@@ -99,7 +102,7 @@ export function overrideRefusal(
   env: Record<string, string | undefined> = process.env,
 ): string | null {
   if (options.overrideBlockers === undefined) return null;
-  if (options.overrideBlockers.trim() === "")
+  if (displayReason(options.overrideBlockers) === "")
     return needs("--override-blockers");
   if (launchOf(env) !== null)
     return "--override-blockers is a person's decision in an interactive session; a session the line started (JIG_LAUNCH is set) cannot take it";

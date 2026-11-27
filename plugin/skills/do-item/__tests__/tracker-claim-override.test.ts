@@ -214,6 +214,16 @@ describe("--override-blockers", () => {
     expect(body).toContain(`${"a".repeat(400)} end`);
   });
 
+  it("escapes display controls in the statement and durable comment", async () => {
+    const out = await claim([OPEN], {
+      args: ["--override-blockers", "go\u001b[2Jnow"],
+    });
+    expectSpawnExit(out, 0);
+    expect(out.stderr).toContain("go [2Jnow");
+    expect(out.stderr).not.toContain("\u001b");
+    expect(comments(out.writes).join("\n")).not.toContain("\u001b");
+  });
+
   it("keeps the claim and reports a label the repository does not have", async () => {
     const out = await overriding([OPEN], {
       committed: "do_item:\n  override_label: jig:started-early\n",

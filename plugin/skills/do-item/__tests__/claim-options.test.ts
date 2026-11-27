@@ -62,4 +62,10 @@ describe("claimOptions", () => {
         "--override-blockers requires a reason",
       );
   });
+
+  it("refuses a reason that becomes empty when displayed", () => {
+    expect(() => parse(["--override-blockers", "\u0007"])).toThrow(
+      "--override-blockers requires a reason",
+    );
+  });
 });

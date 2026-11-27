@@ -876,7 +876,7 @@ implementation. Skip this check for issues about the repository's own code.
    claiming again with their reason:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" claim "<KEY>" --override-blockers "<the person's reason>"
+   bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" claim "<KEY>" --override-blockers '<the person's reason>'
    ```
 
    Pass `--override-blockers` only when the person explicitly asks for it or
@@ -895,7 +895,8 @@ implementation. Skip this check for issues about the repository's own code.
    item as the default, and take the reason in their words; with nobody
    there to answer, stop and report the refusal. An empty reason is a usage
    error; write `--override-blockers=<reason>` for a reason that begins with
-   `--`.
+   `--`. Keep a person's words in one literal argument, as the example does;
+   never interpolate them into shell source.
    The override clears only those refusals: the item's state, its
    assignment, the `blocked` state, `do_item.claim_from`, another claim's
    marker and every other preflight refusal still refuse. Before it writes,
@@ -922,8 +923,9 @@ implementation. Skip this check for issues about the repository's own code.
 
    (**judgment** — native, Linear: only where none of
    `do_item.preflight_command`, `do_item.claim_from` and
-   `do_item.claim_marker` is set; with one set, a native write skips the
-   repository's start rules, so claim through the script above. Read the
+   `do_item.claim_marker` is set or the item has blockers; with either, a
+   native write skips the repository's start rules, so claim through the
+   script above. Read the
    issue and stop on the same two refusals, then
    `mcp__linear__save_issue({ id: issue.id, state: "<mapped name>", assignee: "me" })`,
    then read it again and stop, as on exit `4`, when it shows another
