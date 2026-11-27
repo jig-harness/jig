@@ -10,7 +10,12 @@
 import type { ParkedItem } from "../state/park-frame.ts";
 import type { DriveState } from "../state/schema.ts";
 import { diagnosisDetail, latestDiagnosedPark } from "../state/ci-actions.ts";
-import { lastStopEvent, stopInstant } from "../state/events.ts";
+import {
+  lastStopEvent,
+  stallReasonsLine,
+  stopInstant,
+  stopReasons,
+} from "../state/events.ts";
 import {
   DRIVE_EXIT,
   driveExitReport,
@@ -94,6 +99,26 @@ function forgeLimitStop(
 }
 
 /**
+ * The line for a stall: the state every stalled pass ended on when they
+ * agree, else how they finished as the stop recorded it; `null` when the
+ * stop recorded neither.
+ */
+function stallStop(
+  pr: string,
+  code: number,
+  state: DriveState | null,
+  stall: StallFinish | null,
+): string | null {
+  if (stall !== null)
+    return `PR #${pr}'s drive stalled: every stalled pass's round ended ${stall.state}: ${oneLine(stall.reason)} (exit ${code})`;
+  const reasons =
+    driverRuntime.stallReasons ?? stopReasons(state?.events, code);
+  return reasons === null
+    ? null
+    : `PR #${pr}'s drive stalled, its passes changing nothing: ${stallReasonsLine(reasons)} (exit ${code})`;
+}
+
+/**
  * The line for a drive that stopped with exit `code`. `state` is the drive
  * state, read for a park's question and a limit's reset; `null` when it
  * could not be read. `stall` is what held a stall's rounds, when its passes
@@ -112,8 +137,10 @@ export function stopText(
     if (diagnosis !== undefined)
       return `PR #${pr} stopped after diagnosing CI (exit ${code}): ${diagnosis}`;
   }
-  if (code === exitOf("STALLED") && stall !== null)
-    return `PR #${pr}'s drive stalled: every stalled pass's round ended ${stall.state}: ${oneLine(stall.reason)} (exit ${code})`;
+  if (code === exitOf("STALLED")) {
+    const stalled = stallStop(pr, code, state, stall);
+    if (stalled !== null) return stalled;
+  }
   if (code === exitOf("FORGE_RATE_LIMITED"))
     return forgeLimitStop(pr, code, state);
   const probe = driverRuntime.stopProbe;

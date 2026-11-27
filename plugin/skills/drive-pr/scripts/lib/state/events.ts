@@ -32,7 +32,10 @@
  *     whose passes all ended `finish-round.ts` on the same state, that state
  *     and the last pass's reason (`round-finish.ts`): the dispatcher hands a
  *     stall held by a failed push to a person rather than re-driving it onto
- *     the same refusal, and the ledger's summary names it.
+ *     the same refusal, and the ledger's summary names it. `reasons`
+ *     records, on every stall, how its passes finished: the last reasons
+ *     they recorded and how many recorded none (`StallReasons`), which the
+ *     stop's line, the ledger's summary and the dispatcher's `why` name.
  *
  * Takeovers have their own record (`takeover.ts`). Optional in a stored
  * state: a file written before the field existed reads as no events.
@@ -70,6 +73,119 @@ export interface DriveEvent {
   probe?: unknown;
   /** On a stall's `stop`: the `finish-round.ts` state every stalled pass ended on, with the last reason. The ledger's shape leaves it open, so a reader takes it only when it is one (`stopFinish`) and a malformed value never makes the ledger unreadable. */
   finish?: unknown;
+  /** On a stall's `stop`: how its passes finished (`StallReasons`). The ledger's shape leaves it open, so a reader takes it only when it is one (`stopReasons`). */
+  reasons?: unknown;
+}
+
+/** One stalled pass's finish, as a stall's stop keeps it. */
+export interface StallPassFinish {
+  round: number;
+  state: string;
+  reason: string;
+}
+
+/** How a stall's passes finished: the last reasons they recorded, newest last, and how many of them recorded none. */
+export interface StallReasons {
+  last: StallPassFinish[];
+  missing: number;
+  passes: number;
+}
+
+/** How many recorded reasons a stall's stop keeps. */
+export const STALL_REASONS_KEPT = 3;
+
+/** The longest reason a stall's stop keeps for one pass. */
+export const STALL_REASON_MAX = 300;
+
+function isStallPassFinish(v: unknown): v is StallPassFinish {
+  return (
+    isRecord(v) &&
+    Number.isSafeInteger(v.round) &&
+    typeof v.state === "string" &&
+    /^[A-Z][A-Z_]*$/.test(v.state) &&
+    typeof v.reason === "string" &&
+    v.reason.length <= STALL_REASON_MAX
+  );
+}
+
+/** Whether `v` is a tally a stall's stop may carry. */
+export function isStallReasons(v: unknown): v is StallReasons {
+  return (
+    isRecord(v) &&
+    Array.isArray(v.last) &&
+    v.last.length <= STALL_REASONS_KEPT &&
+    v.last.every(isStallPassFinish) &&
+    Number.isSafeInteger(v.missing) &&
+    Number.isSafeInteger(v.passes) &&
+    (v.missing as number) >= 0 &&
+    (v.passes as number) >= (v.missing as number) + v.last.length &&
+    (v.passes as number) > 0
+  );
+}
+
+/** A reason on one line, cut to the kept length. */
+function keptReason(reason: string): string {
+  const line = reason.replace(/\s+/g, " ").trim();
+  return line.length > STALL_REASON_MAX
+    ? `${line.slice(0, STALL_REASON_MAX - 1)}…`
+    : line;
+}
+
+/**
+ * The tally a stall's stop keeps for its passes' finishes, oldest first and
+ * `null` for a pass that recorded none; `undefined` when there were no passes.
+ */
+export function stallReasonsOf(
+  finishes: readonly (StallPassFinish | null)[],
+): StallReasons | undefined {
+  if (finishes.length === 0) return undefined;
+  const recorded = finishes.filter((f): f is StallPassFinish => f !== null);
+  const kept = {
+    last: recorded.slice(-STALL_REASONS_KEPT).map((f) => ({
+      round: f.round,
+      state: f.state,
+      reason: keptReason(f.reason),
+    })),
+    missing: finishes.length - recorded.length,
+    passes: finishes.length,
+  };
+  return isStallReasons(kept) ? kept : undefined;
+}
+
+/** The tally in words: "round 3 CI_HOLD_WAIT: …; 1 of 3 passes recorded no reason". */
+export function stallReasonsLine(reasons: StallReasons): string {
+  const named = reasons.last
+    .map((f) => `round ${f.round} ${f.state}: ${f.reason}`)
+    .join("; ");
+  const missing =
+    reasons.missing === 0
+      ? "every pass recorded a reason"
+      : `${reasons.missing} of ${reasons.passes} passes recorded no reason`;
+  return named === ""
+    ? `no pass recorded a reason (${missing})`
+    : `${named}; ${missing}`;
+}
+
+/** The tally the drive's last stop recorded, when that stop is the one with `exit` and the tally reads as one; `null` otherwise. */
+export function stopReasons(
+  events: readonly DriveEvent[] | undefined,
+  exit: number | null | undefined,
+): StallReasons | null {
+  const stop = lastStopEvent(events ?? []);
+  if (exit === null || exit === undefined || stop?.cause !== String(exit))
+    return null;
+  return isStallReasons(stop.reasons) ? stop.reasons : null;
+}
+
+/** The ledger summary's line for a stopped drive whose last stop recorded its passes' reasons; `null` when there is none. */
+export function stopReasonsSummary(
+  events: readonly DriveEvent[] | undefined,
+  driver: { state: string; exit?: number | null },
+): string | null {
+  const reasons =
+    driver.state === "stopped" ? stopReasons(events, driver.exit) : null;
+  if (reasons === null) return null;
+  return `How the stalled passes finished: ${withoutMentions(stallReasonsLine(reasons))}`;
 }
 
 /** The finish a stall's passes shared (`round-finish.ts`'s `sharedFinish`). */
@@ -140,12 +256,31 @@ export function withoutMentions(text: string): string {
 
 /** `event` with its stall finish's reason redacted as a report's is, and cut back to the kept length; a finish that does not read as one is dropped. */
 export function redactedFinish(event: DriveEvent): DriveEvent {
+  return redactedReasons(redactedStopFinish(event));
+}
+
+function redactedStopFinish(event: DriveEvent): DriveEvent {
   if (event.finish === undefined) return event;
   const { finish, ...rest } = event;
   const kept = isStopFinish(finish)
     ? stopFinishOf({ ...finish, reason: redactReportText(finish.reason) })
     : undefined;
   return kept === undefined ? rest : { ...rest, finish: kept };
+}
+
+/** `event` with its stall tally's reasons redacted and cut back; a tally that does not read as one is dropped. */
+function redactedReasons(event: DriveEvent): DriveEvent {
+  if (event.reasons === undefined) return event;
+  const { reasons, ...rest } = event;
+  if (!isStallReasons(reasons)) return rest;
+  const kept: StallReasons = {
+    ...reasons,
+    last: reasons.last.map((f) => ({
+      ...f,
+      reason: keptReason(redactReportText(f.reason)),
+    })),
+  };
+  return isStallReasons(kept) ? { ...rest, reasons: kept } : rest;
 }
 
 /** What a ledger's `cut` names when its older stops' finish details were dropped. */
@@ -161,16 +296,17 @@ export function withOlderFinishesCut<
   L extends { events?: readonly DriveEvent[]; cut: readonly string[] },
 >(ledger: L): L {
   const events = ledger.events ?? [];
+  const detailed = (event: DriveEvent) =>
+    event.finish !== undefined || event.reasons !== undefined;
   const latest = events.findLastIndex(
-    (event) => event.kind === "stop" && event.finish !== undefined,
+    (event) => event.kind === "stop" && detailed(event),
   );
-  if (!events.some((e, i) => i !== latest && e.finish !== undefined))
-    return ledger;
+  if (!events.some((e, i) => i !== latest && detailed(e))) return ledger;
   return {
     ...ledger,
     events: events.map((event, index) => {
-      if (index === latest || event.finish === undefined) return event;
-      const { finish: _finish, ...withoutFinish } = event;
+      if (index === latest || !detailed(event)) return event;
+      const { finish: _finish, reasons: _reasons, ...withoutFinish } = event;
       return withoutFinish;
     }),
     cut: [...ledger.cut, OLDER_FINISH_DETAILS_CUT],
@@ -206,7 +342,8 @@ export function isDriveEvent(v: unknown): v is DriveEvent {
     ) &&
     stopOnly(v.kind, v.leftWork, typeof v.leftWork === "boolean") &&
     stopOnly(v.kind, v.tree, typeof v.tree === "string" && v.tree !== "") &&
-    stopOnly(v.kind, v.finish, true)
+    stopOnly(v.kind, v.finish, true) &&
+    stopOnly(v.kind, v.reasons, true)
   );
 }
 
@@ -252,7 +389,7 @@ export function lastStopEvent(
   return events.findLast((e) => e.kind === "stop");
 }
 
-/** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`, optional `"leftWork"` with `"tree"` on a measured stop, `"listingPages"` on a listing stop, `"until"` on a forge-rate-limit stop, and `"finish"` on a stall's stop). */
+/** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`, optional `"leftWork"` with `"tree"` on a measured stop, `"listingPages"` on a listing stop, `"until"` on a forge-rate-limit stop, and `"finish"` and `"reasons"` on a stall's stop). */
 export async function recordEvent(
   store: StateStore,
   raw: string,
@@ -301,6 +438,7 @@ export async function recordEvent(
       ...(input.until === undefined ? {} : { until: input.until }),
       ...(input.probe === undefined ? {} : { probe: input.probe }),
       ...(input.finish === undefined ? {} : { finish: input.finish }),
+      ...(input.reasons === undefined ? {} : { reasons: input.reasons }),
     };
     if (
       !isDriveEvent(event) ||

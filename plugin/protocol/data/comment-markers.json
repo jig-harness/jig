@@ -1393,7 +1393,8 @@
                           "reviewerApp": true,
                           "until": true,
                           "probe": true,
-                          "finish": true
+                          "finish": true,
+                          "reasons": true
                         },
                         "required": ["at", "round", "kind", "cause"],
                         "additionalProperties": true
@@ -2253,7 +2254,8 @@
                       "reviewerApp": true,
                       "until": true,
                       "probe": true,
-                      "finish": true
+                      "finish": true,
+                      "reasons": true
                     },
                     "required": ["at", "round", "kind", "cause"],
                     "additionalProperties": true

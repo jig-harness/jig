@@ -119,7 +119,12 @@ import type {
 import { snapshotFromListing } from "../../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { diagnosisOutcome } from "../../../skills/drive-pr/scripts/lib/state/ci-actions.ts";
-import { lastStopEvent } from "../../../skills/drive-pr/scripts/lib/state/events.ts";
+import {
+  lastStopEvent,
+  stallReasonsLine,
+  stopReasons,
+  withoutMentions,
+} from "../../../skills/drive-pr/scripts/lib/state/events.ts";
 import { ledgerTree } from "../stall-tree.ts";
 import { exitClass as stopClass } from "../../../skills/drive-pr/scripts/lib/status/exit-classes.ts";
 import { infraStopClass } from "../infra-backoff.ts";
@@ -440,7 +445,7 @@ function mechanicalStopClass(
       : stop.words;
   return {
     class: "stale",
-    why: `stopped ${exit} (${words}): re-drive ${rearmTree(tree, last?.leftWork)}, once for head ${short(head)}`,
+    why: `stopped ${exit} (${words})${stallPassesNote(ledger, exit)}: re-drive ${rearmTree(tree, last?.leftWork)}, once for head ${short(head)}`,
     stale: {
       cause: `stopped ${exit}, ${words}`,
       change: `head ${head}, stopped ${exit}`,
@@ -449,6 +454,15 @@ function mechanicalStopClass(
       ...(tree === null ? {} : { tree }),
     },
   };
+}
+
+/** How a stall's passes finished, as its stop recorded them, for its `why`; `""` for another stop or one that recorded none. */
+function stallPassesNote(ledger: Ledger, exit: number): string {
+  if (exit !== DRIVE_EXIT.STALLED) return "";
+  const reasons = stopReasons(ledger.events, exit);
+  return reasons === null
+    ? ""
+    : `; how its passes finished: ${withoutMentions(stallReasonsLine(reasons))}`;
 }
 
 /** Why a stop the exit table (`exitClass`) places by its exit alone reads as its class, for the exits that say more than a person's stop. */

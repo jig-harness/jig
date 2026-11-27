@@ -37,6 +37,11 @@ import { recordDriveEvent } from "./rearm.ts";
 import { circuitStop } from "./circuit-breaker.ts";
 
 import { driverRuntime } from "./runtime.ts";
+import {
+  type StallReasons,
+  stallReasonsLine,
+  stallReasonsOf,
+} from "./../state/events.ts";
 
 import {
   finishSince,
@@ -101,13 +106,10 @@ export async function checkRoundStall(
     ];
   if (stallRounds > 0 && context.noopRounds >= stallRounds) {
     const held = sharedFinish(context.stallFinishes ?? []);
+    const reasons = stallReasonsOf(context.stallFinishes ?? []) ?? null;
     const diagnostics = [
       ...stallDiagnostics(status, context),
-      ...(held === null
-        ? []
-        : [
-            `  Every one of those passes ended finish-round.ts ${held.state}: ${held.reason}`,
-          ]),
+      ...passFinishLines(held, reasons),
     ];
     for (const line of diagnostics) console.error(line);
     // One more round before the stop, with these diagnostics in the pass's
@@ -145,10 +147,28 @@ export async function checkRoundStall(
     process.stderr.write(economyReport);
     driverRuntime.stopLeftWork = await measureStop();
     driverRuntime.stallFinish = held;
+    driverRuntime.stallReasons = reasons;
     return STALLED_EXIT;
   }
 
   return null;
+}
+
+/** What the stalled passes recorded as they finished, as the stop prints it: the state they all ended on, and how each finished. */
+function passFinishLines(
+  held: { state: string; reason: string } | null,
+  reasons: StallReasons | null,
+): string[] {
+  return [
+    ...(held === null
+      ? []
+      : [
+          `  Every one of those passes ended finish-round.ts ${held.state}: ${held.reason}`,
+        ]),
+    ...(reasons === null
+      ? []
+      : [`  How those passes finished: ${stallReasonsLine(reasons)}`]),
+  ];
 }
 
 /**
