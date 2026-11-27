@@ -124,16 +124,34 @@ export function classSeedSources(
   return sources;
 }
 
+const TOO_LARGE = `is larger than ${MAX_CLASS_FILE_BYTES} bytes, so none of it is read`;
+
+function isNetworkLocation(path: string): boolean {
+  return URL.test(path) || NETWORK_PATH.test(path);
+}
+
+/** Read at most one byte past the bound: the file may have grown since fstat. */
+function readBounded(fd: number): string {
+  const buffer = Buffer.alloc(MAX_CLASS_FILE_BYTES + 1);
+  let length = 0;
+  let read = 1;
+  while (read > 0 && length < buffer.length) {
+    read = readSync(fd, buffer, length, buffer.length - length, null);
+    length += read;
+  }
+  if (length > MAX_CLASS_FILE_BYTES) throw new SettingError(TOO_LARGE);
+  return buffer.toString("utf8", 0, length);
+}
+
 /**
  * Open without blocking on a pipe, then check the file actually opened.
  * The path is refused when it, after expansion or after resolving links,
  * names a network location.
  */
 function readClassFile(path: string): string {
-  if (URL.test(path) || NETWORK_PATH.test(path))
-    throw new SettingError("is not a local path");
+  if (isNetworkLocation(path)) throw new SettingError("is not a local path");
   const resolved = realpathSync(path);
-  if (URL.test(resolved) || NETWORK_PATH.test(resolved))
+  if (isNetworkLocation(resolved))
     throw new SettingError("resolves to a network location");
   const fd = openSync(
     resolved,
@@ -142,23 +160,8 @@ function readClassFile(path: string): string {
   try {
     const stat = fstatSync(fd);
     if (!stat.isFile()) throw new SettingError("is not a regular file");
-    if (stat.size > MAX_CLASS_FILE_BYTES)
-      throw new SettingError(
-        `is larger than ${MAX_CLASS_FILE_BYTES} bytes, so none of it is read`,
-      );
-    // Read at most one byte past the bound: the file may have grown since fstat.
-    const buffer = Buffer.alloc(MAX_CLASS_FILE_BYTES + 1);
-    let length = 0;
-    while (length < buffer.length) {
-      const read = readSync(fd, buffer, length, buffer.length - length, null);
-      if (read === 0) break;
-      length += read;
-    }
-    if (length > MAX_CLASS_FILE_BYTES)
-      throw new SettingError(
-        `is larger than ${MAX_CLASS_FILE_BYTES} bytes, so none of it is read`,
-      );
-    return buffer.toString("utf8", 0, length);
+    if (stat.size > MAX_CLASS_FILE_BYTES) throw new SettingError(TOO_LARGE);
+    return readBounded(fd);
   } finally {
     closeSync(fd);
   }
