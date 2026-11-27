@@ -325,14 +325,14 @@ function decimal(
   return value;
 }
 /** How many runs a lock admits and by what rule. */
-interface SlotSettings {
+export interface SlotSettings {
   slots: number;
   /** Whether load and memory decide, below the ceiling. */
   adaptive: boolean;
   policy: AdmissionPolicy;
 }
-/** The slot settings in `env`; a malformed one is a usage error. */
-function slotSettings(env: NodeJS.ProcessEnv): SlotSettings {
+/** The slot settings in `env`; a malformed one is a usage error, thrown. */
+export function slotSettings(env: NodeJS.ProcessEnv): SlotSettings {
   const switched = env.LOCK_STATIC_SLOTS || "0";
   if (switched !== "0" && switched !== "1")
     refuse(`LOCK_STATIC_SLOTS must be 0 or 1: ${switched}`);

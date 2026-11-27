@@ -2,12 +2,14 @@
 import { dirname, resolve } from "node:path";
 import { lockPlace } from "../../shared/resource-lock-waits.ts";
 import { MAX_TIMEOUT_SECONDS } from "../../shared/resource-lock.ts";
+import type { HostLoad } from "../../shared/host-load.ts";
 import { readResourceLockSamples } from "../../shared/resource-lock-samples.ts";
 import { parseMs } from "../../shared/time.ts";
 import type { LineLoadGauge } from "./dashboard-contract.ts";
 import { holds, type ReadRecord } from "./launches.ts";
 import type { LoadReading } from "./load-read.ts";
 import { DEFAULT_PICKUP_DEADLINE_MS } from "./section.ts";
+import { lockSlots } from "./validation-slots.ts";
 import {
   forecastValidation,
   measurementsFor,
@@ -22,6 +24,8 @@ import {
 
 export interface ValidationLoad {
   measured: ValidationMeasurements;
+  /** Why the lock's slot count was not read, so runs at once is the peak the samples saw. */
+  slotsUnread?: string;
   demand: ValidationDemand | { unread: string };
   /** How long a launched pass's test stage waits for the lock. */
   waitLimitMs: number;
@@ -111,12 +115,33 @@ export function validationPassesOf(
   return records.flatMap((record) => passOf(record) ?? []);
 }
 
+/**
+ * The slots the lock admits now, from the host's reading and the lock's
+ * occupancy, or why they cannot be read. A holder counts once however many
+ * slots it holds, so an exclusive holder is one run.
+ */
+function slotsOf(
+  host: HostLoad | undefined,
+  lock: LoadReading["lock"],
+  env: Record<string, string | undefined>,
+): { slots: number } | { unread: string } {
+  if (host === undefined) return { unread: "no host reading" };
+  if ("unread" in lock) return { unread: lock.unread };
+  const holding =
+    lock.runs === undefined
+      ? lock.holders
+      : Math.max(0, lock.runs.length - lock.waiters);
+  const slots = lockSlots(host, holding, env);
+  return slots.ok ? { slots: slots.value } : { unread: slots.failure.reason };
+}
+
 export function readValidationLoad(
   records: readonly ReadRecord[],
   lock: LoadReading["lock"],
   nowMs: number,
   driveDeadlineMs: number,
   env: Record<string, string | undefined> = process.env,
+  host?: HostLoad,
 ): ValidationLoad {
   const { name } = lockPlace(env);
   const passes = validationPassesOf(records);
@@ -131,9 +156,15 @@ export function readValidationLoad(
       holdMs,
     }),
   );
-  const measured = measureValidation(samples, passes);
+  const slots = slotsOf(host, lock, env);
+  const measured = measureValidation(
+    samples,
+    passes,
+    "slots" in slots ? slots.slots : null,
+  );
   return {
     measured,
+    ...("unread" in slots ? { slotsUnread: slots.unread } : {}),
     demand:
       "unread" in lock
         ? lock
@@ -174,6 +205,26 @@ function forecast(
   );
 }
 
+/** Where runs at once came from, when not only from the samples. */
+function concurrencySource(state: ValidationLoad): string {
+  const { concurrency, lockSlots: slots } = state.measured;
+  if (slots !== undefined)
+    return slots === concurrency
+      ? ` (the lock's load check admits ${slots})`
+      : ` (the most seen together; the lock's load check admits ${slots})`;
+  return state.slotsUnread === undefined
+    ? ""
+    : ` (the most seen together; the lock's slot count unread: ${state.slotsUnread})`;
+}
+
+/** The candidate's own run time, when its repository's differs from every repository's. */
+function ownRunTime(measured: ValidationMeasurements): string {
+  const own = measured.candidateRunMs;
+  return own === undefined || own === measured.runMs
+    ? ""
+    : `, its repository's runs ${Math.round(own / 60_000)} min`;
+}
+
 function describe(state: ValidationLoad, result: ValidationForecast): string {
   const { concurrency, runMs } = state.measured;
   const ahead = Number(result.ahead.toFixed(2));
@@ -208,7 +259,7 @@ function describe(state: ValidationLoad, result: ValidationForecast): string {
     result.later > 0
       ? `, and ${result.later} arriving after its first run ahead of a later one`
       : "";
-  return `${ahead} runs ahead${served}${later}, about ${waited} min at ${concurrency} concurrent runs of ${minutes(runMs)} min, capacity ${Number(result.capacity.toFixed(2))} in a ${window}${short}${note}`;
+  return `${ahead} runs ahead${served}${later}, about ${waited} min at ${concurrency} concurrent runs${concurrencySource(state)} of ${minutes(runMs)} min${ownRunTime(state.measured)}, capacity ${Number(result.capacity.toFixed(2))} in a ${window}${short}${note}`;
 }
 
 /**

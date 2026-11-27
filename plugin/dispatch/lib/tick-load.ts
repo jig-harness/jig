@@ -157,6 +157,7 @@ export function readTickLoad(input: {
       nowMs,
       passTimeoutSeconds() * 1000,
       launchEnv,
+      reading.host,
     );
     load.spentBytes = outstandingReservations(records, reading, load);
     return load;

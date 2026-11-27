@@ -2,6 +2,7 @@ import { percentile90 } from "./load-samples.ts";
 import {
   arrivalQueue,
   type ArrivalQueueInput,
+  type TimedRuns,
   type ValidationArrival,
 } from "./validation-arrivals.ts";
 
@@ -32,8 +33,15 @@ interface KindMeasurements {
 }
 
 export interface ValidationMeasurements {
+  /** Every repository's run time, charged to a repository without its own. */
   runMs: number;
+  /** The run time of each repository whose runs the lock records often enough. */
+  runMsPerRepository?: ReadonlyMap<string, number>;
+  /** The run time of the pass being forecast, set by `measurementsFor`. */
+  candidateRunMs?: number;
   concurrency: number;
+  /** The slots the lock's load check admits now, where the forecast read them. */
+  lockSlots?: number;
   kinds: Readonly<Record<ValidationKind, KindMeasurements>>;
   defaults: readonly string[];
 }
@@ -95,16 +103,21 @@ function groupByWorkspace<T extends { workspace: string | null }>(
 interface PassRuns {
   count: number;
   firstRequest: number;
+  /** How long each of its runs held the lock. */
+  holds: number[];
 }
 
 function addRun(
   attributed: Map<ValidationPass, PassRuns>,
   pass: ValidationPass,
-  requestedAtMs: number,
+  { requestedAtMs, holdMs }: ValidationSample,
 ): void {
   const prior = attributed.get(pass);
-  if (prior) prior.count++;
-  else attributed.set(pass, { count: 1, firstRequest: requestedAtMs });
+  const holds = holdMs > 0 ? [holdMs] : [];
+  if (prior) {
+    prior.count++;
+    prior.holds.push(...holds);
+  } else attributed.set(pass, { count: 1, firstRequest: requestedAtMs, holds });
 }
 
 function passForRequest(
@@ -130,9 +143,9 @@ function attributeRuns(
     group.sort((a, b) => a.launchedAtMs - b.launchedAtMs);
     const requests = byWorkspace.get(workspace) ?? [];
     requests.sort((a, b) => a.requestedAtMs - b.requestedAtMs);
-    for (const { requestedAtMs } of requests) {
-      const pass = passForRequest(group, requestedAtMs);
-      if (pass !== null) addRun(attributed, pass, requestedAtMs);
+    for (const request of requests) {
+      const pass = passForRequest(group, request.requestedAtMs);
+      if (pass !== null) addRun(attributed, pass, request);
     }
   }
   return attributed;
@@ -140,6 +153,32 @@ function attributeRuns(
 
 /** The finished passes a repository needs before its own runs per pass replace every repository's. */
 const OWN_MEASURE = 3;
+
+/** The runs a repository's passes made before its own run time replaces every repository's. */
+const OWN_RUN_TIME = 5;
+
+/**
+ * The 90th percentile of the holds of the runs each repository's passes made,
+ * for every repository with at least `OWN_RUN_TIME` of them. Runs the lock
+ * recorded outside any pass (a person's run, another tool's) belong to no
+ * repository and count only in every repository's figure.
+ */
+function ownRunMsPerRepository(
+  attributed: ReadonlyMap<ValidationPass, PassRuns>,
+): Map<string, number> {
+  const holds = new Map<string, number[]>();
+  for (const [{ repo }, runs] of attributed) {
+    if (typeof repo !== "string") continue;
+    holds.set(repo, [...(holds.get(repo) ?? []), ...runs.holds]);
+  }
+  const own = new Map<string, number>();
+  for (const [repo, repoHolds] of holds) {
+    const runMs = percentile90(repoHolds);
+    if (runMs !== null && repoHolds.length >= OWN_RUN_TIME)
+      own.set(repo, runMs);
+  }
+  return own;
+}
 
 /**
  * The median number of runs a finished pass made, never under one: a pass
@@ -250,10 +289,16 @@ function kindMeasurements(
   };
 }
 
-/** Derive each estimate from observed runs and name every estimate using its default. */
+/**
+ * Derive each estimate from observed runs and name every estimate using its
+ * default. `lockSlots`, the slots the lock's load check admits now where it
+ * was read, sets the floor of runs at once: the peak the samples saw may
+ * stand above it, since the lock's own check still decides each run.
+ */
 export function measureValidation(
   samples: readonly ValidationSample[],
   passes: readonly ValidationPass[],
+  lockSlots?: number | null,
 ): ValidationMeasurements {
   const defaults: string[] = [];
   const measuredOr = (
@@ -270,17 +315,36 @@ export function measureValidation(
     15 * 60_000,
     "run time",
   );
-  const concurrency = measuredOr(concurrencyOf(samples), 1, "runs at once");
+  const peak = concurrencyOf(samples);
+  const slots = lockSlots ?? null;
+  const concurrency = measuredOr(
+    slots === null ? peak : Math.max(peak ?? 0, slots),
+    1,
+    "runs at once",
+  );
   const attributed = attributeRuns(passes, samples);
   const finished = measurablePasses(passes, samples, attributed);
   const measureKind = (kind: ValidationKind) =>
     kindMeasurements(kind, attributed, finished, measuredOr);
   return {
     runMs,
+    runMsPerRepository: ownRunMsPerRepository(attributed),
     concurrency,
+    ...(slots === null ? {} : { lockSlots: slots }),
     kinds: { pickup: measureKind("pickup"), drive: measureKind("drive") },
     defaults,
   };
+}
+
+/** How long a run of a pass in `repo` holds the lock: its repository's run time, else every repository's. */
+export function runMsFor(
+  measured: ValidationMeasurements,
+  repo?: string | null,
+): number {
+  return (
+    (repo ? measured.runMsPerRepository?.get(repo) : undefined) ??
+    measured.runMs
+  );
 }
 
 /** The runs a pass of `kind` in `repo` is charged: its repository's measure, else every repository's. */
@@ -294,7 +358,11 @@ export function runsPerPassFor(
   return own ?? runsPerPass;
 }
 
-/** The measurements as a new pass in `repo` is charged them. */
+/**
+ * The measurements as a new pass in `repo` is charged them: its
+ * repository's runs per pass, and its run time for its own runs. The runs
+ * ahead of it keep their own passes' run times.
+ */
 export function measurementsFor(
   measured: ValidationMeasurements,
   repo?: string | null,
@@ -306,6 +374,7 @@ export function measurementsFor(
   });
   return {
     ...measured,
+    candidateRunMs: runMsFor(measured, repo),
     kinds: { pickup: kind("pickup"), drive: kind("drive") },
   };
 }
@@ -340,6 +409,12 @@ export interface ValidationDemand {
    * left over have none and are counted ahead of a new pass.
    */
   arrivals?: readonly ValidationArrival[];
+  /**
+   * The runs among `toArrive` with no arrival estimate whose repository
+   * measures a run time of its own, by that run time; absent when none does.
+   * The rest hold a slot for every repository's run time.
+   */
+  unestimated?: readonly TimedRuns[];
 }
 
 /**
@@ -379,6 +454,7 @@ export function validationDemand(
   const active = groupByWorkspace(lockRuns);
   let toArrive = 0;
   const arrivals: ValidationArrival[] = [];
+  const unestimated: TimedRuns[] = [];
   for (const pass of inFlight) {
     const atLock =
       pass.workspace === null ? 0 : (active.get(pass.workspace)?.length ?? 0);
@@ -393,11 +469,15 @@ export function validationDemand(
       nowMs === undefined || runs === 0
         ? null
         : arrivalOf(measured, pass, made + atLock > 0, nowMs);
-    if (atMs !== null) arrivals.push({ atMs, runs });
+    const runMs = runMsFor(measured, pass.repo);
+    const timed = runMs === measured.runMs ? {} : { runMs };
+    if (atMs !== null) arrivals.push({ atMs, runs, ...timed });
+    else if (runs > 0 && "runMs" in timed) unestimated.push({ runs, runMs });
   }
+  const timed = unestimated.length > 0 ? { unestimated } : {};
   return nowMs === undefined
-    ? { atLock: lockRuns.length, toArrive }
-    : { atLock: lockRuns.length, toArrive, arrivals };
+    ? { atLock: lockRuns.length, toArrive, ...timed }
+    : { atLock: lockRuns.length, toArrive, arrivals, ...timed };
 }
 
 interface QueueEstimate {
@@ -450,7 +530,7 @@ function aggregate(
     lastStartMs:
       timeToValidationMs +
       (required * runMs) / concurrency +
-      Math.max(0, ownRuns - 1) * runMs,
+      Math.max(0, ownRuns - 1) * (measured.candidateRunMs ?? runMs),
   };
 }
 
@@ -469,22 +549,24 @@ function fillOf(input: {
 }
 
 function queuedFor(
-  { runMs, concurrency }: ValidationMeasurements,
+  { runMs, candidateRunMs, concurrency }: ValidationMeasurements,
   demand: ValidationDemand,
   toArrive: number,
   candidateRuns: number,
   arriveMs: number,
 ) {
   const arrivals = demand.arrivals ?? [];
+  const unestimated = demand.unestimated ?? [];
+  const runsOf = (timed: readonly { runs: number }[]) =>
+    timed.reduce((sum, { runs }) => sum + runs, 0);
   return queued({
     concurrency,
     runMs,
+    ...(candidateRunMs === undefined ? {} : { candidateRunMs }),
     atLock: demand.atLock,
     arrivals,
-    unknownRuns: Math.max(
-      0,
-      toArrive - arrivals.reduce((sum, { runs }) => sum + runs, 0),
-    ),
+    unknownRuns: Math.max(0, toArrive - runsOf(arrivals) - runsOf(unestimated)),
+    unestimated,
     arriveMs,
     candidateRuns,
   });
