@@ -1,6 +1,6 @@
-Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 82 beyond it, not needed for this profile; 32 unchanged and met.
+Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 78 beyond it, not needed for this profile; 32 unchanged and met.
 
-### What changed (139)
+### What changed (143)
 
 | Module | Criterion | Before → after | Change |
 |--------|-----------|----------------|--------|
@@ -143,6 +143,10 @@ Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/
 | M16 Releases versions | `changelog-and-version-per-artifact` | not scored → expected absent | Added by Jig |
 | M16 Releases versions | `release-tag-after-verification` | not scored → absent | Added by Jig |
 | M16 Releases versions | `release-identity-narrowed` | not scored → absent | Added by Jig |
+| M7 PR lifecycle review | `automated-reviewer-comment-only-with-bar` | expected absent → absent | Reclassified |
+| M7 PR lifecycle review | `automated-review-source-independent` | expected absent → absent | Reclassified |
+| M7 PR lifecycle review | `pr-target-wiring-fork-safe` | expected absent → absent | Reclassified |
+| M7 PR lifecycle review | `reviewer-promotion-gated-on-measurement` | expected absent → absent | Reclassified |
 
 ### Still open within the target (4)
 
@@ -153,4 +157,4 @@ Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/
 | M0 Instruction architecture | `glossary-exists` | absent → absent | still open |
 | M1 Gates enforcement ladder | `ci-runs-gates-on-pr` | advisory → advisory | still open |
 
-The 82 still open beyond the target are in Module detail, marked not needed for this profile.
+The 78 still open beyond the target are in Module detail, marked not needed for this profile.

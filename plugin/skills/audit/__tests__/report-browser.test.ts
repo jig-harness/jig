@@ -624,8 +624,9 @@ describe("since the last audit", () => {
     ).toEqual([
       "Fixed 1",
       `Added by Jig ${addedAfter(input.prior?.plugin_version ?? "0.14.0").length}`,
+      "Reclassified 4",
       "Still open within the target 4",
-      "Still open beyond the target 82",
+      "Still open beyond the target 78",
       "Unchanged and met 32",
     ]);
     const fixed = page.locator("#since .chg-t .bd-fixed");
