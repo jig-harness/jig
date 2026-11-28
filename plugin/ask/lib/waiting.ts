@@ -32,6 +32,7 @@ import { HOST_NEED_REPO } from "../../dispatch/lib/preflight.ts";
 /** The act that settles each cause the tick finds waiting on a person. */
 const ACTS: Record<NeedCause, PersonAct> = {
   parked: "answer",
+  "busy-holder": "inspect the holding worktree",
   "needs-person": "re-arm",
   "stopped-unknown": "re-arm",
   "followup-failed": "re-run the follow-up",

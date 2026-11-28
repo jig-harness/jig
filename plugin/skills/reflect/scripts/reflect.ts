@@ -67,11 +67,12 @@ import {
 import {
   MODES,
   type ReflectionSettings,
-  reflectionSettings,
+  whenReflectionOn,
 } from "./lib/settings.ts";
 import { failureOf, orExit, Store, storeState } from "./lib/store-client.ts";
 import { readHotspotReport, recordHotspots } from "./lib/hotspots.ts";
 import { chooseOperation, last, type ParsedArgs } from "./lib/args.ts";
+import { loadClassSeeds, type SeededClass } from "./lib/class-seeds.ts";
 
 const USAGE = `usage:
   reflect.ts status
@@ -84,6 +85,34 @@ function print(value: unknown): void {
   console.log(JSON.stringify(value, null, 2));
 }
 
+type GatheredClass = ReturnType<typeof classesInUse>[number] & {
+  seeded?: true;
+  source?: string;
+};
+
+/** Overlay configured vocabulary descriptions without creating findings. */
+function mergeSeededClasses(
+  stored: ReturnType<typeof classesInUse> | null,
+  seeds: readonly SeededClass[],
+): GatheredClass[] | null {
+  if (stored === null && seeds.length === 0) return null;
+  const classes = new Map<string, GatheredClass>();
+  for (const held of stored ?? []) classes.set(held.class, held);
+  for (const seed of seeds) {
+    const held = classes.get(seed.slug);
+    classes.set(seed.slug, {
+      class: seed.slug,
+      findings: held?.findings ?? 0,
+      example: seed.shape,
+      seeded: true,
+      ...(seed.source === undefined ? {} : { source: seed.source }),
+    });
+  }
+  return [...classes.values()].sort(
+    (a, b) => b.findings - a.findings || (a.class < b.class ? -1 : 1),
+  );
+}
+
 async function gather(
   settings: ReflectionSettings,
   path: string,
@@ -92,6 +121,10 @@ async function gather(
   const asked = last(args, "mode");
   if (asked !== undefined && !(MODES as readonly string[]).includes(asked))
     fail(2, `--mode takes ${MODES.join(" or ")} (got '${asked}')`, USAGE);
+  // A seed file belongs only to gather: planning and review act on stored
+  // findings, and even status must not touch a configured local file.
+  const seeds = loadClassSeeds(settings.classSeedSources());
+  for (const warning of seeds.warnings) console.error(`warning: ${warning}`);
   const repository = repositoryId();
   const adopted = adoptPending(path, repository);
   const findings = unsent(readJournal(path));
@@ -109,7 +142,7 @@ async function gather(
     change: currentChange(),
     adopted_from_pending: adopted,
     unsent: findings,
-    classes,
+    classes: mergeSeededClasses(classes, seeds.classes),
     store_error: storeError,
   });
   return 0;
@@ -373,12 +406,9 @@ const OPERATIONS: Record<
 
 export async function main(argv: string[]): Promise<number> {
   const { operation, args } = chooseOperation(argv, OPERATIONS, USAGE);
-  const settings = reflectionSettings();
-  if (!settings.on) {
-    print({ on: false });
-    return 0;
-  }
-  return operation.run(settings, journalPath(settings.journal), args);
+  return whenReflectionOn((settings) =>
+    operation.run(settings, journalPath(settings.journal), args),
+  );
 }
 
 if (import.meta.main) runMain("reflect.ts", () => main(process.argv.slice(2)));
