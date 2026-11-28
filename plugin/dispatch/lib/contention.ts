@@ -36,6 +36,7 @@ import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-st
 import { loadCatalogText } from "../../skills/drive-pr/scripts/lib/change-areas-catalog.ts";
 import { matchesGlob } from "../../shared/glob.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { catalogMissing } from "./configuration-refusals.ts";
 import { holds, isDrive, type ReadRecord } from "./launches.ts";
 import { failureText } from "./text.ts";
 import {
@@ -237,10 +238,7 @@ async function serializedAreas(
   }
   if (!text.ok) return text;
   if (text.value === null)
-    return failed(
-      "missing",
-      `drive.change_areas_catalog names ${input.catalogPath}, which the default branch does not have`,
-    );
+    return failed("missing", catalogMissing(input.catalogPath));
   let catalog: ReturnType<typeof loadCatalogText>;
   try {
     catalog = loadCatalogText(text.value, input.where);
