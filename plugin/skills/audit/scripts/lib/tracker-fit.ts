@@ -164,7 +164,7 @@ export async function poolScopeFindings(
         id: "info:issue_tracker.pool_scope",
         severity: "info",
         message: counts.approximate
-          ? `open population (Jira's estimate of the open-issue query's selection; the configured state map is not applied, so it can differ from the issues the pool reads): ${counts.project} issues in the project; ${scope}`
+          ? `open population (Jira's estimate of the open-issue query's selection; each issue type's own state map is not applied, so it can differ from the issues the pool reads): ${counts.project} issues in the project; ${scope}`
           : `open population: ${counts.project} issues in the project; ${scope}`,
       },
     ];

@@ -281,7 +281,7 @@ describe("the audit's open population scope counts", () => {
         id: "info:issue_tracker.pool_scope",
         severity: "info",
         message:
-          "open population (Jira's estimate of the open-issue query's selection; the configured state map is not applied, so it can differ from the issues the pool reads): 80 issues in the project; 12 within the configured pool issue-type scope",
+          "open population (Jira's estimate of the open-issue query's selection; each issue type's own state map is not applied, so it can differ from the issues the pool reads): 80 issues in the project; 12 within the configured pool issue-type scope",
       },
     ]);
     expect(seen).toBeInstanceOf(AbortSignal);
@@ -296,7 +296,7 @@ describe("the audit's open population scope counts", () => {
       }),
     } as unknown as Tracker;
     expect((await poolScopeFindings(t))[0]?.message).toBe(
-      "open population (Jira's estimate of the open-issue query's selection; the configured state map is not applied, so it can differ from the issues the pool reads): 0 issues in the project; no pool issue-type scope is configured",
+      "open population (Jira's estimate of the open-issue query's selection; each issue type's own state map is not applied, so it can differ from the issues the pool reads): 0 issues in the project; no pool issue-type scope is configured",
     );
     t.poolScopeCounts = async () => {
       throw new Error("unavailable");
@@ -351,7 +351,7 @@ describe("the audit's open population scope counts", () => {
         result = r;
       });
       jest.advanceTimersByTime(COUNT_MS - 1);
-      await Promise.resolve();
+      for (let i = 0; i < 10; i++) await Promise.resolve();
       expect(result).toBeUndefined();
       jest.advanceTimersByTime(1);
       await pending;

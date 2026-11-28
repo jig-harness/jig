@@ -107,7 +107,7 @@ checks that never run, a tracker that cannot be reached (on Jira, with each
 facet stores that cannot be used (GitHub, Jira and Linear; on Jira, a facet's
 field missing from the create screen of an issue type Jig files), Jira's
 estimate of the open issues before and after `issue_tracker.jira.pool_issue_types`
-limits the pool (one estimate request each, resent on a transient failure; past 5 seconds the counts are a warning,
+limits the pool (one estimate request each, resent by the transport only after a transient failure; past 5 seconds the counts are a warning,
 `unchecked:issue_tracker.pool_scope`, naming the bound), recent integration-branch commit subjects that do not follow
 `pull_requests.title_pattern` (an inference about pull request titles that holds
 for squash merges; merge or rebase merging leaves other subjects), a base `pull_requests.base_rules`

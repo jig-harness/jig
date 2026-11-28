@@ -36,7 +36,9 @@ describe("Jira open population counts", () => {
       "project = ENG AND statusCategory != Done",
       "project = ENG AND statusCategory != Done AND issuetype in (10001)",
     ]);
-    expect(counts.every((c) => c.signal === signal)).toBe(true);
+    expect(
+      counts.every((c) => c.signal !== undefined && !c.signal.aborted),
+    ).toBe(true);
     expect(calls.some((c) => c.route === "POST search/jql")).toBe(false);
   });
   test("counts the configured blocked status as open, as the open read selects it", async () => {
@@ -79,5 +81,21 @@ describe("Jira open population counts", () => {
     controller.abort();
     await expect(t.poolScopeCounts?.(controller.signal)).rejects.toThrow();
     expect(calls).toEqual([]);
+  });
+  test("one estimate failing aborts the sibling's signal and keeps the original error", async () => {
+    const { t, calls } = jira(
+      routes({
+        ...TYPES,
+        [COUNT]: (c: Call) =>
+          jqlOf(c).includes("issuetype")
+            ? new Error("estimate refused")
+            : { count: 5 },
+      }),
+      { issue_tracker: { jira: { pool_issue_types: ["Task"] } } },
+    );
+    await expect(t.poolScopeCounts?.()).rejects.toThrow(/estimate refused/);
+    const sent = calls.filter((c) => c.route === COUNT);
+    expect(sent.length).toBe(2);
+    expect(sent.every((c) => c.signal?.aborted === true)).toBe(true);
   });
 });

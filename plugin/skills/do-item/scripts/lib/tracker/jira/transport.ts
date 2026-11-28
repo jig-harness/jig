@@ -922,7 +922,7 @@ export async function approximateCount(
   if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0)
     throw shape(
       where,
-      "the approximate count is missing or not a whole number",
+      "the approximate count is missing, or not a non-negative whole number within the safe integer range",
     );
   return count;
 }

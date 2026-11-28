@@ -589,28 +589,43 @@ export function reportOperations(
     async poolScopeCounts(signal) {
       await client.authenticate(signal);
       const clause = await client.poolScope(signal);
+      // The two estimates share one controller, so a failure of either
+      // cancels the other instead of leaving it running or retrying.
+      const own = new AbortController();
+      const forward = () => own.abort(signal?.reason);
+      if (signal?.aborted === true) own.abort(signal.reason);
+      else signal?.addEventListener("abort", forward, { once: true });
       // Jira's estimate of the open read's selection, one request per count:
       // paging the population itself costs a request per hundred issues.
       async function count(...clauses: string[]): Promise<number> {
-        if (signal?.aborted === true) throw abortedError(signal);
-        return client.approximateCount(
-          projectFilter(project, open, ...clauses),
-          `open issues of ${project}`,
-          signal,
-        );
+        if (own.signal.aborted) throw abortedError(own.signal);
+        try {
+          return await client.approximateCount(
+            projectFilter(project, open, ...clauses),
+            `open issues of ${project}`,
+            own.signal,
+          );
+        } catch (e) {
+          if (!own.signal.aborted) own.abort(e);
+          throw e;
+        }
       }
-      // The two estimates do not depend on each other, so a scoped read
-      // starts both and they share one budget.
-      const [total, pool] =
-        clause === null
-          ? await count().then((n) => [n, n] as const)
-          : await Promise.all([count(), count(clause)]);
-      return {
-        project: total,
-        pool,
-        scoped: clause !== null,
-        approximate: true,
-      };
+      try {
+        // The two estimates do not depend on each other, so a scoped read
+        // starts both and they share one budget.
+        const [total, pool] =
+          clause === null
+            ? await count().then((n) => [n, n] as const)
+            : await Promise.all([count(), count(clause)]);
+        return {
+          project: total,
+          pool,
+          scoped: clause !== null,
+          approximate: true,
+        };
+      } finally {
+        signal?.removeEventListener("abort", forward);
+      }
     },
 
     async openPopulation(signal) {
