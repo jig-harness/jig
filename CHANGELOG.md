@@ -404,6 +404,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.324.0] - 2026-11-28
+
+### Changed
+
+- **Breaking:** `tracker.ts create` and `update` now exit `3`, with only the reason on stderr, when the tracker or the repository's configuration refuses a well-formed request, such as filing an issue without a facet or a required label, a type or size the repository does not list, a sub-task as a parent, removing a Jira issue type, setting no priority on a Jira issue, or giving a label that stands for a facet, a field's value or a workflow state. These used to exit `2` and print the usage text after the reason. A malformed command line still exits `2` with the usage text, so a caller can now tell "the command was wrong" from "the change was refused". **Consumer action:** advised at instructions. A runbook or script that reads exit `2` from `tracker.ts create` or `update` as an incomplete filing or any of these refusals (label, field value, workflow state, facet value, parent) should read exit `3` instead. **Detect:** `text:tracker.ts create`, `text:refused to file`, `text:is not a type of this repository`, `text:gives a sub-task no children`.
+
 ## [0.323.3] - 2026-11-28
 
 ### Fixed
@@ -11727,7 +11733,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.323.3...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.324.0...HEAD
+[0.324.0]: https://github.com/jig-harness/jig/compare/v0.323.3...v0.324.0
 [0.323.3]: https://github.com/jig-harness/jig/compare/v0.323.2...v0.323.3
 [0.323.2]: https://github.com/jig-harness/jig/compare/v0.323.1...v0.323.2
 [0.323.1]: https://github.com/jig-harness/jig/compare/v0.323.0...v0.323.1
