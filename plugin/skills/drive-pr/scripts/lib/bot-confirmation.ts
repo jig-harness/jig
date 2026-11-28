@@ -192,7 +192,7 @@ export function carriesAcknowledgement(body: string): boolean {
   const acknowledgement = prose.join(" ");
   if (acknowledgement === "") return false;
 
-  return /^(?=.{1,280}$)(?=.*\b(?:acknowledged?|confirm(?:ed|ing)?|noted|thanks?|thank you|understood)\b)(?!.*\b(?:not|never)\b[^.!?]*\b(?:nothing further|no further (?:action|changes?|feedback|work))(?:\s+is)?\s+(?:requested|needed|required)\b).*\b(?:nothing further|no further (?:action|changes?|feedback|work))(?:\s+is)?\s+(?:requested|needed|required)\b(?:\s+on\s+(?:this|the)\s+thread)?[.!?]?$/iu.test(
+  return /^(?=[\s\S]{1,280}$)(?=[\s\S]*\b(?:acknowledged?|confirm(?:ed|ing)?|noted|thanks?|thank you|understood)\b)(?![\s\S]*\b(?:not|never)\b[^.!?]*\b(?:nothing further|no further (?:action|changes?|feedback|work))(?:\s+is)?\s+(?:requested|needed|required)\b)[\s\S]*\b(?:nothing further|no further (?:action|changes?|feedback|work))(?:\s+is)?\s+(?:requested|needed|required)\b(?:\s+on\s+(?:this|the)\s+thread)?[.!?]?$/iu.test(
     acknowledgement,
   );
 }
