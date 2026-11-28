@@ -1911,10 +1911,11 @@ make, use the entry's term instead.
 
 <a id="reflection-class"></a>
 
-- **Reflection class** — the short kebab-case name for the kind of failure a
-  finding describes, such as `missing-guard`. Reflection counts findings of the
-  same class together and uses that count to decide when to escalate the
-  recurring problem to a tracker issue.
+- **Reflection class** — the short kebab-case name for the shape of a finding,
+  whether it describes a failure or an opportunity to improve, such as
+  `missing-guard`. Reflection counts open or deferred findings of the same
+  class for the same owner together and uses that count to decide when to
+  escalate the recurring problem to a tracker issue.
 
 <a id="class-vocabulary"></a>
 
