@@ -404,6 +404,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.323.2] - 2026-11-28
+
+### Fixed
+
+- Define reflection classes and the class vocabulary in the glossary and link to those definitions from the reflection documentation.
+
 ## [0.323.1] - 2026-11-28
 
 ### Fixed
@@ -11705,7 +11711,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.323.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.323.2...HEAD
+[0.323.2]: https://github.com/jig-harness/jig/compare/v0.323.1...v0.323.2
 [0.323.1]: https://github.com/jig-harness/jig/compare/v0.323.0...v0.323.1
 [0.323.0]: https://github.com/jig-harness/jig/compare/v0.322.0...v0.323.0
 [0.322.0]: https://github.com/jig-harness/jig/compare/v0.321.0...v0.322.0
