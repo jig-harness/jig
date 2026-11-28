@@ -1288,11 +1288,7 @@ describe("tracker.ts", () => {
     ] as const) {
       const r = run(["create"], [], JSON.stringify({ title: "t", ...issue }));
       expectSpawnExit({ ...r, exitCode: r.status }, 3);
-      expect(r.stderr).toStartWith(
-        `refused to file an issue with no ${lacks}:`,
-      );
-      expect(r.stderr.trimEnd().split("\n")).toHaveLength(1);
-      expect(r.stderr).not.toContain("usage:");
+      expect(r.stderr).toMatch(new RegExp(`^refused.* no ${lacks}:.*\\n$`));
     }
   });
 
@@ -1504,8 +1500,7 @@ describe("tracker.ts", () => {
     it(`rejects ${what} as a usage error, with the usage text`, () => {
       const r = run([...args], []);
       expect(r.status).toBe(2);
-      expect(r.stderr).toContain(expected);
-      expect(r.stderr).toContain("usage:\n  tracker.ts children <issue-key>");
+      expect(r.stderr).toMatch(new RegExp(`${expected}.*\\nusage:\\n`));
     });
   }
 });

@@ -117,7 +117,8 @@
  * repository's configuration does not allow (filing an issue with no
  * priority, removing a Jira issue type, giving a field's value as a label),
  * nothing written, the reason alone on stderr; for `claim`, 3 refused and 4
- * stood down; for `attach` and `fetch-attachment`, 3 refused. A call to the tracker that failed exits with its failure class
+ * stood down; for `attach` and `fetch-attachment`, 3 refused. A call to the
+ * tracker that failed exits with its failure class
  * (`shared/outbound/failure.ts`, `EXIT_OF_CLASS`), the reason on stderr
  * after the class: 5 `rate-limited`, the credential's rate limit spent, with
  * the time it resets on stderr (`RATE-LIMITED until <time>`): the request it
@@ -230,9 +231,6 @@ async function readStdin(): Promise<string> {
   for await (const chunk of process.stdin) s += chunk;
   return s;
 }
-
-/** The exit of a request refused for a domain reason, apart from a usage error's 2. */
-export const REFUSED_EXIT = 3;
 
 function usage(message: string): number {
   console.error(`${message}\n${USAGE}`);
@@ -863,11 +861,6 @@ function isUsage(err: unknown): err is Error {
   );
 }
 
-/** Whether an error is a well-formed request the tracker or configuration refused. */
-function isRefusal(err: unknown): err is TrackerRequestError {
-  return err instanceof TrackerRequestError && err.code === "refused";
-}
-
 function operationNamed(name: string | undefined): Operation {
   if (name === undefined) throw new UsageError("missing operation");
   if (!Object.hasOwn(OPERATIONS, name))
@@ -951,9 +944,9 @@ export function failureExit(error: unknown): { code: number; line: string } {
 
 function reportFailure(error: unknown): number {
   if (isUsage(error)) return usage(error.message);
-  if (isRefusal(error)) {
+  if (error instanceof TrackerRequestError && error.code === "refused") {
     console.error(error.message);
-    return REFUSED_EXIT;
+    return 3;
   }
   const { code, line } = failureExit(error);
   console.error(line);
