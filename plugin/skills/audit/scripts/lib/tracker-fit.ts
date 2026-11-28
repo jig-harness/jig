@@ -26,7 +26,9 @@ export const ANSWER_MS = JIRA_TIMEOUT_MS + 5_000;
  * How long the open population counts may take. The counts are information,
  * not a check the configuration fails, so a tracker slow to estimate them
  * leaves them unchecked rather than holding the audit for a request's whole
- * deadline.
+ * deadline. The refusal then names only the bound: a request failure that
+ * would have settled later, inside the request's own deadline, is not waited
+ * for.
  */
 export const COUNT_MS = 5_000;
 
