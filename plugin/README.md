@@ -1554,7 +1554,8 @@ writes nothing to the host:
   pending) of
   one stage on one repository on at least three of the last seven host days,
   counting the ended rows and the event rows that carry a class, such as a
-  drive stopped for a person (a drift carries none). A question about
+  drive stopped for a person (a drift carries none), and leaving out a
+  drive's stall that its once-per-head re-drive followed. A question about
   yesterday is the Yesterday filter, and the view and the filter are the
   page's address, so a view on a phone is a link a laptop opens.
 
@@ -1688,8 +1689,16 @@ layer, the repository's own read from its default branch), a tick with
 launches, as one finding per week in the reflection store: an error about
 the dispatcher as a Jig tool, its class `dispatch-recurring-<class>` (such
 as `dispatch-recurring-gates-failed`), with the repository, the stage, the
-days, the row count, the reasons the rows give most often and the
-dashboard filter that shows them. A later tick that week records nothing
+days, the row count, the reasons the rows give most often, up to ten rows it
+counted (the pull request or item, when, the head commit where a launch
+record names it, the reason and what the run's closing report concluded; any
+remaining rows are counted but need not appear in History, whose matching-row
+view is limited to its newest 5,000 rows)
+and the dashboard filter that shows them. The dashboard counts every matching
+row, while History shows its newest 5,000 matching rows. A drive's stall that
+the once-per-head re-drive followed is that re-drive's to settle: it is left
+out of the count, so stalls the dispatcher already handles never recur as a
+class, and the finding names the stalls it left out. A later tick that week records nothing
 new; a class still recurring the next week is a new occurrence, so the
 default escalation, at three occurrences of a class, is reached after three
 weeks of one recurrence, sooner when several repositories or stages

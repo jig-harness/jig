@@ -2598,7 +2598,7 @@ lists each recurring class: a bad class (any but converged, merged and parked
 for a person) of one stage on one repository on at least three of the last
 seven host days, today included, counting the ended rows and the event rows
 that carry a class. A drift, a wait, a nudge or a hold carries none and stays
-out. The reflection route below reads the same definition
+out, as does a drive's stall its once-per-head re-drive followed. The reflection route below reads the same definition
 (`dispatch/lib/recurring.ts`). A question about yesterday is a filter, not a
 report: no report file is ever generated. The filter is the page's query
 string, so a view is a link.
@@ -2672,7 +2672,18 @@ where a person approves the change: a cap, an expectation, a skill's step.
   repository's tracker; moving it to a repository's scaffolding is a
   person's call in the review. Its description gives the repository, the
   stage, the days it occurred, the row count, the reasons the rows give most
-  often, verbatim, and the dashboard filter that shows those rows.
+  often, verbatim, each row it counted (the pull request or item, when, the
+  head commit where a launch record still names it, the reason and what the
+  run's closing report concluded; the first ten, the rest counted), and the
+  dashboard filter that shows those rows.
+- **A stall the re-drive settles is not a recurrence.** A drive's stall is
+  re-driven once per head commit. A stall the next drive launched for its
+  pull request re-drove is that re-drive's to settle, so the recurrence
+  (the dashboard's and the route's alike) leaves it out of the count, and a
+  stall finding names those it left out with their re-drives. A re-drive
+  that stalls again on its head, a stall with no head to key a re-drive on,
+  a round limit, a takeover, and a stall whose launch records have expired
+  are counted.
 - **Bounded and quiet on failure.** The append runs under the store's
   deadline (`reflection.timeout_sec`), cut to what the tick has left of its
   own. A failed append is written on the tick's receipt, leaves the finding
