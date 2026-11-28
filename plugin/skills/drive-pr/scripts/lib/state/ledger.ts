@@ -126,7 +126,7 @@ export type {
 } from "./ledger-shapes.ts";
 import {
   LEDGER_DRIVER_SHAPE,
-  LEDGER_PAYLOAD_FIELDS,
+  ledgerPayloadFields,
   type LedgerHeld,
   type LedgerDriver,
   type LedgerClaimRef,
@@ -531,7 +531,7 @@ function ledgerFault(v: Record<string, unknown>): string {
     roundsGranted: () => isOptionalRetryCount(v.roundsGranted),
     driver: () => isLedgerDriver(v.driver),
   };
-  return Object.entries(LEDGER_PAYLOAD_FIELDS)
+  return Object.entries(ledgerPayloadFields(v.ledgerVersion))
     .filter(
       ([name, shape]) =>
         name !== "ledgerVersion" &&

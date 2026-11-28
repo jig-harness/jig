@@ -39,10 +39,7 @@ import {
 } from "../../../plugin/shared/records/marker-shapes.ts";
 import { REFLECTION_EVENT_SHAPE } from "../../../plugin/skills/reflect/scripts/lib/event-shapes.ts";
 import { FOOTPRINT_SHAPE } from "../../../plugin/shared/footprint.ts";
-import {
-  LEDGER_PAYLOAD_SHAPE,
-  LEDGER_PAYLOAD_FIELDS,
-} from "../../../plugin/skills/drive-pr/scripts/lib/state/ledger-shapes.ts";
+import { LEDGER_PAYLOADS } from "../../../plugin/skills/drive-pr/scripts/lib/state/ledger-shapes.ts";
 
 const REGISTRY = "plugin/shared/records/registry.ts";
 const ENVELOPE = "plugin/shared/records/envelope.ts";
@@ -65,13 +62,22 @@ export const MARKER_SCHEMAS = {
   "drive-ledger": [
     {
       name: "drive-ledger",
+      // One alternative per version group, enveloped and bare: what a
+      // ledger may hold depends on its version.
       shape: s.union([
-        enveloped("drive-ledger", LEDGER_PAYLOAD_SHAPE),
-        s.object({
-          ...LEDGER_PAYLOAD_FIELDS,
-          ledgerVersion: s.enum([1, 2, 3]),
-          kind: s.optional(s.never()),
-        }),
+        ...LEDGER_PAYLOADS.map(({ versions, fields }) =>
+          enveloped(
+            "drive-ledger",
+            s.object({ ...fields, v: s.enum(versions) }),
+          ),
+        ),
+        ...LEDGER_PAYLOADS.map(({ versions, fields }) =>
+          s.object({
+            ...fields,
+            ledgerVersion: s.enum(versions),
+            kind: s.optional(s.never()),
+          }),
+        ),
       ]),
     },
   ],
@@ -403,7 +409,7 @@ export const COMMENT_MARKERS: Chapter = {
   title: "Hidden comment markers on the forge and the tracker",
   summary:
     "The hidden markers Jig writes and reads in comments and bodies on the forge and the tracker: what record each marks, who writes it, its version and what it means.",
-  version: 2,
+  version: 3,
   status: "stable",
   planItems: [],
   module: "tools/protocol/chapters/comment-markers.ts",

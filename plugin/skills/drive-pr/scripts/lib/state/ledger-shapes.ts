@@ -4,7 +4,10 @@ import { type Infer, s } from "../../../../../shared/shapes.ts";
 import { AUTONOMY_LEVELS } from "../../../../../shared/autonomy-values.ts";
 import type { ProbeStop } from "../status/probe-stop.ts";
 import { ANSWER_FORM_NAMES } from "../../../../../shared/decisions/decision-values.ts";
-import { GITHUB_LOGIN_SOURCE } from "../../../../../shared/forge-logins.ts";
+import {
+  GITHUB_LOGIN_SOURCE,
+  GITHUB_UNMANAGED_LOGIN_SOURCE,
+} from "../../../../../shared/forge-logins.ts";
 
 import {
   TAKEOVER_VERDICTS,
@@ -54,22 +57,22 @@ export const LEDGER_CLAIM_REF_SHAPE = s.object({
   generation: count,
 });
 
-const parked = s.object({
-  key,
-  kind: s.enum(["thread", "finding"]),
-  reason: nonempty,
-  round: count,
-  // A forge login; this mirrors the `isPerson` reader contract for producers.
-  person: s.optional(
-    s.string({ pattern: `^${GITHUB_LOGIN_SOURCE}(?:\\[bot\\])?$` }),
-  ),
-  at: s.optional(text),
-  class: s.optional(s.string({ pattern: "^[a-z][a-z0-9-]*$" })),
-  record: s.optional(s.string({ pattern: "\\S" })),
-  // Framing belongs to the provisional needs chapter; the park reader checks it.
-  decision: s.optional(s.object({})),
-  digest: s.optional(digest),
-});
+/** A parked item whose person is a forge login of `login`'s grammar. */
+const parkedShape = (login: string) =>
+  s.object({
+    key,
+    kind: s.enum(["thread", "finding"]),
+    reason: nonempty,
+    round: count,
+    // A forge login; this mirrors the `isPerson` reader contract for producers.
+    person: s.optional(s.string({ pattern: `^${login}(?:\\[bot\\])?$` })),
+    at: s.optional(text),
+    class: s.optional(s.string({ pattern: "^[a-z][a-z0-9-]*$" })),
+    record: s.optional(s.string({ pattern: "\\S" })),
+    // Framing belongs to the provisional needs chapter; the park reader checks it.
+    decision: s.optional(s.object({})),
+    digest: s.optional(digest),
+  });
 const takeover = s.object({
   at: text,
   fromActor: s.nullable(actor),
@@ -213,53 +216,89 @@ const receipt = s.object({
   repairStartedAt: s.optional(text),
 });
 
-/** Every parsed field, so the reader can report the field that failed. */
-export const LEDGER_PAYLOAD_FIELDS = {
-  ledgerVersion: s.optional(s.enum([1, 2, 3])),
-  generation: s.integer({ minimum: 1, maximum: Number.MAX_VALUE }),
-  pr: count,
-  round: count,
-  attempts: count,
-  attemptsHead: text,
-  deadlineRetries: count,
-  // Published unrestricted, as the stable ledger accepted it before the field
-  // existed; the reader checks it is a whole number (`ledger.ts`).
-  roundsGranted: s.optional(s.unknown()),
-  // The circuit breaker's raises and first launch, unrestricted as the stable
-  // ledger accepted them before they existed; the reader drops a malformed
-  // one, except a first launch it cannot read, which refuses the ledger
-  // (`circuit-breaker.ts`).
-  ceilingRaised: s.optional(s.unknown()),
-  firstDrivenAt: s.optional(s.unknown()),
-  wallClockRaisedHours: s.optional(s.unknown()),
-  circuitStop: s.optional(s.unknown()),
-  usedOverrides: s.optional(s.unknown()),
-  phase: text,
-  lastCountedHead: text,
-  verifiedSha: text,
-  readyMarkedRound: count,
-  parked: s.array(parked),
-  held: s.array(LEDGER_HELD_SHAPE),
-  // Existing readers accept any object here; seeding does not import the quota park.
-  quotaPark: s.nullable(s.object({})),
-  takeovers: s.array(takeover),
-  claims: s.array(LEDGER_CLAIM_REF_SHAPE),
-  decisions: s.array(decision),
-  events: s.optional(s.array(event)),
-  ciActions: s.optional(s.array(ciAction, { maxItems: 10 })),
-  rulings: s.optional(s.array(ruling)),
-  resolvedParks: s.optional(s.array(receipt)),
-  // Published unrestricted on v1, as the stable ledger accepted unknown keys
-  // before these fields existed; the reader checks both (`ledger-churn.ts`).
-  roundPaths: s.optional(s.unknown()),
-  churnAckRound: s.optional(s.unknown()),
-  driver: LEDGER_DRIVER_SHAPE,
-  narrative: texts,
-  cut: texts,
-} as const;
+/** Every parsed field of a ledger at `versions`, so the reader can report the field that failed. */
+const payloadFields = <const V extends readonly number[]>(
+  versions: V,
+  login: string,
+) =>
+  ({
+    ledgerVersion: s.optional(s.enum(versions)),
+    generation: s.integer({ minimum: 1, maximum: Number.MAX_VALUE }),
+    pr: count,
+    round: count,
+    attempts: count,
+    attemptsHead: text,
+    deadlineRetries: count,
+    // Published unrestricted, as the stable ledger accepted it before the field
+    // existed; the reader checks it is a whole number (`ledger.ts`).
+    roundsGranted: s.optional(s.unknown()),
+    // The circuit breaker's raises and first launch, unrestricted as the stable
+    // ledger accepted them before they existed; the reader drops a malformed
+    // one, except a first launch it cannot read, which refuses the ledger
+    // (`circuit-breaker.ts`).
+    ceilingRaised: s.optional(s.unknown()),
+    firstDrivenAt: s.optional(s.unknown()),
+    wallClockRaisedHours: s.optional(s.unknown()),
+    circuitStop: s.optional(s.unknown()),
+    usedOverrides: s.optional(s.unknown()),
+    phase: text,
+    lastCountedHead: text,
+    verifiedSha: text,
+    readyMarkedRound: count,
+    parked: s.array(parkedShape(login)),
+    held: s.array(LEDGER_HELD_SHAPE),
+    // Existing readers accept any object here; seeding does not import the quota park.
+    quotaPark: s.nullable(s.object({})),
+    takeovers: s.array(takeover),
+    claims: s.array(LEDGER_CLAIM_REF_SHAPE),
+    decisions: s.array(decision),
+    events: s.optional(s.array(event)),
+    ciActions: s.optional(s.array(ciAction, { maxItems: 10 })),
+    rulings: s.optional(s.array(ruling)),
+    resolvedParks: s.optional(s.array(receipt)),
+    // Published unrestricted on v1, as the stable ledger accepted unknown keys
+    // before these fields existed; the reader checks both (`ledger-churn.ts`).
+    roundPaths: s.optional(s.unknown()),
+    churnAckRound: s.optional(s.unknown()),
+    driver: LEDGER_DRIVER_SHAPE,
+    narrative: texts,
+    cut: texts,
+  }) as const;
 
-/** The envelope supplies generation and may supply ledgerVersion from its v. */
-export const LEDGER_PAYLOAD_SHAPE = s.object(LEDGER_PAYLOAD_FIELDS);
+const payload = <const V extends readonly number[]>(
+  versions: V,
+  login: string,
+) => ({
+  versions,
+  fields: payloadFields(versions, login),
+});
+
+/**
+ * The ledger's fields by the versions that share them. A parked item's
+ * person is an Enterprise Managed User's login only from version 3: the
+ * version choice (`ledger-version.ts`) writes a ledger naming one at 3, so
+ * an earlier version naming one was written by no conforming writer.
+ */
+export const LEDGER_PAYLOADS = [
+  payload([1, 2], GITHUB_UNMANAGED_LOGIN_SOURCE),
+  payload([3], GITHUB_LOGIN_SOURCE),
+] as const;
+
+/**
+ * The fields a ledger at `version` is checked against: its own version's,
+ * the earliest group's for a version no ledger is written at, so the reader
+ * never takes more than a conforming writer could have written.
+ */
+export function ledgerPayloadFields(
+  version: unknown,
+): (typeof LEDGER_PAYLOADS)[number]["fields"] {
+  return (
+    LEDGER_PAYLOADS.find((p) =>
+      (p.versions as readonly unknown[]).includes(version),
+    ) ?? LEDGER_PAYLOADS[0]
+  ).fields;
+}
+
 export type LedgerHeld = Infer<typeof LEDGER_HELD_SHAPE>;
 export type LedgerDriver = Omit<Infer<typeof LEDGER_DRIVER_SHAPE>, "probe"> & {
   probe?: ProbeStop;

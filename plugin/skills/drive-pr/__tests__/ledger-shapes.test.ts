@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { matches } from "../../../shared/shapes.ts";
-import { LEDGER_PAYLOAD_SHAPE } from "../scripts/lib/state/ledger-shapes.ts";
+import { matches, s } from "../../../shared/shapes.ts";
+import { ledgerPayloadFields } from "../scripts/lib/state/ledger-shapes.ts";
 import {
   ledgerFromState,
   renderLedger,
@@ -8,6 +8,14 @@ import {
 } from "../scripts/lib/state/ledger.ts";
 import { freshState } from "../scripts/lib/state/schema.ts";
 import { markerText } from "../../../shared/records/envelope.ts";
+
+/** The payload shape of a ledger at `version`. */
+function payloadShape(version: number) {
+  return s.object(ledgerPayloadFields(version));
+}
+
+/** The shape this test's ledgers are written at. */
+const V2_PAYLOAD_SHAPE = payloadShape(2);
 
 function ledger() {
   return ledgerFromState(freshState(12), {
@@ -31,7 +39,7 @@ test("the ledger writer emits the declared payload shape", () => {
   expect(text.ok).toBe(true);
   if (!text.ok) return;
   const value: unknown = JSON.parse(text.value);
-  expect(matches(LEDGER_PAYLOAD_SHAPE, value)).toBe(true);
+  expect(matches(V2_PAYLOAD_SHAPE, value)).toBe(true);
   expect(parseLedger(rendered.body)?.kind).toBe("ledger");
 });
 
@@ -44,7 +52,7 @@ test("the ledger description rejects damaged nested held items and driver fields
     { ...valid, claims: [{ id: "1", clone: "clone", generation: 1 }] },
     { ...valid, narrative: [1] },
   ])
-    expect(matches(LEDGER_PAYLOAD_SHAPE, bad)).toBe(false);
+    expect(matches(V2_PAYLOAD_SHAPE, bad)).toBe(false);
 });
 
 test("the ledger shape preserves legacy optional fields and unconstrained quota park objects", () => {
@@ -57,10 +65,8 @@ test("the ledger shape preserves legacy optional fields and unconstrained quota 
     churnAckRound: _ca,
     ...legacy
   } = ledger();
-  expect(matches(LEDGER_PAYLOAD_SHAPE, legacy)).toBe(true);
-  expect(matches(LEDGER_PAYLOAD_SHAPE, { ...legacy, quotaPark: {} })).toBe(
-    true,
-  );
+  expect(matches(V2_PAYLOAD_SHAPE, legacy)).toBe(true);
+  expect(matches(V2_PAYLOAD_SHAPE, { ...legacy, quotaPark: {} })).toBe(true);
 });
 
 test("a parked person is any GitHub login, an Enterprise Managed User's included", () => {
@@ -74,7 +80,9 @@ test("a parked person is any GitHub login, an Enterprise Managed User's included
     return parseLedger(rendered.body);
   };
   for (const person of ["mona_acme", "Mona_ACME", "review-bot[bot]"]) {
-    expect(matches(LEDGER_PAYLOAD_SHAPE, parked(person))).toBe(true);
+    expect(
+      matches(payloadShape(3), { ...parked(person), ledgerVersion: 3 }),
+    ).toBe(true);
     const got = read(person);
     expect(got?.kind).toBe("ledger");
     if (got?.kind === "ledger")
@@ -82,4 +90,64 @@ test("a parked person is any GitHub login, an Enterprise Managed User's included
   }
   for (const person of ["@mona_acme", "mona acme", "org/team", "", "_mona"])
     expect(read(person)?.kind).toBe("malformed");
+});
+
+test("a parked managed person is read only from a version 3 ledger", () => {
+  const l = {
+    ...ledger(),
+    parked: [
+      {
+        key: "t1",
+        kind: "thread" as const,
+        reason: "why",
+        round: 1,
+        person: "mona_acme",
+      },
+    ],
+  };
+  const rendered = renderLedger(l);
+  if (!("body" in rendered)) throw new Error("the ledger did not render");
+  expect(rendered.ledger.ledgerVersion).toBe(3);
+  const v3 = parseLedger(rendered.body);
+  expect(v3?.kind).toBe("ledger");
+  if (v3?.kind === "ledger")
+    expect(v3.ledger.parked[0]?.person).toBe("mona_acme");
+  const data = markerText(rendered.body, "drive-pr-ledger-data");
+  if (!data.ok) throw new Error(data.failure.reason);
+  const enveloped = JSON.parse(data.value) as Record<string, unknown>;
+  const {
+    kind: _k,
+    v: _v,
+    key: _key,
+    writer: _w,
+    at: _at,
+    ...payload
+  } = enveloped;
+  const body = (json: unknown) =>
+    rendered.body.replace(data.value, JSON.stringify(json));
+  for (const version of [1, 2]) {
+    for (const json of [
+      { ...enveloped, v: version, ledgerVersion: version },
+      { ...payload, ledgerVersion: version },
+    ]) {
+      const read = parseLedger(body(json));
+      expect(read).toEqual({
+        kind: "malformed",
+        reason: "ill-formed field(s): parked",
+      });
+    }
+    expect(matches(payloadShape(version), l)).toBe(false);
+    const handle = parseLedger(
+      body({
+        ...enveloped,
+        v: version,
+        ledgerVersion: version,
+        parked: [{ ...l.parked[0], person: "mona" }],
+      }),
+    );
+    expect(handle?.kind).toBe("ledger");
+  }
+  expect(parseLedger(body({ ...payload, ledgerVersion: 3 }))?.kind).toBe(
+    "ledger",
+  );
 });
