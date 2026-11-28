@@ -29,8 +29,7 @@
  * | a headless claim with no confirmed cleanup after wrapper death | unknown, holding its slot |
  * | no claim | pending |
  *
- * Pending, alive and unknown records hold their stage and account slot.
- * Clear a record that cannot be retried with `jig dispatch clear`.
+ * Pending, alive and unknown records hold their stage and account slot. Clear a record that cannot be retried with `jig dispatch clear`.
  * An interactive record also ends with its agent (`actions/pickup-hold.ts`).
  *
  * What Control adds while the record runs and when it ends: a drive's
@@ -56,6 +55,7 @@ import { ordinalAnchors } from "./account-ordinal.ts";
 import { relaunchAnchors } from "./pickup-relaunch.ts";
 import {
   hasStrings,
+  isAttempt,
   isWorkspace,
   namesTarget,
   optionalLaunchFields,
@@ -156,6 +156,8 @@ export interface LaunchRecord extends RoutineFields {
   release?: string;
   token: string;
   runtime?: "process";
+  /** A provider account's launch: its provider and what its wrapper adds to the pass's environment beside the credential it resolves (`provider-launch.ts`); absent for a subscription account's. */
+  provider?: import("./provider-environment.ts").ProviderRecord;
   action: LaunchAction;
   /** The repository's `owner/name` and its local checkout. */
   repo: string;
@@ -495,15 +497,6 @@ export function targetOf(
 ): string {
   if (record.action === "steward") return "the steward";
   return record.item ?? `PR #${String(record.pr)}`;
-}
-
-function isAttempt(value: unknown): value is LaunchAttempt {
-  return (
-    isMapping(value) &&
-    typeof value.at === "string" &&
-    ["sent", "failed", "lost"].includes(value.outcome as string) &&
-    typeof value.detail === "string"
-  );
 }
 
 function isExit(value: unknown): value is LaunchExit {

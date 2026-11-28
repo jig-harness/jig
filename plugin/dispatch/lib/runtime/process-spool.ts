@@ -17,7 +17,7 @@ const REDACTION_TAIL_BYTES = 32 * 1024;
 // A line longer than this is not held for redaction: it is dropped up to its
 // newline, so pending state and the work per chunk stay bounded.
 const REDACTION_PENDING_LIMIT = 2 * REDACTION_TAIL_BYTES;
-const TRUNCATED_LINE = "[redacted: oversized line dropped]";
+export const TRUNCATED_LINE = "[redacted: oversized line dropped]";
 
 // What a line may end with while its credential value is still to come: a
 // key's separator or a Bearer or Basic scheme. The mask reads across line

@@ -19,11 +19,12 @@ import { trustedAutomationOf } from "../../skills/drive-pr/scripts/lib/trusted-a
 import type { LabelConfig } from "./labels.ts";
 import { duration } from "./machine-config.ts";
 import { parseOverlap, unknownKeys } from "./overlap-config.ts";
-import { followupRoutine } from "./routine-questions.ts";
+import { allowedProviders } from "./provider-allow.ts";
 import {
   DEFAULT_REVIEWER_FAILURES_BEFORE_ESCALATION,
   reviewerFailurePolicy,
 } from "./reviewer-failure.ts";
+import { followupRoutine } from "./routine-questions.ts";
 import type {
   AdoptRule,
   DispatchSection,
@@ -74,6 +75,7 @@ const KEYS = [
   "pool",
   "epic_width",
   "overlap",
+  "allowed_providers",
 ];
 const ADOPT_KEYS = ["enabled", "authors", "within", "trusted_automation"];
 /** `adopt.within`'s default: a week. */
@@ -448,13 +450,16 @@ function timings(section: Record<string, unknown>): Checked<Timings> {
   });
 }
 
-/** What bounds and gates a launch: its deadline, what a priority-less item does, and the routine classes a follow-up settles unattended. */
+/** What bounds and gates a launch: its deadline, what a priority-less item does, the providers it may run on, and the routine classes a follow-up settles unattended. */
 function launchPolicy(
   section: Record<string, unknown>,
 ): Checked<
   Pick<
     DispatchSection,
-    "pickupDeadlineMs" | "missingPriority" | "followupRoutine"
+    | "pickupDeadlineMs"
+    | "missingPriority"
+    | "allowedProviders"
+    | "followupRoutine"
   >
 > {
   const pickupDeadlineMs = wait(
@@ -465,11 +470,14 @@ function launchPolicy(
   if (!pickupDeadlineMs.ok) return pickupDeadlineMs;
   const unranked = missingPriority(section.missing_priority);
   if (!unranked.ok) return unranked;
+  const providers = allowedProviders(section.allowed_providers);
+  if (!providers.ok) return providers;
   const routine = followupRoutine(section.followup_routine);
   if (!routine.ok) return routine;
   return ok({
     pickupDeadlineMs: pickupDeadlineMs.value,
     missingPriority: unranked.value,
+    ...(providers.value === null ? {} : { allowedProviders: providers.value }),
     followupRoutine: routine.value,
   });
 }

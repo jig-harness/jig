@@ -19,6 +19,7 @@ import {
 import { unrecordedDrivers, type HostDrivers } from "../host-drivers.ts";
 import { serves, type ServedStage } from "../account-stages.ts";
 import type { ReadRecord } from "../launches.ts";
+import type { AllowList } from "../provider-allow.ts";
 import type { Action, LaunchOutcome } from "../types.ts";
 
 export type AccountAdmission =
@@ -67,16 +68,30 @@ export function waitsForRearmSlot(
   state: AdmissionState,
   action: Action,
   excluded: ReadonlySet<string>,
+  allowed?: AllowList,
 ): boolean {
+  // A takeover that keeps its replaced record's slot is admitted on that account alone, so only that account's capacity is the wait.
+  let table = state.table;
+  if (action.takeover !== undefined && !takeoverMoves(state, action)) {
+    const replaced = state.records.find((r) => r.record.id === action.takeover);
+    const own =
+      replaced === undefined
+        ? undefined
+        : slotsOf(state.table, replaced.record);
+    if (own === undefined) return false;
+    table = [own];
+  }
   return (
     action.evidence?.rearm === true &&
     hasFullAccount(
-      state.table,
+      table,
       {
         kind: "pass",
         deadlineSec: state.passDeadlineSec,
         codex: state.codexOptIn,
         stage: "rearm",
+        // The repository's provider policy scopes capacity as it scopes admission.
+        ...(allowed === undefined ? {} : { allowed }),
       },
       excluded,
     )
@@ -89,8 +104,10 @@ export function admission(
   excluded: ReadonlySet<string>,
   pickupDeadlineSec: number,
   clone?: string | null,
+  allowed?: AllowList,
 ): Admission {
   const codex = state.codexOptIn;
+  const scope = allowed === undefined ? {} : { allowed };
   const stage = action.stage as ServedStage;
   if (
     action.takeoverHolder !== undefined &&
@@ -124,6 +141,7 @@ export function admission(
         state.passDeadlineSec,
         codex,
         stage,
+        allowed,
       );
   }
   // A pickup is a headless pass under its own deadline (`dispatch.pickup_deadline`).
@@ -131,7 +149,7 @@ export function admission(
     return admitRearm(
       state.table,
       state.last,
-      { kind: "pass", deadlineSec: pickupDeadlineSec, codex, stage },
+      { kind: "pass", deadlineSec: pickupDeadlineSec, codex, stage, ...scope },
       excluded,
       state.records,
     );
@@ -140,12 +158,24 @@ export function admission(
     return admitRearm(
       state.table,
       state.last,
-      { kind: "pass", deadlineSec: state.passDeadlineSec, codex, stage },
+      {
+        kind: "pass",
+        deadlineSec: state.passDeadlineSec,
+        codex,
+        stage,
+        ...scope,
+      },
       excluded,
       state.records,
     );
   const replaced = state.records.find((r) => r.record.id === action.takeover);
   return replaced === undefined
     ? { waits: `the launch record ${action.takeover} it replaces is gone` }
-    : admitTakeover(state.table, replaced, state.passDeadlineSec, codex);
+    : admitTakeover(
+        state.table,
+        replaced,
+        state.passDeadlineSec,
+        codex,
+        allowed,
+      );
 }

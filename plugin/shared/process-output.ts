@@ -1,4 +1,24 @@
 import { FORGE_ACCOUNTING_UNAVAILABLE } from "./trace.ts";
+/** The longest prefix of `text` that fits `room` bytes, backed up to the start of the character the limit cuts, so a complete character is kept as it is and a cut one is dropped. */
+function keepWhole(text: string, room: number): string {
+  const whole = Buffer.from(text);
+  let end = Math.min(whole.length, Math.max(0, room));
+  while (end > 0 && end < whole.length && ((whole[end] ?? 0) & 0xc0) === 0x80)
+    end--;
+  return whole.subarray(0, end).toString("utf8");
+}
+
+/** What of a chunk fits under the byte bound, enforced before appending: a chunk that crosses it keeps only what fits, so the result never holds more than the limit. */
+function fitToLimit(
+  text: string,
+  length: number,
+  bytes: number,
+  limit: number,
+): { kept: string; over: boolean } {
+  if (bytes + length <= limit) return { kept: text, over: false };
+  return { kept: keepWhole(text, limit - bytes), over: true };
+}
+
 /** How much of a failed child's error output `RunResult.stderrTail` keeps. */
 export const STDERR_TAIL_BYTES = 4 * 1024;
 
@@ -160,14 +180,18 @@ function captureProcessOutput(
     if (stream === "stderr") tail = lastBytes(tail + text);
     const captured = !(bufferExceeded || cancellation.timedOut());
     const length = Buffer.byteLength(text);
+    const limit = options.maxBufferBytes ?? MAX_BUFFER_BYTES;
+    let over = false;
     if (captured) {
-      if (stream === "stdout") stdout += text;
-      else stderr += text;
-      bytes += length;
-      options.onOutput?.(stream, text);
+      const fit = fitToLimit(text, length, bytes, limit);
+      over = fit.over;
+      if (stream === "stdout") stdout += fit.kept;
+      else stderr += fit.kept;
+      bytes += over ? limit + 1 - bytes : length;
+      options.onOutput?.(stream, fit.kept);
     }
     options.onChunk?.(stream, length, captured);
-    if (bytes > (options.maxBufferBytes ?? MAX_BUFFER_BYTES)) overflow();
+    if (over || bytes > limit) overflow();
   };
   const observed: NonNullable<ChildProcess["stdout"]>[] = [];
   let hasCapturedOutput = false;

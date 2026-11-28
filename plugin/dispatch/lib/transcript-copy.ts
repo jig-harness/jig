@@ -15,10 +15,12 @@
  *
  * The copy is the end of the transcript, at most `COPY_BYTES`, each line
  * with email addresses, account identifiers, tokens and other
- * credential-shaped values and the record's own token replaced with
- * `<redacted>`, in `<dispatch>/runs/<record>/transcript.jsonl`, beside
- * `copy.json`, which says when the copy was made, from which session, and,
- * when there is none, why. The directory and its files are readable only by
+ * credential-shaped values, the record's own token and a provider account's
+ * resolved credential replaced with `<redacted>` (a provider account's run
+ * is copied only by the process that holds that credential), in
+ * `<dispatch>/runs/<record>/transcript.jsonl`, beside `copy.json`, which
+ * says when the copy was made, from which session, and, when there is none,
+ * why. The directory and its files are readable only by
  * their owner. The copy is removed `KEPT_AFTER_CAUSE_DAYS` after the
  * steward's cause for the run is applied, and at the latest after the
  * machine file's `receipts_days`; the run's bounded output on its launch
@@ -38,6 +40,11 @@ import { claudeCode } from "../../shared/agent-harness/claude-code.ts";
 import { harnessOrDefault } from "../../shared/agent-harness/index.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { isCredentialKey, maskCredentials } from "../../shared/credentials.ts";
+import {
+  heldCredential,
+  holdsCredentialOf,
+  OMITTED_LINE_TEXT,
+} from "./provider-held.ts";
 import { swallow } from "../../shared/errors.ts";
 import { redactStrings } from "../../shared/redact.ts";
 import { LAUNCH_RECORD_ID } from "../../shared/records/launch-claims.ts";
@@ -78,7 +85,7 @@ export interface TranscriptCopy {
   transcript: string | null;
   /** Why there is no copy; absent when there is one. */
   missing?: string;
-  /** Whether the transcript was longer than the copy keeps. */
+  /** Whether the copy leaves anything of the transcript out: the start of one longer than the copy keeps, or a line (marked where it stood) that did not read or still matched a held secret. */
   cut: boolean;
 }
 
@@ -145,26 +152,313 @@ function maskFields(value: unknown): unknown {
   return value;
 }
 
-/** The transcript's lines, each redacted; a line that does not read as JSON is left out. */
-function redactedLines(text: string, token: string): string[] {
-  const mask = (value: string) =>
-    maskCredentials(
-      token === "" ? value : value.split(token).join("<redacted>"),
-      "<redacted>",
+/** `text` with every one of `secrets` replaced, the longest first so one that contains another goes whole. */
+function replaceSecrets(text: string, secrets: readonly string[]): string {
+  let out = text;
+  for (const secret of secrets) out = out.split(secret).join("<redacted>");
+  return out;
+}
+
+/** The deepest nesting of JSON encoded inside strings that is looked into; anything deeper counts as holding a secret. */
+const LOOK_DEPTH = 8;
+
+/** The JSON a string holds as a whole, or after a header line, or as a quoted JSON string; `undefined` when it holds none. */
+function embeddedJson(text: string): unknown {
+  const start = text.search(/[[{"]/);
+  // Ordinary prose rarely ends where JSON does, so most text never reaches the parser.
+  if (start === -1 || !/[\]}"]\s*$/.test(text)) return undefined;
+  try {
+    return JSON.parse(text.slice(start));
+  } catch (error) {
+    // Only a fixed diagnostic: the parser's own message can quote the text.
+    void error;
+    swallow(new SyntaxError("not JSON"), "a string that is not JSON is text");
+    return undefined;
+  }
+}
+
+const escapedForms = new Map<string, string>();
+
+/** `secret` as `JSON.stringify` writes it inside a string, computed once per secret. */
+function escapedForm(secret: string): string {
+  let form = escapedForms.get(secret);
+  if (form === undefined) {
+    form = JSON.stringify(secret).slice(1, -1);
+    escapedForms.set(secret, form);
+  }
+  return form;
+}
+
+const ESCAPE = /\\(?:u([0-9a-fA-F]{4})|(["\\/bfnrt]))/g;
+/** The same escape, for testing without the global flag's state. */
+const DECODABLE_ESCAPE = new RegExp(ESCAPE.source);
+
+/** `text` with every JSON escape in it decoded once. */
+function decodeOnce(text: string): string {
+  return text.replace(
+    ESCAPE,
+    (_all, hex: string | undefined, plain: string | undefined) =>
+      hex !== undefined
+        ? String.fromCharCode(Number.parseInt(hex, 16))
+        : ({ b: "\b", f: "\f", n: "\n", r: "\r", t: "\t" }[plain as string] ??
+          (plain as string)),
+  );
+}
+
+/** `text` decoded until it stops changing, or `LOOK_DEPTH` times. */
+function fullyDecoded(text: string): string {
+  let layer = text;
+  for (let i = 0; i < LOOK_DEPTH; i++) {
+    const next = decodeOnce(layer);
+    if (next === layer) break;
+    layer = next;
+  }
+  return layer;
+}
+
+/** The one traversal both secret checks share: `hit` is asked of the text and of each layer as its JSON escapes are decoded, up to `LOOK_DEPTH` decodes, so `LOOK_DEPTH + 2` forms in the longest path: the raw text, the forms after decodes 1 through `LOOK_DEPTH` (the loop's last `hit` is the form after decode `LOOK_DEPTH`), and the form after decode `LOOK_DEPTH + 1`, checked by the `return` after the loop; lowering the bound keeps that last check. Where the last layer still holds a decodable escape (unless nothing but literal backslashes is left) the text counts as holding a secret, one policy for every check. */
+function walkLayers(text: string, hit: (layer: string) => boolean): boolean {
+  let layer = text;
+  for (let i = 0; i <= LOOK_DEPTH; i++) {
+    if (hit(layer)) return true;
+    const next = decodeOnce(layer);
+    if (next === layer) return false;
+    layer = next;
+  }
+  // One decode past the bound: that result is searched too, and counts as holding a secret only while a decodable escape is left.
+  return hit(layer) || (DECODABLE_ESCAPE.test(layer) && !/^\\+$/.test(layer));
+}
+
+/** Whether `text`, with JSON escapes of any spelling decoded up to `LOOK_DEPTH` times (and the form one decode past that, as `walkLayers` checks it), holds one of `secrets`: wrapped JSON that does not parse as a whole is still looked into. */
+function holdsAfterUnescaping(
+  text: string,
+  secrets: readonly string[],
+): boolean {
+  // A canonically escaped credential is found at any offset, whatever surrounds it and however the surrounding backslashes would pair when decoding.
+  if (secrets.some((secret) => text.includes(escapedForm(secret)))) return true;
+  return walkLayers(text, (layer) =>
+    secrets.some((secret) => layer.includes(secret)),
+  );
+}
+
+/** Where a value ends: the text's end, `,`, `}` or `]`, after any whitespace. A marker followed by anything else, whitespace-separated or not, is the start of a longer value, not a masked one. */
+const VALUE_END = /\s*(?:$|[,}\]])/y;
+
+/** Whether a value ends at `from`, without copying the rest of the text. */
+function endsValue(layer: string, from: number): boolean {
+  VALUE_END.lastIndex = from;
+  return VALUE_END.test(layer);
+}
+
+/** Whether the value written at `at` is one the masking left: `"<redacted>"`, `""` or `null`, each ending where a value ends. A text that ends at `at` holds no value. */
+function isMaskedValue(layer: string, at: number): boolean {
+  if (at >= layer.length) return true;
+  for (const marker of ['"<redacted>"', '""', "null"])
+    if (layer.startsWith(marker, at) && endsValue(layer, at + marker.length))
+      return true;
+  return false;
+}
+
+/** Index of the closing double quote for a JSON string opening at `openAt`, or `-1` when unclosed. */
+function closingQuote(layer: string, openAt: number): number {
+  let end = openAt + 1;
+  while (end < layer.length && layer[end] !== '"')
+    end += layer[end] === "\\" ? 2 : 1;
+  return end < layer.length ? end : -1;
+}
+
+/** First index at or after `from` that is not whitespace. */
+function skipWhitespace(layer: string, from: number): number {
+  let i = from;
+  while (i < layer.length && /\s/.test(layer[i] as string)) i++;
+  return i;
+}
+
+/** Whether `layer` holds a quoted member named like a credential whose value is not masked. Each quoted span is read once, left to right: a span that never closes ends the scan, since every later quote is escaped inside it and would never close either. */
+function layerHoldsCredentialMember(layer: string): boolean {
+  let at = layer.indexOf('"');
+  while (at !== -1) {
+    const end = closingQuote(layer, at);
+    if (end === -1) return false;
+    const colon = skipWhitespace(layer, end + 1);
+    if (layer[colon] !== ":") {
+      // No member here; the closing quote may open the next span.
+      at = end;
+      continue;
+    }
+    const value = skipWhitespace(layer, colon + 1);
+    if (
+      !isMaskedValue(layer, value) &&
+      isCredentialKey(layer.slice(at + 1, end))
+    )
+      return true;
+    at = layer.indexOf('"', end + 1);
+  }
+  return false;
+}
+
+/** Whether any layer of `text` holds a credential-named member with a value that is not masked, wherever the member sits and however the text around it parses: no bracket, footer, duplicate member or decode depth hides one. */
+function holdsCredentialMember(text: string): boolean {
+  return walkLayers(text, layerHoldsCredentialMember);
+}
+
+/** The deepest structural nesting of arrays and objects that is walked; anything deeper counts as holding a secret. */
+const NEST_LIMIT = 64;
+
+/** Whether a string value, or JSON encoded inside it, still holds a secret or an unmasked credential field. */
+function stringLeaksDecoded(
+  value: string,
+  secrets: readonly string[],
+  depth: number,
+): boolean {
+  // A fenced block, a header or trailing text around encoded JSON does not parse, so the text is unescaped, in any spelling, and searched for each secret.
+  if (holdsAfterUnescaping(value, secrets) || holdsCredentialMember(value))
+    return true;
+  // JSON that only parses once the escapes around it are decoded is looked into the same way, so a credential field it reveals is not kept.
+  for (const text of new Set([value, fullyDecoded(value)])) {
+    const inner = embeddedJson(text);
+    if (inner !== undefined && leaksDecoded(inner, secrets, depth + 1, true))
+      return true;
+  }
+  return false;
+}
+
+/** Whether a decoded object property names a credential whose value is still live. */
+function isLiveCredentialField(
+  key: string,
+  field: unknown,
+  decoded: boolean,
+): boolean {
+  return (
+    decoded &&
+    isCredentialKey(key) &&
+    field !== "<redacted>" &&
+    field !== "" &&
+    field !== null
+  );
+}
+
+/** Whether `value`, or any JSON a string in it encodes at any depth, still holds a secret or a credential field that is not masked. Nothing is rewritten: a hit leaves the whole line out, so no number or property name is ever re-encoded. */
+function leaksDecoded(
+  value: unknown,
+  secrets: readonly string[],
+  depth: number,
+  decoded: boolean,
+  nest = 0,
+): boolean {
+  if (depth > LOOK_DEPTH || nest > NEST_LIMIT) return true;
+  if (typeof value === "string")
+    return stringLeaksDecoded(value, secrets, depth);
+  if (typeof value === "number")
+    return secrets.some((secret) => String(value).includes(secret));
+  if (Array.isArray(value))
+    return value.some((item) =>
+      leaksDecoded(item, secrets, depth, decoded, nest + 1),
     );
+  if (value !== null && typeof value === "object")
+    return Object.entries(value).some(
+      ([key, field]) =>
+        isLiveCredentialField(key, field, decoded) ||
+        leaksDecoded(key, secrets, depth, decoded, nest + 1) ||
+        leaksDecoded(field, secrets, depth, decoded, nest + 1),
+    );
+  return false;
+}
+
+/** Rebuild a plain object with every property name and value masked against `secrets`. */
+function maskExactObject(
+  value: object,
+  secrets: readonly string[],
+): Record<string, unknown> {
+  const rebuilt: Record<string, unknown> = Object.create(null);
+  for (const [key, field] of Object.entries(value)) {
+    const maskedKey = replaceSecrets(key, secrets);
+    let name = maskedKey;
+    // Two names that mask alike stay two fields; only names already written count.
+    for (let n = 2; name in rebuilt; n++) name = `${maskedKey}#${n}`;
+    rebuilt[name] = maskExact(field, secrets);
+  }
+  return rebuilt;
+}
+
+/** `value` with each exact secret replaced in every string, every number written as one and every property name, before any generic redaction can split it. JSON a string encodes is not decoded here: `leaksDecoded` leaves such a line out when it holds a secret. */
+function maskExact(value: unknown, secrets: readonly string[]): unknown {
+  if (secrets.length === 0) return value;
+  if (typeof value === "string") return replaceSecrets(value, secrets);
+  if (typeof value === "number") {
+    const written = String(value);
+    return replaceSecrets(written, secrets) === written ? value : "<redacted>";
+  }
+  if (Array.isArray(value))
+    return value.map((item) => maskExact(item, secrets));
+  if (value !== null && typeof value === "object")
+    return maskExactObject(value, secrets);
+  return value;
+}
+
+/** The line that stands where one or more lines were left out, so a reader knows evidence is missing there. */
+const OMITTED_LINE = OMITTED_LINE_TEXT;
+
+/** The transcript's lines, each redacted; a line that does not read as JSON, or that would still match a held secret, is left out and a marker line stands in its place. `kept` counts the lines that are not markers. */
+function redactedLines(
+  text: string,
+  held: readonly string[],
+): { lines: string[]; kept: number; omitted: number } {
+  const secrets = [...new Set(held.filter((secret) => secret !== ""))].sort(
+    (a, b) => b.length - a.length,
+  );
+  const mask = (value: string) =>
+    maskCredentials(replaceSecrets(value, secrets), "<redacted>");
   const lines: string[] = [];
+  let omitted = 0;
+  const leaveOut = () => {
+    omitted++;
+    if (lines[lines.length - 1] !== OMITTED_LINE) lines.push(OMITTED_LINE);
+  };
   for (const line of text.split("\n")) {
     if (line.trim() === "") continue;
     let value: unknown;
     try {
       value = JSON.parse(line);
-    } catch (error) {
-      swallow(error, "a transcript line that does not read is left out");
+    } catch {
+      // The parser's message can quote the line's text, which may be a credential: nothing of it is logged.
+      leaveOut();
       continue;
     }
-    lines.push(JSON.stringify(redactStrings(maskFields(value), mask)));
+    // A source record shaped like the marker could not be told from one Jig wrote.
+    if (isMapping(value) && value.type === "jig-omitted") {
+      leaveOut();
+      continue;
+    }
+    let serialized: string;
+    let residual: boolean;
+    try {
+      // The exact values are masked structurally in the parsed strings, numbers and property names, so no generic rule can split them.
+      const masked = redactStrings(maskExact(maskFields(value), secrets), mask);
+      serialized = JSON.stringify(masked);
+      // A match left in the serialized line, or in JSON a string encodes, is never edited: the line is left out. A value too deep to walk is left out too.
+      residual =
+        secrets.some((secret) =>
+          [secret, JSON.stringify(secret).slice(1, -1)].some((form) =>
+            serialized.includes(form),
+          ),
+        ) || leaksDecoded(masked, secrets, 0, false);
+    } catch {
+      // A stack overflow on a deeply nested value: nothing of its message is logged.
+      leaveOut();
+      continue;
+    }
+    if (residual) {
+      leaveOut();
+      continue;
+    }
+    lines.push(serialized);
   }
-  return lines;
+  return {
+    lines,
+    kept: lines.filter((l) => l !== OMITTED_LINE).length,
+    omitted,
+  };
 }
 
 /** The end of `lines` that fits in `COPY_BYTES`, and whether any was left out. */
@@ -199,7 +493,7 @@ function writePrivate(path: string, body: string): void {
 export function keepTranscriptCopy(
   record: Pick<
     LaunchRecord,
-    "id" | "token" | "vendor" | "configDir" | "createdAt"
+    "id" | "token" | "vendor" | "configDir" | "createdAt" | "provider"
   >,
   session: string | null,
   root = stateRoot(),
@@ -211,7 +505,14 @@ export function keepTranscriptCopy(
   try {
     mkdirSync(join(root, "runs"), { recursive: true, mode: 0o700 });
     mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const found = findTranscript(record, session);
+    // A provider account's transcript may hold its key, which only the process that resolved it can mask.
+    const found =
+      record.provider !== undefined && !holdsCredentialOf(record)
+        ? {
+            missing:
+              "a provider account's transcript is copied only by the wrapper that holds its credential",
+          }
+        : findTranscript(record, session);
     let copy: TranscriptCopy = {
       version: 1,
       record: record.id,
@@ -223,12 +524,30 @@ export function keepTranscriptCopy(
     if ("missing" in found) copy = { ...copy, missing: found.missing };
     else {
       const longer = statSync(found.path).size > COPY_BYTES;
-      const { text, dropped } = boundedEnd(
-        redactedLines(readBoundedTail(found.path, COPY_BYTES), record.token),
-      );
-      const path = join(dir, "transcript.jsonl");
-      writePrivate(path, text);
-      copy = { ...copy, transcript: path, cut: longer || dropped };
+      const redacted = redactedLines(readBoundedTail(found.path, COPY_BYTES), [
+        record.token,
+        heldCredential(record.id) ?? "",
+      ]);
+      const { text, dropped } = boundedEnd(redacted.lines);
+      // Whether the bounded copy still holds evidence is judged after the bound, over the lines that survived it.
+      const surviving = text
+        .split("\n")
+        .filter((l) => l !== "" && l !== OMITTED_LINE).length;
+      if (surviving === 0 && (longer || redacted.omitted > 0 || dropped))
+        copy = {
+          ...copy,
+          missing: "no line of the transcript could be kept safely",
+          cut: true,
+        };
+      else {
+        const path = join(dir, "transcript.jsonl");
+        writePrivate(path, text);
+        copy = {
+          ...copy,
+          transcript: path,
+          cut: longer || dropped || redacted.omitted > 0,
+        };
+      }
     }
     writePrivate(join(dir, "copy.json"), `${JSON.stringify(copy)}\n`);
     return copy;

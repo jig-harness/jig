@@ -116,6 +116,11 @@ function outputOf(r: ReadRecord): UnreportedRun["output"] {
   return tail.trim() === "" ? null : { untrusted: true, tail };
 }
 
+/** The excerpt, marked cut when the copy itself left lines out. */
+function withCopyCut<T extends { cut: boolean }>(excerpt: T, cut: boolean): T {
+  return cut ? { ...excerpt, cut: true } : excerpt;
+}
+
 /** The digest's entry for one run without a report: its copy's excerpt and its output's end. */
 function entryOf(r: ReadRecord, root?: string): UnreportedRun {
   const copy = readTranscriptCopy(r.record.id, root);
@@ -135,7 +140,7 @@ function entryOf(r: ReadRecord, root?: string): UnreportedRun {
             unavailable:
               copy?.missing ?? "the transcript's copy could not be read",
           }
-        : transcriptExcerpt(text),
+        : withCopyCut(transcriptExcerpt(text), copy?.cut === true),
     output: outputOf(r),
   };
 }

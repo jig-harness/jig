@@ -1,13 +1,12 @@
 /** Account admission, launch records and outcomes shared by the apply stages. */
-import { prelaunchSignIn, type SignInChecks } from "./account-sign-in.ts";
-import { harnessNamed } from "../../../shared/agent-harness/index.ts";
-import { claudeCode } from "../../../shared/agent-harness/claude-code.ts";
-import { SIGN_IN_TIMEOUT_SEC } from "../claude-sign-in.ts";
+import type { SignInChecks } from "./account-sign-in.ts";
+import { identityOf } from "./account-identity.ts";
+import { allowListOf } from "./provider-check.ts";
+import type { AllowList } from "../provider-allow.ts";
+import { stampProvider } from "../provider-launch.ts";
 import { accountLaunchOrdinal } from "../account-ordinal.ts";
 import {
-  checkIdentity,
   type CodexOptIn,
-  type IdentityCheck,
   notAdmitted,
   refreshWalls,
   replaySlotBlock,
@@ -68,7 +67,12 @@ import { laneBudgetWait, leftBehind } from "./followup-lane.ts";
 import type { LoadKind } from "../dashboard-contract.ts";
 import { judge, type LoadState, VALIDATION_GAUGES } from "../load.ts";
 import { currentIso, currentMs } from "../../../shared/time.ts";
-import { enforcedDeadlineMs } from "./launch-deadline.ts";
+import {
+  enforcedDeadlineMs,
+  KILL_GRACE_MS,
+  settleMs,
+  timeLeftMs,
+} from "./launch-deadline.ts";
 import {
   checksStage,
   heldAccounts,
@@ -76,7 +80,7 @@ import {
   type Preflight,
 } from "../preflight.ts";
 
-export { enforcedDeadlineMs } from "./launch-deadline.ts";
+export { enforcedDeadlineMs, settleMs, timeLeftMs } from "./launch-deadline.ts";
 export { rotated } from "./launch-rotation.ts";
 
 /** What `--apply` carries across a tick's repositories. */
@@ -119,26 +123,12 @@ export interface ApplyState {
   /** The checks run on an account before a tracker stage launches on it, and their answers this tick (`preflight.ts`). */
   preflight?: Preflight;
   signInChecks?: SignInChecks;
-}
-
-/** The kill grace a timed-out child may take beyond its timeout before it settles. */
-const KILL_GRACE_MS = 2000;
-
-/** The longest `calls` runtime calls of `timeoutMs` each take to settle: a call rounds up to whole seconds and may spend its kill grace. */
-export function settleMs(timeoutMs: number, calls = 1): number {
-  return calls * (Math.ceil(timeoutMs / 1000) * 1000 + KILL_GRACE_MS);
+  /** Each repository's `dispatch.allowed_providers` as this tick read it, by slug; `null`, or a slug it lacks, for none (`provider-allow.ts`). */
+  allowedProviders?: Map<string, string[] | null>;
 }
 
 /** The runtime calls one launch makes after its timeout: the mark, the terminal, the run tab and the agent read-back. */
 const LAUNCH_CALLS = 4;
-
-/** What the tick has left of its launcher's deadline, less the time its receipt needs; `null` for a tick that keeps no start. */
-export function timeLeftMs(state: ApplyState): number | null {
-  if (state.startedAt === undefined) return null;
-  const allowed =
-    enforcedDeadlineMs(state.machine) - state.machine.runtimeTimeoutMs;
-  return allowed - (currentMs() - state.startedAt);
-}
 
 /** The runtime-timeout calls a launch needs before it: the repository lookup and the identity check after the open, beside its admission's identity checks. The open itself runs on the workspace timeout. */
 const PREPARATION_CALLS = 2;
@@ -573,48 +563,6 @@ export async function replay(
   return outcome(record, attempt, true);
 }
 
-/** An identity check's answer, or that the tick has no time for one: a deferral, not a verdict on the account. */
-type IdentityAnswer =
-  | IdentityCheck
-  | { waits: string; waitsOn: "tick-deadline" };
-
-async function identityOf(
-  state: ApplyState,
-  slots: Slots,
-): Promise<IdentityAnswer> {
-  // Every identity check, including the one after an open, must leave the receipt's reserve intact,
-  // and a resolver that must be killed takes its grace beyond the timeout.
-  const timeoutSec = Math.ceil(state.machine.runtimeTimeoutMs / 1000);
-  const left = timeLeftMs(state);
-  if (left !== null && left < settleMs(state.machine.runtimeTimeoutMs))
-    return {
-      waits:
-        "the tick deadline has no room for the identity check and its receipt; a later tick retries this one",
-      waitsOn: "tick-deadline",
-    };
-  // Read afresh each time: a login file can change between two launches.
-  const settings =
-    state.runtime.name === "process"
-      ? (state.machine.process ?? { envKeep: [] })
-      : undefined;
-  const identity = await checkIdentity(slots.account, timeoutSec, settings);
-  if (
-    !identity.ok ||
-    harnessNamed(slots.account.vendor)?.capabilities.signInProbe !== true ||
-    // prelaunchSignIn probes Claude Code's login; another harness needs its own probe first.
-    slots.account.vendor !== claudeCode.name
-  )
-    return identity;
-  const remaining = timeLeftMs(state);
-  return prelaunchSignIn(
-    state,
-    slots.account,
-    identity,
-    settings,
-    remaining === null || remaining >= settleMs(SIGN_IN_TIMEOUT_SEC * 1000),
-  );
-}
-
 /** Why the account a pending record names cannot take its replayed launch now; `null` when it can. */
 export async function accountBlock(
   state: ApplyState,
@@ -635,7 +583,12 @@ export async function accountBlock(
   const slots = slotsOf(state.table, record);
   if (slots === undefined)
     return blocked(`${record.account} is no longer in the machine file`);
-  const unavailable = replaySlotBlock(slots, record, state.codexOptIn);
+  const unavailable = replaySlotBlock(
+    slots,
+    record,
+    state.codexOptIn,
+    allowListOf(state, record.repo),
+  );
   if (unavailable !== null) return blocked(unavailable);
   const identity = await identityOf(state, slots);
   if ("waits" in identity) return blocked(identity.waits, identity.waitsOn);
@@ -773,9 +726,10 @@ function accountsWait(
   waitsOn: LaneWait | undefined,
   refusal: LaunchOutcome | null,
   why: string,
+  allowed?: AllowList,
 ): AccountAdmission {
   return {
-    ...(refusal === null && waitsForRearmSlot(state, action, failed)
+    ...(refusal === null && waitsForRearmSlot(state, action, failed, allowed)
       ? { capacity: "accounts" as const }
       : {}),
     outcome: refusal ?? {
@@ -807,7 +761,14 @@ export async function admitAccount(
   const failed = new Set<string>(held.keys());
   let refusal: LaunchOutcome | null = null;
   for (;;) {
-    const admitted = admission(state, action, failed, pickupDeadlineSec, clone);
+    const admitted = admission(
+      state,
+      action,
+      failed,
+      pickupDeadlineSec,
+      clone,
+      allowListOf(state, repo),
+    );
     if ("waits" in admitted)
       return accountsWait(
         state,
@@ -817,6 +778,7 @@ export async function admitAccount(
         checked.waitsOn,
         refusal,
         admitted.waits,
+        allowListOf(state, repo),
       );
     const slots = admitted.admitted;
     const identity = await identityOf(state, slots);
@@ -896,6 +858,7 @@ export function holdRecord(
   slots: Slots,
 ): void {
   record.accountLaunchOrdinal = accountLaunchOrdinal(state.records, record) + 1;
+  stampProvider(record, slots.account);
   if (state.runtime.name === "process") record.runtime = "process";
   else delete record.runtime;
   writeRecord(record, state.root);

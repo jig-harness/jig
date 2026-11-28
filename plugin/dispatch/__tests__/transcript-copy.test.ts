@@ -20,6 +20,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { recordExit, writeRecord, type LaunchRecord } from "../lib/launches.ts";
+import { holdCredential } from "../lib/provider-held.ts";
 import { insertRow, readRows, type EndedRow } from "../lib/log.ts";
 import { closeStateDb, stateDb } from "../lib/state.ts";
 import {
@@ -166,6 +167,362 @@ describe("keeping a run's transcript copy", () => {
     expect(statSync(runDir(root, ID)).mode & 0o777).toBe(0o700);
     expect(statSync(String(copy?.transcript)).mode & 0o777).toBe(0o600);
     expect(readTranscriptCopy(ID, root)).toEqual(copy);
+  });
+
+  it("masks the launch token and a held provider credential in names, strings and numbers", () => {
+    const root = scratch();
+    const config = join(root, "config");
+    const credential = "98765432101";
+    claudeTranscript(config, [
+      {
+        type: "assistant",
+        message: { content: [] },
+        keep: "unrelated",
+        extra: {
+          "launch-token-1234": 1,
+          "<redacted>": 2,
+          [`key-${credential}`]: 3,
+          number: Number(credential),
+          text: `me@x.io-${credential}`,
+        },
+      },
+    ]);
+    holdCredential(ID, credential);
+    try {
+      const copy = keepTranscriptCopy(
+        record(config, {
+          provider: { provider: "p" },
+        } as unknown as Partial<LaunchRecord>),
+        SESSION,
+        root,
+      );
+      const text = readFileSync(String(copy?.transcript), "utf8");
+      expect(text).not.toContain("launch-token-1234");
+      expect(text).not.toContain(credential);
+      const parsed = JSON.parse(text.trim());
+      expect(parsed.keep).toBe("unrelated");
+      // The colliding names stay distinct fields, none lost (the token-named field is a credential key, so its value is masked).
+      expect(parsed.extra["<redacted>#2"]).toBe(2);
+      expect(Object.values(parsed.extra).sort()).toEqual(
+        expect.arrayContaining([2, 3, "<redacted>"]),
+      );
+      expect(Object.keys(parsed.extra)).toHaveLength(5);
+    } finally {
+      holdCredential("none", "unused-placeholder");
+    }
+  });
+
+  it("keeps an own constructor field and masks a field name a held secret would rename, with its value", () => {
+    const root = scratch();
+    const config = join(root, "config");
+    claudeTranscript(config, [
+      {
+        type: "assistant",
+        message: { content: [] },
+        constructor: "plain",
+        authorization: "some-other-opaque-value",
+      },
+    ]);
+    holdCredential(ID, "authorization");
+    try {
+      const copy = keepTranscriptCopy(
+        record(config, {
+          provider: { provider: "p" },
+        } as unknown as Partial<LaunchRecord>),
+        SESSION,
+        root,
+      );
+      const parsed = JSON.parse(
+        readFileSync(String(copy?.transcript), "utf8").trim(),
+      );
+      expect(parsed.constructor).toBe("plain");
+      expect(parsed.authorization).toBeUndefined();
+      expect(parsed["<redacted>"]).toBe("<redacted>");
+    } finally {
+      holdCredential("none", "unused-placeholder");
+    }
+  });
+
+  it("leaves out a line whose serialized form still matches a held secret, and marks the copy cut", () => {
+    const root = scratch();
+    const config = join(root, "config");
+    claudeTranscript(config, [
+      { type: "assistant", message: { content: [] }, keep: "one" },
+      { type: "assistant", message: { content: [] }, "\nfixture-text": 1 },
+    ]);
+    holdCredential(ID, "\\nfixture-text");
+    try {
+      const copy = keepTranscriptCopy(
+        record(config, {
+          provider: { provider: "p" },
+        } as unknown as Partial<LaunchRecord>),
+        SESSION,
+        root,
+      );
+      const text = readFileSync(String(copy?.transcript), "utf8");
+      const kept = text
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l));
+      expect(kept).toEqual([
+        { type: "assistant", message: { content: [] }, keep: "one" },
+        { type: "jig-omitted" },
+      ]);
+      expect(copy?.cut).toBe(true);
+    } finally {
+      holdCredential("none", "unused-placeholder");
+    }
+  });
+
+  it("records no transcript when its only line cannot be kept", () => {
+    const root = scratch();
+    const config = join(root, "config");
+    claudeTranscript(config, [
+      { type: "assistant", message: { content: [] }, "\nfixture-text": 1 },
+    ]);
+    holdCredential(ID, "\\nfixture-text");
+    try {
+      const copy = keepTranscriptCopy(
+        record(config, {
+          provider: { provider: "p" },
+        } as unknown as Partial<LaunchRecord>),
+        SESSION,
+        root,
+      );
+      expect(copy?.transcript).toBeNull();
+      expect(copy?.missing).toContain("no line");
+      expect(copy?.cut).toBe(true);
+    } finally {
+      holdCredential("none", "unused-placeholder");
+    }
+  });
+
+  it("leaves out a line whose tool output holds JSON with a secret in its decoded form", () => {
+    const root = scratch();
+    const config = join(root, "config");
+    const secret = 'ab"cd\\ef-credential';
+    claudeTranscript(config, [
+      {
+        type: "response_item",
+        payload: {
+          type: "function_call_output",
+          call_id: "c1",
+          output: JSON.stringify({ output: `leaked ${secret}`, exit_code: 1 }),
+        },
+      },
+    ]);
+    holdCredential(ID, secret);
+    try {
+      const copy = keepTranscriptCopy(
+        record(config, {
+          provider: { provider: "p" },
+        } as unknown as Partial<LaunchRecord>),
+        SESSION,
+        root,
+      );
+      expect(copy?.transcript).toBeNull();
+      expect(copy?.cut).toBe(true);
+    } finally {
+      holdCredential("none", "unused-placeholder");
+    }
+  });
+
+  it("keeps a line whose benign text is escaped nine times and holds no secret", () => {
+    const root = scratch();
+    const config = join(root, "config");
+    let benign = "é";
+    for (let i = 0; i < 9; i++)
+      benign = JSON.stringify(benign)
+        .slice(1, -1)
+        .replace(
+          /[^\\"\w]/g,
+          (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+        );
+    claudeTranscript(config, [{ out: `benign-note ${benign}` }]);
+    holdCredential(ID, "some-other-credential");
+    try {
+      const copy = keepTranscriptCopy(
+        record(config, {
+          provider: { provider: "p" },
+        } as unknown as Partial<LaunchRecord>),
+        SESSION,
+        root,
+      );
+      const kept = readFileSync(String(copy?.transcript), "utf8")
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l));
+      expect(kept).toContainEqual({ out: `benign-note ${benign}` });
+      expect(copy?.cut).toBe(false);
+    } finally {
+      holdCredential("none", "unused-placeholder");
+    }
+  });
+
+  it("leaves out lines whose JSON after a header, JSON string, deep nesting or credential key could hide a secret, and a marker-shaped source record", () => {
+    const root = scratch();
+    const config = join(root, "config");
+    const secret = 'ab"cd\\ef-credential';
+    const safe = { type: "assistant", message: "kept-evidence" };
+    // Nine encodings: the secret shows only in the layer after the last decode.
+    let layered = secret;
+    for (let i = 0; i < 9; i++) layered = JSON.stringify(layered).slice(1, -1);
+    let deep: unknown = "x";
+    for (let i = 0; i < 3000; i++) deep = [deep];
+    claudeTranscript(config, [
+      safe,
+      { out: `Output:\n${JSON.stringify({ a: secret })}` },
+      { out: JSON.stringify(JSON.stringify({ a: secret })) },
+      { out: JSON.stringify({ password: "opaque value x" }) },
+      { out: '{"big":9007199254740993}' },
+      { out: `\`\`\`json\n${JSON.stringify({ a: secret })}\n\`\`\`\ntrailing` },
+      { [JSON.stringify({ a: secret })]: 1 },
+      {
+        out: `note \`${JSON.stringify(secret).replace(/e/g, "\\u0065")}\` end`,
+      },
+      { deep },
+      { out: "\\".repeat(512) },
+      {
+        out: `wrapped ${JSON.stringify(JSON.stringify({ token: "opaque-final-layer" })).slice(1, -1)}`,
+      },
+      { out: `layered ${layered} end` },
+      { type: "jig-omitted", marker: "source-marker-xyz" },
+    ]);
+    holdCredential(ID, secret);
+    try {
+      const copy = keepTranscriptCopy(
+        record(config, {
+          provider: { provider: "p" },
+        } as unknown as Partial<LaunchRecord>),
+        SESSION,
+        root,
+      );
+      const text = readFileSync(String(copy?.transcript), "utf8");
+      expect(text).toContain("kept-evidence");
+      expect(text).not.toContain("opaque value");
+      expect(text).not.toContain("ef-credential");
+      expect(text).not.toContain("note ");
+      expect(text).not.toContain("layered");
+      const backslashed = text
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l))
+        .filter((e) => typeof e.out === "string" && /^\\+$/.test(e.out));
+      expect(backslashed).toEqual([{ out: "\\".repeat(512) }]);
+      expect(text).not.toContain("opaque-final-layer");
+      expect(text).toContain("9007199254740993");
+      expect(text).not.toContain("source-marker-xyz");
+      expect(text).not.toContain("trailing");
+      expect(
+        text.split("\n").filter((l) => l.includes("jig-omitted")).length,
+      ).toBeGreaterThan(0);
+      expect(copy?.cut).toBe(true);
+    } finally {
+      holdCredential("none", "unused-placeholder");
+    }
+  });
+
+  it("leaves out text that names a credential field in any layer, whatever surrounds it or repeats it", () => {
+    const root = scratch();
+    const config = join(root, "config");
+    const enc = (v: string) => JSON.stringify(v).slice(1, -1);
+    const inner = enc(JSON.stringify({ token: "opaque-one" }));
+    claudeTranscript(config, [
+      { type: "assistant", message: "kept-between-a" },
+      { out: `[2026-01-01 log] ${enc(inner)} footer-a` },
+      { out: `${enc(JSON.stringify(`{"token":"opaque-two","token":null}`))}` },
+      { out: `{"token":"opaque-three","token":null}` },
+      { type: "assistant", message: "kept-between-b" },
+    ]);
+    holdCredential(ID, "some-other-credential");
+    try {
+      const copy = keepTranscriptCopy(
+        record(config, {
+          provider: { provider: "p" },
+        } as unknown as Partial<LaunchRecord>),
+        SESSION,
+        root,
+      );
+      const kept = readFileSync(String(copy?.transcript), "utf8")
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l));
+      const text = JSON.stringify(kept);
+      expect(text).not.toContain("opaque-");
+      expect(text).not.toContain("footer-a");
+      expect(kept).toEqual([
+        { type: "assistant", message: "kept-between-a" },
+        { type: "jig-omitted" },
+        { out: '{"token": "<redacted>","token": "<redacted>"}' },
+        { type: "assistant", message: "kept-between-b" },
+      ]);
+      expect(copy?.cut).toBe(true);
+    } finally {
+      holdCredential("none", "unused-placeholder");
+    }
+  });
+
+  it("scans members once, keeps masked values and leaves out a member that surfaces only past the decode bound", () => {
+    const root = scratch();
+    const config = join(root, "config");
+    const layer = (v: string, n: number) => {
+      let out = v;
+      for (let i = 0; i < n; i++) out = JSON.stringify(out).slice(1, -1);
+      return out;
+    };
+    claudeTranscript(config, [
+      { type: "assistant", message: "kept-a" },
+      { out: '{"token": null, "other": 1}' },
+      { out: '{"token": "", "x": "<redacted>"}' },
+      { out: '{"token": "<redacted>"}' },
+      { out: '{"token":' },
+      { out: '{"token": null-opaque-tail}' },
+      { out: '{"token": ""opaque-tail}' },
+      { out: '{"token": "<redacted>"opaque-tail}' },
+      { out: '{"token": "<redacted>" opaque-spaced}' },
+      { out: '{"token": null   opaque-spaced}' },
+      { out: '{"token": ""\topaque-spaced}' },
+      { out: layer('{"token":"opaque-nine"}', 9) },
+      { out: layer('{"token":"opaque-three"}', 3) },
+      { out: '\\"'.repeat(16000) },
+      { type: "assistant", message: "kept-b" },
+    ]);
+    holdCredential(ID, "some-other-credential");
+    try {
+      const started = performance.now();
+      const copy = keepTranscriptCopy(
+        record(config, {
+          provider: { provider: "p" },
+        } as unknown as Partial<LaunchRecord>),
+        SESSION,
+        root,
+      );
+      expect(performance.now() - started).toBeLessThan(2000);
+      const text = readFileSync(String(copy?.transcript), "utf8");
+      expect(text).not.toContain("opaque-");
+      expect(text).toContain('\\"other\\": 1');
+      expect(text).toContain('{\\"token\\":"}');
+      const kept = text
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l));
+      expect(kept[0]).toEqual({ type: "assistant", message: "kept-a" });
+      expect(kept.at(-1)).toEqual({ type: "assistant", message: "kept-b" });
+      expect(kept.map((l) => l.out ?? l.type)).toEqual([
+        "assistant",
+        '{"token": "<redacted>", "other": 1}',
+        '{"token": "<redacted>", "x": "<redacted>"}',
+        '{"token": "<redacted>"}',
+        '{"token":',
+        '{"token": "<redacted>"}',
+        "jig-omitted",
+        '\\"'.repeat(16000),
+        "assistant",
+      ]);
+      expect(text).toContain("jig-omitted");
+    } finally {
+      holdCredential("none", "unused-placeholder");
+    }
   });
 
   it("redacts structured tool inputs by their secret keys", () => {

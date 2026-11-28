@@ -18,6 +18,7 @@ import {
   type ProcessSettings,
 } from "./process-environment.ts";
 import { openProcessStartupLog } from "./process-spool.ts";
+import { namedVariables } from "../credential-env.ts";
 import { offerProcessRequest } from "./process-ipc.ts";
 import { launchdCommand, processJobName } from "./process-service.ts";
 
@@ -147,7 +148,19 @@ export async function launchProcess(
         ok: false,
         detail: "the process launch does not match its record",
       };
-    const env = processEnvironment(process.env, settings, record, record.id);
+    const env = {
+      ...processEnvironment(
+        process.env,
+        settings,
+        record,
+        record.id,
+        record.provider,
+      ),
+      // A provider account's wrapper resolves its credential with these; its pass never gets them.
+      ...(record.provider === undefined
+        ? {}
+        : namedVariables(process.env, settings.credentialEnv ?? [])),
+    };
     const request = await offerProcessRequest(
       { id: record.id, token, workspace: workspace.path, env },
       Math.max(1, until - currentMs()),

@@ -183,6 +183,9 @@ export async function actObserved(
   // The tracker stages of this repository, a steward's resume of one included, are checked against its tracker.
   const tracker = trackerTargetOf(opened, observation.tracked);
   if (tracker !== null) apply.preflight?.targets.set(repo.slug, tracker);
+  // Every launch for this repository is checked against its own allow list, as its default branch holds it.
+  apply.allowedProviders ??= new Map();
+  apply.allowedProviders.set(repo.slug, section.allowedProviders ?? null);
   // A steward resume can launch a pickup before the ordinary pickup stage, so
   // it meets the same unreadable-serialization boundary; its other records
   // (follow-ups, needs, facets, causes, re-arms) do not launch pickups.

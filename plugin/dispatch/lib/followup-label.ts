@@ -15,7 +15,7 @@
  */
 import { failureText } from "./text.ts";
 import { editLabels, pullRequestLabels } from "./forge.ts";
-import type { ReadRecord } from "./launches.ts";
+import { readEnded, type ReadRecord } from "./launches.ts";
 import { outcomeOf } from "./followup-outcomes.ts";
 import { routineEnd } from "./routine-reruns.ts";
 import { waitEnd } from "./followup-waits.ts";
@@ -104,8 +104,33 @@ export function labelFailed(label: FollowupLabel): boolean {
 }
 
 /** How an ended follow-up record ended, for its label: `null` while it holds, or when it runs again (a routine run again, or after a rate limit's reset). */
-export function followupEndOf(r: ReadRecord): TickOutcome | null {
+function followupEndOf(r: ReadRecord): TickOutcome | null {
   if (r.record.action !== "followup" || r.record.pr === null) return null;
   if (routineEnd(r) || waitEnd(r)) return null;
   return outcomeOf(r);
+}
+
+/**
+ * A follow-up's end as its pull request's state label, now that its exit is
+ * recorded: best effort, one line here when it is not written, and the next
+ * tick corrects it; the wrapper's exit stays the stage's.
+ */
+export async function labelFollowupRun(id: string): Promise<void> {
+  let line: string | null;
+  let target = `the follow-up of launch record ${id}`;
+  try {
+    const ended = readEnded(id);
+    const outcome = ended === null ? null : followupEndOf(ended);
+    if (ended === null || outcome === null || ended.record.pr === null) return;
+    target = `PR #${ended.record.pr}`;
+    const label = await labelFollowupEnd({
+      slug: ended.record.repo,
+      pr: ended.record.pr,
+      outcome,
+    });
+    line = label.line;
+  } catch (error) {
+    line = defectLine(target, error);
+  }
+  if (line !== null) console.error(`jig dispatch run: ${line}`);
 }

@@ -111,6 +111,18 @@ export function isCalendarDate(text: string): boolean {
   }
 }
 
+/** Whether `name` is a time zone the platform knows by its IANA name (`UTC`, `Europe/Amsterdam`). */
+export function isTimeZone(name: string): boolean {
+  if (!/^[A-Za-z][A-Za-z0-9_+/-]*$/.test(name)) return false;
+  try {
+    Temporal.Now.zonedDateTimeISO(name);
+    return true;
+  } catch (error) {
+    if (error instanceof RangeError) return false;
+    throw error;
+  }
+}
+
 const MONTHS = [
   "Jan",
   "Feb",

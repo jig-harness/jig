@@ -117,7 +117,7 @@ export function recordStartupDeath(
   });
 }
 
-/** A host-wide incident is presented once, independent of how many repositories it affected. */
+/** A host-wide incident is presented once, independent of how many repositories it affected; a provider account's refused credential is its sign-in problem. */
 export function accountStartupNeeds(
   accounts: MachineConfig["accounts"],
   root = stateRoot(),
@@ -147,9 +147,12 @@ export function accountStartupNeeds(
         url: null,
         title: null,
         since: row.since,
-        reason: signIn
-          ? `Sign in again for ${account.name} in its configuration directory ${account.configDir}.`
-          : `Investigate repeated startup failures for ${account.name} in its configuration directory ${account.configDir}.`,
+        reason:
+          signIn && account.provider !== undefined
+            ? `The credential of the provider account ${account.name} was refused (unauthorized): make its reference ${account.provider.credential} resolve through the machine file's credential_command.`
+            : signIn
+              ? `Sign in again for ${account.name} in its configuration directory ${account.configDir}.`
+              : `Investigate repeated startup failures for ${account.name} in its configuration directory ${account.configDir}.`,
         decisions: [],
         notified: null,
         workspaces: [],

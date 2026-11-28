@@ -63,10 +63,34 @@ import {
   harnessOfProgram,
   programList,
 } from "../../../../shared/agent-harness/index.ts";
-import { unresolved } from "../../../../shared/agent-harness/account-identity.ts";
+import {
+  resolved,
+  unresolved,
+} from "../../../../shared/agent-harness/account-identity.ts";
 
 /** The harness an account bills through, by its registered name (`shared/agent-harness`). */
 export type AccountVendor = HarnessName;
+
+/**
+ * The variable a dispatcher's launch on a provider account sets to that
+ * account's identity, `provider:<provider>:<fingerprint>`: the fingerprint
+ * is of the account's credential reference and base URL, never of the key,
+ * so the identity names the account the machine file declares. It is read
+ * before any credential variable, since the launch also carries the
+ * account's key, whose fingerprint would only name the key.
+ */
+export const PROVIDER_IDENTITY_VARIABLE = "JIG_PROVIDER_IDENTITY";
+
+/** A provider account's identity, as `PROVIDER_IDENTITY_VARIABLE` carries it. */
+export const PROVIDER_IDENTITY = /^provider:[a-z][a-z0-9-]*:[0-9a-f]{12}$/;
+
+/** The provider account's identity a launch declared, or `null` when it declared none. */
+function declaredProvider(vendor: HarnessName): AccountIdentity | null {
+  const declared = process.env[PROVIDER_IDENTITY_VARIABLE] ?? "";
+  return PROVIDER_IDENTITY.test(declared)
+    ? resolved(vendor, declared, PROVIDER_IDENTITY_VARIABLE)
+    : null;
+}
 
 /** Every field required, same discipline as `ClaimDiag` (`lib/claim.ts`):
  * a resolver that cannot answer says so explicitly via `reason`, rather than
@@ -89,7 +113,11 @@ export function resolveAccountIdentity(
   passArgv: readonly string[],
 ): AccountIdentity {
   const harness = harnessOfProgram(passArgv[0]);
-  if (harness !== null) return harness.accountIdentity(process.env);
+  // A provider account's launch declares its identity before any credential it carries.
+  if (harness !== null)
+    return (
+      declaredProvider(harness.name) ?? harness.accountIdentity(process.env)
+    );
   // Only argv[0]'s basename, never the full command line: an unrecognized
   // pass command can be an operator's own wrapper (`env VAR=secret claude
   // -p ...`), and this reason string is persisted into the claim file on
@@ -118,7 +146,9 @@ const CREDENTIAL_FINGERPRINT = /^(token|api-key):/;
  * credentials can bill one account, and one account can switch between a
  * token and a file-backed login, so a fingerprint is a display label and
  * never proves which account a wall belongs to. An unknown account is never
- * equal to another.
+ * equal to another. A provider account's identity (`provider:`) is hashed:
+ * its fingerprint is of the reference the machine file declared to be the
+ * account, so it is the account by definition.
  */
 export function accountHash(identity: AccountIdentity): string | null {
   if (identity.account === null || identity.vendor === null) return null;

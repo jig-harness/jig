@@ -40,7 +40,16 @@
  * Before a launch the tick resolves, with the drive's own resolver, the
  * identity the wrapper's environment yields for the admitted account
  * (`passEnvironment`), and compares it with the account's `identity`; a
- * mismatch, or an identity that does not resolve, starts nothing.
+ * mismatch, or an identity that does not resolve, starts nothing. A provider
+ * account's environment declares its derived identity, which the resolver
+ * reads before any credential, so its check needs no secret.
+ *
+ * A launch for a repository is admitted only on an account whose provider
+ * the repository's allow list admits (`provider-allow.ts`); an account it
+ * refuses is passed over, as one of another stage is, and with none left
+ * the launch waits naming `provider-not-allowed`. A provider account is
+ * never admitted while `PROVIDER_ADMISSION_HOLD` stands
+ * (`provider-account.ts`): it is reported as configured and not admitted.
  */
 import { resolve } from "node:path";
 import type { AccountWeights } from "./local-weights.ts";
@@ -82,6 +91,21 @@ import {
 import type { MachineAccount } from "./machine-config.ts";
 import { serves, type ServedStage } from "./account-stages.ts";
 import { accountWall, type Wall } from "./walls.ts";
+import { SECRET_VARIABLES } from "../../shared/credentials.ts";
+import { PROVIDER_IDENTITY_VARIABLE } from "../../skills/drive-pr/scripts/lib/identity.ts";
+import { providerHold } from "./provider-account.ts";
+import {
+  type AllowList,
+  PROVIDER_NOT_ALLOWED,
+  providerRefusal,
+} from "./provider-allow.ts";
+import {
+  CREDENTIAL_HANDOFF,
+  type ProviderLaunch,
+  withheldFromPasses,
+  withoutVariables,
+  withProviderVariables,
+} from "./provider-environment.ts";
 
 type Env = Record<string, string | undefined>;
 
@@ -89,7 +113,9 @@ type Env = Record<string, string | undefined>;
  * The environment a pass billed to `account` runs in: `base` with every
  * registered harness's credential variables (the ones the drive's resolver
  * reads before a configuration directory), directory variable and session
- * markers (`CLAUDECODE`, `CODEX_…`) removed, and the account's configuration
+ * markers (`CLAUDECODE`, `CODEX_…`), Jig's own provider-launch variables and
+ * the credential command's (`credential_env`) removed, whatever their letter
+ * case, and the account's configuration
  * directory set, so the drive's resolver and quota adapters read that
  * account and no other, and the session detects its own agent rather than
  * the wrapper's.
@@ -101,13 +127,58 @@ export function passEnvironment(
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(base))
     if (value !== undefined) env[key] = value;
-  for (const name of credentialVariables()) delete env[name];
+  // Whatever the letter case: a mixed-case spelling reaches the pass as surely as the exact one.
+  withoutVariables(
+    env,
+    [
+      ...credentialVariables(),
+      ...directoryVariables(),
+      "CLAUDECODE",
+      CREDENTIAL_HANDOFF,
+      PROVIDER_IDENTITY_VARIABLE,
+      SECRET_VARIABLES,
+      ...withheldFromPasses(),
+    ],
+    ["CODEX_"],
+  );
   for (const name of Object.keys(env))
     if (isSessionMarker(name)) delete env[name];
-  for (const name of directoryVariables()) delete env[name];
   env[harnessOrDefault(account.vendor).environment.directoryVariable] =
     account.configDir;
   return env;
+}
+
+/**
+ * The environment a pass billed to a provider account runs in: the one a
+ * subscription account's pass starts from (`passEnvironment`), with every
+ * other provider key removed and the account's own added
+ * (`withProviderVariables`): its credential, where one is given, its base
+ * URL and its identity.
+ */
+export function providerPassEnvironment(
+  base: Env,
+  account: { vendor: HarnessName; configDir: string },
+  launch: ProviderLaunch,
+  credential: string | null,
+): Record<string, string> {
+  return withProviderVariables(
+    passEnvironment(base, account),
+    launch,
+    credential,
+  );
+}
+
+/** What a provider account's launch adds to its environment; `undefined` for a subscription account. */
+export function providerLaunchOf(
+  account: Pick<MachineAccount, "identity" | "provider">,
+): ProviderLaunch | undefined {
+  return account.provider === undefined
+    ? undefined
+    : {
+        harness: account.provider.harness,
+        baseUrl: account.provider.baseUrl,
+        identity: account.identity,
+      };
 }
 
 /** Whether this host opted in to Codex's bypass, with the extra words a Codex pass gets, and why not when it did not. */
@@ -170,6 +241,8 @@ export type LaunchKind = { codex: CodexOptIn } & {
   kind: "pass";
   deadlineSec: number;
   stage?: ServedStage;
+  /** The allow list of the repository the launch works on; absent where no repository is named (a report). */
+  allowed?: AllowList;
 };
 
 /** Why an account is passed over for `launch`'s stage; `null` when it serves it or no stage is named. */
@@ -203,6 +276,24 @@ function vendorRefusal(vendor: string, launch: LaunchKind): string | null {
   return null;
 }
 
+/**
+ * Why `account` is never admitted for `launch`, whatever its slots: the
+ * provider accounts' hold, its vendor, or the repository's allow list;
+ * `null` when it may be.
+ */
+function accountRefusal(
+  account: MachineAccount,
+  launch: LaunchKind,
+): string | null {
+  return (
+    providerHold(account) ??
+    vendorRefusal(account.vendor, launch) ??
+    (launch.allowed === undefined
+      ? null
+      : providerRefusal(account, launch.allowed))
+  );
+}
+
 /** The vendor of an account a launch was admitted on, which admission only allows for a vendor with a documented pass command. */
 export function admittedVendor(account: MachineAccount): HarnessName {
   const vendor = account.vendor;
@@ -227,7 +318,7 @@ export function notAdmitted(
   codex: CodexOptIn,
 ): NotAdmitted[] {
   return accounts.flatMap((account) => {
-    const reason = vendorRefusal(account.vendor, {
+    const reason = accountRefusal(account, {
       kind: "pass",
       deadlineSec,
       codex,
@@ -410,7 +501,7 @@ function describeSlots(table: Slots[], launch: LaunchKind): string {
     .map((s) => {
       const passed = stageRefusal(s.account, launch);
       if (passed !== null) return `${s.account.name} (${passed})`;
-      const refused = vendorRefusal(s.account.vendor, launch);
+      const refused = accountRefusal(s.account, launch);
       const weight = `${s.account.name} weight ${s.weight.configured ?? "unreadable"} (effective ${effectiveAccountWeight(s, refused)})`;
       if (refused !== null) return `${weight} (${refused})`;
       return `${weight}, ${s.held}/${s.account.maxPerAccount}${s.wall === null ? "" : ` (walled until ${s.wall.resetAt})`}${s.wallUnrecorded ? " (wall not recorded)" : ""}`;
@@ -430,12 +521,17 @@ export function replaySlotBlock(
   slots: Slots,
   record: Pick<LaunchRecord, "vendor" | "configDir">,
   codex: CodexOptIn,
+  allowed?: AllowList,
 ): string | null {
   if (
     slots.account.vendor !== record.vendor ||
     slots.account.configDir !== record.configDir
   )
     return `${slots.account.name} no longer has the vendor and directory the launch was recorded with`;
+  const refused =
+    providerHold(slots.account) ??
+    (allowed === undefined ? null : providerRefusal(slots.account, allowed));
+  if (refused !== null) return `${slots.account.name}: ${refused}`;
   const weightBlock = accountWeightBlock(slots);
   if (weightBlock !== null) return `${slots.account.name}: ${weightBlock}`;
   if (
@@ -454,7 +550,7 @@ export function replaySlotBlock(
 function closed(slots: Slots, launch: LaunchKind): string | null {
   const passed = stageRefusal(slots.account, launch);
   if (passed !== null) return passed;
-  const refused = vendorRefusal(slots.account.vendor, launch);
+  const refused = accountRefusal(slots.account, launch);
   if (refused !== null) return refused;
   const weightBlock = accountWeightBlock(slots);
   if (weightBlock !== null) return weightBlock;
@@ -511,11 +607,65 @@ export function admitRearm(
     stage !== undefined &&
     table.length > 0 &&
     table.every((s) => !serves(s.account, stage));
+  const disallowed = unallowed(table, launch, excluded);
   return {
     waits: unserved
       ? `no account serves the ${stage} stage: ${describeSlots(table, launch)}`
-      : `no account has a free slot: ${describeSlots(table, launch)}`,
+      : disallowed !== null
+        ? `${disallowed}: ${describeSlots(table, launch)}`
+        : `${slotWait(table, launch, excluded)}: ${describeSlots(table, launch)}`,
   };
+}
+
+/**
+ * The wait for a slot. Where the repository's allow list refuses some account
+ * that serves the stage, the wait names that, so a free account the list
+ * refuses is not read as the reason nothing is free.
+ */
+function slotWait(
+  table: readonly Slots[],
+  launch: LaunchKind,
+  excluded: ReadonlySet<string>,
+): string {
+  const allowed = launch.allowed;
+  const refusedByList =
+    allowed !== undefined &&
+    table.some(
+      (s) =>
+        !excluded.has(s.account.name) &&
+        stageRefusal(s.account, launch) === null &&
+        providerRefusal(s.account, allowed) !== null,
+    );
+  return refusedByList
+    ? `no account the provider allow list admits has a free slot`
+    : "no account has a free slot";
+}
+
+/**
+ * The repository's refusal, when its allow list is what leaves `launch`
+ * without an account: every account that serves the stage and is not
+ * passed over either way is one its list refuses.
+ */
+function unallowed(
+  table: readonly Slots[],
+  launch: LaunchKind,
+  excluded: ReadonlySet<string>,
+): string | null {
+  const allowed = launch.allowed;
+  if (allowed === undefined) return null;
+  const candidates = table.filter(
+    (s) =>
+      !excluded.has(s.account.name) && stageRefusal(s.account, launch) === null,
+  );
+  if (
+    candidates.length === 0 ||
+    candidates.some((s) => providerRefusal(s.account, allowed) === null)
+  )
+    return null;
+  const refusals = candidates
+    .map((s) => `${s.account.name}: ${providerRefusal(s.account, allowed)}`)
+    .join("; ");
+  return `${PROVIDER_NOT_ALLOWED}: ${allowed.repo}'s provider allow list admits none of the accounts that serve this launch (${refusals})`;
 }
 
 /** A takeover uses the replaced record's account and slot only with a positive readable weight, no wall and an admitted vendor. */
@@ -524,14 +674,20 @@ export function admitTakeover(
   replaced: ReadRecord,
   deadlineSec: number,
   codex: CodexOptIn,
+  allowed?: AllowList,
 ): Admission {
   const slots = slotsOf(table, replaced.record);
   if (slots === undefined)
     return {
       waits: `the record it replaces bills ${replaced.record.account}, which the machine file no longer lists`,
     };
-  const launch: LaunchKind = { kind: "pass", deadlineSec, codex };
-  const refused = vendorRefusal(slots.account.vendor, launch);
+  const launch: LaunchKind = {
+    kind: "pass",
+    deadlineSec,
+    codex,
+    ...(allowed === undefined ? {} : { allowed }),
+  };
+  const refused = accountRefusal(slots.account, launch);
   const weightBlock = accountWeightBlock(slots);
   if (weightBlock !== null)
     return { waits: `${slots.account.name}: ${weightBlock}` };
@@ -559,16 +715,23 @@ export function admitHostDriverTakeover(
   deadlineSec: number,
   codex: CodexOptIn,
   stage: ServedStage,
+  allowed?: AllowList,
 ): Admission {
   const slots = table.find((entry) => entry.account.name === account);
   if (slots === undefined)
     return {
       waits: `the live driver's account ${account} is no longer in the machine file`,
     };
-  const launch: LaunchKind = { kind: "pass", deadlineSec, codex, stage };
+  const launch: LaunchKind = {
+    kind: "pass",
+    deadlineSec,
+    codex,
+    stage,
+    ...(allowed === undefined ? {} : { allowed }),
+  };
   const refusal =
     stageRefusal(slots.account, launch) ??
-    vendorRefusal(slots.account.vendor, launch) ??
+    accountRefusal(slots.account, launch) ??
     accountWeightBlock(slots);
   if (refusal !== null) return { waits: `${slots.account.name}: ${refusal}` };
   if (slots.wallUnrecorded)
@@ -614,6 +777,17 @@ export async function checkIdentity(
       reason: `the drive documents no pass command for the vendor ${vendor}`,
     };
   const selected = { vendor, configDir: account.configDir };
+  const provider = providerLaunchOf(account);
+  const environment =
+    settings === undefined
+      ? passEnvironment(process.env, selected)
+      : processEnvironment(
+          process.env,
+          settings,
+          selected,
+          undefined,
+          provider,
+        );
   const done = await run(
     [
       process.execPath,
@@ -626,9 +800,9 @@ export async function checkIdentity(
     {
       timeoutSec,
       env:
-        settings === undefined
-          ? passEnvironment(process.env, selected)
-          : processEnvironment(process.env, settings, selected),
+        provider === undefined
+          ? environment
+          : withProviderVariables(environment, provider, null),
     },
   );
   if (done.code !== 0)

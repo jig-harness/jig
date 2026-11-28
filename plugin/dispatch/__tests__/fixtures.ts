@@ -399,6 +399,12 @@ fs.appendFileSync(F + "/drive-runs.jsonl", JSON.stringify({
   launch: process.env.JIG_LAUNCH ?? null,
   report: process.env.JIG_DRIVER_REPORT ?? null,
 }) + "\\n");
+// A test of what a pass may carry names the variables to record (one per line in drive-env), never the whole environment.
+if (fs.existsSync(F + "/drive-env")) {
+  const names = fs.readFileSync(F + "/drive-env", "utf8").split("\\n").filter(Boolean);
+  fs.writeFileSync(F + "/drive-env.json", JSON.stringify(Object.fromEntries(names.map((n) => [n, process.env[n] ?? null]))));
+}
+if (fs.existsSync(F + "/drive-echo-key")) { console.log("key " + process.env.ANTHROPIC_API_KEY); console.error("key " + process.env.ANTHROPIC_API_KEY); }
 const until = Date.now() + 60000;
 if (fs.existsSync(F + "/drive-stderr")) process.stderr.write(fs.readFileSync(F + "/drive-stderr"));
 while (fs.existsSync(F + "/drive-hold") && Date.now() < until) Bun.sleepSync(50);

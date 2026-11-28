@@ -1,4 +1,12 @@
-/** Environment shared by the process runtime's identity probe and wrapper. */
+/**
+ * Environment shared by the process runtime's identity probe and wrapper.
+ * A subscription account's keeps the base set and the configured names,
+ * never a blocked one. A provider account's starts from the same and has
+ * every provider key removed besides (`provider-environment.ts`), so a name
+ * `process.env_keep` keeps for a subscription account's pass, such as
+ * `GEMINI_API_KEY`, never reaches it; its identity and base URL are added,
+ * and the wrapper adds its credential once it has resolved it.
+ */
 import { delimiter, isAbsolute, join, resolve } from "node:path";
 import {
   credentialVariables,
@@ -10,10 +18,16 @@ import {
 import { isMapping } from "../../../shared/config-layers.ts";
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
 import { HOOK_WORKTREE_ENV } from "../../../shared/worktree-hooks.ts";
+import {
+  type ProviderLaunch,
+  withProviderVariables,
+} from "../provider-environment.ts";
 
 export interface ProcessSettings {
   path?: string;
   envKeep: string[];
+  /** The credential command's variables (`credential_env`), which only a provider account's wrapper gets, to resolve its credential with. */
+  credentialEnv?: string[];
 }
 
 type Environment = Record<string, string | undefined>;
@@ -122,6 +136,7 @@ export function processEnvironment(
   settings: ProcessSettings,
   account: { vendor: HarnessName; configDir: string },
   launch?: string,
+  provider?: ProviderLaunch,
 ): Record<string, string> {
   const env: Record<string, string> = Object.create(null);
   for (const [name, value] of Object.entries(source))
@@ -137,5 +152,7 @@ export function processEnvironment(
   env[harnessOrDefault(account.vendor).environment.directoryVariable] =
     account.configDir;
   if (launch !== undefined) env.JIG_LAUNCH = launch;
-  return env;
+  return provider === undefined
+    ? env
+    : withProviderVariables(env, provider, null);
 }

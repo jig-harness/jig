@@ -11,7 +11,7 @@ unknown wall, and a 402 is a plain pass failure that is tried again on the
 next tick. Model identifiers are a closed list. Nothing records what a pass
 cost, and the choice of agent is a two-value type spread through the code.
 With this built, a host lists provider accounts beside its subscriptions. Each
-has a [spend cap](../GLOSSARY.md), a reference to its credential and a
+has a reference to its credential, a [spend cap](../GLOSSARY.md) when it is metered, and a
 provider the repository allows. Every pass's cost is in a ledger, a 429 is
 waited out and a 402 parks one account with one need. A model outside the
 known families is routed by configuration alone, and a third
@@ -26,7 +26,14 @@ failures and costs are governed is in
 [outbound-calls.md § Model providers](outbound-calls.md#model-providers); this
 page holds the account schema and everything else the build steps read.
 The harness interface is built, with Claude Code and Codex behind it
-(`plugin/shared/agent-harness/`); the rest is not built yet.
+(`plugin/shared/agent-harness/`). The account kind, the credential command, the identity forms and the
+provider allow list are built, the list applying to dispatch launches; a
+provider account is reported as configured and not admitted while the
+provider admission hold stands, which comes off only once the spend-cap work lands together with the endpoint-routing, redaction and original-transcript work. The
+rest is not built yet: the allow list's reach over the measurement's replays
+and the repository need when no allowed account exists, redirect
+refusal and a minimum length beyond 8 characters are not enforced, and the
+spend cap below is the design, not a shipped control.
 
 ## How it works
 
@@ -57,9 +64,10 @@ unknown key in the file is.
 | `kind` | `provider` | required for this kind | |
 | `harness` | a registered harness (`claude-code`, `codex`, and `pi` once built) | required | The agent harness the account's passes run in |
 | `provider` | lowercase name, `^[a-z][a-z0-9-]*$` | required | The provider the account bills, spelled as a repository's allow list spells it (`openrouter`, `gemini`, `anthropic`) |
-| `base_url` | an `https://` URL | the harness's default for the provider | Where the harness sends its requests. A non-HTTPS URL is refused, except a loopback address. The host must be one the provider's profile names, or be named in the machine file's `provider_hosts` for that provider. Redirects to another host are refused, and a loopback or private-network address is admitted only when the machine file names it for the account |
+| `base_url` | an `https://` URL | the harness's own default, allowed only for `anthropic` on `claude-code` and `openai` on `codex`; otherwise required | Where the harness sends its requests. A non-HTTPS URL is refused, except a loopback address. The path carries no percent escape and no credential-shaped value, so a URL whose path does is refused. The host must be one the provider's profile names, or be named in the machine file's `provider_hosts` for that provider. Refusing a redirect to another host is deferred and not enforced today. A loopback or private-network address is admitted only when the machine file names it for the account |
 | `credential` | a [credential reference](#the-credential-reference) | required | Never the credential itself |
-| `spend_cap.daily` | decimal US dollars, as a string | required | The day's [spend cap](#the-spend-cap) |
+| `billing` | `pay-per-token` or `flat-rate` | `pay-per-token` | A `flat-rate` plan has no `spend_cap`: its own usage windows bound it, through the account's wall and `max_per_account` |
+| `spend_cap.daily` | decimal US dollars, as a string | required for `pay-per-token` | The day's [spend cap](#the-spend-cap) |
 | `spend_cap.per_run` | decimal US dollars, as a string | none | The ceiling of one pass |
 | `spend_cap.timezone` | a time zone name such as `Europe/Amsterdam` | `UTC` | Where the day starts |
 | `models` | list of `{id, price}` | none: any model the harness accepts | The models the account may run. A launch whose route names a model outside a given list is refused with that reason. Where the provider reports no cost, `price.input` and `price.output` give what each costs in dollars per million tokens |
@@ -83,6 +91,8 @@ consumer login at all.
 The stages are the dispatcher's launch stages: `pickup` (a `do-item` pass),
 `rearm` (a drive-pr pass), `followup` and `steward`. The routing rows, the
 harness profiles and the ledger's operations use these names.
+
+The example below is the planned shape: it names a third harness (`pi`) and a Gemini endpoint the loader does not accept yet.
 
 ```yaml
 credential_command: [op, read, --no-newline]   # see the credential reference
@@ -132,12 +142,14 @@ credential_timeout: 10s
 The contract of the command:
 
 - It is an argument list, run without a shell. Jig appends the reference as
-  the last argument, as one argument, so a reference with a space or a quote
-  in it is not interpreted.
-- It runs with the host's environment (the 1Password session it needs is
-  there), not the pass's.
+  the last argument, as one argument, so a quote or other shell character in a reference is not interpreted. The loader itself refuses a reference with whitespace in it, so address a vault item whose name has a space by its item ID, which 1Password's reference syntax accepts in place of the name.
+- It runs with a small base of the host's environment (`PATH`, the home, the
+  user, the locale and the temporary directory) and the variables
+  `credential_env` names, such as a vault's session or service-account token
+  (`OP_SERVICE_ACCOUNT_TOKEN`), never the pass's. A host whose vault needs a
+  variable lists it there.
 - Its standard output is the value. One trailing newline is removed. A value
-  that is empty, holds a newline inside it or is over 4 KiB is refused.
+  that is empty, holds a newline or a null character inside it, is under 8 characters (UTF-16 code units, as the masking counts them) or is over 4 KiB is refused.
 - It succeeds with exit 0 within `credential_timeout` (10 seconds by
   default). A non-zero exit or an empty value is `unauthorized` for that
   account: the credential is missing, expired or refused. The account is held
@@ -146,12 +158,13 @@ The contract of the command:
   launch waits for the next tick, as for any system that did not answer.
 - Jig resolves it at each launch and keeps the value only in the launching
   process's memory and the pass's environment. The value is never written to a
-  launch record, a receipt, the ledger, a transcript Jig keeps, an error
-  message or a command line. Every place text is recorded (stdout, stderr and
-  transcripts) is redacted for the **exact resolved value** as well as by
+  launch record, a receipt, the ledger, an error message or a command line.
+  Every place text is recorded (stdout, stderr and the transcript copy) masks
+  the **exact resolved value** as well as by
   [`plugin/shared/credentials.ts`](../plugin/shared/credentials.ts), whose
   pattern masking recognises only credential-shaped text and cannot catch an
-  opaque value printed alone.
+  opaque value printed alone. The transcript copy does not mask a value cut
+  partway, so the guarantee is not yet complete.
 - `credential_command` is read only from the machine file, so a repository
   cannot choose what runs on the host. With no command, a provider account is
   refused at load with that reason. 1Password's `op://` form is one
@@ -183,8 +196,9 @@ the file's author declared to be it.
 
 ### The spend cap
 
-Every provider account has a **daily cap** and may have a **per-run ceiling**.
-A subscription account has neither: its limit is the vendor's.
+Every pay-per-token provider account has a **daily cap** and may have a
+**per-run ceiling**. A flat-rate provider account takes no cap, and a
+subscription account has neither: its limit is the vendor's.
 
 - **The day.** A day runs from midnight to midnight in `spend_cap.timezone`
   (UTC by default). The cap refills whole at the boundary and the refusal's
@@ -291,16 +305,17 @@ dispatch:
   only.
 - **Its reach.** Every launch that sends the repository's code or its tracker
   text to a provider: pickups, re-arms, follow-ups, steward passes and the
-  [measurement's](#measuring-a-fast-decision-model) replays. A session a person
+  [measurement's](#measuring-a-fast-decision-model) replays (planned: the
+  measurement is built later, and the list applies to dispatch launches now). A session a person
   starts is the person's. A harness that routes onward (OpenRouter forwards to
   the model's own provider) is allowed by the name the list holds; the list does
   not name the providers behind it.
 - **A refused launch.** The launch does not start and nothing is reserved. Its
   receipt and the dashboard line give the reason `provider-not-allowed`, naming
   the provider and the repository, as any other hold does. It raises no need
-  per launch. A repository that has work ready and no account on the host that
-  its list allows raises one need for the repository, which clears when the
-  list or the accounts change.
+  per launch. Planned, not built: a repository that has work ready and no
+  account on the host that its list allows raises one need for the
+  repository, which clears when the list or the accounts change.
 
 ### The harness profile of a stage
 

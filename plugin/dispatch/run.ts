@@ -146,7 +146,7 @@ import {
   driveState,
   driveTs,
 } from "../skills/drive-pr/scripts/lib/driver/paths.ts";
-import { passEnvironment } from "./lib/accounts.ts";
+import * as providerLaunch from "./lib/provider-launch.ts";
 import {
   claimRecord,
   isDrive,
@@ -165,8 +165,7 @@ import {
 } from "./lib/run-report.ts";
 import { DRIVER_REPORT_VARIABLE } from "../shared/driver-report.ts";
 import { settleAtExit } from "./lib/shared-launches.ts";
-import { followupEndOf, labelFollowupEnd } from "./lib/followup-label.ts";
-import { defectLine } from "../shared/pr-labels/write.ts";
+import { labelFollowupRun } from "./lib/followup-label.ts";
 import {
   followupPassArgv,
   pickupPassArgv,
@@ -501,12 +500,22 @@ async function wrap(id: string, token: string): Promise<number> {
     return CLAIMED;
   }
   if (!(await publishOwner(record, identity.value))) return 3;
+  // A provider account's credential is resolved here, before anything starts.
+  if (
+    !(await providerLaunch.launchCredential(record, () => endSharedClaim(id)))
+  )
+    return 2;
   process.chdir(record.workspace.path);
   let code: number;
   if (isInteractive(record)) {
     code = await executeStage(id, record);
   } else {
-    code = await spawnSupervisor(id, token, record.runtime === "process");
+    code = await spawnSupervisor(
+      id,
+      token,
+      record.runtime === "process",
+      providerLaunch.supervisorEnvironment(record),
+    );
     enterAfterStage();
   }
   await finishWrapper(record);
@@ -549,7 +558,9 @@ async function executeStage(
     // it starts is a session the line started, named by its launch record.
     // A pass of its own starts no background task, as a drive's passes do.
     {
-      ...withoutRunTabMarker(passEnvironment(process.env, record)),
+      ...withoutRunTabMarker(
+        providerLaunch.stageEnvironment(process.env, record),
+      ),
       ...(ownPass(record) ? NO_BACKGROUND_TASKS : {}),
       [LAUNCH_VARIABLE]: id,
       [RESOLVED_PARKS_PR_ENV]: resolvedParkPr(record),
@@ -560,11 +571,12 @@ async function executeStage(
     },
     { ...runOptions(record), ...(owner === undefined ? {} : { owner }) },
   );
-  return finishRun(id, record, ran);
+  return finishRun(id, record, providerLaunch.redactedRan(ran));
 }
 
 /** A separate process owns the stage and its exit, surviving wrapper death to stop it. */
 async function supervise(id: string, token: string): Promise<number> {
+  providerLaunch.takeHandedCredential(id);
   const record = readRecord(id);
   const wrapper = readStageClaim(id, token);
   if (
@@ -842,7 +854,7 @@ async function publishEnd(
   const wallUnrecorded = !(await wallRecorded(record, code));
   recordFinishedExit(id, record, ran, wallUnrecorded);
   await endSharedClaim(id);
-  await labelFollowup(id);
+  await labelFollowupRun(id);
   printKeptReport(id);
   return code ?? 1;
 }
@@ -864,31 +876,6 @@ async function endSharedClaim(id: string): Promise<void> {
     console.error(
       `jig dispatch run: the launch's end is not on its claim (${why}); the next tick writes it`,
     );
-}
-
-/**
- * A follow-up's end as its pull request's state label, now that its exit is
- * recorded: best effort, one line here when it is not written, and the next
- * tick corrects it; the wrapper's exit stays the stage's.
- */
-async function labelFollowup(id: string): Promise<void> {
-  let line: string | null;
-  let target = `the follow-up of launch record ${id}`;
-  try {
-    const ended = readEnded(id);
-    const outcome = ended === null ? null : followupEndOf(ended);
-    if (ended === null || outcome === null || ended.record.pr === null) return;
-    target = `PR #${ended.record.pr}`;
-    const label = await labelFollowupEnd({
-      slug: ended.record.repo,
-      pr: ended.record.pr,
-      outcome,
-    });
-    line = label.line;
-  } catch (error) {
-    line = defectLine(target, error);
-  }
-  if (line !== null) console.error(`jig dispatch run: ${line}`);
 }
 
 /**
@@ -951,9 +938,9 @@ async function trackerMain(slug: string, deadline: string): Promise<number> {
 
 /** `run.ts identity <harness>`: the account the named harness reads in this environment. */
 function identityMain(name: string): number {
-  const harness = harnessNamed(name);
-  const read = () => harness?.accountIdentity(process.env);
-  console.log(JSON.stringify(read() ?? resolveAccountIdentity([name])));
+  // A provider account's declared identity comes before the harness's own reading.
+  const program = harnessNamed(name)?.program ?? name;
+  console.log(JSON.stringify(resolveAccountIdentity([program])));
   return 0;
 }
 

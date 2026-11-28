@@ -2522,13 +2522,20 @@ make, use the entry's term instead.
   check it.
   Planned ([ROADMAP.md](ROADMAP.md) item 55).
 - **Provider account** — an account of the *dispatcher* that pays for model
-  use by what the model provider charges, with the host's own key, where a
-  subscription account pays a flat fee. It names a harness, a provider, a
-  base URL, a reference to its credential and a *spend cap*. A launch on a
-  provider account carries that credential and no other, and the account is
-  parked when the provider says its credit is spent. Planned
-  ([design/provider-accounts.md](design/provider-accounts.md), ROADMAP.md
-  item 59).
+  use with the host's own key with a model provider, where a subscription
+  account pays the program's vendor a flat fee. It names a harness, a
+  provider, a base URL (optional for Anthropic on Claude Code and OpenAI on Codex), a *credential reference* and, for a key billed by
+  the token, a *spend cap*. A launch on a provider account carries that
+  credential and no other provider's key. The machine file accepts it
+  today, and the dispatcher reports it as configured and not admitted while
+  the provider admission hold stands, which comes off only once the spend-cap work lands together with the endpoint-routing, redaction and original-transcript work; parking the account when the provider says its
+  credit is spent is planned
+  ([plugin/CONFIGURATION.md](plugin/CONFIGURATION.md#provider-accounts),
+  [design/provider-accounts.md](design/provider-accounts.md)).
+- **Credential reference** — the name of a secret in a store, such as
+  `op://Vault/item/field`, written in configuration where the secret itself
+  would otherwise go. A command the host configures turns the reference
+  into the value at the moment it is needed, so the configuration never holds the value. A copy of a session's transcript masks the exact value wherever it is written, but a partial value can remain (the original transcript's retention is pending work). A *provider account*'s credential is one.
 - **Agent harness** — the program that runs an AI model as an agent: it
   reads the prompt, calls the tools, edits files and ends with a result.
   Claude Code and Codex are the harnesses Jig supports. Jig
@@ -2555,10 +2562,12 @@ make, use the entry's term instead.
   and an extension that runs code loads only from the host's allowlist.
   Planned ([design/provider-accounts.md](design/provider-accounts.md)).
 - **Provider allow list** — the model providers a repository's code may be
-  sent to, named in the repository's own *dispatch* configuration and read
-  from its default branch. The *dispatcher* starts no pass for the
-  repository on an account of another provider.
-  Planned ([design/provider-accounts.md](design/provider-accounts.md)).
+  sent to (`dispatch.allowed_providers`), named in the repository's own
+  *dispatch* configuration and read from its default branch. The
+  *dispatcher* starts no pass for the repository on an account of another
+  provider; a subscription account counts under its vendor's provider. A
+  repository with no list uses only its Claude and OpenAI subscription
+  accounts.
 - **BYOK (bring your own key)** — paying a model provider with a key the
   team or the host already holds, in place of a subscription the agent
   program's vendor sells. In Jig that is a *provider account*.

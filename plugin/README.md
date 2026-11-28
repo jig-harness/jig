@@ -439,8 +439,23 @@ launch claim with no end, holds it, and `jig ask` names that hold as what it
 waits on. Once the hold has lasted 30 minutes, counted from the later of the
 launch and the drive's stop, the tick notifies it as needing a person.
 
-**The account picks the agent.** Each account in the machine file names its
-`vendor`, and that decides the agent every session on it runs in: a re-arm
+The machine file lists subscription accounts and provider accounts. A subscription account bills
+a vendor's plan through its signed-in configuration directory; a
+[provider account](CONFIGURATION.md#provider-accounts) bills a model
+provider with the host's own key, named by a credential reference that the
+host's `credential_command` resolves at each launch, and its pass carries
+that one key and no other provider's. A provider account is reported as
+configured and not admitted while the provider admission hold stands; the hold comes off only once the spend-cap work lands together with the endpoint-routing, redaction and original-transcript work.
+Every launch for a repository, of either kind, needs the account's provider
+on the repository's own
+[`dispatch.allowed_providers`](CONFIGURATION.md#dispatch), read from its
+default branch; with no list, only its Claude and OpenAI subscription
+accounts are used. A launch the list refuses starts nothing and is reported
+as `provider-not-allowed`, naming the repository, the account and the
+provider.
+
+**The account picks the agent.** Each subscription account in the machine file names its
+`vendor` (a provider account names its `harness` instead), and that decides the agent every session on it runs in: a re-arm
 admitted on a `claude` account runs Claude Code's pass command with
 `CLAUDE_CONFIG_DIR` set to the account's directory, one on a `codex` account
 runs Codex's documented pass command
