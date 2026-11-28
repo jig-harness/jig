@@ -404,6 +404,92 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.324.1] - 2026-11-28
+
+### Fixed
+
+- Filing drafts whose labels require an epic now checks the actual issue type
+  and create screen together, so a field the screen omits can be left blank.
+
+## [0.324.0] - 2026-11-28
+
+### Changed
+
+- **Breaking:** `tracker.ts create` and `update` now exit `3`, with only the reason on stderr, when the tracker or the repository's configuration refuses a well-formed request, such as filing an issue without a facet or a required label, a type or size the repository does not list, a sub-task as a parent, removing a Jira issue type, setting no priority on a Jira issue, or giving a label that stands for a facet, a field's value or a workflow state. These used to exit `2` and print the usage text after the reason. A malformed command line still exits `2` with the usage text, so a caller can now tell "the command was wrong" from "the change was refused". **Consumer action:** advised at instructions. A runbook or script that reads exit `2` from `tracker.ts create` or `update` as an incomplete filing or any of these refusals (label, field value, workflow state, facet value, parent) should read exit `3` instead. **Detect:** `text:tracker.ts create`, `text:refused to file`, `text:is not a type of this repository`, `text:gives a sub-task no children`.
+
+## [0.323.3] - 2026-11-28
+
+### Fixed
+
+- The online audit's Jira open-issue counts no longer read every open issue
+  of the project. Each count is now one estimate request
+  (`search/approximate-count`; the transport may resend one after a transient failure), shown as
+  Jira's estimate, so the count phase no longer pages through issues. The counts get 5 seconds, measured from
+  when they start, after the forge and tracker checks; past that they are
+  reported unchecked, naming the bound, and the rest of the audit goes on.
+  The estimate is of what the open read selects (statuses outside the Done
+  category, and every configured blocked status name), not each issue's
+  reading by its own type's state map, so it can differ from the issues the
+  pool reads. The full-audit time is not measured here.
+  **Consumer action:** none.
+
+## [0.323.2] - 2026-11-28
+
+### Fixed
+
+- Define reflection classes and the class vocabulary in the glossary and link to those definitions from the reflection documentation.
+
+## [0.323.1] - 2026-11-28
+
+### Fixed
+
+- A recurring-class finding the dispatcher records in the reflection store
+  now lists up to ten rows it counted: each pull request or item, when, the
+  head commit where a launch record names it, the reason and what the run's
+  closing report concluded, then summarizes any remaining rows. A drive's
+  stall that the once-per-head re-drive followed is that re-drive's to settle:
+  the dashboard and the finding leave it out of the recurrence count, and a
+  stall finding names the stalls it left out with their re-drives.
+
+## [0.323.0] - 2026-11-28
+
+### Added
+
+- A person can start an item ahead of its open blockers, on the record:
+  `tracker.ts claim <KEY> --override-blockers "<reason>"` in an interactive
+  session clears a claim's blocker refusal, and a refusal of
+  `do_item.preflight_command` whose second output line is `kind: blockers`,
+  and nothing else. Before it writes, the claim prints the open blockers and
+  what starting early risks; once it lands, it posts one comment recording
+  the person, the reason, the blockers (keeping only a blocker's key when
+  shared visibility is unverified) and a stable attempt marker so retries
+  check trusted comments before posting and report an indeterminate outcome
+  instead of duplicating a comment, carries them in the claim marker
+  (`do_item.claim_marker`) and prints them as `"override"` in its JSON. The
+  pull request it leads to carries a `## Blocker override` section naming
+  what to merge after, as advice. A dispatched or driven session
+  (`JIG_LAUNCH` set), a served or factory claim and a work-batch member's
+  claim (`--work-batch`) are refused the option, and the
+  [do-item skill](plugin/skills/do-item/SKILL.md) passes it only on the
+  person's own word. **Consumer action:** none.
+- `do_item.override_label` names a label an overridden claim adds to the
+  item; unset, none is added, and Jig never removes it
+  ([configuration](plugin/CONFIGURATION.md#do_item)). **Consumer
+  action:** none.
+
+### Changed
+
+- A claim made in an interactive session (`JIG_LAUNCH` unset), without
+  `--for`, `--factory-ancestor` or `--work-batch`, refuses an item with an
+  open `blocked_by` relation, or one whose blocker cannot be read (exit 3,
+  `"why": "blockers"`, nothing written, the blockers and the consequence
+  statement in its JSON), as a served claim already did; one the claim
+  would refuse anyway reports that refusal instead. Such a claim reads the
+  item's relations and each blocker once more. Dispatched and work-batch
+  claims are unchanged. **Consumer action:** advised at instructions. Where
+  a runbook starts a blocked item by hand, have the person claim it with
+  `--override-blockers "<reason>"` instead of removing the blocker link.
+
 ## [0.322.0] - 2026-11-28
 
 ### Added
@@ -11654,7 +11740,13 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.322.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.324.1...HEAD
+[0.324.1]: https://github.com/jig-harness/jig/compare/v0.324.0...v0.324.1
+[0.324.0]: https://github.com/jig-harness/jig/compare/v0.323.3...v0.324.0
+[0.323.3]: https://github.com/jig-harness/jig/compare/v0.323.2...v0.323.3
+[0.323.2]: https://github.com/jig-harness/jig/compare/v0.323.1...v0.323.2
+[0.323.1]: https://github.com/jig-harness/jig/compare/v0.323.0...v0.323.1
+[0.323.0]: https://github.com/jig-harness/jig/compare/v0.322.0...v0.323.0
 [0.322.0]: https://github.com/jig-harness/jig/compare/v0.321.0...v0.322.0
 [0.321.0]: https://github.com/jig-harness/jig/compare/v0.320.0...v0.321.0
 [0.320.0]: https://github.com/jig-harness/jig/compare/v0.319.0...v0.320.0

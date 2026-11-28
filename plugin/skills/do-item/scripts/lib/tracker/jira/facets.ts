@@ -553,7 +553,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
       const typed = t === null ? null : (slot.map?.fromTracker(t.name) ?? null);
       if (typed !== null)
         throw new TrackerRequestError(
-          "invalid",
+          "refused",
           `a Jira issue always has an issue type, and ${issue.key}'s is ${t?.name}, the type ${typed}; give it another type instead`,
         );
       return { fields: {}, add: [], remove: carried };
@@ -845,7 +845,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
       if (owned === undefined) return;
       const value = fallback.read([owned]) as string;
       throw new TrackerRequestError(
-        "invalid",
+        "refused",
         `the label '${owned}' ${where} is the type ${value}; give it as the issue's type (type: ${value}), not as a label`,
       );
     },

@@ -22,17 +22,39 @@ import type { Finding } from "./schema.ts";
  */
 export const ANSWER_MS = JIRA_TIMEOUT_MS + 5_000;
 
-/** `ask`'s answer, or a refusal once it has given none within the time allowed. */
-async function within<T>(ask: (signal: AbortSignal) => Promise<T>): Promise<T> {
+/**
+ * How long the open population counts may take. The counts are information,
+ * not a check the configuration fails, so a tracker slow to estimate them
+ * leaves them unchecked rather than holding the audit for a request's whole
+ * deadline. The refusal then names only the bound: a request failure that
+ * would have settled later, inside the request's own deadline, is not waited
+ * for.
+ */
+export const COUNT_MS = 5_000;
+
+/**
+ * `ask`'s answer, or a refusal once it has given none within `ms`. The refusal
+ * ends the wait at the bound even when `ask` does not heed its signal.
+ */
+async function within<T>(
+  ask: (signal: AbortSignal) => Promise<T>,
+  ms = ANSWER_MS,
+): Promise<T> {
   const deadline = new AbortController();
-  const timer = setTimeout(
-    () =>
-      deadline.abort(new Error(`no answer within ${ANSWER_MS / 1000} seconds`)),
-    ANSWER_MS,
-  );
-  timer.unref();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const reason = new Error(`no answer within ${ms / 1000} seconds`);
+      // Reject first: an abort listener that settles the answer from inside
+      // the abort cannot then win the race, nor replace the bound's message.
+      reject(reason);
+      deadline.abort(reason);
+    }, ms);
+  });
   try {
-    return await ask(deadline.signal);
+    // The race keeps a handler on the answer, so one settling after the bound
+    // is not an unhandled rejection.
+    return await Promise.race([ask(deadline.signal), expired]);
   } finally {
     clearTimeout(timer);
   }
@@ -122,12 +144,18 @@ export async function facetFindings(tracker: Tracker): Promise<Finding[]> {
   });
 }
 
-/** Open population counts, where the adapter can compare its configured scope. */
-export async function poolScopeFindings(tracker: Tracker): Promise<Finding[]> {
+/**
+ * Open population counts, where the adapter can compare its configured scope,
+ * bounded by `ms` (`COUNT_MS`); a count past it is reported unchecked.
+ */
+export async function poolScopeFindings(
+  tracker: Tracker,
+  ms = COUNT_MS,
+): Promise<Finding[]> {
   const read = tracker.poolScopeCounts?.bind(tracker);
   if (read === undefined) return [];
   try {
-    const counts = await within(read);
+    const counts = await within(read, ms);
     const scope = counts.scoped
       ? `${counts.pool} within the configured pool issue-type scope`
       : "no pool issue-type scope is configured";
@@ -135,7 +163,9 @@ export async function poolScopeFindings(tracker: Tracker): Promise<Finding[]> {
       {
         id: "info:issue_tracker.pool_scope",
         severity: "info",
-        message: `open population${counts.approximate ? " (approximate)" : ""}: ${counts.project} issues in the project; ${scope}`,
+        message: counts.approximate
+          ? `open population (Jira's estimate of the open-issue query's selection; each issue type's own state map is not applied, so it can differ from the issues the pool reads): ${counts.project} issues in the project; ${scope}`
+          : `open population: ${counts.project} issues in the project; ${scope}`,
       },
     ];
   } catch (e) {

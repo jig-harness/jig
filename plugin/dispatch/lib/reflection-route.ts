@@ -62,11 +62,16 @@ import {
   pendingFindings,
 } from "./reflection-findings.ts";
 import {
-  commonReasons,
   RECURRENCE_DAYS,
   recurrenceDays,
   recurringClasses,
 } from "./recurring.ts";
+import {
+  type Occurrence,
+  occurrences,
+  settlesByRedrive,
+  topReasons,
+} from "./recurring-rows.ts";
 import { stateDb } from "./state.ts";
 import { stewardRecurrences } from "./steward-recurring.ts";
 import { failureText } from "./text.ts";
@@ -208,7 +213,10 @@ function findingText(
   const days = starts
     .filter((_, i) => r.nights[i])
     .map((start) => dateIn(timeZone, start));
-  const reasons = commonReasons(db, r, nowMs, timeZone)
+  const rows = occurrences(db, r, starts[0] ?? nowMs, nowMs);
+  const counted = rows.filter((o) => o.redrive === null);
+  const settled = rows.filter((o) => o.redrive !== null);
+  const reasons = topReasons(counted)
     .map((c) => `"${c.reason}" (${plural(c.rows, "row")})`)
     .join("; ");
   return {
@@ -216,11 +224,47 @@ function findingText(
     description: [
       `The dispatcher's outcome log shows the class ${r.class} on the ${r.stage} stage of ${r.repo} on ${days.length} of the seven host days to ${dateIn(timeZone, nowMs)} (${days.join(", ")}), ${plural(r.rows, "row")} in all.`,
       `The reasons given most often: ${reasons}.`,
-      `The dashboard's History view shows these rows with the filter ${dashboardFilter(r, nowMs, timeZone)}, added to the address jig dispatch dashboard prints.`,
+      `The occurrences counted: ${listed(counted, OCCURRENCES_LISTED, occurrenceText)}.`,
+      ...(settlesByRedrive(r) ? [settledText(settled)] : []),
+      `The dashboard's History view shows these rows${settled.length > 0 ? ", and the stalls left out," : ""} with the filter ${dashboardFilter(r, nowMs, timeZone)}, added to the address jig dispatch dashboard prints.`,
       `The dispatcher records a class that recurs once per week (this is ${week}); a class still recurring in a later week is a new finding.`,
     ].join(" "),
-    suggested_fix: `Read the rows the filter shows, then decide what makes the ${r.stage} stage end this way on this repository: a dispatcher limit or expectation, a skill's step, or the repository's own instructions, gates or configuration. When the cause is the repository's, move the finding to its scaffolding. The dispatcher changes nothing itself.`,
+    suggested_fix: `Read the occurrences listed and the rows the filter shows, then decide what makes the ${r.stage} stage end this way on this repository: a dispatcher limit or expectation, a skill's step, or the repository's own instructions, gates or configuration. When the cause is the repository's, move the finding to its scaffolding. The dispatcher changes nothing itself.`,
   };
+}
+
+/** The most occurrences a finding names one by one; the rest it counts. */
+const OCCURRENCES_LISTED = 10;
+const SETTLED_LISTED = 5;
+
+function listed(
+  all: readonly Occurrence[],
+  limit: number,
+  text: (o: Occurrence) => string,
+): string {
+  const named = all.slice(0, limit).map(text).join("; ");
+  const more = all.length - limit;
+  return more > 0 ? `${named}; and ${more} more` : named;
+}
+
+const headText = (o: Occurrence) =>
+  o.head === null ? "head unknown" : `head ${o.head}`;
+
+/** One occurrence: what it was about, when, at which head, and the last word its run left. */
+function occurrenceText(o: Occurrence): string {
+  const report = o.concluded === null ? "" : `, its report: "${o.concluded}"`;
+  return `${o.target || "no target"} at ${o.at} (${headText(o)}): ${o.reason}${report}`;
+}
+
+/** The stalls left out of the count, each the once-per-head re-drive's to settle. */
+function settledText(settled: readonly Occurrence[]): string {
+  if (settled.length === 0)
+    return "No stall in these days was followed by its once-per-head re-drive, so every one is counted.";
+  return `Left out of the count: ${plural(settled.length, "stall")} the once-per-head re-drive followed, each that re-drive's to settle: ${listed(
+    settled,
+    SETTLED_LISTED,
+    (o) => `${o.target} at ${o.at} (${headText(o)}, re-drive ${o.redrive})`,
+  )}.`;
 }
 
 /** The finding event for one recurring class, its id derived from the repository, stage, class and week. */

@@ -657,9 +657,11 @@ describe("Jira: issue_tracker.jira.field_labels as a facet's field", () => {
     const { t, calls } = jira(routes(SITE), OVERLAY);
     await expect(
       t.createIssue({ title: "T", description: "", labels: ["size:M"] }),
-    ).rejects.toThrow(
-      "label 'size:M' is the value of the Jira field 'Size', which keeps the size; give it as the issue's size, not as a label",
-    );
+    ).rejects.toMatchObject({
+      code: "refused",
+      message:
+        "label 'size:M' is the value of the Jira field 'Size', which keeps the size; give it as the issue's size, not as a label",
+    });
     expect(writes(calls)).toEqual([]);
   });
 

@@ -441,7 +441,7 @@ describe("Jira adapter: fields read as labels", () => {
       }),
     );
     expect(filed).toBeInstanceOf(TrackerRequestError);
-    expect((filed as TrackerRequestError).code).toBe("invalid");
+    expect((filed as TrackerRequestError).code).toBe("refused");
     expect(String(filed)).toContain(refusal);
     const added = await rejection(
       t.updateIssue("ENG-1", { addLabels: ["fixversion:2.5"] }),

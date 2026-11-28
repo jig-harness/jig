@@ -102,8 +102,8 @@ labels. An epic needs no size. On Jira, omit a facet kept in a custom field
 when the selected issue type’s create screen lacks that field. Supplying it
 produces a refusal naming the field and issue type. The weekly sweep reports
 how many issues it passed over for each facet absent from both screens.
-The tracker refuses an incomplete filing before writing (exit `2`) and
-names what it lacks. Write each
+The tracker refuses an incomplete filing before writing (exit `3`, the
+reason alone on stderr) and names what it lacks. Write each
 file with the Write tool under `.context/scratch/`, never by interpolating
 text into a shell command. A draft whose tracker write failed is the only
 copy of its findings: move it out of `.context/scratch/` (to
@@ -433,7 +433,7 @@ with `"parent": "<PARENT-KEY>"`, each from its own JSON file:
 bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" create --input .context/scratch/file-issue/<n>.json
 ```
 
-Each prints the new issue's key and URL. Exit `2` with `refused to file
+Each prints the new issue's key and URL. Exit `3` with `refused to file
 an issue with no …` names what the issue lacks, and nothing was written:
 add it to the issue's JSON, validate again (step 8) and file it. On any
 other failure, stop: report which
