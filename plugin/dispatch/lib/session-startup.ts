@@ -315,7 +315,7 @@ function noticeOf(record: LaunchRecord, output: string): string | undefined {
  * when there is none, for a pass that exited cleanly, and for another
  * stage's pass.
  */
-function usageNotice(
+export function usageNotice(
   record: LaunchRecord,
   code: number | null,
   output: string,

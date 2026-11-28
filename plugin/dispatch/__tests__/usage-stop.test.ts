@@ -9,7 +9,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import type { LineSnapshot } from "../lib/dashboard-contract.ts";
-import { readRecord } from "../lib/launches.ts";
+import { readRecord, recordResult, readResult } from "../lib/launches.ts";
 import { failedStartup, startupWall } from "../lib/session-startup.ts";
 import { stateDb } from "../lib/state.ts";
 import { readTranscriptCopy } from "../lib/transcript-copy.ts";
@@ -360,4 +360,105 @@ test("a usage notice in a pickup's, a follow-up's and a steward's transcript wal
     ) ?? [];
   expect(again.map(({ action }) => action).sort()).toEqual([...stages].sort());
   expect(again.every(({ account }) => account === "b")).toBe(true);
+}, 60_000);
+
+test("a nonzero pass that printed a question or recorded a result still walls on a terminal quota error while preserving both", async () => {
+  const w = world();
+  current = w;
+  w.setConfig(
+    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\ndispatch:\n  identity: factory-bot\n  followup_command: /followup\n`,
+  );
+  withOrigin(w);
+  w.setPrs("merged", [mergedPr(9, "feature/done", "2026-10-31T12:00:00Z")]);
+  w.setComments(9, []);
+  const ws = join(w.root, "ws-9");
+  mkdirSync(ws, { recursive: true });
+  w.setWorkspaces([{ branch: "feature/done", linkedPR: 9, path: ws }]);
+  machineFile(
+    w,
+    [{ ...account(w, "a", "a@example.com"), max: 5 }],
+    {},
+    ["followup"],
+    { followup_since: "2026-10-30T00:00:00Z" },
+  );
+  // Write a Question: line before exiting 1 on a verified transcript quota notice.
+  writeFileSync(
+    join(w.dir, "claude-said"),
+    "Question: Should this release also tag the beta branch?\n",
+  );
+  const launched = (await applyTick(w, false)).repos[0]?.launches.filter(
+    (l) => l.outcome === "launched",
+  );
+  const id = String(launched?.[0]?.record);
+  expect(id).toBeTruthy();
+  await waitFor("the follow-up pass", () => claudeRuns(w).length === 1);
+  const record = readRecord(id, dispatchState(w));
+  if (record?.sessionId == null) throw new Error(`no session for ${id}`);
+  const resetMs = weeklyReset();
+  writeTranscript(
+    record.configDir,
+    record.sessionId,
+    stoppedAtLimit(weeklyNotice(resetMs)),
+  );
+  // Also record an earlier result on the launch before the process exits non-zero on quota.
+  expect(recordResult(id, "failed", dispatchState(w))).toBe(true);
+  writeFileSync(join(w.dir, "claude-exit"), "1");
+  await waitFor("the exit", () => exitWritten(w, id));
+  rmSync(join(w.dir, "claude-exit"));
+
+  // Account is walled until the notice's reset, while the recorded result and question stay intact.
+  const wall = wallOf("a", Date.now(), dispatchState(w));
+  expect(wall?.resetAt).toBe(isoFromMs(resetMs));
+  expect(wall?.source).toContain("the usage notice's reset");
+  const row = stateDb(dispatchState(w))
+    .query("SELECT exit, result FROM launches WHERE id = ?")
+    .get(id) as { exit: string; result: string | null };
+  expect(JSON.parse(row.exit)).toMatchObject({
+    code: 1,
+    startup: "quota",
+    said: "Question: Should this release also tag the beta branch?",
+  });
+  expect(row.result).toBe("failed");
+  expect(readResult(id, dispatchState(w))).toBe("failed");
+
+  // Without a verified quota error in the transcript, a quick exit with a printed question suppresses startup heuristics (no wall, no startup class).
+  w.setPrs("merged", [
+    mergedPr(9, "feature/done", "2026-10-31T12:00:00Z"),
+    mergedPr(10, "feature/other", "2026-10-31T12:00:00Z"),
+  ]);
+  w.setComments(10, []);
+  const ws10 = join(w.root, "ws-10");
+  mkdirSync(ws10, { recursive: true });
+  w.setWorkspaces([
+    { branch: "feature/done", linkedPR: 9, path: ws },
+    { branch: "feature/other", linkedPR: 10, path: ws10 },
+  ]);
+  machineFile(
+    w,
+    [
+      { ...account(w, "a", "a@example.com"), max: 5 },
+      { ...account(w, "b", "b@example.com"), max: 5 },
+    ],
+    {},
+    ["followup"],
+    { followup_since: "2026-10-30T00:00:00Z" },
+  );
+  const second = (await applyTick(w, false)).repos[0]?.launches.filter(
+    (l) => l.outcome === "launched",
+  );
+  const id2 = String(second?.[0]?.record);
+  expect(second?.[0]?.account).toBe("b");
+  await waitFor("the second follow-up pass", () => claudeRuns(w).length === 2);
+  writeFileSync(join(w.dir, "claude-exit"), "1");
+  await waitFor("the second exit", () => exitWritten(w, id2));
+  rmSync(join(w.dir, "claude-exit"));
+  expect(wallOf("b", Date.now(), dispatchState(w))).toBeNull();
+  const row2 = stateDb(dispatchState(w))
+    .query("SELECT exit FROM launches WHERE id = ?")
+    .get(id2) as { exit: string };
+  expect(JSON.parse(row2.exit)).toMatchObject({
+    code: 1,
+    said: "Question: Should this release also tag the beta branch?",
+  });
+  expect(JSON.parse(row2.exit).startup).toBeUndefined();
 }, 60_000);
