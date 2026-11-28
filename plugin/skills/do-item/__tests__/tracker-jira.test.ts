@@ -605,14 +605,17 @@ describe("Jira adapter: filing and patching", () => {
         "GET priority/search": { ...PRIORITIES, values: [] },
       }),
     );
-    for (const patch of [{ priority: 0 }, {}])
+    for (const [patch, code] of [
+      [{ priority: 0 }, "refused"],
+      [{}, "invalid"],
+    ] as const)
       expect(
         (
           (await t
             .updateIssue("ENG-1", patch)
             .catch((e: unknown) => e)) as TrackerRequestError
         ).code,
-      ).toBe("invalid");
+      ).toBe(code);
     expect(
       (
         (await t
