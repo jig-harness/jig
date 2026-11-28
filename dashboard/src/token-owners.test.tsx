@@ -9,6 +9,7 @@ import { rowAnswer } from "./picking.ts";
 import { NoSendReason } from "./send.tsx";
 import {
   credentialOf,
+  isOwnerName,
   type KeptToken,
   ownerOf,
   parseOwners,
@@ -63,7 +64,19 @@ describe("the owners a person names for a token", () => {
     expect(refusal(parseOwners("example-org/web"))).toContain(
       "example-org rather than example-org/web",
     );
-    expect(refusal(parseOwners("not_an owner"))).toContain("not_an");
+    expect(refusal(parseOwners("not.an owner"))).toContain("not.an");
+    expect(refusal(parseOwners("_mona owner"))).toContain("_mona");
+    expect(refusal(parseOwners("example-bot[bot]"))).toContain("[bot]");
+  });
+
+  test("takes an Enterprise Managed User's account, whose name holds an underscore", () => {
+    expect(parseOwners("mona_acme Mona_ACME/*")).toEqual({
+      ok: true,
+      value: ["mona_acme"],
+    });
+    expect(isOwnerName("mona_acme")).toBe(true);
+    for (const name of ["_mona", "mona/acme", "@mona", "a".repeat(40), 7])
+      expect(isOwnerName(name)).toBe(false);
   });
 });
 

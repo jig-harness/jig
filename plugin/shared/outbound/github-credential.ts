@@ -30,6 +30,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { credentialKey } from "./budget.ts";
 import { swallow } from "../errors.ts";
+import { isGithubLogin } from "../forge-logins.ts";
 
 type Env = Record<string, string | undefined>;
 
@@ -157,7 +158,7 @@ export function activeUserIn(text: string, host: string): string | null {
     const user = /^user:\s*(["']?)([^"'\s]+)\1\s*$/.exec(line.trim());
     if (user === null) continue;
     const login = user[2] ?? "";
-    return /^[A-Za-z0-9-]+$/.test(login) ? login : null;
+    return isGithubLogin(login) ? login : null;
   }
   return null;
 }

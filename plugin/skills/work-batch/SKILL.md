@@ -246,9 +246,15 @@ the release in step 4 restores them. Then, for each:
    `/jig:do-item` Step 4a item 2 does:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" claim "<KEY>"
+   bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" claim "<KEY>" --work-batch
    ```
 
+   `--work-batch` marks the claim as a batch member's: the claim does not
+   read the member's `blocked_by` relations, and it refuses
+   `--override-blockers` (exit `2`), so a batch never starts an item on a
+   person's override. Never drop it, and never pass `--override-blockers`
+   here; an item a person wants started early goes through `/jig:do-item`
+   on its own.
    For a dispatched served batch, append `--for "<identity>"` and that item's
    `--ancestor "<epic-key>"` when supplied. Keep each identity and ancestor
    as one quoted argument. Preserve the served assignee.

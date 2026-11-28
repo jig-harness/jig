@@ -22,6 +22,17 @@ export interface JobSpec {
   schedule: { hour: number } | { everyMinutes: number; afterExit?: boolean };
   /** Extra environment the job runs with, beyond the scheduler's own. */
   env?: Record<string, string>;
+  /**
+   * The variables the job's own spec writes when they are set in the
+   * installing shell, so a reinstall never carries an older value of one
+   * forward from the installed job.
+   */
+  managedEnv?: readonly string[];
+  /**
+   * The variables `--env NAME` captured from the installing shell. The job
+   * runs with them; a preview names them and never shows their values.
+   */
+  capturedEnv?: Record<string, string>;
   /** Seconds one run may take before the launcher stops it; the launcher's own bound when unset. */
   deadlineSec?: number;
 }
