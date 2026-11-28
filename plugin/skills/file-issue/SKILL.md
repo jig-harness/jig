@@ -171,7 +171,7 @@ level, which the level itself answers.
    field behind `issue_tracker.jira.field_labels`, such as Fix versions as
    `fixversion:2.4`). `validate-labels.ts` lists it under `fieldOnly`, with
    a `WARNING`, and leaves it out of `labels`: leave it out of the `labels`
-   of the JSON file `tracker.ts create` files (the adapter refuses it), and
+   of the JSON file [step 10](#10-write) files (the adapter refuses it), and
    set the value on the tracker field after filing.
 3. **A gate's flag goes on the item that ships the change.** A flag whose
    `scope` is `shipping-item` goes on the issue (or sub-issue) whose pull
