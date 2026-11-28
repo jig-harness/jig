@@ -369,6 +369,19 @@
     },
     {
       "kind": "active",
+      "name": "tracker-blocker-override",
+      "part": "marker",
+      "marker": "jig:blocker-override",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "Identifies one blocker-override comment by its attempt id, so a retry checks trusted comments before posting and never duplicates a comment whose response was lost."
+    },
+    {
+      "kind": "active",
       "name": "tracker-claim-marker",
       "part": "marker",
       "marker": "jig-claim",
@@ -378,7 +391,7 @@
       "version": 1,
       "key": "^claim$",
       "writtenBy": "Jig",
-      "meaning": "The token a claim posts on an item before it writes the item, naming the claim's attempt, its session, its branch and the claimant, so another tool sees which session holds the item, and of two hosts claiming it at once the earliest marker wins; beside it, each attempt records once how it ended (claimed, released or unresolved), and a marker whose attempt recorded released or unresolved holds nothing."
+      "meaning": "The token a claim posts on an item before it writes the item, naming the claim's attempt, its session, its branch and the claimant, so another tool sees which session holds the item, and of two hosts claiming it at once the earliest marker wins; a claim a person started ahead of the item's open blockers adds an override naming their reason, the person and each blocker's key and state, which never decides who holds the item; beside it, each attempt records once how it ended (claimed, released or unresolved), and a marker whose attempt recorded released or unresolved holds nothing."
     },
     {
       "kind": "active",
@@ -391,7 +404,7 @@
       "version": 1,
       "key": "^claim$",
       "writtenBy": "Jig",
-      "meaning": "The token a claim posts on an item before it writes the item, naming the claim's attempt, its session, its branch and the claimant, so another tool sees which session holds the item, and of two hosts claiming it at once the earliest marker wins; beside it, each attempt records once how it ended (claimed, released or unresolved), and a marker whose attempt recorded released or unresolved holds nothing."
+      "meaning": "The token a claim posts on an item before it writes the item, naming the claim's attempt, its session, its branch and the claimant, so another tool sees which session holds the item, and of two hosts claiming it at once the earliest marker wins; a claim a person started ahead of the item's open blockers adds an override naming their reason, the person and each blocker's key and state, which never decides who holds the item; beside it, each attempt records once how it ended (claimed, released or unresolved), and a marker whose attempt recorded released or unresolved holds nothing."
     },
     {
       "kind": "active",
@@ -404,7 +417,7 @@
       "version": 1,
       "key": "^claim$",
       "writtenBy": "Jig",
-      "meaning": "The token a claim posts on an item before it writes the item, naming the claim's attempt, its session, its branch and the claimant, so another tool sees which session holds the item, and of two hosts claiming it at once the earliest marker wins; beside it, each attempt records once how it ended (claimed, released or unresolved), and a marker whose attempt recorded released or unresolved holds nothing."
+      "meaning": "The token a claim posts on an item before it writes the item, naming the claim's attempt, its session, its branch and the claimant, so another tool sees which session holds the item, and of two hosts claiming it at once the earliest marker wins; a claim a person started ahead of the item's open blockers adds an override naming their reason, the person and each blocker's key and state, which never decides who holds the item; beside it, each attempt records once how it ended (claimed, released or unresolved), and a marker whose attempt recorded released or unresolved holds nothing."
     },
     {
       "kind": "active",
@@ -2824,7 +2837,8 @@
             },
             "claimant": {
               "type": "string"
-            }
+            },
+            "override": true
           },
           "required": ["session", "branch", "claimant"],
           "additionalProperties": true

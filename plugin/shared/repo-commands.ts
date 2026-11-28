@@ -17,6 +17,8 @@ export const REPO_COMMAND_MAX_OUTPUT_BYTES = 64 * 1024;
 
 /** The exit by which `do_item.preflight_command` refuses a claim, its reason on the first line of standard output. */
 export const PREFLIGHT_REFUSAL_EXIT = 3;
+/** The second line of an exit 3's output that says it refuses only for the item's open blockers. */
+export const PREFLIGHT_BLOCKERS_TAG = "kind: blockers";
 /** The variable that bounds `do_item.preflight_command`, in seconds. */
 export const PREFLIGHT_TIMEOUT_ENV = "JIG_DO_ITEM_PREFLIGHT_TIMEOUT_SEC";
 export const DEFAULT_PREFLIGHT_TIMEOUT_SEC = 60;
@@ -168,8 +170,7 @@ export const REPO_COMMANDS = {
       changedBy: PREFLIGHT_TIMEOUT_ENV,
     },
     exits: {
-      [PREFLIGHT_REFUSAL_EXIT]:
-        'Refuses the claim: nothing is written, the claim exits 3 with `"why": "preflight"`, and the first line of standard output is the reason. Any other failure refuses it too.',
+      [PREFLIGHT_REFUSAL_EXIT]: `Refuses the claim: nothing is written, the claim exits 3 with \`"why": "preflight"\`, and the first line of standard output is the reason. A command that tells a refusal only for the item's open blockers apart may print \`${PREFLIGHT_BLOCKERS_TAG}\` as the second line: a person's \`--override-blockers\` on an interactive claim clears that refusal alone, never an untagged one. Any other failure refuses it too, and no override clears it.`,
     },
     meaning:
       "The repository's own start rules, run by every claim of an item: by do-item, by work-batch for each member, and by a dispatched pickup.",
