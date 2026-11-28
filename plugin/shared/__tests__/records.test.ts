@@ -283,15 +283,28 @@ describe("the registry", () => {
   it("states the versions the code writes", () => {
     const stopped = ledger();
     stopped.driver.personStop = { at: AT, reason: "maintenance" };
-    const rendered = renderLedger(stopped);
+    const stopRendered = renderLedger(stopped);
+    expect("body" in stopRendered).toBe(true);
+    if ("body" in stopRendered)
+      expect(dataOf(stopRendered.body)).toMatchObject({ v: 2 });
+    const managed = ledger({
+      parked: [
+        {
+          key: "t1",
+          kind: "thread",
+          reason: "why",
+          round: 1,
+          person: "mona_acme",
+        },
+      ],
+    } as Partial<Ledger>);
+    const rendered = renderLedger(managed);
     expect("body" in rendered).toBe(true);
     if ("body" in rendered)
       expect(dataOf(rendered.body)).toMatchObject({
         v: recordKind(LEDGER_KIND)?.version,
       });
-    expect(recordKind(LEDGER_KIND)?.version ?? 0).toBeGreaterThanOrEqual(
-      LEDGER_VERSION,
-    );
+    expect(recordKind(LEDGER_KIND)?.version).toBe(LEDGER_VERSION);
     expect(recordKind(FOLLOWUP_KIND)?.version).toBe(FOLLOWUP_VERSION);
     expect(recordKind(ADMISSION_KIND)?.version).toBe(ADMISSION_VERSION);
     for (const kind of [LAUNCH_KIND, HEARTBEAT_KIND])

@@ -15,7 +15,6 @@ import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.
 import {
   type Ledger,
   ledgerFromState,
-  LEDGER_VERSION,
   renderClaim,
   renderLedger,
 } from "../scripts/lib/state/ledger.ts";
@@ -168,7 +167,7 @@ describe("drive.ts seeds its state from the ledger", () => {
 
   it("refuses a ledgerVersion it does not read, naming it", async () => {
     const v9 = body(ledger(4, 3)).replace(
-      `"ledgerVersion":${LEDGER_VERSION}`,
+      /"ledgerVersion":\d+/,
       '"ledgerVersion":9',
     );
     const { dir, stateDir, tree } = withComments(
