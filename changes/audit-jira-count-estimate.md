@@ -7,7 +7,7 @@ release: patch
 - The online audit's Jira open-issue counts no longer read every open issue
   of the project. Each count is now one estimate request
   (`search/approximate-count`; the transport may resend one after a transient failure), shown as
-  Jira's estimate, so the count phase no longer scales with the size of the project. The counts get 5 seconds, measured from
+  Jira's estimate, so the count phase no longer pages through issues. The counts get 5 seconds, measured from
   when they start, after the forge and tracker checks; past that they are
   reported unchecked, naming the bound, and the rest of the audit goes on.
   The estimate is of what the open read selects (statuses outside the Done

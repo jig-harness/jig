@@ -27,7 +27,7 @@ added since, and it does not repeat a recommendation the team declined.
    (on Jira, a facet's field missing from the create screen of an issue type
    Jig files),
    Jira's estimate of the open issues before and after the configured
-   pool issue-type scope (one estimate request each, resent by the transport only after a transient failure, given a few seconds before the
+   pool issue-type scope (one estimate request each, which the transport may resend after a transient failure, given a few seconds before the
    counts are reported unchecked), declared values the repository contradicts (`stacking: none` with
    stacked pull requests open), tracker labels its label taxonomy does not
    define, a comment-only scheduled sweep missing `--position <file>` (so
