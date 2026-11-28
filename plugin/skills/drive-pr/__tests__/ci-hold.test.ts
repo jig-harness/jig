@@ -29,6 +29,34 @@ const HOLD_OVERLAY = join(import.meta.dir, "fixtures", "overlay.yaml");
 /** One required check on its own, for the single-check freshness cases. */
 const WITNESS = ["Schema gate"];
 
+const RELEASED_AT = "2026-09-10T10:00:00Z";
+const RELEASED_TIMELINE = JSON.stringify([
+  [
+    {
+      node_id: "LE_released",
+      event: "unlabeled",
+      label: { name: HOLD },
+      actor: { login: "drive-user" },
+      created_at: RELEASED_AT,
+    },
+  ],
+]);
+
+function seedReleasedHold(stateDir: string): void {
+  writeState(stateDir, "999", {
+    ...freshState(999),
+    ciHold: {
+      phase: "released",
+      eventId: "LE_released",
+      createdAt: RELEASED_AT,
+      checkRunWatermark: 0,
+      source: "external",
+      actor: "drive-user",
+      head: HEAD,
+    },
+  });
+}
+
 function writeGhStub(path: string, body: string): void {
   const guard = `#!/usr/bin/env bash
 case "$1 $2" in
@@ -887,11 +915,7 @@ esac
     return { bin, stateDir };
   }
 
-  function invoke(
-    bin: string,
-    stateDir: string,
-    args: string[],
-  ): ReturnType<typeof Bun.spawnSync> {
+  function invoke(bin: string, stateDir: string, args: string[]) {
     return Bun.spawnSync(
       scriptArgv(
         join(import.meta.dir, "..", "scripts", "drive-state.ts"),
@@ -1144,6 +1168,7 @@ esac
     const bin = join(root, "bin");
     const stateDir = scopedStateDir(join(root, "state"));
     Bun.spawnSync(["mkdir", "-p", bin, stateDir]);
+    seedReleasedHold(stateDir);
     const gh = join(bin, "gh");
     const counter = join(root, "check-runs-calls");
     writeFileSync(counter, "0");
@@ -1169,7 +1194,7 @@ case "$1" in
   pr) printf '%s\\n' '{"state":"OPEN","headRefOid":"${HEAD}","labels":[]}' ;;
   api)
     case "$*" in
-      *timeline*) printf '%s\\n' '[[]]' ;;
+      *timeline*) printf '%s\\n' '${RELEASED_TIMELINE}' ;;
       *'/status?'*) printf '%s\\n' '[{"statuses":[]}]' ;;
       *)
         n=$(cat ${counter})
@@ -1191,7 +1216,7 @@ esac
       "--sha",
       HEAD,
     ]);
-    expect(result.exitCode).toBe(4);
+    expectSpawnExit(result, 4);
     const read = invoke(bin, stateDir, ["verified", "999"]);
     expect(new TextDecoder().decode(read.stdout).trim()).toBe("");
   });
@@ -1580,15 +1605,25 @@ esac
     bin: string,
     stateDir: string,
     requireSuccess = false,
-  ): ReturnType<typeof Bun.spawnSync> {
+    verify = false,
+  ) {
     return Bun.spawnSync(
       scriptArgv(
-        join(import.meta.dir, "..", "scripts", "ci-hold.ts"),
-        "final-ready",
-        "999",
-        "--expect-head",
-        HEAD,
-        ...(requireSuccess ? ["--require-success"] : []),
+        join(
+          import.meta.dir,
+          "..",
+          "scripts",
+          verify ? "drive-state.ts" : "ci-hold.ts",
+        ),
+        ...(verify
+          ? ["set-verified", "999", "--sha", HEAD]
+          : [
+              "final-ready",
+              "999",
+              "--expect-head",
+              HEAD,
+              ...(requireSuccess ? ["--require-success"] : []),
+            ]),
       ),
       {
         env: {
@@ -1641,6 +1676,56 @@ esac
         ],
       },
     ]);
+
+  function withNewerRun(
+    conclusion: string,
+    status: string,
+    newerConclusion: string | null,
+  ) {
+    const [page] = JSON.parse(runsWith(conclusion, "success"));
+    page.check_runs.push({
+      ...page.check_runs[1],
+      id: 100,
+      status,
+      conclusion: newerConclusion,
+      started_at: "2026-09-10T10:03:00Z",
+    });
+    return JSON.stringify([page]);
+  }
+
+  it("uses the passing run and its start time when a newer skip follows it before any hold", () => {
+    const { bin, stateDir } = fakeGh(
+      withNewerRun("success", "completed", "skipped"),
+    );
+    for (const strict of [false, true]) {
+      const result = invoke(bin, stateDir, strict);
+      expectSpawnExit(result, 0);
+      expect(result.stdout.toString().trim()).toBe("2026-09-10T10:01:00Z");
+    }
+    expectSpawnExit(invoke(bin, stateDir, false, true), 0);
+  });
+
+  it("counts failure followed by a skip as complete but refuses to certify success", () => {
+    const { bin, stateDir } = fakeGh(
+      withNewerRun("failure", "completed", "skipped"),
+    );
+    expectSpawnExit(invoke(bin, stateDir), 0);
+    expectSpawnExit(invoke(bin, stateDir, true), 4);
+    expectSpawnExit(invoke(bin, stateDir, false, true), 4);
+  });
+
+  it.each([
+    ["success", "queued", null],
+    ["success", "in_progress", null],
+    ["cancelled", "completed", "skipped"],
+    ["skipped", "completed", "skipped"],
+  ] as const)(
+    "keeps waiting for %s followed by %s (%s)",
+    (prior, status, conclusion) => {
+      const { bin, stateDir } = fakeGh(withNewerRun(prior, status, conclusion));
+      expectSpawnExit(invoke(bin, stateDir), 4);
+    },
+  );
 
   it("reports ready over a genuinely green, unheld head", () => {
     const { bin, stateDir } = fakeGh(runsWith("success", "success"));
@@ -1780,6 +1865,7 @@ esac
     const bin = join(root, "bin");
     const stateDir = scopedStateDir(join(root, "state"));
     Bun.spawnSync(["mkdir", "-p", bin, stateDir]);
+    seedReleasedHold(stateDir);
     const gh = join(bin, "gh");
     const counter = join(root, "check-runs-calls");
     writeFileSync(counter, "0");
@@ -1833,7 +1919,7 @@ case "$1" in
   pr) printf '%s\\n' '{"state":"OPEN","headRefOid":"${HEAD}","labels":[]}' ;;
   api)
     case "$*" in
-      *timeline*) printf '%s\\n' '[[]]' ;;
+      *timeline*) printf '%s\\n' '${RELEASED_TIMELINE}' ;;
       *'/status?'*) printf '%s\\n' '[{"statuses":[]}]' ;;
       *)
         n=$(cat ${counter})
@@ -1849,7 +1935,7 @@ case "$1" in
 esac
 `,
     );
-    expect(invoke(bin, stateDir, true).exitCode).toBe(4);
+    expectSpawnExit(invoke(bin, stateDir, true), 4);
   });
 
   it("catches a head change landing in the window stillCurrentForFinalReady's OWN timeline call spends on the network", () => {

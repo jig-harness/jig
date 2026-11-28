@@ -3,6 +3,7 @@ import {
   completedRequiredCi,
   parseCheckRuns,
   parsePrSnapshot,
+  pastCompletedSkips,
   requirementsWithoutRun,
 } from "../ci-hold.ts";
 import { type CiPolicy, ciPolicy } from "../ci-policy.ts";
@@ -195,7 +196,9 @@ async function requiredChecksFresh(
   );
   if (attributed === null) return null;
   return completedRequiredCi(
-    runs,
+    policy.holdLabel === null
+      ? runs
+      : pastCompletedSkips(runs, policy.requiredChecks, sha, apps),
     policy.requiredChecks,
     sha,
     undefined,
