@@ -9,6 +9,8 @@
  * between tokens. Owners and logins compare without case, as GitHub's do.
  */
 
+import { isGithubLogin } from "../../plugin/shared/forge-logins.ts";
+
 /** A tested token, who it signs in as, and the owners it answers for. */
 export interface KeptToken {
   token: string;
@@ -52,12 +54,9 @@ export function credentialOf(token: KeptToken | null): string {
   return token === null ? "" : `${token.login.toLowerCase()} ${token.at}`;
 }
 
-/** A GitHub account or organization name. */
-const OWNER = /^[a-z\d](?:[a-z\d-]{0,38})$/i;
-
 /** Whether `name` is an owner as `parseOwners` keeps it: a bare account or organization name. */
 export function isOwnerName(name: unknown): name is string {
-  return typeof name === "string" && OWNER.test(name);
+  return isGithubLogin(name);
 }
 
 /** The owners the person wrote, by commas or spaces, `owner/*` read as `owner`. */
@@ -70,7 +69,7 @@ export function parseOwners(text: string): Mapped<string[]> {
         ok: false,
         reason: `Name owners, not repositories: ${ownerOf(owner)} rather than ${owner}. A token answers for every repository of the owners it names.`,
       };
-    if (!OWNER.test(owner))
+    if (!isGithubLogin(owner))
       return {
         ok: false,
         reason: `${word} is not a GitHub account or organization name.`,

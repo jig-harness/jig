@@ -4,6 +4,7 @@ import { type Infer, s } from "../../../../../shared/shapes.ts";
 import { AUTONOMY_LEVELS } from "../../../../../shared/autonomy-values.ts";
 import type { ProbeStop } from "../status/probe-stop.ts";
 import { ANSWER_FORM_NAMES } from "../../../../../shared/decisions/decision-values.ts";
+import { GITHUB_LOGIN_SOURCE } from "../../../../../shared/forge-logins.ts";
 
 import {
   TAKEOVER_VERDICTS,
@@ -58,8 +59,9 @@ const parked = s.object({
   kind: s.enum(["thread", "finding"]),
   reason: nonempty,
   round: count,
+  // A forge login; this mirrors the `isPerson` reader contract for producers.
   person: s.optional(
-    s.string({ pattern: "^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,38})(?:\\[bot\\])?$" }),
+    s.string({ pattern: `^${GITHUB_LOGIN_SOURCE}(?:\\[bot\\])?$` }),
   ),
   at: s.optional(text),
   class: s.optional(s.string({ pattern: "^[a-z][a-z0-9-]*$" })),
@@ -213,7 +215,7 @@ const receipt = s.object({
 
 /** Every parsed field, so the reader can report the field that failed. */
 export const LEDGER_PAYLOAD_FIELDS = {
-  ledgerVersion: s.optional(s.enum([1, 2])),
+  ledgerVersion: s.optional(s.enum([1, 2, 3])),
   generation: s.integer({ minimum: 1, maximum: Number.MAX_VALUE }),
   pr: count,
   round: count,

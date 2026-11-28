@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://jig-harness.dev/protocol/comment-markers/v1/schemas/record-envelope.json",
+  "$id": "https://jig-harness.dev/protocol/comment-markers/v2/schemas/record-envelope.json",
   "type": "object",
   "properties": {
     "kind": {

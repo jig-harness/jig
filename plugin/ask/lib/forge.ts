@@ -10,6 +10,7 @@
  */
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
+import { isGithubLogin } from "../../shared/forge-logins.ts";
 import { isRecord } from "../../shared/guards.ts";
 import { ghConditionalGet } from "../../shared/gh-conditional.ts";
 import { failedBy, outboundFailure } from "../../shared/outbound/failure.ts";
@@ -230,7 +231,7 @@ export async function readLogin(
     return unreadable("names a login that is not text");
   const login = text(v.login);
   if (login === "") return ok(null);
-  return /^[A-Za-z0-9-]+(\[bot\])?$/.test(login)
+  return isGithubLogin(login, { bot: true })
     ? ok(login)
     : unreadable("names a login that is malformed");
 }
