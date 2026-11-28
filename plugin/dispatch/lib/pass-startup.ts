@@ -4,7 +4,6 @@
  * cause, counted toward the account's breaker) or stopped later at its usage
  * limit.
  */
-import { harnessNamed } from "../../shared/agent-harness/index.ts";
 import { swallow } from "../../shared/errors.ts";
 import { isoFromMs } from "../../shared/time.ts";
 import {
@@ -20,6 +19,7 @@ import {
   failedStartup,
   passedStartupWindow,
   quickStartupDeath,
+  readsStartup,
   type SignInPhrase,
   type StartupFailure,
 } from "./session-startup.ts";
@@ -57,8 +57,8 @@ export function startupOf(
 
 /**
  * When the pass ran and failed, its start and exit: `undefined` for a pass
- * the startup reading does not cover (another stage's, a vendor with no
- * sign-in probe, one that never ran), and for one that recorded a result,
+ * the startup reading does not cover (another stage's, a vendor whose startup
+ * is not read, one that never ran), and for one that recorded a result,
  * exited cleanly or stated a question, which marks its account working.
  */
 function failedWindowOf(
@@ -67,7 +67,7 @@ function failedWindowOf(
 ): { started: number; exited: number } | undefined {
   if (
     !ownPass(record) ||
-    harnessNamed(record.vendor)?.capabilities.signInProbe !== true ||
+    !readsStartup(record.vendor) ||
     ran.started === undefined ||
     ran.exited === undefined
   )
@@ -99,6 +99,7 @@ function quickStartupOf(
     (found) => {
       phrase = found;
     },
+    ran.head,
   );
   const threshold = record.startupFailureThreshold ?? DEFAULT_STARTUP_THRESHOLD;
   const deaths = recordStartupDeath(

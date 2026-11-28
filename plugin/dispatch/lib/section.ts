@@ -20,6 +20,7 @@ import type { LabelConfig } from "./labels.ts";
 import { duration } from "./machine-config.ts";
 import { parseOverlap, unknownKeys } from "./overlap-config.ts";
 import { redriveSection } from "./redrive-config.ts";
+import { followupRoutine } from "./routine-questions.ts";
 import {
   DEFAULT_REVIEWER_FAILURES_BEFORE_ESCALATION,
   reviewerFailurePolicy,
@@ -65,6 +66,7 @@ const KEYS = [
   "pickup_deadline",
   "followup_within",
   "followup_stale_after",
+  "followup_routine",
   "notices_linger",
   "notices_branch",
   "renotify_after",
@@ -362,6 +364,7 @@ type Timings = Omit<
   | "pickupDeadlineMs"
   | "retiredEpicWidth"
   | "overlap"
+  | "followupRoutine"
 >;
 
 /** `stalled_scope`: `claimed` unless the section says `assigned`. */
@@ -447,10 +450,15 @@ function timings(section: Record<string, unknown>): Checked<Timings> {
   });
 }
 
-/** What bounds and gates a launch: its deadline, and what a priority-less item does. */
+/** What bounds and gates a launch: its deadline, what a priority-less item does, and the routine classes a follow-up settles unattended. */
 function launchPolicy(
   section: Record<string, unknown>,
-): Checked<Pick<DispatchSection, "pickupDeadlineMs" | "missingPriority">> {
+): Checked<
+  Pick<
+    DispatchSection,
+    "pickupDeadlineMs" | "missingPriority" | "followupRoutine"
+  >
+> {
   const pickupDeadlineMs = wait(
     section.pickup_deadline,
     "pickup_deadline",
@@ -459,9 +467,12 @@ function launchPolicy(
   if (!pickupDeadlineMs.ok) return pickupDeadlineMs;
   const unranked = missingPriority(section.missing_priority);
   if (!unranked.ok) return unranked;
+  const routine = followupRoutine(section.followup_routine);
+  if (!routine.ok) return routine;
   return ok({
     pickupDeadlineMs: pickupDeadlineMs.value,
     missingPriority: unranked.value,
+    followupRoutine: routine.value,
   });
 }
 

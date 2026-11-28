@@ -10,9 +10,12 @@
  * `jig ask` read through it, so all three place a pull request on the same
  * facts.
  *
- * The head's check contexts can continue across bounded pages. Other
- * connections read one page. The predicate keeps a pull request partial
- * when it cannot rule out an unread failing check, thread, approval or reviewer.
+ * Each connection that continues is followed by cursor across bounded
+ * pages under the same deadline: the head's check contexts on the head
+ * commit, the pull request's labels, review threads, review requests and
+ * latest reviews on the pull request while its head is unchanged. The
+ * predicate keeps a pull request partial when one is still incomplete, since
+ * it cannot rule out an unread failing check, thread, approval or reviewer.
  */
 import { OVERLAY_RELPATH } from "../../../../shared/config-layers.ts";
 import { isRecord } from "../../../../shared/guards.ts";
@@ -50,17 +53,83 @@ function checkContexts(number: number, after = ""): string {
   } } }`;
 }
 
+/** A pull request's own connection the reader follows past its first page. */
+interface PullConnection {
+  /** The field of the pull request. */
+  field: string;
+  /** Its name in a partial-read reason. */
+  label: string;
+  /** The entries on its first page; each later page reads `PAGE`. */
+  first: number;
+  /** The fields of each entry. */
+  entry: string;
+  /** Whether an entry holds every fact the predicate reads from it. */
+  readable: (entry: Record<string, unknown>) => boolean;
+}
+
+/** Entries per continuation page of a pull request's own connection. */
+const PAGE = 100;
+/** Maximum pages per pull request connection, including the first. */
+const PULL_PAGES = 3;
+
+const PULL_CONNECTIONS: readonly PullConnection[] = [
+  {
+    field: "labels",
+    label: "labels",
+    first: 100,
+    entry: "name",
+    readable: (e) => str(e.name) !== "",
+  },
+  {
+    field: "reviewThreads",
+    label: "review threads",
+    first: THREADS,
+    entry: "isResolved",
+    readable: (e) => typeof e.isResolved === "boolean",
+  },
+  {
+    field: "reviewRequests",
+    label: "review requests",
+    first: REVIEWS,
+    entry:
+      "requestedReviewer { __typename ... on User { login } ... on Bot { login } ... on Team { slug } ... on Mannequin { login } }",
+    readable: (e) => requestOf(e) !== "",
+  },
+  {
+    field: "latestReviews",
+    label: "latest reviews",
+    first: REVIEWS,
+    entry: "state authorAssociation author { __typename login } commit { oid }",
+    readable: (e) => str(e.state) !== "" && reviewOf(e) !== null,
+  },
+];
+
+function connectionFields(
+  c: PullConnection,
+  first: number,
+  after = "",
+): string {
+  return `${c.field}(first: ${first}${after}) { totalCount pageInfo { hasNextPage endCursor } nodes { ${c.entry} } }`;
+}
+
 /** One pull request's part of the query, aliased by its number. */
 function pullFields(n: number): string {
   return `pr${n}: pullRequest(number: ${n}) {
       number headRefOid baseRefOid isDraft mergeable mergeStateStatus reviewDecision authorAssociation isMergeQueueEnabled
       author { __typename login } isCrossRepository
-      labels(first: 100) { pageInfo { hasNextPage } nodes { name } }
-      reviewThreads(first: ${THREADS}) { pageInfo { hasNextPage } nodes { isResolved } }
-      reviewRequests(first: ${REVIEWS}) { pageInfo { hasNextPage } nodes { requestedReviewer { __typename ... on User { login } ... on Bot { login } ... on Team { slug } ... on Mannequin { login } } } }
-      latestReviews(first: ${REVIEWS}) { pageInfo { hasNextPage } nodes { state authorAssociation author { __typename login } commit { oid } } }
+      ${PULL_CONNECTIONS.map((c) => connectionFields(c, c.first)).join("\n      ")}
       commits(last: 1) { nodes { commit { oid ${checkContexts(n)} } } }
     }`;
+}
+
+/** The next page of one of a pull request's own connections, with its head to pin it. */
+function pullPageQuery(number: number, c: PullConnection): string {
+  return `query MergePullConnection($owner: String!, $name: String!, $after: String!) {
+  rateLimit { cost remaining limit }
+  repository(owner: $owner, name: $name) {
+    pull: pullRequest(number: ${number}) { headRefOid ${connectionFields(c, PAGE, ", after: $after")} }
+  }
+}`;
 }
 
 function checkPageQuery(number: number): string {
@@ -250,10 +319,10 @@ function partialOf(
   contexts: unknown,
 ): string | null {
   const parts: Array<[string, unknown]> = [
-    ["labels", at(node, "labels")],
-    ["review threads", at(node, "reviewThreads")],
-    ["review requests", at(node, "reviewRequests")],
-    ["latest reviews", at(node, "latestReviews")],
+    ...PULL_CONNECTIONS.map((c): [string, unknown] => [
+      c.label,
+      at(node, c.field),
+    ]),
     ["checks", contexts],
   ];
   const long = parts.filter(([, c]) => more(c)).map(([name]) => name);
@@ -416,9 +485,25 @@ function checkPageNodes(page: unknown): unknown[] | null {
   return known ? entries : null;
 }
 
-interface CheckPage {
+interface Page {
   entries: unknown[];
   after: string | null;
+  /** The connection's size as this page saw it, `null` when it reported none. */
+  total: number | null;
+}
+
+/** One connection's continuation: how to ask for its next page, and where the answer holds it. */
+interface Continuation {
+  /** The page's name in a reason, such as "check page". */
+  what: string;
+  query: string;
+  /** The query's variables besides `after`, as forge-client flags. */
+  fields: readonly string[];
+  /** Whether the answer read on the head the first page was read on. */
+  pinned: (answer: unknown) => boolean;
+  page: (answer: unknown) => unknown;
+  /** The page's entries, `null` when one is unreadable. */
+  entries: (page: unknown) => unknown[] | null;
 }
 
 /** The remaining shared deadline, passed to the transport without rounding up. */
@@ -427,22 +512,21 @@ function secondsLeft(deadline: number): number {
 }
 
 /** Read a continuation pinned to the original head, using the board's deadline. */
-async function readCheckPage(
+async function readPage(
   slug: string | null,
-  facts: ForgeFacts,
+  c: Continuation,
   read: FactsRead,
   after: string,
   deadline: number,
-): Promise<Outcome<CheckPage, "unreadable">> {
+): Promise<Outcome<Page, "unreadable">> {
   const leftSec = secondsLeft(deadline);
   if (leftSec <= 0)
     return failed(
       "unreadable",
-      "the merge facts deadline left no time for another check page",
+      `the merge facts deadline left no time for another ${c.what}`,
     );
-  const next = await queryGraphql(slug, checkPageQuery(facts.number), leftSec, [
-    "-f",
-    `head=${facts.head}`,
+  const next = await queryGraphql(slug, c.query, leftSec, [
+    ...c.fields,
     "-f",
     `after=${after}`,
   ]);
@@ -452,75 +536,203 @@ async function readCheckPage(
   if (currentMs() >= deadline)
     return failed(
       "unreadable",
-      "the merge facts deadline expired while reading the next check page",
+      `the merge facts deadline expired while reading the next ${c.what}`,
     );
   if (!next.ok)
     return failed(
       "unreadable",
-      `the forge did not return the next check page: ${next.failure.reason}`,
+      `the forge did not return the next ${c.what}: ${next.failure.reason}`,
     );
-  const head = at(next.value, "data", "repository", "head");
-  if (at(head, "oid") !== facts.head || at(next.value, "errors") !== undefined)
+  if (at(next.value, "errors") !== undefined)
     return failed(
       "unreadable",
-      "the next check page did not read on the original head",
+      `the forge answered the next ${c.what} with an error`,
     );
-  const page = at(head, "statusCheckRollup", "contexts");
-  const entries = checkPageNodes(page);
+  if (!c.pinned(next.value))
+    return failed(
+      "unreadable",
+      `the next ${c.what} did not read on the original head`,
+    );
+  const page = c.page(next.value);
+  const entries = c.entries(page);
   const hasNext = at(page, "pageInfo", "hasNextPage");
   if (entries === null || typeof hasNext !== "boolean")
-    return failed("unreadable", "the next check page was incomplete");
+    return failed("unreadable", `the next ${c.what} was incomplete`);
   return ok({
     entries,
     after: hasNext ? str(at(page, "pageInfo", "endCursor")) : null,
+    total: totalOf(page),
   });
 }
 
-function incompleteChecks(facts: ForgeFacts, reason: string): ForgeFacts {
-  return { ...facts, partial: `${facts.partial}; ${reason}` };
+const totalOf = (page: unknown): number | null => {
+  const total = at(page, "totalCount");
+  return typeof total === "number" && Number.isSafeInteger(total)
+    ? total
+    : null;
+};
+
+/**
+ * Follow `initial` from its first page's `entries` for at most `pages` pages
+ * in all, replacing its entries only when the connection was read to its
+ * end; otherwise why it was not, the connection left as first read.
+ */
+async function follow(
+  slug: string | null,
+  c: Continuation,
+  initial: Record<string, unknown>,
+  entries: unknown[],
+  pages: number,
+  read: FactsRead,
+  deadline: number,
+  cap: string,
+): Promise<string | null> {
+  let after = str(at(initial, "pageInfo", "endCursor"));
+  const all = [...entries];
+  const cursors = new Set<string>();
+  // Cursor paging can skip an entry when the list changes between pages, and
+  // the head's oid does not pin these lists: a size that moves, or that the
+  // entries read do not add up to, means the pages are not one reading.
+  const total = totalOf(initial);
+  for (let pageNumber = 1; pageNumber < pages; pageNumber++) {
+    if (after === "" || cursors.has(after))
+      return `the next ${c.what} had no usable cursor`;
+    cursors.add(after);
+    const result = await readPage(slug, c, read, after, deadline);
+    if (!result.ok) return result.failure.reason;
+    all.push(...result.value.entries);
+    if (total !== null && result.value.total !== total)
+      return `the ${c.what} count changed while it was read`;
+    if (result.value.after === null) {
+      if (total !== null && all.length !== total)
+        return `the ${c.what} entries did not add up to the ${total} the forge counted`;
+      initial.nodes = all;
+      initial.pageInfo = { hasNextPage: false };
+      return null;
+    }
+    after = result.value.after;
+  }
+  return `the ${cap} read reached its ${pages}-page cap`;
 }
 
-/** Replace the initial check page only when the connection was read to its end. */
+function checkContinuation(facts: ForgeFacts): Continuation {
+  const head = (answer: unknown) => at(answer, "data", "repository", "head");
+  return {
+    what: "check page",
+    query: checkPageQuery(facts.number),
+    fields: ["-f", `head=${facts.head}`],
+    pinned: (answer) => at(head(answer), "oid") === facts.head,
+    page: (answer) => at(head(answer), "statusCheckRollup", "contexts"),
+    entries: checkPageNodes,
+  };
+}
+
+/** Follow the head's check contexts; why they did not read whole, `null` when they did or need no follow-up. */
 async function completeChecks(
   slug: string | null,
   pull: unknown,
   facts: ForgeFacts,
   read: FactsRead,
   deadline: number,
-): Promise<ForgeFacts> {
+): Promise<string | null> {
   const commit = at(nodes(at(pull, "commits"))[0], "commit");
   const initial = at(commit, "statusCheckRollup", "contexts");
   if (!more(initial) || at(commit, "oid") !== facts.head || !isRecord(initial))
-    return facts;
-
+    return null;
   const entries = initialCheckPageNodes(commit, initial);
-  if (entries === null)
-    return incompleteChecks(facts, "the first check page was incomplete");
-  let after = str(at(initial, "pageInfo", "endCursor"));
-  const checks = [...entries];
-  const cursors = new Set<string>();
-  for (let pageNumber = 1; pageNumber < CHECK_PAGES; pageNumber++) {
-    if (after === "" || cursors.has(after))
-      return incompleteChecks(
-        facts,
-        "the next check page had no usable cursor",
-      );
-    cursors.add(after);
-    const result = await readCheckPage(slug, facts, read, after, deadline);
-    if (!result.ok) return incompleteChecks(facts, result.failure.reason);
-    const page = result.value;
-    for (const entry of page.entries) checks.push(entry);
-    if (page.after === null) {
-      initial.nodes = checks;
-      initial.pageInfo = { hasNextPage: false };
-      return parsePull(pull, facts.methods) ?? facts;
-    }
-    after = page.after;
-  }
-  return incompleteChecks(
-    facts,
-    `the check read reached its ${CHECK_PAGES}-page cap`,
+  if (entries === null) return "the first check page was incomplete";
+  return follow(
+    slug,
+    checkContinuation(facts),
+    initial,
+    entries,
+    CHECK_PAGES,
+    read,
+    deadline,
+    "check",
   );
+}
+
+/** A page's entries, `null` when the list or one entry is unreadable. */
+function connectionNodes(c: PullConnection, page: unknown): unknown[] | null {
+  const entries = at(page, "nodes");
+  return Array.isArray(entries) &&
+    entries.every((entry) => isRecord(entry) && c.readable(entry))
+    ? entries
+    : null;
+}
+
+function pullContinuation(facts: ForgeFacts, c: PullConnection): Continuation {
+  const pull = (answer: unknown) => at(answer, "data", "repository", "pull");
+  return {
+    what: `${c.label} page`,
+    query: pullPageQuery(facts.number, c),
+    fields: [],
+    pinned: (answer) => at(pull(answer), "headRefOid") === facts.head,
+    page: (answer) => at(pull(answer), c.field),
+    entries: (page) => connectionNodes(c, page),
+  };
+}
+
+/** Follow one of the pull request's own connections, as `completeChecks` does the head's checks. */
+async function completeConnection(
+  slug: string | null,
+  pull: unknown,
+  facts: ForgeFacts,
+  c: PullConnection,
+  read: FactsRead,
+  deadline: number,
+): Promise<string | null> {
+  const initial = at(pull, c.field);
+  // A connection that does not continue is still one partial pull request's
+  // evidence: its entries and its pageInfo must read whole before the
+  // pull request is called complete.
+  if (
+    !isRecord(initial) ||
+    typeof at(initial, "pageInfo", "hasNextPage") !== "boolean"
+  )
+    return `the first ${c.label} page was incomplete`;
+  const entries = connectionNodes(c, initial);
+  if (entries === null) return `the first ${c.label} page was incomplete`;
+  if (!more(initial)) return null;
+  return follow(
+    slug,
+    pullContinuation(facts, c),
+    initial,
+    entries,
+    PULL_PAGES,
+    read,
+    deadline,
+    c.label,
+  );
+}
+
+/**
+ * A partial pull request's facts after following each connection that
+ * continues, with why one still did not read whole. The first connection
+ * left unread keeps the pull request partial, so the rest are not read.
+ */
+async function completePull(
+  slug: string | null,
+  pull: unknown,
+  facts: ForgeFacts,
+  read: FactsRead,
+  deadline: number,
+): Promise<ForgeFacts> {
+  const steps = [
+    () => completeChecks(slug, pull, facts, read, deadline),
+    ...PULL_CONNECTIONS.map(
+      (c) => () => completeConnection(slug, pull, facts, c, read, deadline),
+    ),
+  ];
+  let why: string | null = null;
+  for (const step of steps) {
+    why = await step();
+    if (why !== null) break;
+  }
+  const reread = parsePull(pull, facts.methods) ?? facts;
+  if (why === null) return reread;
+  return { ...reread, partial: `${reread.partial ?? facts.partial}; ${why}` };
 }
 
 interface FactsPage {
@@ -567,7 +779,7 @@ export async function readMergeFacts(
     limit: null,
   };
   const deadline = currentMs() + timeoutSec * 1000;
-  const checkPulls = new Map<number, unknown>();
+  const partialPulls = new Map<number, unknown>();
   for (let i = 0; i < numbers.length; i += FACTS_PAGE) {
     const chunk = numbers.slice(i, i + FACTS_PAGE);
     const next = await readFactsPage(slug, chunk, deadline);
@@ -576,19 +788,16 @@ export async function readMergeFacts(
     addPart(read, part);
     for (const [n, facts] of part.pulls) {
       if (facts.partial !== null)
-        checkPulls.set(
+        partialPulls.set(
           n,
           at(next.value.answer, "data", "repository", `pr${n}`),
         );
     }
   }
-  for (const [n, pull] of checkPulls) {
+  for (const [n, pull] of partialPulls) {
     const facts = read.pulls.get(n);
     if (facts !== undefined)
-      read.pulls.set(
-        n,
-        await completeChecks(slug, pull, facts, read, deadline),
-      );
+      read.pulls.set(n, await completePull(slug, pull, facts, read, deadline));
   }
   return ok(read);
 }

@@ -645,6 +645,38 @@ describe("Jira adapter: filing and patching", () => {
     expect(calls.map((c) => c.query.startAt)).toEqual([0, 2]);
   });
 
+  it("asks for the site's labels a thousand at a time", async () => {
+    const { t, calls } = jira(
+      routes({
+        "GET label": {
+          values: ["a"],
+          startAt: 0,
+          maxResults: 1000,
+          isLast: true,
+        },
+      }),
+    );
+    await t.listLabels();
+    expect(calls.map((c) => c.query.maxResults)).toEqual([1000]);
+  });
+
+  it("reads a label the next page repeats, after one was added mid-read, once", async () => {
+    const { t, calls } = jira(
+      routes({
+        "GET label": (c: Call) =>
+          c.query.startAt === 0
+            ? { values: ["alpha", "beta"], startAt: 0, isLast: false }
+            : { values: ["beta", "gamma"], startAt: 2, isLast: true },
+      }),
+    );
+    expect(await t.listLabels()).toEqual([
+      { name: "alpha", group: null },
+      { name: "beta", group: null },
+      { name: "gamma", group: null },
+    ]);
+    expect(calls.map((c) => c.query.startAt)).toEqual([0, 2]);
+  });
+
   it("searches summaries and descriptions, open issues unless asked", async () => {
     const { t, calls } = jira(
       routes({ "POST search/jql": page(issue({ key: "ENG-4" })) }),

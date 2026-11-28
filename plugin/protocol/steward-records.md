@@ -74,7 +74,7 @@ The registry's kind the host keeps the submitted records as:
 
 | Kind | Medium | Markers | Version | Key | Meaning |
 | --- | --- | --- | --- | --- | --- |
-| `dispatch-steward-record` | machine |  | 54 | — | The closed records a steward pass submitted. The next tick claims each before acting on it, and first checks again the stops, holds and budgets that apply. |
+| `dispatch-steward-record` | machine |  | 56 | — | The closed records a steward pass submitted. The next tick claims each before acting on it, and first checks again the stops, holds and budgets that apply. |
 
 <!-- /protocol:generated -->
 

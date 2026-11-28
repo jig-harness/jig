@@ -113,7 +113,7 @@ describe("jig dispatch with a checkout Orca does not list holding the head branc
       "a notice to a person follows",
     );
     expect(notifications(first)).toMatchObject([
-      { target: "PR #7", cause: "needs-person", key, outcome: "sent" },
+      { target: "PR #7", cause: "busy-holder", key, outcome: "sent" },
     ]);
     const [written] = notifyWrites(w);
     const comment = written?.[written.indexOf("--comment") + 1] ?? "";
@@ -195,7 +195,7 @@ describe("jig dispatch with detach_idle_holders", () => {
       { target: "PR #7", outcome: "refused", holder: { path: off.holder } },
     ]);
     expect(notifications(refusedTick)).toMatchObject([
-      { target: "PR #7", cause: "needs-person" },
+      { target: "PR #7", cause: "busy-holder" },
     ]);
     expect(isDetached(off.w, off.holder)).toBe(false);
     writeFileSync(join(off.w.dir, "claude-exit"), "");
@@ -213,7 +213,7 @@ describe("jig dispatch with detach_idle_holders", () => {
     });
     expect(launched?.holder).toBeUndefined();
     expect(
-      notifications(receipt).filter((n) => n.cause === "needs-person"),
+      notifications(receipt).filter((n) => n.cause === "busy-holder"),
     ).toEqual([]);
     expect(isDetached(w, holder)).toBe(true);
     expect(git(w, "-C", holder, "status", "--porcelain")).toBe("?? notes.txt");
@@ -298,7 +298,7 @@ describe("jig dispatch with detach_idle_holders", () => {
       "its unpushed commits could not be kept on a rescue branch, so it was left as it is",
     );
     expect(notifications(receipt)).toMatchObject([
-      { target: "PR #7", cause: "needs-person" },
+      { target: "PR #7", cause: "busy-holder" },
     ]);
     expect(isDetached(w, holder)).toBe(false);
     expect(git(w, "-C", holder, "rev-parse", "HEAD")).toBe(head);
@@ -408,7 +408,7 @@ describe("jig dispatch with a squash-merged checkout Orca does not list holding 
       `left the idle checkout at ${holder} detached at ${head.slice(0, 12)}, its branch ${MERGED} kept`,
     );
     expect(
-      notifications(receipt).filter((n) => n.cause === "needs-person"),
+      notifications(receipt).filter((n) => n.cause === "busy-holder"),
     ).toEqual([]);
     expect(git(w, "-C", holder, "rev-parse", "HEAD")).toBe(head);
     const detached = Bun.spawnSync(

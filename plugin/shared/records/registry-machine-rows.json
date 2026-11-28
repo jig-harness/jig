@@ -7,6 +7,12 @@
       "One session the dispatcher started: its stage, its pull request or item, its account, the wrapper's claim, its exit and its result. A secondary host records release tags owed by a follow-up on its launch and shares them with the launch's outcome. The tick reads this record to know what holds a stage and an account's slot."
     ],
     [
+      "dispatch-pickup-batch-member",
+      "dispatch/lib/pickup-successor-schema.ts",
+      "pickup_batch_members",
+      "One batch launch's membership for one item, indexed by repository, item and launch time. It is derived from the retained launch record."
+    ],
+    [
       "dispatch-process-worktree-completion",
       "dispatch/lib/launches.ts",
       "process_worktree_completions",

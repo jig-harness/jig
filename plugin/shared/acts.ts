@@ -174,6 +174,7 @@ export function listedActOfClass(
 
 /** The act each cause the dispatcher finds waiting on a person asks for; a park's act is its class's. */
 const CAUSE_ACTS: Readonly<Record<string, NeedAct>> = {
+  "busy-holder": "Investigate",
   "needs-person": "Investigate",
   "stopped-unknown": "Investigate",
   "followup-failed": "Investigate",

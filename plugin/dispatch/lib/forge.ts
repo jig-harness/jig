@@ -819,9 +819,37 @@ export async function mergedNotClosed(
 }
 
 /**
+ * The refusal `gh pr edit` prints for a label the repository lacks:
+ * `'<name>' not found`, bare, since the edit path propagates the label
+ * lookup's error as it is. The create paths prefix it with
+ * `could not add label: `, which the pattern also reads. gh stops at the
+ * first such label, so a refusal names one.
+ */
+const MISSING_LABEL = /(?:could not add label: )?'(.+)' not found/;
+
+/** A label write the forge refused because the repository lacks a label it adds: `missing` names it. */
+export interface MissingLabelFailure extends CausedFailure<"missing-label"> {
+  missing: string[];
+}
+
+/** Why a label write was refused: a label the repository lacks (`missing-label`), or any other refusal (`refused`: no permission, a lost answer). */
+export type LabelEditFailure = CausedFailure<"refused"> | MissingLabelFailure;
+
+/** A refusal of a write adding `add`, classed as a missing label when gh names one of them. */
+export function labelEditFailure(
+  failure: CausedFailure<"refused">,
+  add: readonly string[],
+): LabelEditFailure {
+  const named = MISSING_LABEL.exec(failure.reason)?.[1];
+  if (named === undefined || !add.includes(named)) return failure;
+  return { ...failure, code: "missing-label", missing: [named] };
+}
+
+/**
  * Change a pull request's labels in one call: `add` added, `remove`
- * removed, every other label left as it is; `refused` with the forge's
- * reason (a label that does not exist, no permission).
+ * removed, every other label left as it is; `missing-label` naming a label
+ * of `add` the repository lacks, else `refused` with the forge's reason
+ * (no permission).
  */
 export async function editLabels(
   slug: string,
@@ -829,7 +857,9 @@ export async function editLabels(
   add: readonly string[],
   remove: readonly string[],
   timeoutSec?: number,
-): Promise<Outcome<void, "refused">> {
+): Promise<
+  { ok: true; value: undefined } | { ok: false; failure: LabelEditFailure }
+> {
   const edited = await gh(
     [
       "pr",
@@ -844,7 +874,9 @@ export async function editLabels(
     undefined,
     timeoutSec,
   );
-  return edited.ok ? ok(undefined) : edited;
+  return edited.ok
+    ? ok(undefined)
+    : { ok: false, failure: labelEditFailure(edited.failure, add) };
 }
 
 /** Post `body` as a comment on pull request `pr` of `slug`, one REST call; `refused` with the forge's reason. */
@@ -923,11 +955,18 @@ export async function repositoryLabels(
   );
 }
 
-/** Create one label; `refused` with the forge's reason (no permission). */
+/**
+ * The refusal `gh label create` prints for a label the repository already
+ * has: `label with name "<name>" already exists; use `--force` to update
+ * its color and description`.
+ */
+const LABEL_EXISTS = /label with name ".*" already exists/;
+
+/** Create one label; `exists` when the repository already has it (another writer created it first), else `refused` with the forge's reason (no permission). */
 export async function createLabel(
   slug: string,
   label: { name: string; color: string; description: string },
-): Promise<Outcome<void, "refused">> {
+): Promise<Outcome<void, "refused" | "exists">> {
   const created = await gh(
     [
       "label",
@@ -942,7 +981,10 @@ export async function createLabel(
     ],
     "refused",
   );
-  return created.ok ? ok(undefined) : created;
+  if (created.ok) return ok(undefined);
+  return LABEL_EXISTS.test(created.failure.reason)
+    ? { ok: false, failure: { ...created.failure, code: "exists" } }
+    : created;
 }
 
 /** Set one label's description, its color or both, leaving what it is not given; `refused` with the forge's reason (no permission). */
