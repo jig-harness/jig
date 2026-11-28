@@ -413,6 +413,14 @@ function bytes(text: string): number {
 export const RESOLVED_PARKS_CUT = "the resolved parks";
 export const OLDER_PARKS_CUT = "the older resolved parks";
 
+/** The lowest ledger version that carries what this ledger holds: a managed recipient needs the newest, an operator stop the one before. */
+function writtenVersion(ledger: Ledger): number {
+  if (ledger.parked.some((park) => park.person?.includes("_") === true))
+    return LEDGER_VERSION;
+  if (ledger.driver.personStop === undefined) return ledger.ledgerVersion;
+  return Math.max(ledger.ledgerVersion, OPERATOR_STOP_LEDGER_VERSION);
+}
+
 /**
  * The comment body for `ledger`, cut to `limit`: CI telemetry and older stops'
  * finish details go first, the resolved parks' receipts, held items' outcomes
@@ -428,13 +436,7 @@ export function renderLedger(
 ): { body: string; ledger: Ledger } | { error: string } {
   let l: Ledger = {
     ...ledger,
-    ledgerVersion: ledger.parked.some(
-      (park) => park.person?.includes("_") === true,
-    )
-      ? LEDGER_VERSION
-      : ledger.driver.personStop === undefined
-        ? ledger.ledgerVersion
-        : Math.max(ledger.ledgerVersion, OPERATOR_STOP_LEDGER_VERSION),
+    ledgerVersion: writtenVersion(ledger),
     // A receipt or churn-evidence loss the state already carries stays named, whatever this render drops.
     cut: ledger.cut.filter(
       (c) =>

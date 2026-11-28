@@ -280,13 +280,10 @@ describe("the registry", () => {
     expect(recordKind("no-such-kind")).toBeUndefined();
   });
 
-  it("states the versions the code writes", () => {
+  it("states the ledger versions the writer emits", () => {
     const stopped = ledger();
     stopped.driver.personStop = { at: AT, reason: "maintenance" };
-    const stopRendered = renderLedger(stopped);
-    expect("body" in stopRendered).toBe(true);
-    if ("body" in stopRendered)
-      expect(dataOf(stopRendered.body)).toMatchObject({ v: 2 });
+    expect(renderedVersion(stopped)).toBe(2);
     const managed = ledger({
       parked: [
         {
@@ -298,13 +295,11 @@ describe("the registry", () => {
         },
       ],
     } as Partial<Ledger>);
-    const rendered = renderLedger(managed);
-    expect("body" in rendered).toBe(true);
-    if ("body" in rendered)
-      expect(dataOf(rendered.body)).toMatchObject({
-        v: recordKind(LEDGER_KIND)?.version,
-      });
+    expect(renderedVersion(managed)).toBe(recordKind(LEDGER_KIND)?.version);
     expect(recordKind(LEDGER_KIND)?.version).toBe(LEDGER_VERSION);
+  });
+
+  it("states the versions the code writes", () => {
     expect(recordKind(FOLLOWUP_KIND)?.version).toBe(FOLLOWUP_VERSION);
     expect(recordKind(ADMISSION_KIND)?.version).toBe(ADMISSION_VERSION);
     for (const kind of [LAUNCH_KIND, HEARTBEAT_KIND])
@@ -316,6 +311,12 @@ describe("the registry", () => {
     for (const kind of tables) expect(kind.version).toBe(SCHEMA_VERSION);
   });
 });
+
+function renderedVersion(l: Ledger): unknown {
+  const rendered = renderLedger(l);
+  if (!("body" in rendered)) throw new Error("the ledger did not render");
+  return (dataOf(rendered.body) as { v?: unknown }).v;
+}
 
 function ledger(over: Partial<Ledger> = {}): Ledger {
   return {
