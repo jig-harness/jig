@@ -133,8 +133,14 @@ function childRecorded(w: World, id: string): boolean {
 function schemaAt(root: string, version: number): void {
   closeStateDb(root);
   const db = new Database(statePath(root));
-  db.run(`PRAGMA user_version = ${version}`);
-  db.close();
+  try {
+    // Match `shared/records/db.ts`'s wait so an exiting wrapper or supervisor
+    // closing or reopening its connection does not trip `SQLITE_BUSY`.
+    db.run("PRAGMA busy_timeout = 10000");
+    db.run(`PRAGMA user_version = ${version}`);
+  } finally {
+    db.close();
+  }
 }
 
 /** A tick that exited 1 as the newest receipt: the host's health check fails. */
