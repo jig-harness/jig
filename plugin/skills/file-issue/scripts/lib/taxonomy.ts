@@ -24,7 +24,13 @@
  *               its `labels`, accepts any slug `open` matches (a regular
  *               expression matched against the whole slug), or both; it
  *               may set `max` and `recommended` (warnings) and `requires`
- *               (labels that must all be present whenever one of its labels is)
+ *               (labels that must all be present whenever one of its labels is).
+ *               A category with `field_only: true` holds values the tracker
+ *               keeps in a field it reads as labels (a Jira field behind
+ *               `issue_tracker.jira.field_labels`), which are set on that
+ *               field after filing and never written as labels: it may not
+ *               be `recommended`, and no `requires` or `requires_category`
+ *               may name it or its labels, since a filing never carries them
  *
  * Every entry may also carry `notes`, and `color`: the colour its label shows
  * in the tracker, six hex digits written as text (`cfd3d7`, no `#`), so a
@@ -77,6 +83,7 @@ const ENTRY_KEYS: Record<string, string[]> = {
     "max",
     "recommended",
     "requires",
+    "field_only",
   ],
   label: ["id", "notes", "color"],
 };
@@ -104,6 +111,11 @@ export interface LabelCategory {
   max: number | null;
   recommended: boolean;
   requires: string[];
+  /**
+   * Its values live in a tracker field the adapter reads as labels and
+   * never writes: set on the field after filing, never filed as labels.
+   */
+  fieldOnly: boolean;
 }
 
 export interface LabelFlag {
@@ -394,14 +406,21 @@ function readCategory(read: Entry, problems: string[]): LabelCategory {
     problems.push(
       `${what} declares neither 'labels:' nor 'open:' (a category needs one or both)`,
     );
+  const recommended = flagField(problems, what, entry, "recommended");
+  const fieldOnly = flagField(problems, what, entry, "field_only");
+  if (fieldOnly && recommended)
+    problems.push(
+      `${what} is 'field_only: true' and 'recommended: true' (its values are set on the tracker field after filing, so a filing never carries one)`,
+    );
   return {
     id,
     prefix,
     labels,
     open,
     max: maxField(what, entry.max, problems),
-    recommended: flagField(problems, what, entry, "recommended"),
+    recommended,
     requires: texts(problems, what, entry, "requires"),
+    fieldOnly,
   };
 }
 
@@ -489,6 +508,47 @@ function categoryReferenceProblems(
   });
 }
 
+const FIELD_ONLY_REQUIRED =
+  "whose values are set on the tracker field after filing, so a filing never carries one";
+
+/**
+ * No `requires` may name a field-only category's label, and no
+ * `requires_category` a field-only category: the label set a filing writes
+ * never holds one, so the rule could never be met.
+ */
+function fieldOnlyReferenceProblems(
+  flags: LabelFlag[],
+  categories: LabelCategory[],
+): string[] {
+  const fieldOnly = categories.filter((c) => c.fieldOnly);
+  const owner = (label: string) =>
+    fieldOnly.find((c) => c.labels.includes(label));
+  const problems: string[] = [];
+  const required = [
+    ...flags.map((f) => ({ what: `flag '${f.id}'`, requires: f.requires })),
+    // A category requiring its own label is reported as that already.
+    ...categories.map((c) => ({
+      what: `category '${c.id}'`,
+      requires: c.requires.filter((l) => !c.labels.includes(l)),
+    })),
+  ];
+  for (const { what, requires } of required)
+    for (const label of requires) {
+      const category = owner(label);
+      if (category)
+        problems.push(
+          `${what} requires '${label}', a label of field-only category '${category.id}' ${FIELD_ONLY_REQUIRED}`,
+        );
+    }
+  for (const flag of flags)
+    for (const id of flag.requiresCategory)
+      if (fieldOnly.some((c) => c.id === id))
+        problems.push(
+          `flag '${flag.id}' has requires_category '${id}', a field-only category ${FIELD_ONLY_REQUIRED}`,
+        );
+  return problems;
+}
+
 /** Every `requires` and `requires_category` must name what the file defines. */
 function referenceProblems(
   flags: LabelFlag[],
@@ -499,6 +559,7 @@ function referenceProblems(
   return [
     ...flags.flatMap((f) => flagReferenceProblems(f, categoryIds, labels)),
     ...categories.flatMap((c) => categoryReferenceProblems(c, labels)),
+    ...fieldOnlyReferenceProblems(flags, categories),
   ];
 }
 

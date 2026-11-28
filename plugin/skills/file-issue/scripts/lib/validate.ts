@@ -14,7 +14,10 @@
  *   - a flag's `requires_category` unmet (a flag without any of its facets).
  * Warnings (the label set may be written):
  *   - more labels of a category than its `max`;
- *   - no label of a `recommended` category.
+ *   - no label of a `recommended` category;
+ *   - a label of a `field_only` category: the taxonomy knows it, but its
+ *     value is set on the tracker field after filing, so it is listed in
+ *     `fieldOnly` and left out of `labels`, the set a filing writes.
  *
  * Given the issue's facets, the type, the size and the priority are checked
  * as the facets they are (plugin/skills/file-issue/README.md):
@@ -69,7 +72,13 @@ export interface ParsedLabels {
 
 export interface Validation {
   valid: boolean;
+  /** The labels to write: the checked set without its `fieldOnly` labels. */
   labels: string[];
+  /**
+   * The labels of `field_only` categories: values set on the tracker field
+   * after filing, never written as labels.
+   */
+  fieldOnly: string[];
   errors: string[];
   warnings: string[];
   parsed: ParsedLabels;
@@ -266,6 +275,24 @@ function facetErrors(
   return { errors, missing };
 }
 
+/**
+ * The labels of the field-only categories, and a warning for each such
+ * category present saying where its values go instead.
+ */
+function fieldOnlyLabels(parsed: ParsedLabels, categories: LabelCategory[]) {
+  const present = categories
+    .filter((c) => c.fieldOnly)
+    .map((c) => ({ id: c.id, found: of(parsed.categories, c.id) }))
+    .filter((c) => c.found.length);
+  return {
+    labels: present.flatMap((c) => c.found),
+    warnings: present.map(({ id, found }) => {
+      const many = found.length > 1;
+      return `${quoted(found)} ${many ? "are values" : "is a value"} of field-only category '${id}': set ${many ? "them" : "it"} on the tracker field after filing, not as ${many ? "labels" : "a label"} (left out of the labels to write)`;
+    }),
+  };
+}
+
 /** A category's `requires` beside its labels (errors), `max` and `recommended` (warnings). */
 function categoryChecks(
   category: LabelCategory,
@@ -383,9 +410,12 @@ export function validateLabels(
     warnings.push(...checks.warnings);
   }
   errors.push(...flagErrors(parsed, taxonomy, present));
+  const fieldOnly = fieldOnlyLabels(parsed, taxonomy.categories);
+  warnings.push(...fieldOnly.warnings);
   return {
     valid: errors.length === 0,
-    labels,
+    labels: labels.filter((l) => !fieldOnly.labels.includes(l)),
+    fieldOnly: fieldOnly.labels,
     errors,
     warnings,
     parsed,

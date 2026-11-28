@@ -104,6 +104,20 @@ The tracker-agnostic contract the gate needs is small: a `status:` and the
 completed phase ids, one per line. Any tracker that can export those (a saved
 view, an API query) can be gated — the export is the only per-tracker adapter.
 
+## Field-only label categories
+
+A taxonomy category marked `field_only: true` holds values the tracker keeps
+in a field it reads as labels but never writes, so a filing sets them on that
+field afterwards and never as labels.
+
+| Tracker | Such a field | Mapping |
+|---------|--------------|---------|
+| Jira | a field whose values the adapter reads as prefixed labels, such as Fix versions as `fixversion:2.4` | `issue_tracker.jira.field_labels: { "Fix versions": "fixversion:" }`, with the category's `prefix` equal to the mapped prefix |
+| GitHub issues, GitLab issues, Linear, Dart | none read this way | no category is field-only; every value is a label |
+
+`validate-labels.ts --check-tracker` refuses a field-only category whose
+prefix the configured tracker maps to no field.
+
 ## Issue trackers — the work-item rules
 
 The [work-item rules](README.md#work-item-rules) need three things from a

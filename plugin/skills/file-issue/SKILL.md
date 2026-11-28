@@ -166,6 +166,21 @@ level, which the level itself answers.
 2. **Only taxonomy labels.** A label the taxonomy lacks is a change to the
    taxonomy, not to this issue: say so and leave it off. Never create a
    label in the tracker from here.
+   A label of a category the taxonomy marks `field_only: true` is a value
+   the tracker keeps in a field it reads as labels but never writes (a Jira
+   field behind `issue_tracker.jira.field_labels`, such as Fix versions as
+   `fixversion:2.4`). Keep two drafts: the validation draft carries the
+   value among its `labels`, so `validate-labels.ts` reports it under
+   `fieldOnly`, with a `WARNING`, and returns the set to write in `labels`;
+   the filing draft, the JSON file [step 10](#10-write) files, carries that
+   returned `labels` and never the value (the adapter refuses it). Keep the
+   `fieldOnly` values from the validation for the confirmation and the
+   report. With `--check-tracker`, a field-only category whose prefix no
+   `field_labels` entry names is invalid. No Jig script writes that field,
+   so never set the value yourself, by the tracker scripts or the tracker's
+   own interface: it is a step a person owes in the tracker after filing,
+   and the confirmation and the report name it as owed. Under a drive,
+   record it with the filing (drive-pr § 8), so a person finds it.
 3. **A gate's flag goes on the item that ships the change.** A flag whose
    `scope` is `shipping-item` goes on the issue (or sub-issue) whose pull
    request makes the change, never on the container above it; a
@@ -396,7 +411,9 @@ It prints `confirm: <level>` or `skip: <level>`, then the filed-by line.
 - **`confirm`** (the `attended` level, and every interactive session unless
   its person chose a level): show the user the plan, each issue's title,
   labels, priority, parent and relations, and each issue's body in full,
-  children's included: the body is what step 10 writes. Write nothing until
+  children's included: the body is what step 10 writes. Name each
+  field-only value (rule 2) apart from the labels, as a step a person owes
+  on the tracker field after filing. Write nothing until
   the user accepts; apply their changes and validate again.
 - **`skip`** (the `unattended` level a driver pass reads where the repository
   allows it): put the printed filed-by line at the end of each issue's body,
@@ -508,6 +525,7 @@ tracker, then assign it again after the window.
 ## Filed <KEY>: <title>
 
 - Labels: <labels> (warnings: <any, or none>)
+- Owed on the tracker field, by a person (Jig does not write it): <each field-only value (rule 2), or none>
 - Priority: <priority> · Category: <category>
 - Parent: <key, or none> · Sub-issues: <keys, or none>
 - Relations: <KEY blocks …, related …, or none>
@@ -575,7 +593,10 @@ bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" update "<KEY>" --input .
 
 with `addLabels` and `removeLabels` rather than a whole label list, and a
 changed type, priority or size in its own field (`"type"`, `"priority"`,
-`"size"`), which takes the old value off wherever it is kept. When a
+`"size"`), which takes the old value off wherever it is kept. A
+field-only value (rule 2) the issue shows among its labels is neither added
+nor removed here: a change to it is a step a person owes on the tracker
+field, and the report names it as owed. When a
 child cannot be created, stop before the update: the issue keeps its flags,
 so no flag is lost, and report which children exist (with their keys) and
 which do not. Do not retry blindly; ask the user whether to create the rest
