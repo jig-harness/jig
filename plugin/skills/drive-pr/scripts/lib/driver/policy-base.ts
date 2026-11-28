@@ -64,7 +64,7 @@ async function commitOf(
 async function refreshTrackingRef(
   root: string,
   ref: string,
-): Promise<{ commit: string } | { error: string }> {
+): Promise<{ commit: string; branch: string } | { error: string }> {
   const remote = readRemoteName(root);
   if ("error" in remote) return remote;
   const prefix = `refs/remotes/${remote.remote}/`;
@@ -113,7 +113,31 @@ async function refreshTrackingRef(
   // The immutable object named above belongs to this observation. Do not read
   // the shared tracking ref: another worktree may advance it between fetch and
   // policy parsing.
-  return commitOf(root, commit);
+  const verified = await commitOf(root, commit);
+  return "error" in verified ? verified : { commit: verified.commit, branch };
+}
+
+/** A freshly fetched base-branch commit (and integration bound for a stack), or why it failed. */
+export type ResolvedPolicyBase =
+  | { commit: string; branch: string; bound?: string }
+  | { error: string };
+
+/**
+ * Resolve pull request `pr`'s freshly fetched base-branch commit (and, for a
+ * stacked base, the freshly fetched integration-branch bound commit) without
+ * modifying `process.env`.
+ */
+export async function resolvePolicyBase(
+  pr: string,
+  root: string = consumerRoot(),
+): Promise<ResolvedPolicyBase> {
+  const base = await freshPrBaseRef(root, pr, gitCallTimeoutSeconds());
+  if ("error" in base) return base;
+  const resolved = await refreshTrackingRef(root, base.ref);
+  if ("error" in resolved) return resolved;
+  const bound = await integrationBound(root, base.ref, resolved);
+  if (bound !== null && "error" in bound) return bound;
+  return bound === null ? resolved : { ...resolved, bound: bound.commit };
 }
 
 /**
@@ -126,26 +150,13 @@ export async function exportPolicyBase(
   pr: string,
   root: string = consumerRoot(),
 ): Promise<{ commit: string } | { error: string }> {
-  const base = await freshPrBaseRef(root, pr, gitCallTimeoutSeconds());
-  const fetched =
-    "error" in base ? null : await refreshTrackingRef(root, base.ref);
-  const resolved =
-    "error" in base
-      ? base
-      : fetched !== null && "error" in fetched
-        ? fetched
-        : (fetched ?? (await commitOf(root, base.ref)));
-  const bound =
-    "error" in base || "error" in resolved
-      ? null
-      : await integrationBound(root, base.ref, resolved);
-  const result = bound !== null && "error" in bound ? bound : resolved;
+  const result = await resolvePolicyBase(pr, root);
   const failed = "error" in result;
   process.env[POLICY_BASE_VARIABLE] = failed ? "" : result.commit;
-  if (!failed && bound !== null && "commit" in bound)
-    process.env[POLICY_BOUND_VARIABLE] = bound.commit;
+  if (!failed && result.bound !== undefined)
+    process.env[POLICY_BOUND_VARIABLE] = result.bound;
   else delete process.env[POLICY_BOUND_VARIABLE];
-  return result;
+  return failed ? result : { commit: result.commit };
 }
 
 /**

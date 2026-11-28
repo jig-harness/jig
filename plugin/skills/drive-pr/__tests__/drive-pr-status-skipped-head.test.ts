@@ -13,6 +13,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import {
   binDir,
@@ -24,6 +25,7 @@ import {
   useDrivePrSuite,
   writeFixture,
 } from "./drive-pr-harness.ts";
+import { realGitForShell } from "./round-plan-fixtures.ts";
 
 useDrivePrSuite();
 
@@ -690,5 +692,134 @@ describe("drive-status.ts over a head the reviewer skipped", () => {
     const other = await gate(repo.dir, fixture, skipNotice(repo.merged), env);
     expectSpawnExit(other, 4);
     expect(other.state).toBe("STALE_REVIEW");
+  });
+
+  /** Attach a local bare `origin` matching the fixture PR repo (`example-org/example-repo`) and `develop` base. */
+  function withPolicyRemote(
+    repoDir: string,
+    developCommit: string,
+  ): { remote: string; env: Record<string, string> } {
+    const remote = `${repoDir}-remote.git`;
+    git(repoDir, "init", "-q", "--bare", remote);
+    git(repoDir, "push", "-q", remote, `${developCommit}:refs/heads/develop`);
+    git(remote, "symbolic-ref", "HEAD", "refs/heads/develop");
+    git(repoDir, "remote", "add", "origin", remote);
+    git(repoDir, "update-ref", "refs/remotes/origin/develop", developCommit);
+    git(
+      repoDir,
+      "symbolic-ref",
+      "refs/remotes/origin/HEAD",
+      "refs/remotes/origin/develop",
+    );
+    const fakeGitDir = `${repoDir}-gitbin`;
+    mkdirSync(fakeGitDir, { recursive: true });
+    writeFakeProgram(
+      join(fakeGitDir, "git"),
+      `#!/usr/bin/env sh
+if [ "\${*#*remote get-url }" = "origin" ]; then
+  echo https://github.com/example-org/example-repo.git
+  exit 0
+fi
+exec "${realGitForShell()}" "$@"
+`,
+    );
+    return {
+      remote,
+      env: {
+        PATH: `${fakeGitDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
+      },
+    };
+  }
+
+  it("converges an unstamped current-head skip when the refreshed base excludes every changed path", async () => {
+    const repo = pullRequestRepo(
+      "unstamped-remote-excluded",
+      "review:\n  skip_excluded_paths: [feature.txt]\n",
+    );
+    const { env } = withPolicyRemote(repo.dir, repo.base);
+    const fixture = { ...at(repo, repo.merged), reviewedSha: null };
+    const standalone = await gate(repo.dir, fixture, null, env, (dir) =>
+      addUnstampedSkip(dir, repo.merged),
+    );
+    expectSpawnExit(standalone, 3);
+    expect(standalone.state).toBe("CONVERGED");
+    expect(standalone.reviewer.reviewedSha).toBe(repo.merged);
+    expect(standalone.reviewer.reviewedShaSource).toBe("skip-notice");
+
+    const driven = await gate(
+      repo.dir,
+      fixture,
+      null,
+      { ...env, DRIVE_PR_TARGET: "999", DRIVE_PR_POLICY_BASE: repo.base },
+      (dir) => addUnstampedSkip(dir, repo.merged),
+    );
+    expectSpawnExit(driven, 3);
+    expect(driven.state).toBe("CONVERGED");
+    expect(driven.reviewer.reviewedShaSource).toBe("skip-notice");
+  });
+
+  it("refreshes the reviewed policy on a driver poll when the base revokes a skip exclusion", async () => {
+    const repo = pullRequestRepo(
+      "unstamped-revoked-driver-poll",
+      "review:\n  skip_excluded_paths: [feature.txt]\n",
+    );
+    const { remote, env } = withPolicyRemote(repo.dir, repo.base);
+    git(repo.dir, "checkout", "-q", "main");
+    const revoked = commitFile(
+      repo.dir,
+      ".config/jig.yaml",
+      "review:\n  skip_excluded_paths: []\n",
+    );
+    git(repo.dir, "push", "-q", remote, `${revoked}:refs/heads/develop`);
+
+    // Driver exported the older policy base before the poll began; the
+    // evaluation now observes the newer base where the exclusion was revoked.
+    const fixture = { ...at(repo, repo.merged, revoked), reviewedSha: null };
+    const r = await gate(
+      repo.dir,
+      fixture,
+      null,
+      { ...env, DRIVE_PR_TARGET: "999", DRIVE_PR_POLICY_BASE: repo.base },
+      (dir) => addUnstampedSkip(dir, repo.merged),
+    );
+    expectSpawnExit(r, 22);
+    expect(r.state).toBe("REVIEW_SKIPPED");
+    expect(r.reason).toContain("outside review.skip_excluded_paths");
+
+    // Even when the PR snapshot lags on the older base commit, refreshing the
+    // remote base enforces the revocation.
+    const lagging = await gate(
+      repo.dir,
+      { ...at(repo, repo.merged, repo.base), reviewedSha: null },
+      null,
+      { ...env, DRIVE_PR_TARGET: "999", DRIVE_PR_POLICY_BASE: repo.base },
+      (dir) => addUnstampedSkip(dir, repo.merged),
+    );
+    expectSpawnExit(lagging, 22);
+    expect(lagging.state).toBe("REVIEW_SKIPPED");
+    expect(lagging.reason).toContain("outside review.skip_excluded_paths");
+  });
+
+  it("refuses to certify an unstamped skip when the refreshed policy does not cover the evaluated base commit", async () => {
+    const repo = pullRequestRepo(
+      "unstamped-stale-remote-base",
+      "review:\n  skip_excluded_paths: [feature.txt]\n",
+    );
+    // Remote still points at the older base with the exclusion, while the
+    // evaluated PR snapshot already names the newer commit that revoked it.
+    const { env } = withPolicyRemote(repo.dir, repo.base);
+    git(repo.dir, "checkout", "-q", "main");
+    const newer = commitFile(
+      repo.dir,
+      ".config/jig.yaml",
+      "review:\n  skip_excluded_paths: []\n",
+    );
+    const fixture = { ...at(repo, repo.merged, newer), reviewedSha: null };
+    const r = await gate(repo.dir, fixture, null, env, (dir) =>
+      addUnstampedSkip(dir, repo.merged),
+    );
+    expectSpawnExit(r, 22);
+    expect(r.state).toBe("REVIEW_SKIPPED");
+    expect(r.reason).toContain("does not cover the evaluated base commit");
   });
 });

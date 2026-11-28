@@ -483,6 +483,17 @@ async function evaluateFresh(
         `cannot re-read #${ctx.pr}'s base to confirm it did not move while the witnesses were gathered`,
       );
     }
+    if (
+      report.baseRefName !== "" &&
+      now.snapshot.baseRefName !== "" &&
+      now.snapshot.baseRefName !== report.baseRefName
+    ) {
+      return terminal(
+        report,
+        "HEAD_MOVED",
+        `#${ctx.pr}'s base branch changed from ${report.baseRefName} to ${now.snapshot.baseRefName} while this evaluation ran — mergeability and reviewer witnesses above describe the old base, so no terminal claim about it holds`,
+      );
+    }
     if (baseNow !== report.baseHead) {
       return terminal(
         report,
@@ -941,6 +952,7 @@ async function evaluateFresh(
     // Second witness: the reviewer's stamp must name THIS head, or the head
     // it reviewed before skipping this one unchanged (`reviewed-sha.ts`).
     const stop = await reviewedShaGate(
+      ctx.pr,
       report,
       marker,
       markerFull,

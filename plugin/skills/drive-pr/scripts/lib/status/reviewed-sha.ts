@@ -35,6 +35,7 @@ import {
 } from "../../../../../shared/consumer.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { fetchTimeoutSeconds } from "../base-drift.ts";
+import { resolvePolicyBase } from "../driver/policy-base.ts";
 import { reviewerLabel } from "../overlay.ts";
 import {
   git,
@@ -144,12 +145,13 @@ export interface ReviewedShaStop {
  * accepted wrong one costs the whole guard.
  */
 export async function reviewedShaGate(
+  pr: string,
   report: StatusReport,
   marker: string,
   markerFull: string,
   skip: SkipNotice | null,
 ): Promise<ReviewedShaStop | null> {
-  if (marker === "") return unstampedSkipGate(report, skip);
+  if (marker === "") return unstampedSkipGate(pr, report, skip);
   report.reviewedSha = marker;
   report.reviewedShaSource = "comment-marker";
   if (marker.length !== 40) {
@@ -219,6 +221,7 @@ async function skippedHeadGate(
 }
 
 async function unstampedSkipGate(
+  pr: string,
   report: StatusReport,
   skip: SkipNotice | null,
 ): Promise<ReviewedShaStop | null> {
@@ -228,27 +231,49 @@ async function unstampedSkipGate(
     return null;
   }
   const notice = `its skip notice for this head reads "${skip.text}"`;
-  const excluded = skipExcludedPathsAt(report.baseHead);
+  const excluded = await skipExcludedPathsAt(pr, report);
   if ("reason" in excluded) return skippedStop(report, notice, excluded.reason);
-  const remaining = await changedPathsOutsideExcluded(
-    report.baseHead,
-    report.apiHead,
+  const diffStop = await checkExcludedBases(
+    report,
+    notice,
     new Set(excluded.paths),
+    excluded.policyBase,
   );
-  if (typeof remaining === "string")
-    return skippedStop(
-      report,
-      notice,
-      `Jig cannot read the pull request diff after applying review.skip_excluded_paths (${remaining})`,
-    );
-  if (remaining !== 0)
-    return skippedStop(
-      report,
-      notice,
-      `the pull request still changes ${remaining} path${remaining === 1 ? "" : "s"} outside review.skip_excluded_paths`,
-    );
+  if (diffStop !== null) return diffStop;
   report.reviewedSha = report.apiHead;
   report.reviewedShaSource = "skip-notice";
+  return null;
+}
+
+async function checkExcludedBases(
+  report: StatusReport,
+  notice: string,
+  excluded: ReadonlySet<string>,
+  policyBase: string,
+): Promise<ReviewedShaStop | null> {
+  const bases =
+    policyBase === report.baseHead
+      ? [report.baseHead]
+      : [report.baseHead, policyBase];
+  for (const base of bases) {
+    const remaining = await changedPathsOutsideExcluded(
+      base,
+      report.apiHead,
+      excluded,
+    );
+    if (typeof remaining === "string")
+      return skippedStop(
+        report,
+        notice,
+        `Jig cannot read the pull request diff after applying review.skip_excluded_paths (${remaining})`,
+      );
+    if (remaining !== 0)
+      return skippedStop(
+        report,
+        notice,
+        `the pull request still changes ${remaining} path${remaining === 1 ? "" : "s"} outside review.skip_excluded_paths`,
+      );
+  }
   return null;
 }
 
@@ -314,10 +339,11 @@ async function changedPathsOutsideExcluded(
 }
 
 /** Review exclusions are policy, so only the PR base branch may supply them. */
-function skipExcludedPathsAt(
-  baseHead: string,
-): { paths: string[] } | { reason: string } {
-  const configured = excludedPathsConfig(baseHead);
+async function skipExcludedPathsAt(
+  pr: string,
+  report: StatusReport,
+): Promise<{ paths: string[]; policyBase: string } | { reason: string }> {
+  const configured = await excludedPathsConfig(pr, report);
   if ("reason" in configured) return configured;
   const value = configured.value;
   if (!Array.isArray(value))
@@ -339,32 +365,51 @@ function skipExcludedPathsAt(
       reason:
         "review.skip_excluded_paths on the pull request base names a path more than once",
     };
-  return { paths };
+  return { paths, policyBase: configured.policyBase };
 }
 
-/** The raw `review.skip_excluded_paths` value from the reviewed policy snapshot. */
-function excludedPathsConfig(
-  baseHead: string,
-): { value: unknown } | { reason: string } {
-  // Review excludes have their own schema. Do not make an otherwise readable
-  // review policy depend on unrelated autonomy fields in that same config.
-  // A stack's bound is the reviewed policy that may narrow this proof.
-  if (
-    Object.hasOwn(process.env, "DRIVE_PR_POLICY_BASE") &&
-    (process.env.DRIVE_PR_POLICY_BASE ?? "").trim() === ""
-  )
-    return { reason: "the reviewed policy base could not be resolved" };
-  const bound = (process.env.DRIVE_PR_POLICY_BOUND ?? "").trim();
-  // The refreshed policy base is the policy witness. `baseHead` belongs to
-  // the evaluation snapshot and can lag the fetched target branch.
-  const policyBase = (process.env.DRIVE_PR_POLICY_BASE ?? "").trim();
-  const commit = bound === "" ? policyBase || baseHead : bound;
+/** Whether `older` is an ancestor of (or equal to) `newer` in the driven clone. */
+async function isAncestor(older: string, newer: string): Promise<boolean> {
+  if (older === newer) return true;
+  const r = await localGit([
+    "--no-replace-objects",
+    "merge-base",
+    "--is-ancestor",
+    older,
+    newer,
+  ]);
+  return r.code === 0;
+}
+
+/** The raw `review.skip_excluded_paths` value from a freshly resolved reviewed policy. */
+async function excludedPathsConfig(
+  pr: string,
+  report: StatusReport,
+): Promise<{ value: unknown; policyBase: string } | { reason: string }> {
+  // Always refresh the reviewed policy on an unstamped skip rather than
+  // reusing an inherited DRIVE_PR_POLICY_BASE from an earlier poll, and bind
+  // that observation to the base branch and commit being judged.
+  const root = process.env.DRIVE_PR_WORKTREE || undefined;
+  const policy = await resolvePolicyBase(pr, root);
+  if ("error" in policy)
+    return {
+      reason: `the reviewed policy base could not be resolved (${policy.error})`,
+    };
+  if (report.baseRefName !== "" && policy.branch !== report.baseRefName)
+    return {
+      reason: `the refreshed policy targets '${policy.branch}', which does not match the evaluated base '${report.baseRefName}'`,
+    };
+  if (!(await isAncestor(report.baseHead, policy.commit)))
+    return {
+      reason: `the refreshed policy base (${policy.commit}) does not cover the evaluated base commit (${report.baseHead})`,
+    };
+  const commit = policy.bound ?? policy.commit;
   const snapshot = readSnapshotAt(
     commit,
-    bound === "" ? "pull request base" : "DRIVE_PR_POLICY_BOUND",
-    bound === "" ? "base" : "integration",
+    policy.bound === undefined ? "pull request base" : "DRIVE_PR_POLICY_BOUND",
+    policy.bound === undefined ? "base" : "integration",
     process.env,
-    process.env.DRIVE_PR_WORKTREE || process.cwd(),
+    root ?? consumerRoot(),
     false,
   );
   if (snapshot.from === "unreadable")
@@ -373,7 +418,10 @@ function excludedPathsConfig(
     };
   if (snapshot.from !== "base")
     return { reason: "the pull request base configuration cannot be read" };
-  return reviewSkipPolicy(snapshot.values.review);
+  const skipPolicy = reviewSkipPolicy(snapshot.values.review);
+  return "reason" in skipPolicy
+    ? skipPolicy
+    : { value: skipPolicy.value, policyBase: policy.commit };
 }
 
 /** `review.skip_excluded_paths` from the review section of the base configuration. */
