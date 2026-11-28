@@ -34,7 +34,6 @@ import {
   sectionRefusal,
   trackerRefusal,
 } from "./configuration-refusals.ts";
-import { swallow } from "../../shared/errors.ts";
 import { readSection, trackerConfigOf } from "./section.ts";
 import { configuredCatalog, repositoryPath } from "./sources/contention.ts";
 import { failureText } from "./text.ts";
@@ -129,25 +128,32 @@ function ancestorProblem(base: string, entry: string): string | null {
   return null;
 }
 
-/** Whether the committed tree holds `path`: a file absent from disk but committed is a sparse checkout's omission, not an absent file. */
+/**
+ * Whether the committed tree holds `path`: a file absent from disk but
+ * committed is a sparse checkout's omission, not an absent file. Only two
+ * answers stand for "not committed": git listing the tree without the path,
+ * and a directory git does not read as a repository (or one with no commit
+ * yet). Any other failure (git missing, a timeout, an unreadable object
+ * database) throws, so the file reads as unreadable and never as absent.
+ */
 function committed(root: string, path: string): boolean {
   try {
-    execFileSync(
+    const out = execFileSync(
       "git",
-      ["--literal-pathspecs", "cat-file", "-e", `HEAD:${path}`],
+      ["--literal-pathspecs", "ls-tree", "--name-only", "HEAD", "--", path],
       {
         cwd: root,
+        encoding: "utf8",
         stdio: ["ignore", "pipe", "pipe"],
         timeout: 10_000,
       },
     );
-    return true;
+    return out.trim() !== "";
   } catch (error) {
-    swallow(
-      error,
-      "the path is not in the committed tree, or git is unavailable",
-    );
-    return false;
+    const stderr = String((error as { stderr?: unknown }).stderr ?? "");
+    if (/not a git repository|not a valid object name HEAD/i.test(stderr))
+      return false;
+    throw error;
   }
 }
 

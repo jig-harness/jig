@@ -300,6 +300,17 @@ describe("checkConfiguration reads only what the tick can read", () => {
     expect(checkConfiguration(root).map((f) => f.part)).toEqual(["dispatch"]);
   });
 
+  it("refuses a missing configuration when git cannot read the committed tree, rather than reading defaults", () => {
+    const root = dir({ ".config/jig.yaml": TRACKER });
+    commitAll(root);
+    rmSync(join(root, ".config"), { recursive: true });
+    const objects = join(root, ".git", "objects");
+    rmSync(objects, { recursive: true });
+    mkdirSync(join(objects, "pack"), { recursive: true });
+    mkdirSync(join(objects, "info"));
+    expect(checkConfiguration(root).map((f) => f.part)).toEqual(["dispatch"]);
+  });
+
   it("refuses a label taxonomy outside the checkout before the tracker reads it", () => {
     const outside = dir({ "taxonomy.yaml": "SECRET-BYTES: [" });
     const root = dir({
