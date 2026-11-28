@@ -182,8 +182,9 @@ console.log(JSON.stringify({ ok: read.ok, reason: read.ok ? "" : read.failure.re
     });
   // Learn the label from a run with no job: the read is a clean absence.
   const absent = run();
-  const label = JSON.parse(absent.stdout.toString().trim().split("\n").pop()!)
-    .label as string;
+  const label = JSON.parse(
+    absent.stdout.toString().trim().split("\n").at(-1) ?? "",
+  ).label as string;
   writeFileSync(
     join(agents, `${label}.plist`),
     Buffer.concat([
@@ -195,7 +196,7 @@ console.log(JSON.stringify({ ok: read.ok, reason: read.ok ? "" : read.failure.re
   const refused = run();
   expectSpawnExit(refused, 0);
   const report = JSON.parse(
-    refused.stdout.toString().trim().split("\n").pop()!,
+    refused.stdout.toString().trim().split("\n").at(-1) ?? "",
   );
   expect(report.ok).toBe(false);
   expect(report.reason).toContain("not valid UTF-8");
