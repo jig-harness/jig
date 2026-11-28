@@ -180,6 +180,10 @@ describe("a transparent follow-up", () => {
       "an acknowledgement followed by feedback",
       "Thanks, nothing further is required. The guard still permits unauthorized requests.",
     ],
+    [
+      "feedback before a closing acknowledgement",
+      "Thanks. The guard still permits unauthorized requests. Nothing further is required.",
+    ],
   ])("does not accept %s", (_name, prose) => {
     expect(
       transparent("coderabbitai", `${CODERABBIT_CHAT_MARKER}\n${prose}`),

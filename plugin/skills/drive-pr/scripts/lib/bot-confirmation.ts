@@ -19,9 +19,10 @@
  *    without regard to case or a `[bot]` suffix), and it carries that bot's
  *    chat marker and none of the bot's finding shape: no line a severity
  *    format for that login reads as a severity (`lib/severity-formats.ts`).
- *    CodeRabbit's generated-chat marker additionally needs an affirmative
- *    acknowledgement that says nothing further is requested, because it can
- *    also appear on prose that reports a new finding. Only a recognizer known
+ *    CodeRabbit's generated-chat marker additionally needs prose made only of
+ *    acknowledgement sentences, including a bounded no-further-work
+ *    acknowledgement, because it can also appear on prose that reports a new
+ *    finding. Only a recognizer known
  *    to be the bot's can prove that absence: one `review.severity_formats`
  *    declares, or a built-in one.
  *    Jig's format is assumed for the configured reviewer
@@ -192,8 +193,24 @@ export function carriesAcknowledgement(body: string): boolean {
   const acknowledgement = prose.join(" ");
   if (acknowledgement === "") return false;
 
-  return /^(?=[\s\S]{1,280}$)(?=[\s\S]*\b(?:acknowledged?|confirm(?:ed|ing)?|noted|thanks?|thank you|understood)\b)(?![\s\S]*\b(?:not|never)\b[^.!?]*\b(?:nothing further|no further (?:action|changes?|feedback|work))(?:\s+is)?\s+(?:requested|needed|required)\b)[\s\S]*\b(?:nothing further|no further (?:action|changes?|feedback|work))(?:\s+is)?\s+(?:requested|needed|required)\b(?:\s+on\s+(?:this|the)\s+thread)?[.!?]?$/iu.test(
-    acknowledgement,
+  const noFurther =
+    /\b(?:nothing further|no further (?:action|changes?|feedback|work))(?:\s+is)?\s+(?:requested|needed|required)\b(?:\s+on\s+(?:this|the)\s+thread)?/iu;
+  const sentences = acknowledgement.match(/[^.!?]+[.!?]?/gu) ?? [];
+  const acknowledgementSentence =
+    /^(?:acknowledged?|confirm(?:ed|ing)?|noted|thanks?|thank you|understood)\b/iu;
+
+  return (
+    acknowledgement.length <= 280 &&
+    noFurther.test(acknowledgement) &&
+    !/\b(?:not|never)\b[^.!?]*\b(?:nothing further|no further (?:action|changes?|feedback|work))(?:\s+is)?\s+(?:requested|needed|required)\b/iu.test(
+      acknowledgement,
+    ) &&
+    sentences.length > 0 &&
+    sentences.every(
+      (sentence) =>
+        acknowledgementSentence.test(sentence.trim()) ||
+        noFurther.test(sentence.trim()),
+    )
   );
 }
 
