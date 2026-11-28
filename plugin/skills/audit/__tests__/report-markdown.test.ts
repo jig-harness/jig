@@ -67,7 +67,7 @@ describe("the Markdown copy", () => {
   test("lists the criteria still open within the target, and only counts those beyond it", () => {
     const text = renderReportMarkdown(reportInput({ prior: priorRecord() }));
     const added = addedAfter("0.14.0");
-    expect(text).toContain(`### What changed (${added.length + 1})`);
+    expect(text).toContain(`### What changed (${added.length + 5})`);
     // Keep the snapshot's historical changes stable as the catalog grows.
     // Check the added rows against today's catalog separately.
     const historicalChanges = (markdown: string) =>
@@ -102,7 +102,7 @@ describe("the Markdown copy", () => {
       reportInput({ prior: priorRecord(), source: noProfile }),
     );
     expect(none).toContain(
-      "Compared with the audit of 2026-07-19 (plugin 0.14.0): 82 still open, 36 unchanged and met.",
+      "Compared with the audit of 2026-07-19 (plugin 0.14.0): 82 still open, 32 unchanged and met.",
     );
     expect(none).not.toContain("Still open");
     expect(none).not.toContain("beyond the target");

@@ -160,9 +160,20 @@ export const ruledOutRecord = (): string =>
     "M6/lifecycle-owners-resolve-gated": "expected-absent",
   });
 
+/** Synthetic scores for a repository with no automated reviewer, as an audit would have recorded them before those criteria scored absent (not a published record). */
+const HISTORICAL_NO_REVIEWER = {
+  "M7/automated-reviewer-comment-only-with-bar": "expected-absent",
+  "M7/automated-review-source-independent": "expected-absent",
+  "M7/pr-target-wiring-fork-safe": "expected-absent",
+  "M7/reviewer-promotion-gated-on-measurement": "expected-absent",
+};
+
 /** An older record of the same repository: CI was not running the gates then. */
 export const priorRecord = (): string =>
-  recordAt("2026-07-19", { "M1/gate-set-documented": "absent" });
+  recordAt("2026-07-19", {
+    "M1/gate-set-documented": "absent",
+    ...HISTORICAL_NO_REVIEWER,
+  });
 
 /** An older record still: the library had not yet ruled out derived files, so M2 attained nothing. */
 export const historyRecord = (): string =>

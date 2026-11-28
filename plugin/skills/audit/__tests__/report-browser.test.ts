@@ -617,16 +617,14 @@ describe("the map's popovers and the module chips", () => {
 describe("since the last audit", () => {
   run("counts and marks each change with a coloured badge", async () => {
     const { page } = await open(true);
-    expect(
-      (await page.locator("#since .bds .bd").allInnerTexts()).map((t) =>
-        t.replace(/\s+/g, " "),
-      ),
-    ).toEqual([
+    const badges = await page.locator("#since .bds .bd").allInnerTexts();
+    expect(badges.map((t) => t.replace(/\s+/g, " "))).toEqual([
       "Fixed 1",
       `Added by Jig ${addedAfter(input.prior?.plugin_version ?? "0.14.0").length}`,
+      "Reclassified 4",
       "Still open within the target 4",
       "Still open beyond the target 78",
-      "Unchanged and met 36",
+      "Unchanged and met 32",
     ]);
     const fixed = page.locator("#since .chg-t .bd-fixed");
     expect(await fixed.count()).toBe(1);

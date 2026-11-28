@@ -60,8 +60,9 @@ For each Jig module, grade the target:
 
 - **absent** — the practice doesn't exist (mark "expected-absent" only where
   the repo's shape rules the practice out for good — e.g. no deploy pipeline
-  in a library; a practice that waits on another module's practice not yet
-  adopted, such as a CI check in a repository without CI, is absent);
+  in a library; a practice not yet adopted is absent whichever module asks
+  for it, such as a CI check in a repository without CI, or M7's automated
+  reviewer criteria in a repository whose pull requests only people review);
 - **convention-only** — practiced or documented, but nothing mechanical fails
   when it's violated;
 - **advisory** — a check runs mechanically but cannot block (non-blocking CI

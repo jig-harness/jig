@@ -35,7 +35,8 @@
 >
 > A score is one of `absent`, `convention`, `advisory`, `mechanical` or
 > `expected-absent` (the repository's shape rules the practice out for good;
-> a practice waiting on another one that is not there yet is `absent`, though
+> a practice not adopted yet, such as an automated reviewer, or one waiting
+> on another that is not there yet, is `absent`, though
 > the part that does exist still scores: a check run only by hand or by a
 > local hook while there is no CI is `advisory`). The
 > evidence is one line with file paths, and never begins with `probe: `.
@@ -59,12 +60,15 @@ Calibration rules (learned from audit runs):
   and greps you ran and the closest files that *do* exist.
 - **Mentioned ≠ wired in.** A vendor name in a readme, sponsor logo, or
   badge is not a configured tool. Claim a bot/tool is in use only with its
-  config file or workflow step as evidence.
+  config file or workflow step as evidence (for a hosted app that leaves no
+  checked-in wiring, host-side evidence of its reviews).
 - **Configured to do Y needs the line; installed needs the app.** A claim
   that "tool X is configured to do Y" quotes the configuration line that
-  does Y, with its path and line number. "Installed" or "running" needs an
-  app installation the host reports, or a workflow that runs the tool, as
-  evidence: a configuration file alone shows intent, and one that already
+  does Y, with its path and line number. "Installed" needs an
+  app installation the host reports, a workflow that runs the tool, or
+  host-side evidence of the app's reviews;
+  "running" is shown by a workflow that runs it or host-side evidence of its
+  reviews (a named app's reviews, comments or check runs), as evidence: a configuration file alone shows intent, and one that already
   does Y is not a gap to recommend.
 - **Configured is not installed in every checkout.** A hook manager's
   configuration shows the hooks a checkout gets once the manager is

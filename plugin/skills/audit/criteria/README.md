@@ -39,12 +39,12 @@ every change; for a criterion about a hook itself, the hook runs it). Two
 scores sit off the ladder:
 
 - `expected-absent`, which counts as met: the repository's shape rules the
-  practice out for good (no deploy pipeline in a library). A practice that
-  presupposes another module's practice the repository has not adopted yet
-  scores what the repository does without it, never `expected-absent`: it
-  can still come, and the gap is real. With no CI, a derived-file check
-  nobody runs is `absent`, and one run by hand or by a local hook is
-  `advisory`.
+  practice out for good (no deploy pipeline in a library). A practice the
+  repository has not adopted yet is a gap whichever module asks for it, the
+  criterion itself included: a criterion that asks for it or presupposes it
+  scores what the repository does without it, never `expected-absent`, since
+  the practice can still come and the gap is real. With no CI, a derived-file check nobody runs is
+  `absent`, and one run by hand or by a local hook is `advisory`.
 - `not-examined`, which meets no bar and is never a gap: the audit chose not
   to examine a criterion beyond the profile's target. Only
   `score.ts`, with `--draft` and `--profile`, writes it, with the evidence
@@ -86,6 +86,16 @@ Cases that recur:
   when the contributing guide asks every job to set one, every job is
   covered at least by that rule, so it is `convention`; it is `mechanical`
   only once the third job sets one too.
+- **No automated reviewer**, where only people review pull requests, is
+  not a shape: any repository can add one. M7's criteria about the reviewer
+  (that one runs comment-only under a written precision bar, where its
+  runtime and policy come from, how it is promoted to blocking) score
+  `absent`, never `expected-absent`, and the recommendation that closes the
+  gap points to M7. The lint that keeps a reviewer workflow bearing a secret
+  off fork code scores what runs: with no lint, `absent`, even while no
+  workflow uses a privileged trigger. The evidence names where the audit looked: the review
+  configuration, the workflow wiring and who reviewed recent pull requests.
+  A badge or a sponsor mention is not a reviewer.
 - **A host plan that cannot require checks** (branch protection that the
   plan does not offer for a private repository): score what runs, usually
   `advisory`, say the host's limit in the evidence, and recommend a local

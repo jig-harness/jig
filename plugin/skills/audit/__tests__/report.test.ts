@@ -854,7 +854,7 @@ describe("the sheet", () => {
     // One row per criterion: the module's chip, the criterion linked to its
     // detail, both scores as chips, and the change as a badge.
     expect(again).toContain(
-      `What changed (${addedAfter("0.14.0").length + 1})</h3>`,
+      `What changed (${addedAfter("0.14.0").length + 5})</h3>`,
     );
     expect(again).toMatch(
       /<table class="chgt chg-t">.*?<tr><td><span class="pw mw"><a class="mchip" href="#d-M1" aria-describedby="(mp-\d+)">M1<\/a><span class="pop pop-m" role="tooltip" id="\1"><b>M1 Gates enforcement ladder<\/b> Stated rules become checks[^<]*<\/span><\/span><\/td><td class="cc"><a href="#c-M1-gate-set-documented"><code>gate-set-documented<\/code><\/a><\/td><td class="ba"><span class="sch s-absent">.*?absent<\/span>.*?<span class="sch s-convention">.*?convention<\/span><\/td><td><span class="bd bd-fixed">Fixed<\/span><\/td><\/tr>/,
@@ -1122,7 +1122,7 @@ describe("the sheet", () => {
       renderReportHtml(reportInput({ prior: priorRecord() })),
     );
     expect(suggested).toContain(
-      `<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-added-by-jig">Added by Jig <b>${addedAfter("0.14.0").length}</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>78</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li></ul>`,
+      `<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-added-by-jig">Added by Jig <b>${addedAfter("0.14.0").length}</b></span></li><li><span class="bd bd-reclassified">Reclassified <b>4</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>78</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>32</b></span></li></ul>`,
     );
     expect(suggested).toMatch(
       /<details class="later sm" id="since-within" open data-fold><summary><span class="later-h">Still open within the target<\/span> <span class="later-n">\(4\)<\/span><\/summary><table class="chgt chg-t">.*?<tbody><tr><td><span class="pw mw"><a class="mchip" href="#d-M0".*?<code>universal-instruction-file<\/code>.*?<td><span class="bd bd-open">Still open<\/span><\/td><\/tr>/,
@@ -1152,7 +1152,7 @@ describe("the sheet", () => {
       ),
     );
     expect(none).toContain(
-      '<li><span class="bd bd-open">Still open <b>82</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li>',
+      '<li><span class="bd bd-open">Still open <b>82</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>32</b></span></li>',
     );
     expect(none).not.toContain("Still open within");
     expect(none).not.toContain("Still open beyond");
