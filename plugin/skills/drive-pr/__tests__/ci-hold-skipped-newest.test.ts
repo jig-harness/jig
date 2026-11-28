@@ -4,7 +4,7 @@
  * required job. Before the hold is first added, the hold's precondition looks
  * past completed skips to the newest run that is not one; a queued or running
  * run still waits, a cancelled one is left to the cancelled-run recovery, and
- * a skip is never itself complete. Every other reader keeps the newest run.
+ * a skip is never itself complete. After a hold release, the newest run is judged.
  */
 import { describe, expect, it } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -15,6 +15,7 @@ import {
   type CheckRunLite,
   completedHoldPrecondition,
   completedRequiredCi,
+  pastCompletedSkips,
 } from "../scripts/lib/ci-hold.ts";
 import { useDrivePrSuite } from "./drive-pr-harness.ts";
 import { createFindingsFinishRoundFixtures } from "./drive-pr-findings-finish-round-fixtures.ts";
@@ -117,7 +118,20 @@ describe("the hold precondition on a head whose newest run is a skip", () => {
     );
   });
 
-  it("keeps the newest run for the final-CI witness, under a hold or not", () => {
+  it("looks past skips separately for each pinned app", () => {
+    const runs = [
+      { ...run(1, "tests", "success"), appId: 11 },
+      { ...run(2, "tests", "skipped"), appId: 22 },
+      { ...run(3, "tests", "skipped"), appId: 11 },
+      { ...run(4, "tests", "success"), appId: 33 },
+      { ...run(5, "tests", "skipped"), appId: 33 },
+    ];
+    const apps = new Map([["tests", [11, 22]]]);
+    const judged = pastCompletedSkips(runs, ["tests"], HEAD, apps);
+    expect(judged.map(({ id }) => id)).toEqual([1, 2, 4, 5]);
+  });
+
+  it("judges the newest run when given unfiltered evidence", () => {
     const runs = thenSkipped((id, n) => run(id, n, "success"));
     expect(completedRequiredCi(runs, REQUIRED, HEAD)).toBe(false);
     expect(completedRequiredCi(runs, REQUIRED, HEAD, undefined, true)).toBe(

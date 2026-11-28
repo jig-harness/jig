@@ -28,6 +28,7 @@ import {
   checkRunWatermark,
   completedHoldPrecondition,
   completedRequiredCi,
+  pastCompletedSkips,
   type LabelTransition,
   mayMutateHold,
   mutationProven,
@@ -696,10 +697,14 @@ async function finalCiProofGreen(
   // is still outstanding.
   if (rerunAwaitsResult(settled, workflowRuns))
     return { ok: false, pending: true };
-  const runs = withoutRerunning(settled, workflowRuns);
+  const eligible = withoutRerunning(settled, workflowRuns);
   const required = policy.requiredChecks;
   const apps = policy.requiredApps;
   const noHold = policy.holdLabel === null;
+  const runs =
+    persisted === null && !noHold
+      ? pastCompletedSkips(eligible, required, head, apps)
+      : eligible;
   // A required context with no check run on the head may be a legacy commit
   // status; read them only then, and never against an unlabel floor.
   const withoutRun =
