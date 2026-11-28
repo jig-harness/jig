@@ -141,7 +141,9 @@ if (args[0] === "pr" && args[1] === "view" && args.some((a) => a.includes("headR
   const listed = JSON.parse(fs.readFileSync(F + "/prs-open.json", "utf8")).find((p) => p.number === Number(args[2]));
   if (listed === undefined) { process.stderr.write("gh: no pull requests found\\n"); process.exit(1); }
   if (args.some((a) => a.includes("headRepositoryOwner"))) {
-    const head = Bun.spawnSync(["git", "rev-parse", "--verify", "refs/heads/" + listed.headRefName]);
+    // pr-head-from-origin: the head as origin has it, as a forge reports it, not the clone's local branch.
+    const ref = (fs.existsSync(F + "/pr-head-from-origin") ? "refs/remotes/origin/" : "refs/heads/") + listed.headRefName;
+    const head = Bun.spawnSync(["git", "rev-parse", "--verify", ref]);
     out({ ...listed, state: "OPEN", headRefOid: head.exitCode === 0 ? head.stdout.toString().trim() : listed.headRefOid,
       isCrossRepository: false, headRepositoryOwner: { login: "example-org" }, headRepository: { name: "example-repo" },
       url: "https://github.com/${SLUG}/pull/" + listed.number });
@@ -187,7 +189,7 @@ if (args[0] === "pr" && args[1] === "edit") {
   if (fs.existsSync(F + "/labels-repo.json")) {
     const have = repoLabels().map((l) => l.name);
     const absent = add.find((l) => !have.includes(l));
-    if (absent !== undefined) { process.stderr.write("could not add label: '" + absent + "' not found\\n"); process.exit(1); }
+    if (absent !== undefined) { process.stderr.write("'" + absent + "' not found\\n"); process.exit(1); }
   }
   for (const state of ["open", "merged", "closed"]) {
     const file = F + "/prs-" + state + ".json";
@@ -205,11 +207,12 @@ if (args[0] === "label" && args[1] === "list")
   out(repoLabels().map(({ name, description, color }) => ({ name, description, color })));
 const flag = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 if (args[0] === "label" && args[1] === "create") {
-  // One label added to labels-repo.json; refused while label-create-fail exists.
+  // One label added to labels-repo.json; refused while label-create-fail exists; while label-create-raced exists, another writer creates it first and this create is refused as gh refuses a label the repository already has.
   if (fs.existsSync(F + "/label-create-fail")) { process.stderr.write("gh: Resource not accessible by integration (HTTP 403)\\n"); process.exit(1); }
   const have = repoLabels();
   have.push({ name: args[2], description: flag("--description") ?? "", color: flag("--color") ?? "ededed" });
   fs.writeFileSync(F + "/labels-repo.json", JSON.stringify(have));
+  if (fs.existsSync(F + "/label-create-raced")) { process.stderr.write('label with name "' + args[2] + '" already exists; use \`--force\` to update its color and description\\n'); process.exit(1); }
   out("");
 }
 if (args[0] === "label" && args[1] === "edit") {
@@ -414,7 +417,7 @@ fs.appendFileSync(F + "/doctor-runs.jsonl", JSON.stringify({ argv: process.argv.
 process.stdout.write(fs.existsSync(F + "/doctor.json") ? fs.readFileSync(F + "/doctor.json", "utf8") : JSON.stringify({ rows: [] }));
 `;
 
-/** The Codex a pickup's wrapper starts in tests: it records how it was started and runs until \`claude-exit\` appears. */
+/** The Codex a pickup's wrapper starts in tests: it records how it was started and runs until \`claude-exit\` appears; with \`codex-exit\`, it exits at once with that code, printing \`codex-said\`. */
 const FAKE_CODEX = `#!/usr/bin/env bun
 const fs = require("node:fs");
 const F = process.env.DISPATCH_FAKE_DIR;
@@ -425,6 +428,10 @@ fs.appendFileSync(F + "/codex-runs.jsonl", JSON.stringify({
   configDir: process.env.CLAUDE_CONFIG_DIR ?? null,
   token: process.env.CLAUDE_CODE_OAUTH_TOKEN ?? null,
 }) + "\\n");
+if (fs.existsSync(F + "/codex-exit")) {
+  if (fs.existsSync(F + "/codex-said")) process.stdout.write(fs.readFileSync(F + "/codex-said", "utf8"));
+  process.exit(Number(fs.readFileSync(F + "/codex-exit", "utf8")));
+}
 const until = Date.now() + 60000;
 while (!fs.existsSync(F + "/claude-exit") && Date.now() < until) Bun.sleepSync(50);
 process.exit(0);

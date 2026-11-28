@@ -27,6 +27,7 @@ interface Listed {
   number: number;
   author?: { login: string; is_bot?: boolean };
   labels?: unknown;
+  closingIssuesReferences?: { pageInfo: { hasNextPage: boolean }; nodes: unknown[] };
   [key: string]: unknown;
 }
 
@@ -232,10 +233,18 @@ export function repositoryQuery(
   const first = Number(arg("first"));
   const after = arg("after") === "" ? 0 : Number(arg("after"));
   const query = arg("query");
+  const closingLimit = Number(/closingIssuesReferences\(first: (\d+)\)/.exec(query)?.[1]);
   const all = json("prs-open.json") as Listed[];
   const nodes = all.slice(after, after + first).map((p) => {
+    const closing = p.closingIssuesReferences;
     return {
       ...p,
+      ...(closing === undefined ? {} : {
+        closingIssuesReferences: {
+          pageInfo: { hasNextPage: closing.pageInfo.hasNextPage || closing.nodes.length > closingLimit },
+          nodes: closing.nodes.slice(0, closingLimit),
+        },
+      }),
       author:
         p.author === undefined
           ? null

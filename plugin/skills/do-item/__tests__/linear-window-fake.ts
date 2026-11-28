@@ -83,6 +83,7 @@ export function fakeLinear(
                 ? null
                 : { id: issue.assignee, name: issue.assignee },
             labels: { pageInfo: { hasNextPage: false }, nodes: [] },
+            allChildren: { nodes: [] },
             children: { pageInfo: { hasNextPage: false }, nodes: [] },
           },
         };

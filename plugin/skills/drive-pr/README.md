@@ -119,7 +119,7 @@ the drive reads best-effort and replaces with the default when mistyped.
 | `drive.max_rounds` | Whole number ≥ 1: how many rounds a drive runs before it stops unconverged ([`MAX_ROUNDS`](../../protocol/drive-exits.md)). `--max-rounds N` overrides it for one run; a re-arm after a `MAX_ROUNDS` stop grants one more budget of this size, within the round ceiling ([below](#picking-up-a-stopped-drive)); a malformed value stops the drive with [`INDETERMINATE`](../../protocol/drive-exits.md) unless the flag names the budget | `10` |
 | `drive.max_total_rounds` | Whole number from 1 to 50: the pull request's round ceiling, the most distinct reviewed heads it may spend across every launch, re-arm and takeover ([§ The round ceiling and the divergence stop](#the-round-ceiling-and-the-divergence-stop)); a malformed value stops the drive with [`INDETERMINATE`](../../protocol/drive-exits.md) | `8` |
 | `drive.max_wall_clock_hours` | Number of hours, at least `0.1`: how long a pull request may be driven from its first launch, never reset by a re-arm or takeover; reaching it parks the drive as the round ceiling does | No cap |
-| `drive.pass_deadline_retries` | Whole number ≥ 0: how many passes killed at their deadline one drive restarts from before it stops with [`PASS_DEADLINE`](../../protocol/drive-exits.md) ([restarts](#a-stopped-drive-restarts-itself)); a malformed value stops the drive with [`INDETERMINATE`](../../protocol/drive-exits.md) | `2` |
+| `drive.pass_deadline_retries` | Whole number ≥ 0: how many passes one drive restarts, whether killed at their deadline or ended with a background process still running, before a deadline stops it with [`PASS_DEADLINE`](../../protocol/drive-exits.md) ([restarts](#a-stopped-drive-restarts-itself)); a malformed value stops the drive with [`INDETERMINATE`](../../protocol/drive-exits.md) | `2` |
 | `drive.escape_baseline_doc` | Path, relative to the repository root, to the document recording the human-judged defect-escape baseline (`## Baseline window: <from> → <to>` headings, each followed by an `**Escape rate: <n> of <total> ...**` line). The loop-cost reports print its latest figure next to their speed numbers | `docs/review-loop-baseline.md`; a missing document reads as "unmeasured" |
 | `fleet_health.config` | Path, relative to the repository root or absolute, to the fleet-health settings file that `fleet-health.ts` and the per-round fleet-health warnings read ([format](../../CONFIGURATION.md#the-fleet-health-file)) | `.config/fleet-health.yaml` |
 | `fleet_health.snapshot_dir` | Where the gate reads a `fleet-health.json` snapshot from (`~` is expanded). Jig writes no such snapshot: an external collector publishes it, if the machine runs one, and without one the per-round fleet-health warnings are empty. `DEV_DASHBOARD_DIR` overrides it | `~/.local/state/jig/dashboard` |
@@ -402,7 +402,8 @@ Local mailbox stop, hold and resume and the provisional-decision sweep
 retain a ten-second idle cadence, independent of bulk CI observation.
 After a complete round-boundary takeover read, the drive waits at least
 sixty seconds between read starts. If the listing cannot be read, the next
-round checkpoint retries it. The drive still reads claims fresh before
+round checkpoint retries it, and the drive's log says why, once for each run of
+rejections with the same reason. The drive still reads claims fresh before
 dispatching a pass and before writing the ledger. The mailbox runs before
 remote reads. In-flight work adds its helper deadline;
 GitHub's Retry-After and primary reset holds still take precedence. These
@@ -528,7 +529,7 @@ not infer whether the code has already been fixed.
 
 - **A PR exists and you want the review loop run to completion** → this skill. Normally you don't even start it by hand: a `/jig:do-item` run arms the drive when it opens the draft PR. Typing `/jig:drive-pr [PR]` in a session does the same thing: the agent starts the driver below (in a terminal tab of its own in Orca, in the background elsewhere; see [Arming from a session](#arming-from-a-session)), reports its log path, and stops — it does not work a round itself.
 - **You want exactly one round, interactively, with yourself in the loop** → `/jig:drive-pr --interactive [PR]` (one in-session round, then stop), or [`/jig:resolve-review-comments`](../resolve-review-comments/README.md) (the drive wraps it).
-- **CI is red and that's the only problem** → repair it directly, with [`/jig:fix-ci`](../fix-ci/SKILL.md). (A drive already in flight repairs red CI itself, up to `drive.ci_repair_rounds` times; repair by hand when there is no drive running, or when its budget is spent.)
+- **CI is red and that's the only problem** → repair it directly, with [`/jig:fix-ci`](../fix-ci/SKILL.md). (A drive already in flight repairs red CI itself, up to `drive.ci_repair_rounds` times and then once more through a diagnosing session; repair by hand when there is no drive running.)
 
 ## How to start it
 
@@ -681,7 +682,10 @@ recorded: the refusal that stops the round now. When every stalled pass's
 `finish-round.ts` ended on the same state (`CI_HOLD_WAIT`, say), the stop and
 its closing report name that state and its reason, and the report's cause
 follows from it (`environment` for `CI_HOLD_WAIT`) instead of `unknown`; the
-drive's ledger names them too. A failed push's reason says why it failed (a
+drive's ledger names them too. When they did not all end on one state, the stop
+names the last reasons they recorded instead and counts each pass that recorded none, and the
+ledger, the closing report and the dispatcher's account of the stall (which the
+steward reads) carry that tally. A failed push's reason says why it failed (a
 pre-push gate, the remote's rejection, the connection, a timeout) with the
 last lines the push wrote, and a stall whose every push failed is handed to a
 person to fix that before re-arming, never re-driven onto it until a push
@@ -689,7 +693,24 @@ moves the pull request's head. A short usage
 limit is slept through, as before.
 
 The driver disables Claude Code's background tasks in its spawned passes
-with `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`. A successful pass that leaves
+with `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`. A pass can still leave a
+process running when it exits (a command sent to the background in the
+shell, or a Codex background terminal), and nothing would ever report that
+process's result. The driver gives each pass a token in its environment.
+When the pass exits, the driver waits a moment, then looks for a live process
+that still carries the token or is still in the pass's process group, and
+stops it. The driver then starts the pass again in the same tree, whether or
+not the pass left work there (uncommitted edits, unpushed commits, an
+unfinished git operation), with a notice saying what it stopped and what the
+tree holds, since the stopped process's result was never read.
+These restarts come out of the same `drive.pass_deadline_retries` budget as
+restarts after a deadline. A pass whose process is stopped once the budget is
+spent counts as a finished pass. If the process cannot be stopped, the drive keeps
+its locks and stops with
+[`INDETERMINATE`](../../protocol/drive-exits.md), for a person to stop the
+process and re-arm. The environment check needs `/proc` (Linux). On other
+POSIX hosts the driver sees only the pass's process group, and on Windows
+it sees nothing. A successful pass that leaves
 uncommitted edits and this tree's unverified holds from the current round
 stops immediately with [`WORKTREE_UNCLEAN`](../../protocol/drive-exits.md), naming the unfinished
 held fixes. Validate, commit and push them, then re-arm in that tree. Other

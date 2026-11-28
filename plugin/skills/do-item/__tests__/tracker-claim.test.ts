@@ -79,6 +79,24 @@ function memory(
 }
 
 describe("claimIssue", () => {
+  it.each([{ isEpic: true }, { hasOpenChildren: true }, { hasChildren: true }])(
+    "refuses to claim an epic before writing",
+    async (facts) => {
+      const { tracker, log } = memory("Todo", []);
+      const poolIssue = tracker.poolIssue;
+      tracker.poolIssue = async (key) => {
+        const issue = await poolIssue(key);
+        return issue === null ? null : { ...issue, ...facts };
+      };
+      expect(await claimIssue(tracker, "#5")).toMatchObject({
+        outcome: "refused",
+        why: "epic",
+        reason: "#5 is an epic; epics are worked through their children",
+      });
+      expect(log).toEqual([]);
+    },
+  );
+
   it("refuses an issue whose pull request is open, writing nothing", async () => {
     const states = parseTrackerConfig({
       issue_tracker: { states: { pr_open: "Awaiting Review" } },
@@ -144,6 +162,60 @@ describe("claimIssue", () => {
     const { tracker, log } = memory("Todo", [ME]);
     expect((await claimIssue(tracker, "#5")).outcome).toBe("claimed");
     expect(log).toEqual(["transition in_progress"]);
+  });
+
+  it.each([
+    [2, { hasChildren: true }, { outcome: "refused", why: "epic" }, []],
+    [
+      3,
+      { hasChildren: true },
+      {
+        outcome: "stood_down",
+        reason: "#5 is an epic; epics are worked through their children",
+      },
+      ["assign factory"],
+    ],
+    [2, { assignee: DANA }, { outcome: "refused", why: "assigned" }, []],
+    [
+      3,
+      { assignee: DANA },
+      {
+        outcome: "stood_down",
+        reason: "#5 is assigned to dana, not to factory",
+      },
+      ["assign factory"],
+    ],
+  ])(
+    "refuses or stands down when a fresh read changes",
+    async (at, change, outcome, log) => {
+      const { tracker, log: writes } = memory("Todo", []);
+      const poolIssue = tracker.poolIssue;
+      let reads = 0;
+      tracker.poolIssue = async (key) => {
+        const issue = await poolIssue(key);
+        return issue === null || ++reads !== at
+          ? issue
+          : { ...issue, ...change };
+      };
+      expect(await claimIssue(tracker, "#5")).toMatchObject(outcome);
+      expect(writes).toEqual(log);
+    },
+  );
+
+  it("stands down before transition when its assignment disappeared", async () => {
+    const { tracker, log } = memory("Todo", []);
+    const assignees = tracker.assignees;
+    let reads = 0;
+    tracker.assignees = async (key) => {
+      reads += 1;
+      return reads === 3 ? [] : assignees(key);
+    };
+    expect(await claimIssue(tracker, "#5")).toEqual({
+      outcome: "stood_down",
+      issue: "#5",
+      reason: "another claim landed first: #5 is no longer assigned to factory",
+    });
+    expect(log).toEqual(["assign factory"]);
   });
 
   it("stands down when the re-read shows another assignee", async () => {
@@ -537,6 +609,7 @@ describe("Linear adapter: claiming", () => {
     stateName: string,
     assignee: TrackerUser | null,
     race = false,
+    omitAllChildren = false,
   ) {
     let state = { stateName, assignee };
     const calls: string[] = [];
@@ -569,6 +642,7 @@ describe("Linear adapter: claiming", () => {
               },
               assignee: user(state.assignee),
               labels: { pageInfo: { hasNextPage: false }, nodes: [] },
+              ...(omitAllChildren ? {} : { allChildren: { nodes: [] } }),
               children: { pageInfo: { hasNextPage: false }, nodes: [] },
             },
           };
@@ -636,6 +710,15 @@ describe("Linear adapter: claiming", () => {
     expect(await claimIssue(world("Todo", ME, true).t, "ENG-4")).toMatchObject({
       outcome: "stood_down",
     });
+  });
+
+  it("rejects a fresh response that omits child-presence data before writing", async () => {
+    const w = world("Todo", null, false, true);
+    await expect(claimIssue(w.t, "ENG-4")).rejects.toThrow(
+      "pool issue ENG-4.allChildren: expected an object",
+    );
+    expect(w.calls).not.toContain("TrackerAssign");
+    expect(w.calls).not.toContain("TrackerUpdate");
   });
 });
 

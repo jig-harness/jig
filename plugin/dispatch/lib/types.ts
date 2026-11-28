@@ -61,6 +61,8 @@ export interface DispatchSection {
   followupWithinMs: number;
   /** How old a follow-up claim with no done mark and no session joined to it may grow before the tick releases it, once (`followup_stale_after`). */
   followupStaleAfterMs: number;
+  /** The routine question classes a follow-up may settle unattended (`followup_routine`); absent, every class. */
+  followupRoutine?: string[];
   /** How long the notices workspace stays once read before the tick removes it; `0s` removes it at the first tick that finds it read. */
   noticesLingerMs: number;
   /** The branch of the workspace every notice goes to (`notices_branch`); `null` for the repository's notices workspace, which the tick opens and removes. */
@@ -396,6 +398,7 @@ export interface Unplaced {
 /** What a notification is about. */
 export type NotifyCause =
   | "double-claim"
+  | "busy-holder"
   | "stalled"
   | "waiting"
   | "parked"
@@ -540,11 +543,12 @@ export interface BusyHolder {
   reasons: string[];
 }
 
-/** An idle checkout the runtime does not list that held a launch's branch, detached at its commit by the open; its branch is kept. */
+/** A checkout the runtime does not list that held a launch's branch, detached at its commit by the open; its branch is kept, its unpushed commits first on a rescue branch of the clone where the host lets the open rescue them (`rescue`). */
 export interface DetachedCheckout {
   path: string;
   branch: string;
   head: string;
+  rescue?: { branch: string; clone: string };
 }
 
 /** What `--apply` did with one planned launch. */

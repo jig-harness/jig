@@ -3,6 +3,7 @@ import type { ReadRecord } from "../lib/launches.ts";
 import {
   forecastValidation,
   measureValidation,
+  runMsFor,
   runsPerPassFor,
   validationDemand,
   type ValidationPass,
@@ -16,6 +17,7 @@ import {
   validationPassesOf,
   type ValidationLoad,
 } from "../lib/validation-load.ts";
+import { lockSlots } from "../lib/validation-slots.ts";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -728,10 +730,38 @@ describe("validation forecast", () => {
     };
     expect(measured.concurrency).toBe(3);
     expect(runsPerPassFor(measured, "pickup", repo)).toBe(1);
+    // The repository's own runs, not the host's longest, set its run time.
+    expect(runMsFor(measured, repo)).toBeLessThan(measured.runMs);
     const gauge = validationGauge(state, 1);
     expect(gauge.fill).not.toBeNull();
     expect(gauge.fill ?? Infinity).toBeLessThan(1);
     expect(validationHold(state, 1, "pickup", 3 * HOUR, repo)).toBeNull();
+    // Read with the lock's slot count, it still reads below the line. The
+    // receipt gives the load per core, not the cores: 16 stand in, at 0.15
+    // load per core with one run holding.
+    const slots = lockSlots(
+      { load1: 0.15 * 16, cores: 16, availableBytes: 32 * 1024 ** 3 },
+      1,
+      {},
+    );
+    expect(slots).toEqual({ ok: true, value: 2 });
+    const withSlots = measureValidation(
+      samples,
+      [...passes, ...inFlight],
+      slots.ok ? slots.value : null,
+    );
+    const slotted: ValidationLoad = {
+      ...state,
+      measured: withSlots,
+      demand: validationDemand(
+        withSlots,
+        [{ workspace: null }],
+        inFlight,
+        samples,
+      ),
+    };
+    expect(validationGauge(slotted, 1).fill ?? Infinity).toBeLessThan(1);
+    expect(validationHold(slotted, 1, "pickup", 3 * HOUR, repo)).toBeNull();
   });
 });
 

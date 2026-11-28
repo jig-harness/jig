@@ -12,6 +12,10 @@
 
 import type { OpenBlocker } from "./blocker-override.ts";
 import {
+  EPIC_PICKUP_REASON,
+  isEpicPickup,
+} from "../../../../shared/epic-pickup.ts";
+import {
   CANONICAL_STATES,
   type CanonicalState,
   type StateContext,
@@ -47,6 +51,7 @@ export type ClaimResult =
       outcome: "refused";
       issue: string;
       why:
+        | "epic"
         | "in_progress"
         | "pr_open"
         | "assigned"
@@ -76,10 +81,27 @@ export type ClaimResult =
       reason: string;
     };
 
+type ClaimRefusal = Extract<ClaimResult, { outcome: "refused" }>;
+
 const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 function names(users: TrackerUser[]): string {
   return users.map((u) => u.name).join(", ");
+}
+
+function freshAssigneeRefusal(
+  key: string,
+  issue: PoolIssue,
+  me: TrackerUser,
+): ClaimRefusal | null {
+  const assignee = issue.assignee;
+  if (assignee === null || assignee.id === me.id) return null;
+  return {
+    outcome: "refused",
+    issue: key,
+    why: "assigned",
+    reason: `${key} is assigned to ${assignee.name}, not to ${me.name}`,
+  };
 }
 
 /** The canonical states whose tracker name is `name`; empty when none is. */
@@ -106,7 +128,7 @@ export function claimFromRefusal(
   stateName: string,
   claimFrom: readonly CanonicalState[] | null,
   context: StateContext = null,
-): ClaimResult | null {
+): ClaimRefusal | null {
   if (claimFrom === null) return null;
   const states = canonicalStatesOf(tracker, stateName, context);
   if (states.some((s) => claimFrom.includes(s))) return null;
@@ -130,7 +152,7 @@ export function blockedStateRefusal(
   key: string,
   stateName: string,
   context: StateContext = null,
-): ClaimResult | null {
+): ClaimRefusal | null {
   const blocked = tracker.stateName("blocked", context);
   if (blocked === null || !sameName(stateName, blocked)) return null;
   return {
@@ -139,6 +161,21 @@ export function blockedStateRefusal(
     why: "blocked",
     reason: `${key} is ${blocked}: its drive stopped on parked work, and only the drive's projection or a person moves it out`,
   };
+}
+
+/** A named refusal shared by direct, served and inherited claims. */
+export function epicClaimRefusal(
+  key: string,
+  issue: PoolIssue | null,
+): ClaimRefusal | null {
+  return issue !== null && isEpicPickup(issue)
+    ? {
+        outcome: "refused",
+        issue: key,
+        why: "epic",
+        reason: `${key} is an epic; ${EPIC_PICKUP_REASON}`,
+      }
+    : null;
 }
 
 /** What a repository's configuration adds to a claim's own rules. */
@@ -153,12 +190,22 @@ export async function claimIssue(
   key: string,
   rules: ClaimRules = { claimFrom: null },
 ): Promise<ClaimResult> {
-  const admitted = await admit(tracker, key, rules);
-  if ("refusal" in admitted) return admitted.refusal;
-  const { me, started, holders } = admitted;
+  const me = await tracker.viewer();
+  const prepared = await prepareClaim(tracker, key, rules, me);
+  if ("outcome" in prepared) return prepared;
+  const { started, holders } = prepared;
 
   // The assignment first: a claim racing this one then reads it and refuses.
   if (!holders.some((u) => u.id === me.id)) await tracker.assign(key, me);
+
+  const transitionReason = await transitionStillAllowed(
+    tracker,
+    key,
+    rules,
+    me,
+  );
+  if (transitionReason !== null)
+    return { outcome: "stood_down", issue: key, reason: transitionReason };
   await tracker.transition(key, "in_progress");
 
   const now = await tracker.assignees(key);
@@ -173,6 +220,8 @@ export async function claimIssue(
           ? `another claim landed first: ${key} is now assigned to ${names(landed)}`
           : `another claim landed first: ${key} is no longer assigned to ${me.name}`,
     };
+  if (after !== null && isEpicPickup(after))
+    return { outcome: "stood_down", issue: key, reason: EPIC_PICKUP_REASON };
   if (after === null || !sameName(after.state.name, started))
     return {
       outcome: "stood_down",
@@ -180,6 +229,76 @@ export async function claimIssue(
       reason: `another change landed first: ${key} is now ${after?.state.name ?? "gone"}, not ${started}`,
     };
   return { outcome: "claimed", issue: key, claimant: me, state: started };
+}
+
+/** Read the state and assignees again immediately before a claim writes. */
+async function prepareClaim(
+  tracker: ClaimTracker,
+  key: string,
+  rules: ClaimRules,
+  me: TrackerUser,
+): Promise<{ started: string; holders: TrackerUser[] } | ClaimResult> {
+  const before = await tracker.poolIssue(key);
+  if (before === null)
+    throw new TrackerRequestError("unresolved", `issue ${key} does not exist`);
+  const admission = startAdmission(tracker, key, before, rules);
+  if ("refusal" in admission) return admission.refusal;
+  const holders = await tracker.assignees(key);
+  const others = holders.filter((u) => u.id !== me.id);
+  if (others.length > 0) return assignedRefusal(key, others, me);
+
+  const beforeWrite = await tracker.poolIssue(key);
+  if (beforeWrite === null) return goneStandDown(key);
+  const beforeWriteAdmission = startAdmission(tracker, key, beforeWrite, rules);
+  if ("refusal" in beforeWriteAdmission) return beforeWriteAdmission.refusal;
+  const beforeWriteHolders = await tracker.assignees(key);
+  const beforeWriteOthers = beforeWriteHolders.filter((u) => u.id !== me.id);
+  if (beforeWriteOthers.length > 0)
+    return assignedRefusal(key, beforeWriteOthers, me);
+  const beforeWriteAssignee = freshAssigneeRefusal(key, beforeWrite, me);
+  if (beforeWriteAssignee !== null) return beforeWriteAssignee;
+  return { started: admission.started, holders: beforeWriteHolders };
+}
+
+function assignedRefusal(
+  key: string,
+  holders: TrackerUser[],
+  me: TrackerUser,
+): ClaimRefusal {
+  return {
+    outcome: "refused",
+    issue: key,
+    why: "assigned",
+    reason: `${key} is assigned to ${names(holders)}, not to ${me.name}`,
+  };
+}
+
+function goneStandDown(key: string): ClaimResult {
+  return {
+    outcome: "stood_down",
+    issue: key,
+    reason: `another change landed first: ${key} is gone`,
+  };
+}
+
+/** Keep assignment-race protection before changing the issue's state. */
+async function transitionStillAllowed(
+  tracker: ClaimTracker,
+  key: string,
+  rules: ClaimRules,
+  me: TrackerUser,
+): Promise<string | null> {
+  const issue = await tracker.poolIssue(key);
+  if (issue === null) return `another change landed first: ${key} is gone`;
+  const admission = startAdmission(tracker, key, issue, rules);
+  if ("refusal" in admission) return admission.refusal.reason;
+  const holders = await tracker.assignees(key);
+  const others = holders.filter((u) => u.id !== me.id);
+  if (others.length > 0)
+    return `${key} is assigned to ${names(others)}, not to ${me.name}`;
+  if (!holders.some((u) => u.id === me.id))
+    return `another claim landed first: ${key} is no longer assigned to ${me.name}`;
+  return freshAssigneeRefusal(key, issue, me)?.reason ?? null;
 }
 
 /**
@@ -244,6 +363,7 @@ export async function claimStillStands(
   ]);
   if (holders.length !== 1 || holders[0]?.id !== claimed.claimant.id)
     return `its assignee is no longer ${claimed.claimant.name} alone`;
+  if (issue !== null && isEpicPickup(issue)) return EPIC_PICKUP_REASON;
   if (issue === null || !sameName(issue.state.name, claimed.state))
     return `it is now ${issue?.state.name ?? "gone"}, not ${claimed.state}`;
   return null;
@@ -255,7 +375,9 @@ function startAdmission(
   key: string,
   before: PoolIssue,
   rules: ClaimRules,
-): { started: string } | { refusal: ClaimResult } {
+): { started: string } | { refusal: ClaimRefusal } {
+  const epic = epicClaimRefusal(key, before);
+  if (epic) return { refusal: epic };
   const context = before.nativeType ?? null;
   const started = tracker.stateName("in_progress", context);
   if (started === null)

@@ -41,6 +41,8 @@ export interface LoadReading {
   lock: Read<{
     holders: number;
     waiters: number;
+    /** The distinct holders the load average already shows. */
+    settled?: number;
     runs?: { workspace: string | null }[];
   }>;
   forge: Read<{ remaining: number; limit: number }>;

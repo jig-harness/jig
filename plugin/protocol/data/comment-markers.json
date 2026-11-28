@@ -1327,7 +1327,11 @@
                             "const": "restart"
                           },
                           "cause": {
-                            "enum": ["pass-deadline", "stall"]
+                            "enum": [
+                              "pass-deadline",
+                              "background-pending",
+                              "stall"
+                            ]
                           },
                           "leftWork": false,
                           "tree": false
@@ -1393,7 +1397,8 @@
                           "reviewerApp": true,
                           "until": true,
                           "probe": true,
-                          "finish": true
+                          "finish": true,
+                          "reasons": true
                         },
                         "required": ["at", "round", "kind", "cause"],
                         "additionalProperties": true
@@ -2187,7 +2192,7 @@
                         "const": "restart"
                       },
                       "cause": {
-                        "enum": ["pass-deadline", "stall"]
+                        "enum": ["pass-deadline", "background-pending", "stall"]
                       },
                       "leftWork": false,
                       "tree": false
@@ -2253,7 +2258,8 @@
                       "reviewerApp": true,
                       "until": true,
                       "probe": true,
-                      "finish": true
+                      "finish": true,
+                      "reasons": true
                     },
                     "required": ["at", "round", "kind", "cause"],
                     "additionalProperties": true

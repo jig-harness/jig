@@ -1,7 +1,9 @@
+import { isEpicPickup } from "../../../../shared/epic-pickup.ts";
 /** Served pickups preserve the person's assignment and revalidate inherited authority live. */
 import {
   type ClaimResult,
   blockedStateRefusal,
+  epicClaimRefusal,
   claimFromRefusal,
 } from "./claim.ts";
 import { blocksWithin } from "./blocker-chain.ts";
@@ -109,7 +111,7 @@ async function readNode(
     return { reason: `${current} needs a person to start` };
   if (child && blockedStateRefusal(tracker, current, issue.state.name, issue))
     return { reason: `${current} is in the blocked state` };
-  if (!child && !issue.isEpic)
+  if (!child && !issue.isEpic && !isEpicPickup(pool))
     return { reason: `${current} is no longer an epic` };
   const blocked = await blockedReasonForNode(tracker, current, child, options);
   return blocked ? { reason: blocked } : { issue };
@@ -228,7 +230,7 @@ async function validateAssignment(
 /** An epic, or an item with open children: a queue never pulls one forward. */
 async function isEpic(tracker: Tracker, key: string): Promise<boolean> {
   const item = await tracker.poolIssue(key);
-  return item !== null && (item.hasOpenChildren || item.isEpic);
+  return item !== null && isEpicPickup(item);
 }
 
 /** The reason an item's epic plans hold it, else null; an unreadable plan holds. */
@@ -263,7 +265,7 @@ async function passable(
       item.state.name,
       item.nativeType ?? null,
     ) === null &&
-    !(await isEpic(tracker, key)) &&
+    !isEpicPickup(item) &&
     !hold(item.labels, options) &&
     (await planHold(tracker, item, options)) === null
   );
@@ -351,6 +353,8 @@ export async function claimServedIssue(
   key: string,
   options: ServedClaim,
 ): Promise<ClaimResult> {
+  const epic = epicClaimRefusal(key, await tracker.poolIssue(key));
+  if (epic) return epic;
   const claimFrom = options.claimFrom ?? null;
   if (claimFrom === null) return claimServed(tracker, key, options);
   const start = await tracker.getIssue(key);
@@ -458,6 +462,7 @@ async function startedStandDown(
   const after = await tracker.poolIssue(key);
   if (
     !after ||
+    epicClaimRefusal(key, after) !== null ||
     after.truncated.length > 0 ||
     hold(after.labels, options) ||
     after.state.name.toLowerCase() !==
@@ -544,6 +549,8 @@ async function assignInherited(
   if (!inherits || !assignUnassigned) return null;
   const outsideNow = await stateBeforeAssignment(tracker, key, options);
   if (outsideNow) return outsideNow;
+  const epic = epicClaimRefusal(key, await tracker.poolIssue(key));
+  if (epic) return epic;
   const assignment = await assignUnassigned(key, user);
   if (assignment.assigned) return null;
   return {
@@ -575,6 +582,8 @@ async function claimServed(
   if (outside) return outside;
   if (
     !before ||
+    before.isEpic ||
+    (before.children?.length ?? 0) > 0 ||
     !waiting(before.state.type) ||
     hold(before.labels, options) ||
     !only(await tracker.assignees(key), user)

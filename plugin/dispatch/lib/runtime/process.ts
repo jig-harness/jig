@@ -1,4 +1,5 @@
 /** A local session runtime whose runs are witnessed by process identity. */
+import type { HolderPolicy } from "../../../shared/orca-workspace/holder.ts";
 import { readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import {
@@ -211,6 +212,7 @@ export function processRuntime(
     process?: ProcessSettings;
     runtimeTimeoutMs: number;
     workspaceTimeoutMs: number;
+    holders?: HolderPolicy;
   },
   probe: AsyncProbeRun = localProbe(
     Math.max(1, Math.ceil(machine.runtimeTimeoutMs / 1000)),
@@ -286,7 +288,7 @@ export function processRuntime(
       }
     },
     openWorkspace: (repo, target) =>
-      processOpen(repo, target, machine.workspaceTimeoutMs),
+      processOpen(repo, target, machine.workspaceTimeoutMs, machine.holders),
     verifyWorkspace: (repo, ws, target, timeoutMs) =>
       verifyPullRequestWorkspace(
         repo.path,

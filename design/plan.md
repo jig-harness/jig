@@ -251,9 +251,6 @@ per issue in the design's order:
   stands down recording why; the conflict round recognising a squash-merged
   stacked base; a pass that ended with a background task pending restarted;
   a re-arm or takeover refused as a usage error not launched again.
-- **Held checkouts.** An idle holder detached where the host opts in
-  (`detach_idle_holders`), its unpushed commits first kept on a local
-  rescue branch (`rescue_unpushed`).
 - **Follow-ups.** The routine question classes as configuration
   (`dispatch.followup_routine`).
 - **The Protocol.** The causes of a need, the act each asks for and the

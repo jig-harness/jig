@@ -145,7 +145,13 @@ describe("the tick's tracker record and the issue facets", () => {
     expect(reading.read.detail).toContain(
       "2 assigned item(s) lack a type, priority or size",
     );
-    expect(reading.wanted.map((w) => w.key).sort()).toEqual(["#1", "#2", "#3"]);
+    expect(reading.wanted.map((w) => w.key).sort()).toEqual(["#1", "#2"]);
+    expect(reading.unplaced).toContainEqual(
+      expect.objectContaining({
+        target: "#3",
+        reason: "epics are worked through their children",
+      }),
+    );
   });
 
   it("reads the stores first, without discovery, under the tick's signal and deadline", async () => {

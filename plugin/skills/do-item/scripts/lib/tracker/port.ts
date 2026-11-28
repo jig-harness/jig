@@ -352,6 +352,8 @@ export interface PoolIssue {
   isEpic: boolean;
   /** The issue has at least one child that is not closed. */
   hasOpenChildren: boolean;
+  /** Whether any sub-issue exists, including finished ones. */
+  hasChildren?: boolean;
   /**
    * Nested lists the read could not take in full; non-empty means partial.
    * `labels` here means a label the caller tests for may be missing.

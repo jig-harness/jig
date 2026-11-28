@@ -486,10 +486,11 @@ report comes last, with the `jig dispatch report` command its prompt names.
 - **Stop on a question** only when an arm you may carry out cannot go on
   without a person's decision: carry out what does not depend on it, then end
   your output with one line starting `Question:`. When the question is only
-  one of the dispatcher's routine classes, put its tag right after the
-  prefix: `[local-leftover]` (a local branch or worktree you may not delete
-  without asking), `[person-owed]` (who takes a step only a person can),
-  `[drafted-items]` (whether to file the items you drafted). Tag no other
+  one of the routine classes the dispatcher's prompt lists, put its tag right
+  after the prefix: by default `[local-leftover]` (a local branch or worktree
+  you may not delete without asking), `[person-owed]` (who takes a step only
+  a person can), `[drafted-items]` (whether to file the items you drafted);
+  a repository's `dispatch.followup_routine` may list fewer. Tag no other
   question.
 - Routine local leftovers never make a question, a failed result or an open
   arm.

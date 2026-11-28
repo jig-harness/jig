@@ -834,8 +834,10 @@ implementation. Skip this check for issues about the repository's own code.
    (`"recovery": "reclaimed"`), and stands down when one recorded its claim
    (`"held"`) or when the evidence cannot say (`"unresolved"`).
 
-   Exit `0` is the claim. Exit `3` is a refusal, nothing written: the issue
-   is already `in_progress`, `pr_open` or `blocked`, or assigned to someone
+   Exit `0` is the claim. Exit `3` is a refusal with no change to the assignee
+   or state. An epic or an issue with sub-issues is refused with
+   `"why": "epic"`. Work proceeds through its children. The claim also refuses an
+   issue already `in_progress`, `pr_open` or `blocked`, or assigned to someone
    else; its state is not
    one `do_item.claim_from` lets work start from (`"why": "state"`); a
    claim in an interactive session (`JIG_LAUNCH` unset), without `--for`,
@@ -926,10 +928,11 @@ implementation. Skip this check for issues about the repository's own code.
 
    (**judgment** — native, Linear: only where none of
    `do_item.preflight_command`, `do_item.claim_from` and
-   `do_item.claim_marker` is set or the item has blockers; with either, a
-   native write skips the repository's start rules, so claim through the
-   script above. Read the
-   issue and stop on the same two refusals, then
+   `do_item.claim_marker` is set and the item has no open blockers; with
+   any of those settings set, or when reading the issue shows an open
+   blocker, a native write skips the repository's start rules, so claim
+   through the script above. Read the issue and stop on the same refusals,
+   including an epic, any issue with sub-issues, or an open blocker, then
    `mcp__linear__save_issue({ id: issue.id, state: "<mapped name>", assignee: "me" })`,
    then read it again and stop, as on exit `4`, when it shows another
    assignee, or when the issue is gone or no longer in the mapped state.)
