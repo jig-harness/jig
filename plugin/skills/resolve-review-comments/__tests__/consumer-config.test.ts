@@ -25,7 +25,8 @@ function runConfig(overlay: string) {
   writeFileSync(join(repo, ".config", "jig.yaml"), overlay);
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env))
-    if (v !== undefined && k !== "JIG_OVERLAY") env[k] = v;
+    if (v !== undefined && k !== "JIG_OVERLAY" && !k.startsWith("JIG__"))
+      env[k] = v;
   env.JIG_CONSUMER_ROOT = repo;
   const r = spawnSync(process.execPath, [SCRIPT], {
     cwd: repo,
@@ -48,14 +49,6 @@ test("the gate command alone is a usable configuration", () => {
 });
 
 test("a known reviewer app supplies the effective bot identity", () => {
-  const result = runConfig(
-    "gates:\n  command: make check\nreview:\n  reviewer_app: coderabbitai\n",
-  );
-  expectSpawnExit(result, 0);
-  expect(result.stdout).toContain("review.bots: coderabbitai[bot]\n");
-});
-
-test("a standalone resolver starts without the drive-pr skill", () => {
   const result = runConfig(
     "gates:\n  command: make check\nreview:\n  reviewer_app: coderabbitai\n",
   );

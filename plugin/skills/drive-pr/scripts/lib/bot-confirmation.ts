@@ -15,8 +15,8 @@
  *    bot's own comments (`BUILTIN_MARKERS`) applies whether or not
  *    `review.bots` lists the bot, one a `review.bots` entry declares applies
  *    to that bot; or
- *  - its author is listed in `review.bots` (compared by login without regard
- *    to case or a `[bot]` suffix), and it carries that bot's chat marker and
+ *  - its author is in the effective `review.bots` list (compared by login
+ *    without regard to case or a `[bot]` suffix), and it carries that bot's chat marker and
  *    none of the bot's finding shape: no line a severity format for that
  *    login reads as a severity (`lib/severity-formats.ts`), since a chat
  *    reply can embed a fresh finding. Only a recognizer known to be the
@@ -24,8 +24,8 @@
  *    or a built-in one. Jig's format is assumed for the configured
  *    reviewer (`review.reviewer_app`, else the `review.bots` logins), and an
  *    assumed recognizer proves nothing, so a bot without a known format has
- *    no transparent chat follow-ups, and neither has a bot the list leaves
- *    out.
+ *    no transparent chat follow-ups, and neither has a bot the effective list
+ *    leaves out.
  *
  * Authorship is by login: an association check cannot tell a bot from a
  * person (both read `NONE`), and logins are unique across users and bots.
@@ -40,7 +40,7 @@
  * what counts as transparent cannot land in one caller and not the others.
  */
 import { botEntries, type ReviewBot } from "../../../../shared/consumer.ts";
-import { hasConfiguredReviewBots, reviewBotEntries } from "./overlay.ts";
+import { reviewBotEntries } from "./overlay.ts";
 import {
   hasSeverityFormat,
   normalizeLogin,
@@ -176,10 +176,7 @@ export function carriesFindingShape(
 export function isTransparentFollowUp(
   c: ConfirmationCandidate,
   qualifyingOutcome: (body: string) => unknown,
-  bots: readonly BotMarkers[] = botMarkers(
-    reviewBotEntries(),
-    hasConfiguredReviewBots(),
-  ),
+  bots: readonly BotMarkers[] = botMarkers(reviewBotEntries()),
   formats?: readonly SeverityFormat[],
 ): boolean {
   if (c.authorLogin === null) return false;

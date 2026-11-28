@@ -17,7 +17,7 @@ export interface ReviewerProfile {
   bodyFormat?: ReviewBodyFormat;
 }
 
-/** Built-in reviewer profiles. */
+/** Built-in reviewer profiles, including each review system's evidence shape. */
 const REVIEWER_PROFILES: Readonly<Record<string, ReviewerProfile>> = {
   coderabbitai: {
     botLogin: "coderabbitai[bot]",

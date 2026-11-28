@@ -115,11 +115,11 @@ const ACKNOWLEDGEMENT = [
 
 describe("a transparent follow-up", () => {
   test.each([
-    ["", false],
+    ["", true],
     ['  bots: ["example-review[bot]"]', false],
     ["  bots: []", false],
   ])(
-    "requires an explicit bot list before chat acknowledgements are transparent (%s)",
+    "uses the effective bot list for chat acknowledgements (%s)",
     (bots, expected) => {
       const script = [
         `import { isTransparentFollowUp } from ${JSON.stringify(join(SCRIPTS, "lib/bot-confirmation.ts"))};`,
