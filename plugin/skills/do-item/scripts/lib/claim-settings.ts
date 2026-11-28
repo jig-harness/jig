@@ -7,6 +7,8 @@
  *   maps to no canonical state, is refused with nothing written.
  * - `claim_marker`: a successful claim posts the claim marker
  *   (`claim-marker.ts`). Off by default.
+ * - `override_label`: the label a claim a person started ahead of open
+ *   blockers adds to the item (`blocker-override.ts`). Unset by default.
  *
  * A value the claim cannot use is an error naming the field, so a
  * misconfigured repository fails the claim rather than claiming unchecked.
@@ -28,6 +30,17 @@ export class ClaimSettingsError extends JigError<"invalid-claim-setting"> {
 export interface ClaimSettings {
   claimFrom: CanonicalState[] | null;
   claimMarker: boolean;
+  /** `do_item.override_label`; `null` when unset. */
+  overrideLabel: string | null;
+}
+
+function overrideLabel(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string" || value.trim() === "")
+    throw new ClaimSettingsError(
+      "do_item.override_label must be a label's name (nonempty text)",
+    );
+  return value;
 }
 
 /**
@@ -67,7 +80,7 @@ export function claimSettingsOf(
 ): ClaimSettings {
   const section = doItemSection(overlay);
   if (section === undefined || section === null)
-    return { claimFrom: null, claimMarker: false };
+    return { claimFrom: null, claimMarker: false, overrideLabel: null };
   if (!isRecord(section))
     throw new ClaimSettingsError("do_item must be a mapping");
   const marker = section.claim_marker;
@@ -76,25 +89,27 @@ export function claimSettingsOf(
   return {
     claimFrom: claimFrom(section.claim_from),
     claimMarker: marker === true,
+    overrideLabel: overrideLabel(section.override_label),
   };
 }
 
 /**
  * The claim settings a claim applies: the default branch's, like
  * `do_item.preflight_command`, so a branch cannot widen its own allowed
- * states or switch off the marker. When the default branch cannot be read,
- * a working tree that sets either refuses the claim; one that sets neither
- * claims with the defaults.
+ * states, switch off the marker or drop the override label. When the
+ * default branch cannot be read, a working tree that sets any of them
+ * refuses the claim; one that sets none claims with the defaults.
  */
 export async function claimSettingsFromDefaultBranch(
   root: string,
   workingTree: Record<string, unknown> | null,
 ): Promise<Outcome<ClaimSettings, "unreadable">> {
-  // One read answers both fields, so a restriction read is never dropped
+  // One read answers every field, so a restriction read is never dropped
   // because a second read failed.
   const read = await defaultBranchSettings(root, "do_item", [
     "claim_from",
     "claim_marker",
+    "override_label",
   ]);
   if (read.ok)
     return {
@@ -103,17 +118,18 @@ export async function claimSettingsFromDefaultBranch(
         do_item: {
           claim_from: read.value.claim_from,
           claim_marker: read.value.claim_marker,
+          override_label: read.value.override_label,
         },
       }),
     };
   const own = claimSettingsOf(workingTree);
-  if (own.claimFrom === null && !own.claimMarker)
+  if (own.claimFrom === null && !own.claimMarker && own.overrideLabel === null)
     return { ok: true, value: own };
   return {
     ok: false,
     failure: {
       code: "unreadable",
-      reason: `do_item.claim_from and do_item.claim_marker are read from the default branch, which could not be read: ${read.failure.reason}`,
+      reason: `do_item.claim_from, do_item.claim_marker and do_item.override_label are read from the default branch, which could not be read: ${read.failure.reason}`,
     },
   };
 }

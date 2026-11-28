@@ -159,7 +159,12 @@ export const dispatchComponent: Component<DispatchArguments> = {
   missingOptIn,
   install: async (request) => {
     const timer = await installDispatch(
-      { intervalMs: null, confirm: request.confirm, uninstall: false },
+      {
+        intervalMs: null,
+        confirm: request.confirm,
+        uninstall: false,
+        env: request.env ?? [],
+      },
       request.script,
       machineFile(),
     );

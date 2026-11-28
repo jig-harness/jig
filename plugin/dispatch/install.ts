@@ -10,6 +10,11 @@
  * What the tick starts is the machine file's to say, so the jobs are written
  * only when there is one; a removal takes both away.
  *
+ * A launchd job keeps the variables a person added to the installed one
+ * (`runtime/job-environment.ts`), and `--env NAME`, repeatable, writes the
+ * named variable's value from the installing shell into both jobs: the way a
+ * macOS host gives its scheduled tick a tracker or notification credential.
+ *
  * The probe has a timer of its own rather than a place in the tick's: the
  * two run at different intervals, a probe inside the tick's job would wait
  * out every sweep (systemd and launchd never overlap two runs of one job;
@@ -24,12 +29,14 @@ import { log } from "../shared/log.ts";
 import { type Failure, failed, ok, type Outcome } from "../shared/outcome.ts";
 import { exclusiveInstallLock } from "../shared/gc-lock.ts";
 import { jobPresent } from "../runtime/installed-job.ts";
+import { capturedEnvironment } from "../runtime/job-environment.ts";
 import type { JobSpec } from "../runtime/job-spec.ts";
 import {
   checkLauncherResolves,
   detectScheduler,
   installedScript,
-  jobPreview,
+  jobPreviewOutcome,
+  managedEnvironment,
   restoreScheduler,
   type SchedulerSnapshot,
   snapshotScheduler,
@@ -51,7 +58,12 @@ interface InstallOptions {
   intervalMs: number | null;
   confirm: boolean;
   uninstall: boolean;
+  /** `--env`, the names of the variables to capture from the installing shell. */
+  env?: readonly string[];
 }
+
+/** The Orca variables the tick's job writes when the installing shell sets them. */
+const ORCA_VARIABLES = ["ORCA_CLI_COMMAND", "ORCA_CLI_BIN_DIR"];
 
 /**
  * The Orca command configuration the tick resolves at run time, kept in the
@@ -76,6 +88,7 @@ export function dispatchJobSpec(
   minutes: number,
   machine: MachineConfig | null = null,
   env: NodeJS.ProcessEnv = process.env,
+  captured: Record<string, string> = {},
 ): JobSpec {
   const needed = machine === null ? 0 : Math.ceil(tickBudgetMs(machine) / 1000);
   const minimum = MIN_TICK_DEADLINE_MS / 1000;
@@ -89,6 +102,8 @@ export function dispatchJobSpec(
     schedule: { everyMinutes: minutes },
     deadlineSec: Math.max(minimum, needed),
     env: orcaEnvironment(env),
+    managedEnv: ORCA_VARIABLES,
+    ...(Object.keys(captured).length === 0 ? {} : { capturedEnv: captured }),
   };
 }
 
@@ -103,8 +118,9 @@ export function dispatchJobSpec(
 export function probeJobSpec(
   machine: MachineConfig | null = null,
   env: NodeJS.ProcessEnv = process.env,
+  captured: Record<string, string> = {},
 ): JobSpec {
-  const tick = dispatchJobSpec(1, machine, env);
+  const tick = dispatchJobSpec(1, machine, env, captured);
   return {
     name: "jig-dispatch-probe",
     label: "dev.jig.dispatch-probe",
@@ -114,6 +130,10 @@ export function probeJobSpec(
     args: ["dispatch", "probe", "--apply"],
     schedule: { everyMinutes: 1 },
     env: tick.env ?? {},
+    managedEnv: ORCA_VARIABLES,
+    ...(tick.capturedEnv === undefined
+      ? {}
+      : { capturedEnv: tick.capturedEnv }),
     ...(tick.deadlineSec === undefined
       ? {}
       : {
@@ -201,12 +221,38 @@ function intervalMinutes(
   return ms / 60_000;
 }
 
+/**
+ * The values `--env` names, from the installing shell; a usage error (exit
+ * 2) before anything is written when a name cannot be captured, the job is
+ * being removed, or this machine's scheduler is not launchd.
+ */
+function capturedFor(options: InstallOptions): Record<string, string> {
+  const names = [...new Set(options.env ?? [])];
+  if (names.length === 0) return {};
+  if (options.uninstall)
+    throw new ExitError(USAGE_EXIT, "--env has nothing to write on a removal");
+  const captured = capturedEnvironment(
+    names,
+    process.env,
+    managedEnvironment(dispatchJobSpec(5)),
+  );
+  if (!captured.ok) throw new ExitError(USAGE_EXIT, captured.failure.reason);
+  const scheduler = detectScheduler();
+  if (scheduler.ok && scheduler.value !== "launchd")
+    throw new ExitError(
+      USAGE_EXIT,
+      `--env writes into a macOS launchd job; this machine's scheduler is ${scheduler.value}. On systemd, set the variable in a drop-in for jig-dispatch.service, which a reinstall keeps (CONFIGURATION.md, the scheduled tick's environment)`,
+    );
+  return captured.value;
+}
+
 export async function installDispatch(
   options: InstallOptions,
   script: string,
   machine: MachineConfig | null,
 ): Promise<number> {
   if (options.intervalMs !== null) intervalMinutes(options.intervalMs, null);
+  const captured = capturedFor(options);
   if (machine === null && !options.uninstall)
     throw new ExitError(
       USAGE_EXIT,
@@ -217,16 +263,24 @@ export async function installDispatch(
       spec: dispatchJobSpec(
         intervalMinutes(options.intervalMs, machine),
         machine,
+        process.env,
+        captured,
       ),
       remove: options.uninstall,
     },
     {
-      spec: probeJobSpec(machine),
+      spec: probeJobSpec(machine, process.env, captured),
       remove: options.uninstall || machine?.changeProbe === false,
     },
   ];
-  for (const change of changes)
-    console.log(jobPreview(change.spec, change.remove));
+  for (const change of changes) {
+    const preview = jobPreviewOutcome(change.spec, change.remove);
+    if (!preview.ok) {
+      console.error(preview.failure.reason);
+      return 1;
+    }
+    console.log(preview.value);
+  }
   if (!options.confirm) {
     console.log("Preview only. Repeat with --yes to write the jobs.");
     return 0;
