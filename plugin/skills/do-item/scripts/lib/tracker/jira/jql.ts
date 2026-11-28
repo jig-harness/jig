@@ -1,7 +1,8 @@
 /**
  * JQL (Jira Query Language) for the Jira adapter's listings. Every query
  * starts with `project = <KEY>`, since Jira refuses an unbounded search, and
- * is ordered by creation, so a read pages through a stable order.
+ * that lists issues is ordered by creation, so a read pages through a stable
+ * order; a query that only counts its selection is not ordered.
  *
  * Strings are double-quoted with `"` and `\` escaped; issue keys in
  * `in (...)` lists go unquoted, after a check that each is a key. Dates have

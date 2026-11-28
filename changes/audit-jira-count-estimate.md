@@ -5,11 +5,14 @@ release: patch
 ### Fixed
 
 - The online audit's Jira open-issue counts no longer read every open issue
-  of the project. Each count is now one request for Jira's own estimate
-  (`search/approximate-count`), shown as approximate, so the audit of a large
-  project finishes in seconds instead of half a minute. The counts get 5
-  seconds; past that they are reported unchecked, naming the bound, and the
-  rest of the audit goes on. The estimate counts what the open read selects
-  (statuses outside the Done category, and the configured blocked status),
-  not each issue's reading by its own type's state map.
+  of the project. Each count is now one estimate request
+  (`search/approximate-count`; a transient failure is resent), shown as
+  Jira's estimate, so the count phase of an audit of a large project takes
+  seconds instead of half a minute. The counts get 5 seconds, measured from
+  when they start, after the forge and tracker checks; past that they are
+  reported unchecked, naming the bound, and the rest of the audit goes on.
+  The estimate is of what the open read selects (statuses outside the Done
+  category, and every configured blocked status name), not each issue's
+  reading by its own type's state map, so it can differ from the issues the
+  pool reads. The full-audit time is not measured here.
   **Consumer action:** none.

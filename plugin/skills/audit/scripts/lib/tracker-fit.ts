@@ -45,17 +45,16 @@ async function within<T>(
   const expired = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       const reason = new Error(`no answer within ${ms / 1000} seconds`);
-      deadline.abort(reason);
+      // Reject first: an abort listener that settles the answer from inside
+      // the abort cannot then win the race, nor replace the bound's message.
       reject(reason);
+      deadline.abort(reason);
     }, ms);
-    timer.unref();
   });
   try {
-    const answer = ask(deadline.signal);
-    answer.catch(() => {
-      // An answer that settles after the bound is no longer awaited.
-    });
-    return await Promise.race([answer, expired]);
+    // The race keeps a handler on the answer, so one settling after the bound
+    // is not an unhandled rejection.
+    return await Promise.race([ask(deadline.signal), expired]);
   } finally {
     clearTimeout(timer);
   }
@@ -164,7 +163,9 @@ export async function poolScopeFindings(
       {
         id: "info:issue_tracker.pool_scope",
         severity: "info",
-        message: `open population${counts.approximate ? " (approximate)" : ""}: ${counts.project} issues in the project; ${scope}`,
+        message: counts.approximate
+          ? `open population (Jira's estimate of the open-issue query's selection; the configured state map is not applied, so it can differ from the issues the pool reads): ${counts.project} issues in the project; ${scope}`
+          : `open population: ${counts.project} issues in the project; ${scope}`,
       },
     ];
   } catch (e) {

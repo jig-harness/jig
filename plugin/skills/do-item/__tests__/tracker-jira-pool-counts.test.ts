@@ -46,12 +46,19 @@ describe("Jira open population counts", () => {
       },
     });
     expect((await t.poolScopeCounts?.())?.project).toBe(3);
-    expect(jqlOf(calls.find((c) => c.route === COUNT) as Call)).toContain(
-      'status = "Waiting"',
+    expect(jqlOf(calls.find((c) => c.route === COUNT) as Call)).toBe(
+      'project = ENG AND (statusCategory != Done OR status = "Waiting")',
     );
   });
   test("refuses an answer without a count instead of inventing one", async () => {
-    for (const answer of [{}, { count: -1 }, { count: 1.5 }, { count: "9" }]) {
+    for (const answer of [
+      {},
+      { count: -1 },
+      { count: 1.5 },
+      { count: 1e100 },
+      { count: 9007199254740992 },
+      { count: "9" },
+    ]) {
       const { t } = jira(routes({ [COUNT]: answer }));
       await expect(t.poolScopeCounts?.()).rejects.toThrow(/count/);
     }

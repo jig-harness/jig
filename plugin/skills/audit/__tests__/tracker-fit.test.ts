@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, jest, test } from "bun:test";
 import type {
   FacetReadOptions,
   FacetStoreReport,
@@ -281,7 +281,7 @@ describe("the audit's open population scope counts", () => {
         id: "info:issue_tracker.pool_scope",
         severity: "info",
         message:
-          "open population (approximate): 80 issues in the project; 12 within the configured pool issue-type scope",
+          "open population (Jira's estimate of the open-issue query's selection; the configured state map is not applied, so it can differ from the issues the pool reads): 80 issues in the project; 12 within the configured pool issue-type scope",
       },
     ]);
     expect(seen).toBeInstanceOf(AbortSignal);
@@ -296,7 +296,7 @@ describe("the audit's open population scope counts", () => {
       }),
     } as unknown as Tracker;
     expect((await poolScopeFindings(t))[0]?.message).toBe(
-      "open population (approximate): 0 issues in the project; no pool issue-type scope is configured",
+      "open population (Jira's estimate of the open-issue query's selection; the configured state map is not applied, so it can differ from the issues the pool reads): 0 issues in the project; no pool issue-type scope is configured",
     );
     t.poolScopeCounts = async () => {
       throw new Error("unavailable");
@@ -327,7 +327,6 @@ describe("the audit's open population scope counts", () => {
         });
       },
     } as unknown as Tracker;
-    const started = performance.now();
     expect(await poolScopeFindings(t, 50)).toEqual([
       {
         id: "unchecked:issue_tracker.pool_scope",
@@ -336,7 +335,57 @@ describe("the audit's open population scope counts", () => {
           "open population counts are unchecked: no answer within 0.05 seconds",
       },
     ]);
-    expect(performance.now() - started).toBeLessThan(1_000);
     expect(aborted).toBe(true);
+  });
+  test("the default bound is COUNT_MS: unchecked at the bound, not before", async () => {
+    jest.useFakeTimers();
+    try {
+      const t = {
+        poolScopeCounts: () =>
+          new Promise(() => {
+            // Never settles.
+          }),
+      } as unknown as Tracker;
+      let result: Awaited<ReturnType<typeof poolScopeFindings>> | undefined;
+      const pending = poolScopeFindings(t).then((r) => {
+        result = r;
+      });
+      jest.advanceTimersByTime(COUNT_MS - 1);
+      await Promise.resolve();
+      expect(result).toBeUndefined();
+      jest.advanceTimersByTime(1);
+      await pending;
+      expect(result?.[0]?.message).toBe(
+        `open population counts are unchecked: no answer within ${COUNT_MS / 1000} seconds`,
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+  test("an answer produced from inside the abort does not beat the bound", async () => {
+    const t = {
+      poolScopeCounts: (signal?: AbortSignal) =>
+        new Promise((resolve) => {
+          signal?.addEventListener("abort", () =>
+            resolve({ project: 1, pool: 1, scoped: false, approximate: true }),
+          );
+        }),
+    } as unknown as Tracker;
+    expect((await poolScopeFindings(t, 20))[0]?.id).toBe(
+      "unchecked:issue_tracker.pool_scope",
+    );
+  });
+  test("an abort listener that rejects does not replace the bound's message", async () => {
+    const t = {
+      poolScopeCounts: (signal?: AbortSignal) =>
+        new Promise((_, reject) => {
+          signal?.addEventListener("abort", () =>
+            reject(new Error("listener failure")),
+          );
+        }),
+    } as unknown as Tracker;
+    expect((await poolScopeFindings(t, 20))[0]?.message).toBe(
+      "open population counts are unchecked: no answer within 0.02 seconds",
+    );
   });
 });

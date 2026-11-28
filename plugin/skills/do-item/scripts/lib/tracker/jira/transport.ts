@@ -898,7 +898,10 @@ function nextToken(
 /**
  * Jira's estimate of how many issues a JQL query selects, through
  * `POST search/approximate-count`: one request, whatever the population, and
- * no issue read. An answer without a non-negative whole `count` fails the read.
+ * no issue read. An answer without a non-negative safe integer `count` fails the read.
+ * The request is idempotent, so a transient failure is resent by the governed
+ * transport (and once more after a credential renewal): one request is the
+ * normal case, not the ceiling.
  */
 export async function approximateCount(
   transport: JiraTransport,
@@ -916,7 +919,7 @@ export async function approximateCount(
     signal,
   );
   const count = (answer as Record<string, unknown> | null)?.count;
-  if (typeof count !== "number" || !Number.isInteger(count) || count < 0)
+  if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0)
     throw shape(
       where,
       "the approximate count is missing or not a whole number",

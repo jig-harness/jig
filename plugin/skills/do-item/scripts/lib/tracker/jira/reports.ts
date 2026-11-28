@@ -1,7 +1,8 @@
 /**
  * The Jira adapter's reads for the fleet metrics and the candidate pools.
  *
- * Every population is one JQL query (`jql.ts`) read to its end. A window is
+ * Every population listing is one JQL query (`jql.ts`) read to its end; the
+ * pool counts are one estimate request each, with no issue read. A window is
  * widened by a minute on each side, since JQL dates have minute precision in
  * the credential's profile time zone, and each issue is then kept or dropped
  * by its exact time. A comment search reads every comment of the labelled
@@ -598,8 +599,12 @@ export function reportOperations(
           signal,
         );
       }
-      const total = await count();
-      const pool = clause === null ? total : await count(clause);
+      // The two estimates do not depend on each other, so a scoped read
+      // starts both and they share one budget.
+      const [total, pool] =
+        clause === null
+          ? await count().then((n) => [n, n] as const)
+          : await Promise.all([count(), count(clause)]);
       return {
         project: total,
         pool,
