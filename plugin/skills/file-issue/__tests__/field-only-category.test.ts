@@ -200,9 +200,10 @@ describe("validate-labels.ts with a field-only category", () => {
     }
   };
   /** A tracker whose labels are `names`, recording which it was asked about. */
-  const tracker = (names: string[]) => {
+  const tracker = (names: string[], prefixes = ["fixversion:"]) => {
     let opened = 0;
     const deps: Deps = {
+      fieldLabelPrefixes: () => prefixes,
       openTracker: () => {
         opened++;
         return {
@@ -254,6 +255,7 @@ describe("validate-labels.ts with a field-only category", () => {
     );
     const drafts: string[][] = [];
     const deps: Deps = {
+      fieldLabelPrefixes: () => ["fixversion:"],
       openTracker: () => ({
         listLabels: async () =>
           ["feature", "area:api"].map((name) => ({ name, group: null })),
@@ -285,5 +287,18 @@ describe("validate-labels.ts with a field-only category", () => {
     expect(code).toBe(3);
     expect(out).toContain("not in the tracker: area:api");
     expect(out).not.toContain("not in the tracker: area:api, fixversion");
+  });
+
+  test("with --check-tracker: a field-only category with no tracker field behind its prefix is invalid", async () => {
+    const { deps, opened } = tracker(["feature", "area:api"], []);
+    const { code, out } = await capture(
+      ["--check-tracker", "--taxonomy", path, ...labels],
+      deps,
+    );
+    expect(code).toBe(3);
+    expect(out).toContain(
+      "category 'fixversion' is 'field_only: true', but the configured tracker has no field read as labels with the prefix 'fixversion:'",
+    );
+    expect(opened()).toBe(0);
   });
 });

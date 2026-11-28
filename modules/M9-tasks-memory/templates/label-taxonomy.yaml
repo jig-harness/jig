@@ -174,14 +174,15 @@ categories:
     labels:
       - id: product
       - id: legal
-  # A field-only category, for a Jira project that reads its Fix versions
-  # field as labels (`issue_tracker.jira.field_labels: { "Fix versions":
-  # "fixversion:" }`): set the version on the field after filing.
-  # - id: fixversion
-  #   prefix: "fixversion:"
+  # A field-only category: values the tracker keeps in a field it reads as
+  # labels but never writes, so a filing sets them on that field afterwards.
+  # Which trackers have such a field, and how it is mapped, is in the
+  # module's mappings.md.
+  # - id: release
+  #   prefix: "release:"
   #   field_only: true
-  #   open: "[0-9A-Za-z][0-9A-Za-z._-]*"  # version names such as 2.4, v2.4, 2.4-rc1
-  #   notes: the release an item is targeted at, kept in Jira's Fix versions
+  #   open: "[0-9A-Za-z][0-9A-Za-z._-]*"
+  #   notes: the release an item is targeted at, kept in a tracker field
 
 # ---------------------------------------------------------------------------
 # flags — each FIRES a named process. Zero or more per issue. These are the

@@ -169,14 +169,18 @@ level, which the level itself answers.
    A label of a category the taxonomy marks `field_only: true` is a value
    the tracker keeps in a field it reads as labels but never writes (a Jira
    field behind `issue_tracker.jira.field_labels`, such as Fix versions as
-   `fixversion:2.4`). `validate-labels.ts` lists it under `fieldOnly`, with
-   a `WARNING`, and leaves it out of `labels`: leave it out of the `labels`
-   of the JSON file [step 10](#10-write) files (the adapter refuses it).
-   No Jig script writes that field, so never set the value yourself, by the
-   tracker scripts or the tracker's own interface: it is a step a person
-   owes in the tracker after filing, and the confirmation and the report
-   name it as owed. Under a drive, record it with the filing (drive-pr
-   § 8), so a person finds it.
+   `fixversion:2.4`). Keep two drafts: the validation draft carries the
+   value among its `labels`, so `validate-labels.ts` reports it under
+   `fieldOnly`, with a `WARNING`, and returns the set to write in `labels`;
+   the filing draft, the JSON file [step 10](#10-write) files, carries that
+   returned `labels` and never the value (the adapter refuses it). Keep the
+   `fieldOnly` values from the validation for the confirmation and the
+   report. With `--check-tracker`, a field-only category whose prefix no
+   `field_labels` entry names is invalid. No Jig script writes that field,
+   so never set the value yourself, by the tracker scripts or the tracker's
+   own interface: it is a step a person owes in the tracker after filing,
+   and the confirmation and the report name it as owed. Under a drive,
+   record it with the filing (drive-pr § 8), so a person finds it.
 3. **A gate's flag goes on the item that ships the change.** A flag whose
    `scope` is `shipping-item` goes on the issue (or sub-issue) whose pull
    request makes the change, never on the container above it; a

@@ -49,6 +49,7 @@ import {
 } from "../../do-item/scripts/lib/tracker/port.ts";
 import { readConfig } from "../../../shared/consumer.ts";
 import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
+import { trackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
 import { taxonomyPath } from "./lib/config.ts";
 import { lintTaxonomyFile } from "./lib/taxonomy.ts";
 import {
@@ -73,6 +74,11 @@ type LabelTracker = Pick<
 export interface Deps {
   /** The consumer's tracker, opened only for `--check-tracker`. */
   openTracker: () => LabelTracker;
+  /**
+   * The prefixes of the fields the tracker reads as labels and never writes
+   * (Jira's `issue_tracker.jira.field_labels`), read only for `--check-tracker`.
+   */
+  fieldLabelPrefixes?: () => string[];
   /** Standard input, read only when no label is given as an argument. */
   readStdin: () => Promise<string>;
 }
@@ -85,8 +91,16 @@ async function readStdin(): Promise<string> {
   return text;
 }
 
+function configuredFieldLabelPrefixes(): string[] {
+  const config = trackerConfig();
+  return config.adapter === "jira"
+    ? Object.values(config.jira.fieldLabels)
+    : [];
+}
+
 const defaultDeps: Deps = {
   openTracker: () => openTracker(),
+  fieldLabelPrefixes: configuredFieldLabelPrefixes,
   readStdin,
 };
 
@@ -434,6 +448,38 @@ function openLabelTracker(deps: Deps): LabelTracker {
 }
 
 /**
+ * An error for each field-only category in use whose prefix the configured
+ * tracker has no field behind: its values would be dropped from the filing
+ * with nowhere to be set.
+ */
+function unbackedFieldOnly(
+  deps: Deps,
+  taxonomy: Taxonomy,
+  result: Validation,
+): string[] {
+  const used = taxonomy.categories.filter(
+    (c) => c.fieldOnly && (result.parsed.categories[c.id]?.length ?? 0) > 0,
+  );
+  if (used.length === 0) return [];
+  let prefixes: string[];
+  try {
+    prefixes = (deps.fieldLabelPrefixes ?? configuredFieldLabelPrefixes)();
+  } catch (e) {
+    throw new Stop(
+      1,
+      `ERROR: the tracker's field-label mapping (issue_tracker.jira.field_labels) could not be read: ${reason(e)}`,
+      { cause: e },
+    );
+  }
+  return used
+    .filter((c) => !prefixes.includes(c.prefix))
+    .map(
+      (c) =>
+        `category '${c.id}' is 'field_only: true', but the configured tracker has no field read as labels with the prefix '${c.prefix}' (issue_tracker.jira.field_labels): drop 'field_only', or fix the mapping or the prefix`,
+    );
+}
+
+/**
  * The verdict with the tracker's view added: the draft's screen first, then
  * every label against the tracker's labels. An invalid set is already the
  * verdict, so the labels are not read for it: that read could only hide it
@@ -445,6 +491,12 @@ async function checkTracker(
   taxonomy: Taxonomy,
   initial: Validation,
 ): Promise<Validation> {
+  const unbacked = unbackedFieldOnly(deps, taxonomy, initial);
+  if (unbacked.length) {
+    initial.errors.push(...unbacked);
+    initial.valid = false;
+    return initial;
+  }
   // Placement can only exempt a missing facet. Other taxonomy errors already
   // decide the result, except where its native epic type can satisfy a label
   // rule. In that case validateFiling must get the chance to revalidate it.
