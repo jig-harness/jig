@@ -1281,14 +1281,18 @@ describe("tracker.ts", () => {
     });
   });
 
-  it("refuses an issue with no priority, or no size, naming it, before any request", () => {
+  it("refuses an issue with no priority, or no size, naming it alone, before any request", () => {
     for (const [issue, lacks] of [
       [{ type: "bug", size: "xs" }, "priority"],
       [{ type: "bug", priority: 3 }, "size"],
     ] as const) {
       const r = run(["create"], [], JSON.stringify({ title: "t", ...issue }));
-      expectSpawnExit({ ...r, exitCode: r.status }, 2);
-      expect(r.stderr).toContain(`refused to file an issue with no ${lacks}:`);
+      expectSpawnExit({ ...r, exitCode: r.status }, 3);
+      expect(r.stderr).toStartWith(
+        `refused to file an issue with no ${lacks}:`,
+      );
+      expect(r.stderr.trimEnd().split("\n")).toHaveLength(1);
+      expect(r.stderr).not.toContain("usage:");
     }
   });
 
@@ -1497,10 +1501,11 @@ describe("tracker.ts", () => {
     ],
     ["a missing key", ["children"], "one issue key"],
   ] as const) {
-    it(`rejects ${what} as a usage error`, () => {
+    it(`rejects ${what} as a usage error, with the usage text`, () => {
       const r = run([...args], []);
       expect(r.status).toBe(2);
       expect(r.stderr).toContain(expected);
+      expect(r.stderr).toContain("usage:\n  tracker.ts children <issue-key>");
     });
   }
 });

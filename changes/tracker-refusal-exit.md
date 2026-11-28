@@ -1,0 +1,7 @@
+---
+release: minor
+---
+
+### Changed
+
+- **Breaking:** `tracker.ts create` and `update` now exit `3`, with only the reason on stderr, when the tracker or the repository's configuration refuses a well-formed request: filing an issue without a facet or a required label, removing a Jira issue type, setting no priority on a Jira issue, or giving a facet's or a field's value as a label. These used to exit `2` and print the usage text after the reason. A malformed command line still exits `2` with the usage text, so a caller can now tell "the command was wrong" from "the change was refused". **Consumer action:** advised at instructions. A runbook or script that reads exit `2` from `tracker.ts create` or `update` as an incomplete filing should read exit `3` instead. **Detect:** `text:tracker.ts create`, `text:refused to file`.

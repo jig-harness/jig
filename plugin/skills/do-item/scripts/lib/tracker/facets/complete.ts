@@ -165,7 +165,7 @@ export function checkedTracker(
         missing = missing.filter((name) => !unavailable.has(name));
       }
       if (missing.length > 0)
-        throw new TrackerRequestError("invalid", incompleteRefusal(missing));
+        throw new TrackerRequestError("refused", incompleteRefusal(missing));
       return tracker.createIssue(issue);
     },
   };

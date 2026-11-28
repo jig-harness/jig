@@ -232,9 +232,12 @@ describe("Jira: changing a type and a size kept in Jira's own fields", () => {
   it("refuses to remove a type the issue type holds", async () => {
     await expect(
       change(issue({ key: "ENG-1", type: "Bug" }), { type: null }),
-    ).rejects.toThrow(
-      "a Jira issue always has an issue type, and ENG-1's is Bug, the type bug",
-    );
+    ).rejects.toMatchObject({
+      code: "refused",
+      message: expect.stringContaining(
+        "a Jira issue always has an issue type, and ENG-1's is Bug, the type bug",
+      ),
+    });
   });
 
   it("refuses to remove the label of the type the write sets", async () => {

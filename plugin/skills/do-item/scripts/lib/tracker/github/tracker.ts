@@ -423,7 +423,7 @@ export function gitHubTracker(client: Client): Tracker {
     const kept = add.filter(retired);
     if (kept.length > 0)
       throw new TrackerRequestError(
-        "invalid",
+        "refused",
         `${kept.map((l) => `'${l}'`).join(", ")} stand for a priority, which ${slug(home)} keeps in the field '${client.facetSlots.priority.field ?? "Priority"}'; give it as the issue's priority instead`,
       );
     const reserved = [...add, ...remove.filter((l) => !retired(l))].filter(
@@ -431,7 +431,7 @@ export function gitHubTracker(client: Client): Tracker {
     );
     if (reserved.length > 0)
       throw new TrackerRequestError(
-        "invalid",
+        "refused",
         `${reserved.map((l) => `'${l}'`).join(", ")} stand for a workflow state or a priority; use transition or priority instead`,
       );
   }

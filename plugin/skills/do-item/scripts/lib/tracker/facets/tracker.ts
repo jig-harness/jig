@@ -271,7 +271,7 @@ export function withFacets(
           ? `priority: ${PRIORITY_NAMES.indexOf(value as (typeof PRIORITY_NAMES)[number]) + 1} (${value})`
           : `${codec.facet}: ${value}`;
       throw new TrackerRequestError(
-        "invalid",
+        "refused",
         `the label '${owned}' ${where} is the ${codec.facet} ${value}; give it as the issue's ${codec.facet} (${given}), not as a label`,
       );
     }
@@ -307,7 +307,7 @@ export function withFacets(
       const where =
         slot.field === null ? `its ${f}` : `the field '${slot.field}'`;
       throw new TrackerRequestError(
-        "invalid",
+        "refused",
         `the label '${owned}' stands for the ${f} ${value}, which this repository keeps in ${where}, not in labels; give it as the issue's ${f} (${f}: ${value})`,
       );
     }

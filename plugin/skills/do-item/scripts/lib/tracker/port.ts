@@ -536,15 +536,18 @@ export interface FacetStores {
 
 /**
  * A request refused before anything is written: input the operation cannot
- * take (`invalid`), or a name that resolves to no tracker resource or to
- * several (`unresolved`). Every adapter throws it for the same causes, so a
- * caller tells its own mistake from a tracker that failed.
+ * take (`invalid`), a name that resolves to no tracker resource or to
+ * several (`unresolved`), or a well-formed change the tracker or the
+ * repository's configuration does not allow (`refused`: an issue filed
+ * without a facet it needs, a Jira issue type removed, a field's value given
+ * as a label). Every adapter throws it for the same causes, so a caller
+ * tells its own mistake from a tracker that failed.
  */
 export class TrackerRequestError extends Error {
   // A declared field, not a parameter property: the repository's TypeScript
   // settings allow erasable syntax only.
-  readonly code: "invalid" | "unresolved";
-  constructor(code: "invalid" | "unresolved", message: string) {
+  readonly code: "invalid" | "unresolved" | "refused";
+  constructor(code: "invalid" | "unresolved" | "refused", message: string) {
     super(message);
     this.code = code;
   }

@@ -111,10 +111,13 @@
  * places; run it after the plan is written.
  *
  * Output: JSON on stdout. Exit codes: 0 done, 2 usage (input the operation
- * cannot take), 1 the operation failed (the reason on stderr), a label,
- * project or issue that does not resolve to exactly one included; for
- * `claim`, 3 refused and 4 stood down; for `attach` and `fetch-attachment`,
- * 3 refused. A call to the tracker that failed exits with its failure class
+ * cannot take, with the usage text), 1 the operation failed (the reason on
+ * stderr), a label, project or issue that does not resolve to exactly one
+ * included; 3 refused: a well-formed request the tracker or the
+ * repository's configuration does not allow (filing an issue with no
+ * priority, removing a Jira issue type, giving a field's value as a label),
+ * nothing written, the reason alone on stderr; for `claim`, 3 refused and 4
+ * stood down; for `attach` and `fetch-attachment`, 3 refused. A call to the tracker that failed exits with its failure class
  * (`shared/outbound/failure.ts`, `EXIT_OF_CLASS`), the reason on stderr
  * after the class: 5 `rate-limited`, the credential's rate limit spent, with
  * the time it resets on stderr (`RATE-LIMITED until <time>`): the request it
@@ -227,6 +230,9 @@ async function readStdin(): Promise<string> {
   for await (const chunk of process.stdin) s += chunk;
   return s;
 }
+
+/** The exit of a request refused for a domain reason, apart from a usage error's 2. */
+export const REFUSED_EXIT = 3;
 
 function usage(message: string): number {
   console.error(`${message}\n${USAGE}`);
@@ -857,6 +863,11 @@ function isUsage(err: unknown): err is Error {
   );
 }
 
+/** Whether an error is a well-formed request the tracker or configuration refused. */
+function isRefusal(err: unknown): err is TrackerRequestError {
+  return err instanceof TrackerRequestError && err.code === "refused";
+}
+
 function operationNamed(name: string | undefined): Operation {
   if (name === undefined) throw new UsageError("missing operation");
   if (!Object.hasOwn(OPERATIONS, name))
@@ -940,6 +951,10 @@ export function failureExit(error: unknown): { code: number; line: string } {
 
 function reportFailure(error: unknown): number {
   if (isUsage(error)) return usage(error.message);
+  if (isRefusal(error)) {
+    console.error(error.message);
+    return REFUSED_EXIT;
+  }
   const { code, line } = failureExit(error);
   console.error(line);
   return code;

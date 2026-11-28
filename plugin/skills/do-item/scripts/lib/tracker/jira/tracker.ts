@@ -330,7 +330,7 @@ export function jiraTracker(client: Client): Tracker {
         (f) => f.id === found.field.id,
       )?.facet;
       throw new TrackerRequestError(
-        "invalid",
+        "refused",
         facet === undefined
           ? `label '${l}' is the value of the Jira field '${found.field.name}' (issue_tracker.jira.field_labels.${found.field.configured}), which the adapter reads but does not write; set the field in Jira`
           : `label '${l}' is the value of the Jira field '${found.field.name}', which keeps the ${facet}; give it as the issue's ${facet}, not as a label`,
@@ -654,7 +654,7 @@ export function jiraTracker(client: Client): Tracker {
       await refuseFieldLabels(patch.addLabels ?? [], signal);
       if (patch.priority === 0)
         throw new TrackerRequestError(
-          "invalid",
+          "refused",
           "a Jira issue always carries a priority, so priority 0 (none) cannot be set",
         );
       const issue = await client.mustIssue(key, signal);

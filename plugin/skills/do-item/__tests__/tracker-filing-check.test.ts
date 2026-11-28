@@ -116,10 +116,10 @@ describe("the filing check inside createIssue", () => {
           e instanceof TrackerRequestError ? `${e.code}: ${e.message}` : e,
       );
     expect(await refusal(issue({}, ["priority"]))).toBe(
-      'invalid: refused to file an issue with no priority: every issue is filed with its type, priority and size, so give "type", "priority" (1 to 4) and "size" in the issue tracker.ts create reads (an epic needs no size)',
+      'refused: refused to file an issue with no priority: every issue is filed with its type, priority and size, so give "type", "priority" (1 to 4) and "size" in the issue tracker.ts create reads (an epic needs no size)',
     );
     expect(await refusal(issue({ labels: [] }, ["size"]))).toBe(
-      'invalid: refused to file an issue with no size and no repo label: every issue is filed with its type, priority and size, so give "type", "priority" (1 to 4) and "size" in the issue tracker.ts create reads (an epic needs no size) and a label of each required group of the label taxonomy',
+      'refused: refused to file an issue with no size and no repo label: every issue is filed with its type, priority and size, so give "type", "priority" (1 to 4) and "size" in the issue tracker.ts create reads (an epic needs no size) and a label of each required group of the label taxonomy',
     );
     expect(filed).toEqual([]);
     expect(await t.createIssue(issue({}))).toEqual({
