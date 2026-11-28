@@ -126,7 +126,7 @@ export type {
 } from "./ledger-shapes.ts";
 import {
   LEDGER_DRIVER_SHAPE,
-  LEDGER_PAYLOAD_FIELDS,
+  ledgerPayloadFields,
   type LedgerHeld,
   type LedgerDriver,
   type LedgerClaimRef,
@@ -531,7 +531,10 @@ function ledgerFault(v: Record<string, unknown>): string {
     roundsGranted: () => isOptionalRetryCount(v.roundsGranted),
     driver: () => isLedgerDriver(v.driver),
   };
-  return Object.entries(LEDGER_PAYLOAD_FIELDS)
+  // The version's own fields: a parked person takes the managed form only from version 3.
+  const fields = ledgerPayloadFields(v.ledgerVersion);
+  if (fields === undefined) return "ledgerVersion";
+  return Object.entries(fields)
     .filter(
       ([name, shape]) =>
         name !== "ledgerVersion" &&

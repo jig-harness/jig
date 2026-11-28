@@ -38,7 +38,6 @@ import {
   effectiveClaims,
   ledgerFromState,
   ledgerOfStoppedDriver,
-  LEDGER_VERSION,
   newerClaim,
   parseLedger,
   seedFromLedger,
@@ -343,18 +342,12 @@ async function mirrorUnlocked(
         })),
       },
     );
-    // Preserve an existing reader-compatible version. Rendering raises it
-    // only for an operator stop (v2) or a managed recipient (v3).
+    // Preserve an existing reader-compatible version. Rendering applies the
+    // version choice (`writtenVersion`), which raises it only for an operator
+    // stop (v2) or a managed recipient (v3), whichever path writes the ledger.
     return existingVersion === undefined
       ? ledger
-      : {
-          ...ledger,
-          ledgerVersion:
-            existingVersion < LEDGER_VERSION &&
-            ledger.parked.some((park) => park.person?.includes("_") === true)
-              ? LEDGER_VERSION
-              : existingVersion,
-        };
+      : { ...ledger, ledgerVersion: existingVersion };
   });
   if (result.kind !== "written") {
     console.error(`ledger: not written — ${result.reason}.`);

@@ -1,6 +1,6 @@
 # Hidden comment markers on the forge and the tracker
 
-Version 2 · stable
+Version 3 · stable
 
 Jig's parts leave records for each other where everyone who can read the
 repository reads them: comments and the pull request's body on the
@@ -167,9 +167,20 @@ The [record envelope](schemas/record-envelope.json) describes the shared
 fields. JSON records also have their own schemas: the
 [drive ledger](schemas/drive-ledger.json),
 [sent answer](schemas/drive-answer.json),
+[re-arm request](schemas/dispatch-rearm-request.json),
 [claim marker](schemas/tracker-claim-marker.json),
 [claim outcome](schemas/tracker-claim-outcome.json),
-[attachment header](schemas/tracker-attachment.json) and
-[reflection event](schemas/reflection-record.json), and
+[attachment header](schemas/tracker-attachment.json),
+[reflection event](schemas/reflection-record.json) and
 [tracker footprint](schemas/tracker-footprint.json). Text marker grammars
 remain the forms this chapter lists.
+
+The drive ledger's schema has one alternative per group of ledger versions,
+enveloped and bare, because what a ledger holds depends on its version: a
+parked item's `person` is an
+[Enterprise Managed User](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)'s login (`mona_acme`)
+only in a version 3 ledger, the version Jig writes a ledger naming one at.
+
+The site publishes this chapter's schemas and data file for its current
+version only; [Earlier versions are withdrawn](README.md#earlier-versions-are-withdrawn)
+says what a reader of an earlier version's addresses does.

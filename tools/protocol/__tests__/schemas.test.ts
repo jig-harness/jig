@@ -254,6 +254,53 @@ describe("stable JSON writers", () => {
       narrative: [42],
     });
   });
+  test("the published ledger schema takes a managed parked person at version 3 only", () => {
+    const ledger = ledgerFromState(freshState(12), {
+      generation: 1,
+      driver: {
+        actor: "tree",
+        clone: "clone",
+        heartbeat: at,
+        state: "running",
+      },
+      narrative: [],
+      claims: [],
+    });
+    ledger.parked = [
+      {
+        key: "t1",
+        kind: "thread",
+        reason: "why",
+        round: 1,
+        person: "mona_acme",
+      },
+    ];
+    const rendered = renderLedger(ledger);
+    if (!("body" in rendered)) throw new Error("ledger did not render");
+    const enveloped = markerJson(rendered.body, "drive-pr-ledger-data");
+    expect(enveloped.v).toBe(3);
+    expectSchemaAccepts(published("drive-ledger"), enveloped);
+    expectSchemaAccepts(published("drive-ledger"), {
+      ...ledger,
+      ledgerVersion: 3,
+    });
+    for (const version of [1, 2]) {
+      expectSchemaRejects(published("drive-ledger"), {
+        ...enveloped,
+        v: version,
+        ledgerVersion: version,
+      });
+      expectSchemaRejects(published("drive-ledger"), {
+        ...ledger,
+        ledgerVersion: version,
+      });
+      expectSchemaAccepts(published("drive-ledger"), {
+        ...ledger,
+        ledgerVersion: version,
+        parked: [{ ...ledger.parked[0], person: "mona" }],
+      });
+    }
+  });
   test("both attachment writers fit their marker schema", () => {
     const file = {
       title: "Example",

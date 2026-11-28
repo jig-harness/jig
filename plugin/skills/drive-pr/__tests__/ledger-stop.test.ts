@@ -64,13 +64,14 @@ interface Stage {
 function stage(
   driver: Partial<Ledger["driver"]> = {},
   extra: unknown[] = [],
+  parked: Ledger["parked"] = [],
 ): Stage {
   const forge = fakeForge([], { login: "drive-bot" });
   const leaf = scopedStateDir(forge.stateDir, forge.repo);
   const actor = `wt-${worktreePathKey(forge.repo)}`;
   const started = new Date(Date.now() - 1000).toISOString();
   const ledger = ledgerFromState(
-    { ...freshState(999), rounds: 2 },
+    { ...freshState(999), rounds: 2, parked },
     {
       generation: 3,
       driver: {
@@ -138,9 +139,13 @@ async function drives(
   return { stdout, stderr, exitCode };
 }
 
-function driverOf(s: Stage): Ledger["driver"] | null {
+function ledgerOf(s: Stage): Ledger | null {
   const parsed = parseLedger(s.forge.comments()[0]?.body ?? "");
-  return parsed?.kind === "ledger" ? parsed.ledger.driver : null;
+  return parsed?.kind === "ledger" ? parsed.ledger : null;
+}
+
+function driverOf(s: Stage): Ledger["driver"] | null {
+  return ledgerOf(s)?.driver ?? null;
 }
 
 async function deadPid(): Promise<number> {
@@ -178,6 +183,43 @@ describe("drives.ts --stop marks the stopped driver's ledger", () => {
       expectSpawnExit(r, 0);
       expect(driverOf(s)).toMatchObject({ actor: s.actor, state: "stopped" });
       expect(driverOf(s)?.personStop?.reason).toBe("maintenance");
+    },
+    60_000,
+  );
+
+  it.skipIf(posixStop)(
+    "keeps version 3 when it stops a drive whose ledger parks a question for a managed user",
+    async () => {
+      const parked: Ledger["parked"] = [
+        {
+          key: "PRRT_x",
+          kind: "thread",
+          reason: "Which schema does the store keep?",
+          round: 1,
+          person: "mona_acme",
+        },
+      ];
+      const s = stage({}, [], parked);
+      writeState(s.leaf, "999", { ...freshState(999), rounds: 2, parked });
+      expect(ledgerOf(s)?.ledgerVersion).toBe(3);
+      const owner = Bun.spawn(
+        [
+          process.execPath,
+          "-e",
+          "setInterval(() => {}, 1000)",
+          "drive.ts",
+          "999",
+        ],
+        { stdout: "ignore", stderr: "ignore" },
+      );
+      plantLock(s, owner.pid);
+      const r = await drives(s, ["--stop", "999", "--reason", "maintenance"]);
+      owner.kill("SIGKILL");
+      expectSpawnExit(r, 0);
+      const stopped = ledgerOf(s);
+      expect(stopped?.driver.personStop?.reason).toBe("maintenance");
+      expect(stopped?.ledgerVersion).toBe(3);
+      expect(stopped?.parked[0]?.person).toBe("mona_acme");
     },
     60_000,
   );

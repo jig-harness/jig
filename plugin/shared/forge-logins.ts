@@ -8,6 +8,14 @@ export function uniqueLogins(logins: readonly string[]): string[] {
 }
 
 /**
+ * A GitHub login without the managed form's short code, as a pattern source
+ * without anchors: the login of an account that is not an Enterprise Managed
+ * User, and the grammar a record shaped before managed logins were taken
+ * still holds to.
+ */
+export const GITHUB_UNMANAGED_LOGIN_SOURCE = "[A-Za-z0-9][A-Za-z0-9-]{0,38}";
+
+/**
  * A GitHub login, as a pattern source without anchors: a letter or digit,
  * then up to 38 letters, digits or hyphens, and optionally one underscore
  * and a three-to-eight character alphanumeric short code, the form of an
@@ -15,8 +23,7 @@ export function uniqueLogins(logins: readonly string[]): string[] {
  * `mona_acme`). No other underscore is taken. A schema that cannot import
  * this module (the audit's configuration schema) spells the same source out.
  */
-export const GITHUB_LOGIN_SOURCE =
-  "[A-Za-z0-9][A-Za-z0-9-]{0,38}(?:_[A-Za-z0-9]{3,8})?";
+export const GITHUB_LOGIN_SOURCE = `${GITHUB_UNMANAGED_LOGIN_SOURCE}(?:_[A-Za-z0-9]{3,8})?`;
 
 /** An organization's name, with no leading or trailing hyphen. */
 const ORG_SOURCE = "[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?";
