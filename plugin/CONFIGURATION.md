@@ -1884,6 +1884,7 @@ repository. What a run may start is the machine's to say, in
 | `dispatch.overlap.bound_patience` | duration | `24h`: a pickup that has waited in tier 3 longer than this is promoted to tier 1, ahead of every pickup that has not, the longest waiter first, until it starts or is no longer wanted | dispatch |
 | `dispatch.followup_within` | duration | `1h`: a follow-up the dispatcher launched that has not ended by then drifts; and a follow-up whose passes record `waits --reason pending` (an arm still pending) is notified as a failed follow-up naming the arm once a pass still finds it pending this long after the first pass that found that arm so (a pass naming newer release tags or a newer deploy run starts the window again, up to three windows after the run's first pending pass), unless the release tags the arm names all exist and the deploy runs it links to have all finished, none cancelled, when the tick reads them again, within 15 minutes of the pass's end, which runs the follow-up once more | dispatch |
 | `dispatch.followup_stale_after` | duration | `24h`: a follow-up claim no run will finish (a person's run's marker not marked done, or another host's with no answer) that is older than this, with no session joined to its pull request, is released: the host that owns the repository deletes the marker, once per pull request, and the follow-up starts again. A claim on it that goes stale again after that is notified to a person, never released twice | dispatch |
+| `dispatch.followup_routine` | list of `local-leftover`, `person-owed`, `drafted-items`, each once | Every class: the [routine question classes](README.md#every-need-is-a-decision) a follow-up's pass may settle unattended, with the class's standing answer. A class left out is not offered to the pass, its unattended rule is left out of the pass's prompt (with `drafted-items` left out, the pass asks before it files the items it drafted), and a question tagged with it is a person's, notified and never run again. Routine local housekeeping is an exception: it remains periodic cleanup rather than a question. The classes, their coverage and their answers are the dispatcher's; this only selects among them, and a class it does not list is refused | dispatch |
 | `dispatch.notices_linger` | duration, or `0s` | `1h`: the repository's notices workspace, once read, is removed this long after the first tick that finds it read; `0s` removes it at that tick. An unread one is removed once every cause it carries is gone | dispatch |
 | `dispatch.notices_branch` | branch name, with no space | None: every notification for the repository goes to its notices workspace. A branch names the workspace a person watches instead: every notification goes to the workspace on that branch, never to the one joined to the pull request or item. The dispatcher never opens or removes it, and a notification waits, reported, while no workspace on it is open or its comment is a person's. Naming `jig-dispatch-notices`, the notices workspace's own branch, is the same as naming none | dispatch |
 | `dispatch.renotify_after` | duration, or `0s` | `24h`: a notification whose cause still stands this long after it was last sent is sent again, saying since when it has waited, until the cause goes. `0s` sends each one once | dispatch |
@@ -2072,12 +2073,19 @@ since it read it, so a drive's label written for a newer ledger is not
 replaced from the older one the run planned from. A run without `--apply`,
 or for a repository the machine file does not list, writes nothing and
 reports what it would write. A write the forge refuses is reported and
-tried again at the next run; it does not fail the run. With `only_labeled`
+tried again at the next run; it does not fail the run. A write refused for
+a label of the set or a marker label the repository does not have yet
+creates the label as `jig dispatch labels --yes` does and writes again in
+the same run; a create the forge refuses is counted once for the
+repository, keyed by the label (`label create <name>` in the failure
+ledger), so past `failures.notify_after` a person is told once, with the
+command that creates it, and the writes that add it wait while it backs
+off. With `only_labeled`
 off, a drive a person armed by hand on a pull request with no label gets
 its label from the drive itself.
 
-The labels must exist before anything writes them, and no writer creates
-one: setting them up is a one-time step,
+The labels should exist before anything writes them, and only the
+dispatcher's run creates a missing one: setting them up is a one-time step,
 
 ```sh
 jig dispatch labels [--repo <path>]... [--yes]
@@ -2609,6 +2617,7 @@ dispatch:
     bound_patience: 24h
   followup_within: 1h
   followup_stale_after: 24h
+  followup_routine: [local-leftover, person-owed, drafted-items]
   notices_linger: 1h
   notices_branch: jig-dispatch-notices
   renotify_after: 24h

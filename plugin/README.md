@@ -950,6 +950,12 @@ within the same budget, with the class's standing answer in its prompt:
 | `person-owed` | who takes, authorizes or scopes a step only a person can: a live check, a rollout to another repository, an organization's setting, an operational action, a failed release gate | take none of it; report it as owed and file one item for it in this repository's tracker |
 | `drafted-items` | whether to file the follow-up items the pass drafted itself | file them as drafted |
 
+A repository chooses which of these classes its follow-ups settle unattended
+with `dispatch.followup_routine` (every class by default): a class it leaves
+out is not offered to the pass, and a question of that class is a person's
+like any other, so a repository whose filing goes to a shared tracker can
+turn `drafted-items` off.
+
 Each answer ends with finishing the other arms and recording done. A step
 only a person can take is no reason to stop in the first place: the pass
 reports it as owed, files it, and counts the arm settled; unlike a death's run again, it has no 6-hour age limit. A follow-up
@@ -1207,8 +1213,12 @@ names, which is the host's own identity. The dispatcher never removes `automatio
 or an `automation:` label, and never puts either on a person's pull
 request. With `only_labeled`, the dispatcher reads only the pull requests
 that carry a label of the set, which includes one a drive armed by hand
-has labelled `jig:driving`; `jig:hold` keeps such a pull request out. The labels must exist first, and no writer
-creates one: `jig dispatch labels [--repo <path>] [--yes]` lists the missing
+has labelled `jig:driving`; `jig:hold` keeps such a pull request out. The labels must exist first. A drive or a
+follow-up never creates one; the dispatcher's `--apply` run creates a
+missing label of the set or a missing marker label when a write it makes
+is refused for it, writes again in the same run, and when the signed-in
+account may not create labels, tells a person once for the repository,
+naming the label, rather than once per pull request. `jig dispatch labels [--repo <path>] [--yes]` lists the missing
 ones, the marker labels with them, and the labels of the set whose
 description or color is not the one this release gives them, with no job
 installed, and with `--yes` names each it created or updated (only what
