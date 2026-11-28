@@ -404,6 +404,22 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.323.3] - 2026-11-28
+
+### Fixed
+
+- The online audit's Jira open-issue counts no longer read every open issue
+  of the project. Each count is now one estimate request
+  (`search/approximate-count`; the transport may resend one after a transient failure), shown as
+  Jira's estimate, so the count phase no longer pages through issues. The counts get 5 seconds, measured from
+  when they start, after the forge and tracker checks; past that they are
+  reported unchecked, naming the bound, and the rest of the audit goes on.
+  The estimate is of what the open read selects (statuses outside the Done
+  category, and every configured blocked status name), not each issue's
+  reading by its own type's state map, so it can differ from the issues the
+  pool reads. The full-audit time is not measured here.
+  **Consumer action:** none.
+
 ## [0.323.2] - 2026-11-28
 
 ### Fixed
@@ -11711,7 +11727,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.323.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.323.3...HEAD
+[0.323.3]: https://github.com/jig-harness/jig/compare/v0.323.2...v0.323.3
 [0.323.2]: https://github.com/jig-harness/jig/compare/v0.323.1...v0.323.2
 [0.323.1]: https://github.com/jig-harness/jig/compare/v0.323.0...v0.323.1
 [0.323.0]: https://github.com/jig-harness/jig/compare/v0.322.0...v0.323.0
