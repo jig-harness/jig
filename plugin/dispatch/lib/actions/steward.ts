@@ -122,15 +122,9 @@ export async function applySteward(
   const off = notRunning(opened, config);
   if (off !== null) return skip(off);
   await replayPending(state, repo.slug, report);
-  const request = pendingStewardRequest(stateDb(state.root), repo.slug);
-  let currentRecords: ReadRecord[] | null = null;
-  if (request !== null) {
-    const fresh = await readLaunches(state.root);
-    if (fresh.unreadable.length > 0)
-      return skip("the steward's launches did not all read");
-    currentRecords = fresh.records;
-    if (settleRequest(state, repo.slug, request, currentRecords, skip)) return;
-  }
+  const prepared = await prepareRequest(state, repo.slug, skip);
+  if (prepared === null) return;
+  const { request, currentRecords } = prepared;
   if (!mayStart(state, observation, request, currentRecords)) return;
   const judged = judgedMembers(
     repo.slug,
@@ -235,6 +229,30 @@ function notRunning(
 }
 
 /**
+ * Read any pending steward request beside fresh launch rows from SQLite so
+ * reconciliation and refusal rules never judge from a stale tick snapshot.
+ * Returns `null` once the request is settled or kept waiting for this tick.
+ */
+async function prepareRequest(
+  state: ApplyState,
+  slug: string,
+  skip: (status: string) => void,
+): Promise<{
+  request: StewardRequest | null;
+  currentRecords: ReadRecord[] | null;
+} | null> {
+  const request = pendingStewardRequest(stateDb(state.root), slug);
+  if (request === null) return { request: null, currentRecords: null };
+  const fresh = await readLaunches(state.root);
+  if (fresh.unreadable.length > 0) {
+    skip("the steward's launches did not all read");
+    return null;
+  }
+  if (settleRequest(state, slug, request, fresh.records, skip)) return null;
+  return { request, currentRecords: fresh.records };
+}
+
+/**
  * Reconcile a pending steward request by its identity: positive wrapper or
  * execution evidence on its launch settles it (`answerRequest`), while a
  * still-pending reservation or ambiguous malformed claim for that request
@@ -303,6 +321,20 @@ function answerRequest(
   return true;
 }
 
+/** Report or consume a rule refusal on `report`, returning `false`. */
+function denyStart(
+  state: ApplyState,
+  request: StewardRequest | null,
+  report: RepoReport,
+  rule: StewardRule,
+): false {
+  if (request !== null) refuseRequest(state, request, report, rule);
+  else if (rule === "budget")
+    report.steward = { status: STEWARD_RULES.budget, trigger: "budget" };
+  else report.steward = { status: STEWARD_RULES.held };
+  return false;
+}
+
 /**
  * Whether the rules let a pass start now: no pass holds the repository, the
  * digest's records all read, and the host's hourly budget is not spent.
@@ -319,11 +351,8 @@ function mayStart(
   const { opened, forge } = observation;
   const { repo, report } = opened;
   const authoritative = currentRecords ?? state.records;
-  if (stewardHeld(authoritative, repo.slug)) {
-    if (request === null) report.steward = { status: STEWARD_RULES.held };
-    else refuseRequest(state, request, report, "held");
-    return false;
-  }
+  if (stewardHeld(authoritative, repo.slug))
+    return denyStart(state, request, report, "held");
   if (request !== null && stewardHeld(state.records, repo.slug)) {
     report.steward = {
       status: `${request.by}'s request waits for the next tick: the earlier steward holder ended during this tick`,
@@ -336,11 +365,9 @@ function mayStart(
     return false;
   }
   const runs = countedRuns(authoritative, stewardRuns(null, state.root));
-  if (!stewardBudgetSpent(runs, currentMs())) return true;
-  if (request === null)
-    report.steward = { status: STEWARD_RULES.budget, trigger: "budget" };
-  else refuseRequest(state, request, report, "budget");
-  return false;
+  return stewardBudgetSpent(runs, currentMs())
+    ? denyStart(state, request, report, "budget")
+    : true;
 }
 
 /** What a steward launch is started with, beside what every steward record holds. */

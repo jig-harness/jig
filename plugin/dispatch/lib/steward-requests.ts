@@ -15,7 +15,8 @@ import type { Database } from "bun:sqlite";
 import { attempt, type Outcome } from "../../shared/outcome.ts";
 import { currentIso } from "../../shared/time.ts";
 import type { LaunchRecord, LaunchState, ReadRecord } from "./launches.ts";
-import { insertRow, type LogRow } from "./log.ts";
+import type { LogRow } from "./log.ts";
+import { insertLogRow } from "./log-insert.ts";
 import { stateDb, statePath } from "./state.ts";
 import { inTransaction } from "../../shared/records/db.ts";
 import { stewardBudgetSpent, type StewardRun } from "./steward.ts";
@@ -47,7 +48,7 @@ export const STEWARD_RULES: Readonly<Record<StewardRule, string>> = {
 };
 
 /** The rule that refuses a pass, with its words. */
-export interface StewardRefusal {
+interface StewardRefusal {
   rule: StewardRule;
   reason: string;
 }
@@ -174,7 +175,7 @@ export function settleStewardRequestInTx(
     .query("DELETE FROM steward_requests WHERE repo = ? AND id = ?")
     .run(pending.repo, pending.id);
   if (deleted.changes === 0) return false;
-  insertRow(db, requestRow(pending, record.repo, { started: record.id }));
+  insertLogRow(db, requestRow(pending, record.repo, { started: record.id }));
   return true;
 }
 
@@ -235,7 +236,7 @@ export function keepStewardRequest(
           const deleted = db
             .query("DELETE FROM steward_requests WHERE repo = ? AND id = ?")
             .run(replaceAnswered.request.repo, replaceAnswered.request.id);
-          if (deleted.changes > 0) insertRow(db, replaceAnswered.row);
+          if (deleted.changes > 0) insertLogRow(db, replaceAnswered.row);
         }
         db.query(
           "INSERT INTO steward_requests (repo, id, requested_by, requested_at) VALUES (?, ?, ?, ?) ON CONFLICT (repo) DO NOTHING",
@@ -267,7 +268,7 @@ export function takeStewardRequest(
     const deleted = db
       .query("DELETE FROM steward_requests WHERE repo = ? AND id = ?")
       .run(request.repo, request.id);
-    if (deleted.changes > 0) insertRow(db, row);
+    if (deleted.changes > 0) insertLogRow(db, row);
   });
 }
 

@@ -28,7 +28,7 @@ const REVIEWS_QUERY = `query DispatchHeadReviews($owner: String!, $name: String!
 }`;
 
 /** One submitted review: the commit it reviewed and when. */
-export interface SubmittedReview {
+interface SubmittedReview {
   commit: string;
   submittedAt: string;
 }
@@ -42,7 +42,7 @@ function field(value: unknown, key: string): unknown {
  * pending review, which only its author sees, is passed over. One call of
  * one page, given `timeoutSec` when the caller holds a deadline.
  */
-export async function submittedReviews(
+async function submittedReviews(
   slug: string,
   pr: number,
   timeoutSec?: number,
