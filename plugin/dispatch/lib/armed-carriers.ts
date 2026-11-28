@@ -5,6 +5,12 @@
  * drive ledger (a refusal, a crash). Such a drive is not armed again until
  * its head moves, and the drive's own row is only a quiet line, so the
  * item's stall need is what reports it, with the hold's reason.
+ *
+ * That reason is the spent arm even on an automation pull request: an
+ * unarmed drive has no ledger, while automation idleness is read only beside
+ * one (`idleForAdoption` in sources/ledgers.ts), and `automationStartBlock`
+ * leaves the `unarmed` class alone, since a label, the adoption rule or a
+ * pickup's handoff asked for the drive. Nothing but the arm keeps it unstarted.
  */
 import { driveHold } from "./actions/drive-hold.ts";
 import type { CarrierInput } from "./carried-pr.ts";

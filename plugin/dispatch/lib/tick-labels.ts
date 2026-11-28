@@ -18,9 +18,17 @@ import {
 } from "./actions/labels.ts";
 import { writeBlocked } from "./actions/blocked.ts";
 import { adoptionOf, ownAuthors } from "./adopt.ts";
-import type { LabelConfig } from "./labels.ts";
+import { createKey } from "./actions/label-create.ts";
+import {
+  type LabelChange,
+  type LabelConfig,
+  labelSet,
+  type LabelSpec,
+} from "./labels.ts";
 import { forgeReread, ledgerStillCurrent } from "./label-freshness.ts";
 import { manualOpsLabel } from "./owed-steps.ts";
+import { markerSet } from "./pr-markers.ts";
+import { AUTOMATION_SPEC } from "./automation.ts";
 import { unobservedTarget } from "./notices.ts";
 import { bookOf, type TickContext } from "./tick-context.ts";
 import { pullRequestHead, pullRequestLabels } from "./forge.ts";
@@ -100,6 +108,31 @@ function blockedInput(
   };
 }
 
+/** The labels the tick creates when a write misses one, by name, as `jig dispatch labels` does: the set, and the marker labels where the manual-operations label reads. */
+function creatable(
+  labels: LabelConfig,
+  manualOps: string | null,
+): Map<string, LabelSpec> {
+  const specs = [
+    ...labelSet(labels),
+    // Automation is independent of the manual-operations marker.  Only the
+    // owed-steps marker needs a configured manual-operations label.
+    ...(manualOps === null ? [AUTOMATION_SPEC] : markerSet(manualOps)),
+  ];
+  return new Map(specs.map((l) => [l.name, l]));
+}
+
+/** The failure ledger's keys the writes want: each pull request's write, and the create of each label one adds. */
+function wantedKeys(
+  changes: readonly LabelChange[],
+  specs: ReadonlyMap<string, LabelSpec>,
+): string[] {
+  return changes.flatMap((c) => [
+    labelKey(c.pr, c.part),
+    ...c.add.filter((l) => specs.has(l)).map(createKey),
+  ]);
+}
+
 /**
  * The projection, last in a repository's tick: each managed pull request's
  * state label set from its ledger, written only with `--apply` for a
@@ -151,6 +184,7 @@ async function projectLabels(
       ok: false,
       detail: `the manual-operations label's name does not read, so no pull request's owed-steps label is written: ${manualOps.failure.reason}`,
     });
+  const ops = manualOps.ok ? manualOps.value : null;
   const planned = planLabels({
     config: labels,
     open: forge.open.filter((p) => !forge.disputed.has(p.number)),
@@ -160,15 +194,16 @@ async function projectLabels(
     followedUp,
     followupFailed,
     followupUnplaced,
-    manualOps: manualOps.ok ? manualOps.value : null,
+    manualOps: ops,
     own: ownAuthors(adoptionOf(section, forge.login), forge.login),
     serialized: forge.serialized,
   });
   planned.report.held = report.labels?.held ?? [];
   const writing = apply !== null && forge.listed;
+  const specs = creatable(labels, ops);
   book?.wanted(
     "label",
-    writing ? planned.changes.map((c) => labelKey(c.pr, c.part)) : [],
+    writing ? wantedKeys(planned.changes, specs) : [],
     // A pull request the listings disagree on is read again next tick: its write is not known to be unwanted.
     (target) =>
       unobservedTarget(report, target) ||
@@ -181,6 +216,7 @@ async function projectLabels(
     late,
     book,
     current,
+    create: { specs },
   });
   const blocked = await writeBlocked(blockedInput(labels, forge, tracked), {
     apply: writing,

@@ -20,6 +20,7 @@ import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { MARKER } from "../lib/followup-marker.ts";
 import { readRecord } from "../lib/launches.ts";
+import { unwrittenExitWitness } from "../lib/unwritten-result.ts";
 import { Database } from "bun:sqlite";
 import {
   closeStateDb,
@@ -202,3 +203,23 @@ it("runs a follow-up whose result write failed again once after the host's healt
   expect(need?.evidence.question).toBeUndefined();
   expect(claudeRuns(w)).toHaveLength(2);
 }, 240_000);
+
+it("keeps the evidence of an exit the wrapper could not record, under the record's token", async () => {
+  const w = fixture();
+  const runs = claudeRuns(w).length;
+  const [launched] = launches(await applyTick(w, false));
+  expect(launched).toMatchObject({ action: "followup", outcome: "launched" });
+  const id = String(launched?.record);
+  await waitFor("the pass", () => claudeRuns(w).length === runs + 1);
+  const root = dispatchState(w);
+  await waitFor("the child's identity", () => childRecorded(w, id));
+  const token = String(readRecord(id, root)?.token);
+  schemaAt(root, SCHEMA_VERSION + 1);
+  writeFileSync(join(w.dir, "claude-exit"), "1");
+  await waitFor("the exit's evidence", () =>
+    unwrittenExitWitness(root, id, token),
+  );
+  expect(unwrittenExitWitness(root, id, "another-token")).toBe(false);
+  schemaAt(root, SCHEMA_VERSION);
+  expect(exitWritten(w, id)).toBe(false);
+}, 120_000);
