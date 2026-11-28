@@ -318,6 +318,20 @@
         }
       ],
       "retracts": []
+    },
+    {
+      "version": "0.320.0",
+      "actions": [
+        {
+          "id": "0.320.0#842a0166",
+          "strength": "required",
+          "levels": ["machine"],
+          "description": "**Breaking:** The [hidden comment markers](plugin/protocol/comment-markers.md) protocol is now version 2. Its drive-ledger schema constrains a parked question's person to a GitHub login, including an Enterprise Managed User login. Upgrade every host that reads a shared ledger before a managed user is routed a parked question; earlier hosts refuse the version 3 ledger.",
+          "instruction": "Upgrade every host that reads shared drive ledgers.",
+          "hints": []
+        }
+      ],
+      "retracts": []
     }
   ]
 }

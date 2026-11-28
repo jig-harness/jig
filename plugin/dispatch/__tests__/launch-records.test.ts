@@ -85,6 +85,38 @@ function record(id: string, over: Partial<LaunchRecord> = {}): LaunchRecord {
   };
 }
 
+it("marks a stored record as reading only when the reader's validator accepts it", () => {
+  const dir = root();
+  const good = record("20260101T000000Z-cccccccc", {
+    action: "pickup",
+    pr: null,
+    item: "#1",
+  });
+  const bad = record("20260101T000000Z-dddddddd", {
+    pr: null,
+    item: "#1",
+    action: "pickup",
+    version: 2 as unknown as 1,
+  });
+  writeRecord(good, dir);
+  writeRecord(bad, dir);
+  const reads = (id: string) =>
+    (
+      stateDb(dir)
+        .query("SELECT record_reads AS r FROM launches WHERE id = ?")
+        .get(id) as { r: number }
+    ).r;
+  expect(reads(good.id)).toBe(1);
+  expect(reads(bad.id)).toBe(0);
+  writeRecord({ ...bad, version: 1 }, dir);
+  expect(reads(bad.id)).toBe(1);
+  // A write by anything else (an older plugin) clears the marker.
+  stateDb(dir)
+    .query("UPDATE launches SET record = ? WHERE id = ?")
+    .run('{"damaged":', good.id);
+  expect(reads(good.id)).toBe(0);
+});
+
 it("records a new launch after the greatest ordinal, even when a resume copied an old ordinal", () => {
   const dir = root();
   const previous = ended(

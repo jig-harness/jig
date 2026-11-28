@@ -72,6 +72,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       value.claimedItems,
       value.releasedItems,
       value.codexPassArgs,
+      value.routineClasses,
     ].every(optionalStrings) &&
     optionalHostDriverReplacement(value.replacesHostDriver) &&
     [value.passTimeoutSec, value.rerunDied].every(optionalSeconds) &&

@@ -88,6 +88,7 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "dispatch.pickup_deadline",
   "dispatch.followup_within",
   "dispatch.followup_stale_after",
+  "dispatch.followup_routine",
   "dispatch.notices_linger",
   "dispatch.notices_branch",
   "dispatch.renotify_after",
@@ -168,6 +169,7 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "do_item.preflight_command",
   "do_item.claim_from",
   "do_item.claim_marker",
+  "do_item.override_label",
 ];
 
 /**

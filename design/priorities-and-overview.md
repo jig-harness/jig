@@ -66,7 +66,7 @@ and is built when the hub is.
 | Level | Proposed home and reader | Independence |
 | --- | --- | --- |
 | Repository | `.config/priorities.yaml`, read from the default branch by the owner host's dispatcher | Works with no site or individual record |
-| Individual | `priorities` under that person's entry in the host dispatch file | Restricts the work that host serves for the person; never published in a repository |
+| Individual | The host's individual priorities file: `$JIG_HOME/priorities.local.yaml` on a machine one person uses, or a per-person file beside the profile `serve[].profile` names on a host serving several ([ADR-0028](../docs/adr/ADR-0028-a-person-profile-stays-on-the-host.md)) | Restricts the work that host serves for the person; never published in a repository, never in the machine file |
 | Site | The hub's configured priorities file, managed by its operator | Built with the hub, never required by a host; shared tracker scopes are groupings within this level |
 
 Coincident levels need one declaration: an absent level adds no restriction
@@ -87,6 +87,13 @@ for allocation; the last valid revision remains visible with its age. No
 reader silently renormalizes a person's choices. A host never transmits its
 individual declarations or identities to a site; the site receives
 aggregate capacity and objective progress only.
+
+The individual record lives in a file of its own, beside the machine file
+and the weights file rather than under the person's `serve[]` entry, so a
+typo in a person's routine or profile never blocks allocation or breaks
+the machine file, which stays the host's list of whom it serves
+([ADR-0028](../docs/adr/ADR-0028-a-person-profile-stays-on-the-host.md)).
+Like the weights file it is the host's own and never committed.
 
 The `priorities` skill prepares a change through a pull request for a
 repository record, validates it, and shows the resulting shortlist diff.

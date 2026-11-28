@@ -18,7 +18,8 @@
  * `jig dispatch clear` removes a launch record only a person can settle;
  * `jig dispatch attach` follows a process run's output or takes the run over;
  * `jig dispatch probe` reads the forge for what changed since the last probe
- * and, with `--apply`, wakes those repositories' ticks.
+ * and, with `--apply`, wakes those repositories' ticks; `jig dispatch check`
+ * checks the configuration a tick reads from a repository, for its CI.
  */
 import { basename, dirname } from "node:path";
 import { consumerRoot } from "../shared/consumer.ts";
@@ -52,6 +53,7 @@ import {
   scheduledDashboard,
 } from "./dashboard-install.ts";
 import { attachMain } from "./attach.ts";
+import { checkMain } from "./check-command.ts";
 import { clearMain } from "./clear.ts";
 import { installDispatch } from "./install.ts";
 import { installLabels } from "./install-labels.ts";
@@ -183,6 +185,11 @@ const installation = (wholeMinutes: boolean) =>
       uninstall: option("--uninstall", {
         description: message`Remove the job instead.`,
       }),
+      env: multiple(
+        option("--env", string({ metavar: "NAME" }), {
+          description: message`On macOS, write this variable's value from this shell into the launchd jobs; a name only, never NAME=VALUE. Repeat for more. The preview names it and never shows its value.`,
+        }),
+      ),
     }),
     {
       brief: message`Install the timer that runs dispatch --apply.`,
@@ -353,6 +360,22 @@ const labels = command(
   },
 );
 
+const check = command(
+  "check",
+  object({
+    action: constant("check"),
+    repo: optional(
+      option("--repo", pathValue, {
+        description: message`The checkout whose configuration to check. Without it, the current one.`,
+      }),
+    ),
+  }),
+  {
+    brief: message`Check the configuration a tick reads from a repository, for its CI.`,
+    description: message`Reads the checkout's .config/jig.yaml with the tick's own readers: its dispatch section, the tracker it names with the issue facets, and the change-area catalog drive.change_areas_catalog names. Prints each reading the tick would refuse with the tick's message and exits 1; exits 0 when the tick reads it whole. The tick resolves the label taxonomy from the host's checkout, which is current only once the host has updated, so a taxonomy change must reach the dispatch hosts too. Refuses a path that is not a git checkout. Reads files only: nothing is sent to the tracker or the forge.`,
+  },
+);
+
 const log = command(
   "log",
   object({
@@ -475,7 +498,7 @@ const dashboard = command(
 );
 
 /**
- * `jig dispatch`: one tick by default, with `result`, `report`, `marker`, `labels`, `dashboard`,
+ * `jig dispatch`: one tick by default, with `result`, `report`, `marker`, `labels`, `check`, `dashboard`,
  * `log`, `line`, `clear`, `attach` and `probe` as its subcommands. Its `install` and `receipts`
  * subcommands do what the lifecycle verbs `jig install dispatch` and
  * `jig receipts dispatch` do, and stay for the command lines that use them,
@@ -493,6 +516,7 @@ const dispatch = (wholeMinutes: boolean) =>
         releaseOwed,
         marker,
         labels,
+        check,
         dashboard,
         log,
         line,
@@ -799,10 +823,24 @@ function dashboardAction(
   return dashboardCommand(args.port);
 }
 
-/** The subcommands that act on a repository's pull requests: the label setup and the follow-up marker. */
-function pullRequestAction(
-  args: Extract<Subcommand, { action: "labels" | "marker" }>,
-): Promise<number> {
+type RepositoryAction = Extract<
+  Subcommand,
+  { action: "labels" | "marker" | "check" }
+>;
+
+const REPOSITORY_ACTIONS: ReadonlySet<string> = new Set([
+  "labels",
+  "marker",
+  "check",
+]);
+
+function isRepositoryAction(args: Subcommand): args is RepositoryAction {
+  return REPOSITORY_ACTIONS.has(args.action);
+}
+
+/** The subcommands that act on one repository: the label setup, the follow-up marker and the configuration check. */
+function repositoryAction(args: RepositoryAction): number | Promise<number> {
+  if (args.action === "check") return checkMain(args.repo ?? consumerRoot());
   if (args.action === "labels")
     return installLabels(
       args.repos.length === 0 ? [consumerRoot()] : args.repos,
@@ -861,14 +899,14 @@ function subcommandMain(
   if (args.action === "probe")
     return probeMain({ apply: args.apply, json: args.json }, machineFile());
   if (args.action === "dashboard") return dashboardAction(args, script);
-  if (args.action === "labels" || args.action === "marker")
-    return pullRequestAction(args);
+  if (isRepositoryAction(args)) return repositoryAction(args);
   // `install`. A removal needs no machine file: a broken one must not keep the timer installed.
   return installDispatch(
     {
       intervalMs: args.intervalMs ?? null,
       confirm: args.confirm,
       uninstall: args.uninstall,
+      env: args.env,
     },
     script,
     args.uninstall ? null : machineFile(),

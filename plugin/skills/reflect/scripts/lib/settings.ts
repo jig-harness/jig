@@ -9,18 +9,16 @@ import { homedir } from "node:os";
 import { isAbsolute, join, type posix, resolve } from "node:path";
 import {
   consumerRoot,
-  readConfig,
+  layeredConfig,
   withSource,
 } from "../../../../shared/consumer.ts";
 import { splitCommandWords } from "../../../../shared/command-words.ts";
 import { DEFAULT_REFLECTION_TIMEOUT_SEC } from "../../../../shared/repo-commands.ts";
 import { isMapping, jigHome } from "../../../../shared/config-layers.ts";
 import { notionId } from "./notion/ids.ts";
-
-/** A `reflection` setting that cannot be used, naming the field. */
-export class SettingError extends Error {
-  override name = "SettingError";
-}
+import { classSeedSources, type ClassSeedSource } from "./class-seeds.ts";
+import { SettingError } from "./setting-error.ts";
+export { SettingError } from "./setting-error.ts";
 
 export const STORE_KINDS = [
   "filesystem",
@@ -48,6 +46,11 @@ export interface ReflectionSettings {
   escalateAfter: number;
   timeoutSec: number;
   mode: Mode;
+  /**
+   * Ordered vocabulary sources, read on call: their files are read only by
+   * gather, so only `gather` can fail on them.
+   */
+  classSeedSources: () => ClassSeedSource[];
 }
 
 /**
@@ -111,6 +114,8 @@ const KNOWN = [
   "escalate_after",
   "timeout_sec",
   "mode",
+  "classes",
+  "classes_from",
 ];
 
 function oneOf<T extends string>(
@@ -303,17 +308,30 @@ export function parseReflection(
       MAX_TIMEOUT_SEC,
     ),
     mode: oneOf(section.mode, MODES, "mode", DEFAULTS.mode),
+    classSeedSources: () => [],
   };
 }
 
 /** The repository's reflection settings, from every configuration layer. */
 export function reflectionSettings(): Reflection {
-  const values = readConfig();
+  const config = layeredConfig();
+  const { values } = config;
+  let settings: Reflection;
   try {
-    return parseReflection(values.reflection);
+    settings = parseReflection(values.reflection);
   } catch (error) {
     throw withSource(values, "reflection", error);
   }
+  if (!settings.on) return settings;
+  // Evaluated by `gather` alone: a mistake in a vocabulary must not stop the
+  // journal or the review of stored findings. It validates every active layer,
+  // including a lower layer the merged read would replace, and its error names
+  // that layer's source.
+  return {
+    ...settings,
+    classSeedSources: () =>
+      classSeedSources(config.layers, (path) => expandPath(path)),
+  };
 }
 
 /**
@@ -327,4 +345,16 @@ export function reflectionSwitch(): boolean | Error {
   } catch (error) {
     return error instanceof Error ? error : new Error(String(error));
   }
+}
+
+/** Run `run` with the reflection settings, or report `{on: false}` and stop. */
+export async function whenReflectionOn(
+  run: (settings: ReflectionSettings) => number | Promise<number>,
+): Promise<number> {
+  const settings = reflectionSettings();
+  if (!settings.on) {
+    console.log(JSON.stringify({ on: false }, null, 2));
+    return 0;
+  }
+  return run(settings);
 }

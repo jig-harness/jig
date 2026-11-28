@@ -13,7 +13,12 @@
  *   -->
  *   Claimed by <claimant> · session <id> · branch <branch>
  *
- * The writer's host is a digest, as on every record the tracker keeps.
+ * The writer's host is a digest, as on every record the tracker keeps. A
+ * claim a person started ahead of the item's open blockers
+ * (`blocker-override.ts`) adds `override` to the payload: the reason, the
+ * person, and each open blocker's key and state. It is a record for people:
+ * the reader leaves it out of a marker's acceptance, so it never decides
+ * which claim holds the item.
  *
  * Each attempt that posted a marker also records how it ended, in a comment
  * of its own, the record's outcome form, since a tracker comment is posted
@@ -39,9 +44,10 @@ import {
   encodeMarker,
 } from "../../../../shared/records/envelope.ts";
 import { localWriter } from "../../../../shared/records/writer.ts";
-import { matches } from "../../../../shared/shapes.ts";
+import { type Infer, matches } from "../../../../shared/shapes.ts";
 import {
   CLAIM_MARKER_PAYLOAD_SHAPE,
+  CLAIM_OVERRIDE_SHAPE,
   CLAIM_OUTCOME_PAYLOAD_SHAPE,
   type CLAIM_OUTCOMES,
 } from "../../../../shared/records/marker-shapes.ts";
@@ -68,8 +74,12 @@ export interface ClaimMarkerFacts {
   branch: string;
   /** Who the item is now assigned to. */
   claimant: string;
+  /** A claim started ahead of the item's open blockers on a person's decision. */
+  override?: MarkerOverride;
   at: string;
 }
+
+export type MarkerOverride = Infer<typeof CLAIM_OVERRIDE_SHAPE>;
 
 const OUTCOME_DATA = "jig-claim-outcome";
 
@@ -115,6 +125,7 @@ export function claimMarkerBody(facts: ClaimMarkerFacts): string {
       session: facts.session,
       branch: facts.branch,
       claimant: facts.claimant,
+      ...(facts.override === undefined ? {} : { override: facts.override }),
     },
   );
   const line = `Claimed by ${facts.claimant} · session ${facts.session} · branch ${facts.branch}`;
@@ -130,13 +141,15 @@ export function readClaimMarker(body: string): ClaimMarkerFacts | null {
   if (!body.includes(`<!-- ${CLAIM_DATA}`)) return null;
   const read = decodeMarker(body, CLAIM_DATA, CLAIM_MARKER_KIND);
   if (!read.ok) return null;
-  if (!matches(CLAIM_MARKER_PAYLOAD_SHAPE, read.value.payload)) return null;
-  const { attempt, session, branch, claimant } = read.value.payload;
+  const { override, ...held } = read.value.payload as Record<string, unknown>;
+  if (!matches(CLAIM_MARKER_PAYLOAD_SHAPE, held)) return null;
+  const { attempt, session, branch, claimant } = held;
   return {
     ...(typeof attempt === "string" ? { attempt } : {}),
     session,
     branch,
     claimant,
+    ...(matches(CLAIM_OVERRIDE_SHAPE, override) ? { override } : {}),
     at: read.value.envelope.at,
   };
 }

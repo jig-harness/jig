@@ -107,8 +107,8 @@ Command-line flags, where a script has them, override all three.
 - **Merging.** Sections merge field by field: a user file that sets
   `review.sticky_marker` and a repository file that sets `review.bots` give
   both. Any other value (text, a number, a date, a list, `null`) replaces the
-  lower layer's value whole, so a list is never part one layer's and part
-  another's.
+  lower layer's value whole. The reflection class vocabulary combines
+  entries from the active layers as described under [reflection](#reflection).
 - **Environment variables.** Two underscores separate the levels and the
   names are read in lower case: `JIG__ISSUE_TRACKER__TEAM=ENG` sets
   `issue_tracker.team`. `true`, `false`, `null`, decimal numbers (`400`,
@@ -898,9 +898,10 @@ same), rather than running without the repository's routing and gates.
 | `do_item.guidance` | list of `{labels, paths, skills, notes}` | none | do-item | Implementation guidance: skills and notes the implementing agent is given. Each entry's `labels` and `paths` are a rule; every entry whose rule matches applies, as [rule matchers](protocol/rule-matchers.md) say. Each entry names labels or paths, and skills or notes. `determine_agent.ts` prints the union of the matching entries and of the matched change areas' `implementation` blocks and own `notes`, in entry order and then catalog order, and do-item's delegation prompt lists them under `## Implementation guidance`. An area is matched by a label `do_item.agents.codearea_areas` maps to it, one of its `tracker.labels`, or a path its globs claim among those `--paths` names. Separate from `do_item.gates`, which it never replaces; a label may appear in both. Guidance every item needs belongs in the repository's own agent instructions. A skill that resolves to nothing installed (the repository's `.claude/skills` or `.agents/skills`, the user's skills, this plugin's, or another plugin's as `<plugin>:<skill>`) is named in do-item's status message, and the audit refuses it |
 | `do_item.execution_plan_block` | name | `execution-plan-v1` | do-item, dispatch | Name of the fenced block in an epic's description that holds its machine-readable execution plan. A claim that pulls a blocker forward (`claim` with a person and `--blocking`) reads it from the default branch, as `do_item.claim_from` is: a branch cannot select another block until the change merges, and when that branch cannot be read the claim is refused whatever the working tree sets. Any other claim never reads the plan block. Dispatch reads it from the default branch too, for its queue and its launch checks, so changing it in a working tree does not change what dispatch selects until the change merges; the other readers of the plan use the working tree's value |
 | `do_item.arm_drive` | `auto`, `tab`, `background`, `print` | `auto` | do-item, drive-pr | How `/jig:do-item`'s § Arm the drive and `/jig:drive-pr`'s § Arm start the drive (both through drive-pr's `arm-drive.ts`). `auto`: in a terminal tab of the pull request's workspace where the session can open one (in an [Orca](https://www.onorca.dev) workspace on a macOS or Linux host), and with the session's background execution elsewhere, falling back to the background, and saying why, when Orca refuses the tab or the tab's drive is not listed in time. `tab`: a terminal tab, or a reported failure. `background`: the session's background execution. `print`: the command only, for a person to run. The tab is a fresh login shell of the user's, so `bun`, the agent's command (`claude` or `codex`) and the account or profile come from it, not from the session. The tab closes when the drive ends with nothing for a person, and stays open after a park or a failure until the pull request is armed again. A Windows host opens no tab, since Orca's tab there can run `cmd.exe` or PowerShell and the drive's command is quoted for a POSIX shell: `auto` arms in the background, and `tab` fails. The drive's pass command is the one of the agent tool the session runs in: a Codex session arms Codex's pass command in a tab or through its managed background command tool. Without that tool, the caller prints the command and reports the limitation; when the host ends children with the session, keep it alive until the drive ends or use an external terminal. A session of any other tool prints Claude Code's command whatever the setting, and so does a human checkpoint the run has no clearance for. A pickup under the process runtime returns `owed` and requests a drive from the dispatcher. A pass `jig dispatch` started runs with background tasks off and cannot spawn: where the setting leads to the background, it starts no drive, records its result with the pull request and reports the unstarted command. The dispatcher drives a completed process pickup through its ordinary admission checks; `dispatch.adopt` and the `drive` label remain the background fallback, subject to `dispatch.labels.only_labeled` |
-| `do_item.preflight_command` | shell command | none | do-item, work-batch, dispatch | The repository's own start rules, run by every claim of an item: by do-item, by work-batch for each member, and by a dispatched pickup. The [repository commands chapter](protocol/repo-commands.md) gives its invocation, input, answer, exits and deadline. A person clears a refusal by changing the item or command. The dispatcher retries after the item's `updatedAt` moves; in a batch, only refused members are held, each at its own timestamp. |
+| `do_item.preflight_command` | shell command | none | do-item, work-batch, dispatch | The repository's own start rules, run by every claim of an item: by do-item, by work-batch for each member, and by a dispatched pickup. The [repository commands chapter](protocol/repo-commands.md) gives its invocation, input, answer, exits and deadline. A person clears a refusal by changing the item or command; a refusal for open blockers alone, which the command tags with a second output line `kind: blockers`, a person may also start ahead of with `claim --override-blockers "<reason>"` in an interactive session (see `do_item.override_label`). The dispatcher retries after the item's `updatedAt` moves; in a batch, only refused members are held, each at its own timestamp. |
 | `do_item.claim_from` | list of canonical states | none: the claim's own restrictions apply (no `in_progress` or `pr_open` item; a served claim needs a triage, backlog or unstarted item) | do-item, work-batch, dispatch | The states a claim may start work from. A claim of an item in any other state, or in a tracker status that maps to no canonical state (a side state such as a blocked or reopened status with its own name), is refused: nothing is written, and `claim` exits 3 with `"why": "state"`, naming the state and the allowed ones. It applies to `/jig:do-item`, `/jig:work-batch` and served claims alike. Unset, a claim keeps those own restrictions and is not limited to `dispatch.states`; `/jig:audit` warns when both are set and differ. It cannot list `in_progress` or `pr_open`: an item there is already someone's. Read from the default branch, as `do_item.preflight_command` is: a branch cannot change it until the change merges; when that branch cannot be read, a working tree that sets it refuses the claim. Repository file only |
 | `do_item.claim_marker` | `true`, `false` | `false` | do-item, work-batch, dispatch | A claim posts the claim marker on the item before it writes the item's assignee or state: a comment carrying the [tracker-claim marker](protocol/comment-markers.md#the-kinds-that-carry-markers) and its record (the attempt, the session, the host as a digest, the branch and the claimant; see [RECORDS.md](RECORDS.md)) and one line a person reads. It reads the item's markers back, and of the trusted markers posted within 10 minutes of its own the earliest wins: a claim that finds an earlier one, or cannot post or read back its own, removes its marker and refuses (exit 3, `"why": "marker"`) with nothing written to the item, and one that finds an earlier one after writing, or no longer finds its own, settles who holds the item from the chapter's outcome record each attempt posts when it ends (claimed, released or unresolved), without undoing its writes: it keeps the claim when its own marker still shows and every earlier attempt released (`"recovery": "reclaimed"`), stands down when one claimed (`"held"`, exit 4), and stands down `"unresolved"` (exit 4), leaving the item for a person, when no outcome shows within 90 seconds, its own marker is gone, or the markers cannot be read. Each attempt's outcome comment stays on the item. Set it wherever more than one host picks up from one queue: unset, claims serialize on one host only. Two claims whose read-backs each miss the other's marker can still both win. Read from the default branch, as `do_item.claim_from` is. Repository file only |
+| `do_item.override_label` | label | none: no label | do-item | The label a claim adds when a person starts the item ahead of its open blockers. A claim in an interactive session (`JIG_LAUNCH` unset), without `--for`, `--factory-ancestor` or `--work-batch`, refuses an item with an open `blocked_by` relation, or one whose blocker cannot be read (exit 3, `"why": "blockers"`, nothing written, the blockers and the consequence in its JSON; a dispatched claim reads no blockers); a person who decides to start it anyway claims again with `--override-blockers "<reason>"`, which only an interactive session takes (never with `JIG_LAUNCH` set, `--for`, `--factory-ancestor` or `--work-batch`). That clears the blocker refusal and a preflight refusal tagged `kind: blockers`, nothing else. Before it writes, the claim prints the open blockers and the consequence; once it lands, one comment records the person, the reason and the blockers, the claim marker carries them with `do_item.claim_marker`, the claim's JSON prints them as `"override"`, and this label is added where it is set. Jig never removes the label and never creates it: a label the repository does not have is reported and the claim stands. Read from the default branch, as `do_item.claim_from` is. Repository file only |
 | `do_item.post_merge_state` | `done`, `ops_pending`, `in_review` | `done` | do-item, work-batch | The last state the post-merge rule moves a merged item to, for a team whose `done` means merged and verified by someone else. It applies wherever the rule applies: a standalone item, each sub-issue, an epic's roll-up (a parent whose children are all done is capped there), `/jig:work-batch after-merge`, and the post-merge follow-up. An item carrying the manual-operations label still parks at `ops_pending`. A value other than `done` needs `pull_requests.issue_link: refs`, since with `closes` the forge closes the item on merge whatever the skills do; the configuration reader refuses any other combination before a claim writes. A post-merge move to `done` (`tracker.ts transition <key> done --post-merge`) is then refused; a person's own `tracker.ts transition` without the flag still works |
 | `do_item.post_merge_closer` | text | A sentence saying a person closes the item | do-item, work-batch | Who closes an item the post-merge rule leaves short of `done` (a role such as "the release lead"), for the closing comment. Checked whenever the section is read (a blank value is refused even under `done`), and used only when `do_item.post_merge_state` is not `done` |
 | `do_item.work_types` | map from a work type to fields of its row in the depth table below | The table's defaults | do-item | How much each delivery station does for an item of each type. An entry overrides single fields and keeps the rest of the row; a type outside the default list must set every field. Refused: an entry for a type outside `issue_tracker.types`, an entry for `unknown`, a field the table does not have, and a value outside a field's set. do-item prints the type and its row when it picks up an item |
@@ -1361,9 +1362,35 @@ reflection:
 | `reflection.notion.database` | a Notion database id, or a link to it | **Required** with `store: notion` | reflect, review-reflections, dispatch | The database `notion-store.ts init` created. The integration's secret is read from the `NOTION_TOKEN` environment variable, never from a file |
 | `reflection.github.repository` | `owner/name` | **Required** with `store: github` | reflect, review-reflections, dispatch | The repository whose issues hold the reflections, often a private one kept for them. Requests go through `gh`, signed in as it is; the account needs write access, and the repository a `jig-reflection` label (`check` names the command that creates it) |
 | `reflection.journal` | file path | `<git-dir>/jig/reflection-journal.jsonl` | reflect, resolve-review-comments | The worktree's journal; a path git would track, or a file it already tracks, is refused. Parking still uses it when the section says `enabled: false` |
+| `reflection.classes` | list of class entries | empty | reflect | Class names to reuse, each with a `slug`, a `shape` and an optional non-empty text `source` |
+| `reflection.classes_from` | local YAML or JSON file path | unset | reflect | A top-level list of class entries, at most 500 and in a file of at most 256 KiB. A `.json` file is parsed as JSON, any other as YAML. Paths expand `~` to the home directory and resolve relative to the repository root; a URL, a network share path (`\\host\share`, `//host/share`), a path with a NUL character and a path whose last component is a link are refused |
 | `reflection.escalate_after` | whole number, at least 1 | `3` | reflect, review-reflections | The recurrence count at which a class is escalated to one tracker issue |
 | `reflection.timeout_sec` | whole number of seconds, at most 86400 | `120` | reflect, review-reflections, dispatch | The deadline for one store operation; `list` and `diagnose` get five times as long |
 | `reflection.mode` | `quick`, `comprehensive` | `quick` | reflect | The reflection's default depth: what went wrong only, or also what worked and what could improve |
+
+Seed classes to share a vocabulary across repositories or to reuse a class
+before the first finding is stored. Each entry's `slug` uses lowercase
+letters and digits in hyphen-separated groups. Its `shape` is a non-empty
+description on one line and `source` can name the reference it came from.
+
+```yaml
+reflection:
+  classes_from: ~/.jig/reflection-classes.yaml
+  classes:
+    - slug: missing-guard
+      shape: A required check is absent from a reusable workflow.
+      source: Team reflection register
+```
+
+`reflect gather` combines vocabularies from the user, repository and
+environment layers. For duplicate slugs, the higher layer supplies the whole
+entry. Within a layer, an inline entry takes precedence over the file.
+Missing or unreadable files produce a warning and gathering continues.
+Malformed entries, a slug repeated within one list and invalid YAML or JSON are configuration errors; so is a list over the entry limit, while a file over the size limit is a warning and is not read. Only `reflect gather` validates and reads the vocabularies, so a mistake in a vocabulary entry or file never stops the journal or the review of stored findings. The configuration check validates the merged setting and does not read the vocabulary files. Every command's settings reader still loads and parses all configuration layers, so a configuration layer that cannot be parsed at all stops every command, vocabularies aside.
+A seed's shape supplies the example, and the store still supplies the
+finding count. When a store read fails, `store_error` reports the failure
+and any available seeds appear with zero findings. Escalation and review
+count actual findings.
 
 Escalation reads `issue_tracker.labels.pattern_prefix` (a class's issue is
 labelled `<prefix><class>` and carries an owner marker, a
@@ -1833,6 +1860,47 @@ repository. What a run may start is the machine's to say, in
 [the machine's dispatch file](#the-machines-dispatch-file); see
 [the plugin's README](README.md#the-dispatcher).
 
+A configuration the tick refuses fails the repository's every turn on the
+host until a person fixes it, so check it before it merges, in the
+repository's CI. `jig dispatch check [--repo <path>]` reads the checkout's
+`.config/jig.yaml` with the tick's own readers: this section, the tracker
+`issue_tracker` names with its [issue facets](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (resolved against the
+checkout's label taxonomy, as the tick resolves them against the host's
+checkout, which holds the merged taxonomy only once the host has updated),
+and the change-area catalog `drive.change_areas_catalog` names.
+It prints each reading the tick would refuse, with the tick's own message,
+and exits `1`; it exits `0` when the tick reads the configuration whole.
+Where a message names a file, the check names it by its path in the
+checkout and the tick by the repository and branch it read it from. Run on
+a pull request's tree, it checks what the default branch will hold once the
+pull request merges; the label taxonomy is the exception a host must
+receive too, since the tick reads it from the host's own checkout. The
+command refuses a `--repo` path (or an implicit root) that is not a git
+checkout, reads only files inside it, and refuses a file larger than the
+forge's inline content limit (1 MiB, measured on the committed blob), which the tick could not read either; the label taxonomy must be a path inside the checkout. It reads files only and sends nothing to the tracker
+or the forge, so what only they can say (a field the organization lacks,
+the store detection finds for a facet) is still the tick's to find. The
+readers take the environment the tick takes: a dispatch host that sets
+`JIRA_ALLOWED_HOSTS` for a Jira site outside Atlassian Cloud needs the same
+value in the CI job. The plugin runs from any copy of its directory with
+Bun alone, so a CI job can run a release the hosts run that includes the
+command. Name the Bun version in the workflow itself, since the action otherwise reads it from the checkout under review. Run Bun from the plugin's own copy, so the checkout under review
+cannot supply its Bun configuration or preloads, and name the checkout with
+`--repo`:
+
+```yaml
+- uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+  with:
+    bun-version: "X.Y.Z" # replace with the Bun version the chosen Jig release pins (`packageManager` in its root `package.json`); set it here, never from the checkout under review
+- name: Check what the dispatcher reads
+  env:
+    JIG_VERSION: "X.Y.Z" # replace with a plugin version that includes `dispatch check`, the one the dispatch hosts run
+  run: |
+    git clone --quiet --depth 1 --branch "v$JIG_VERSION" https://github.com/jig-harness/jig "$RUNNER_TEMP/jig"
+    cd "$RUNNER_TEMP/jig"
+    bun --no-env-file plugin/jig.ts dispatch check --repo "$GITHUB_WORKSPACE"
+```
+
 | Field | Type | Default / meaning | Read by |
 |-------|------|-------------------|---------|
 | `dispatch.identity` | string: a GitHub login; a Linear user's email or display name; or, on Jira, an Atlassian account id, or an email or display name that matches exactly one user (more or fewer matches are refused) | None: the repository has no pickups. A factory-inherited `do-item` claim requires the identity on the default branch and refuses when it is absent or unreadable | dispatch, do-item |
@@ -1858,6 +1926,7 @@ repository. What a run may start is the machine's to say, in
 | `dispatch.overlap.bound_patience` | duration | `24h`: a pickup that has waited in tier 3 longer than this is promoted to tier 1, ahead of every pickup that has not, the longest waiter first, until it starts or is no longer wanted | dispatch |
 | `dispatch.followup_within` | duration | `1h`: a follow-up the dispatcher launched that has not ended by then drifts; and a follow-up whose passes record `waits --reason pending` (an arm still pending) is notified as a failed follow-up naming the arm once a pass still finds it pending this long after the first pass that found that arm so (a pass naming newer release tags or a newer deploy run starts the window again, up to three windows after the run's first pending pass), unless the release tags the arm names all exist and the deploy runs it links to have all finished, none cancelled, when the tick reads them again, within 15 minutes of the pass's end, which runs the follow-up once more | dispatch |
 | `dispatch.followup_stale_after` | duration | `24h`: a follow-up claim no run will finish (a person's run's marker not marked done, or another host's with no answer) that is older than this, with no session joined to its pull request, is released: the host that owns the repository deletes the marker, once per pull request, and the follow-up starts again. A claim on it that goes stale again after that is notified to a person, never released twice | dispatch |
+| `dispatch.followup_routine` | list of `local-leftover`, `person-owed`, `drafted-items`, each once | Every class: the [routine question classes](README.md#every-need-is-a-decision) a follow-up's pass may settle unattended, with the class's standing answer. A class left out is not offered to the pass, its unattended rule is left out of the pass's prompt (with `drafted-items` left out, the pass asks before it files the items it drafted), and a question tagged with it is a person's, notified and never run again. Routine local housekeeping is an exception: it remains periodic cleanup rather than a question. The classes, their coverage and their answers are the dispatcher's; this only selects among them, and a class it does not list is refused | dispatch |
 | `dispatch.notices_linger` | duration, or `0s` | `1h`: the repository's notices workspace, once read, is removed this long after the first tick that finds it read; `0s` removes it at that tick. An unread one is removed once every cause it carries is gone | dispatch |
 | `dispatch.notices_branch` | branch name, with no space | None: every notification for the repository goes to its notices workspace. A branch names the workspace a person watches instead: every notification goes to the workspace on that branch, never to the one joined to the pull request or item. The dispatcher never opens or removes it, and a notification waits, reported, while no workspace on it is open or its comment is a person's. Naming `jig-dispatch-notices`, the notices workspace's own branch, is the same as naming none | dispatch |
 | `dispatch.renotify_after` | duration, or `0s` | `24h`: a notification whose cause still stands this long after it was last sent is sent again, saying since when it has waited, until the cause goes. `0s` sends each one once | dispatch |
@@ -2046,12 +2115,19 @@ since it read it, so a drive's label written for a newer ledger is not
 replaced from the older one the run planned from. A run without `--apply`,
 or for a repository the machine file does not list, writes nothing and
 reports what it would write. A write the forge refuses is reported and
-tried again at the next run; it does not fail the run. With `only_labeled`
+tried again at the next run; it does not fail the run. A write refused for
+a label of the set or a marker label the repository does not have yet
+creates the label as `jig dispatch labels --yes` does and writes again in
+the same run; a create the forge refuses is counted once for the
+repository, keyed by the label (`label create <name>` in the failure
+ledger), so past `failures.notify_after` a person is told once, with the
+command that creates it, and the writes that add it wait while it backs
+off. With `only_labeled`
 off, a drive a person armed by hand on a pull request with no label gets
 its label from the drive itself.
 
-The labels must exist before anything writes them, and no writer creates
-one: setting them up is a one-time step,
+The labels should exist before anything writes them, and only the
+dispatcher's run creates a missing one: setting them up is a one-time step,
 
 ```sh
 jig dispatch labels [--repo <path>]... [--yes]
@@ -2250,7 +2326,7 @@ rejects any other form.
 | `notify.channels[]` | Empty; the [notification channels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) the tick sends each notification through, beside the Orca card it writes on `runtime: orca`. Each keeps its own records: a notification is sent once on each channel, again after `dispatch.renotify_after` while its cause stands, and a delivery that keeps failing backs off in the failure ledger under `notice <name> <key>` and, past `failures.notify_after`, is notified as failing through a channel that still delivers. A channel starts from what stands on each repository separately: on the first tick it can send there, that repository's standing causes are recorded as known without sending (the tick's receipt says once how many), so only a cause that appears or changes afterwards is sent. A repository first reached on a later tick starts the same way, silently. A repository's start is written only once its causes are recorded and its records were read whole, so a tick that fails part way starts it again. After the start the usual rules apply: a cause is repeated on `dispatch.renotify_after` while it stands and dropped when it leaves. A lasting cause (drifting, ready, a stopped drive with no cause read, a failed re-arm, a reviewer failure, a usage refusal) is never repeated, and one recorded as known without sending stays suppressed on that channel, even if it leaves and returns under the same key; only a new key sends it. With `dispatch.renotify_after` at `0s` no cause is repeated. A renamed channel is a new one, as is one whose records were dropped or that has none (a channel upgraded from a release that kept none starts silently too, whatever its earlier delivery failures); `orca-card` is never started this way. On `runtime: process`, which writes no card, a repository's `notify` stage needs at least one. Read by the dispatcher's tick |
 | `notify.channels[].name` | Required; the channel's name, lowercase letters, digits and hyphens starting with a letter, and not another channel's. `orca-card`, the Orca card's name, is refused. Its records and failure-ledger rows are kept under it, so renaming a channel starts it anew on every repository: it starts as any new channel does (see `notify.channels[]`) |
 | `notify.channels[].kind` | Required; `webhook`, the one kind: an incoming webhook that takes one HTTP `POST` per notification (ntfy, a Slack incoming webhook, a Discord webhook). A 2xx answer counts as delivered. A webhook cannot be read back, so a notification whose answer was lost after it was sent may arrive twice once its back-off allows the next try, and it cannot tell whether a notification was read: the `notices_read` observation is the Orca card's alone |
-| `notify.channels[].url_env` | Required; the name of the environment variable, in the tick's environment, that holds the webhook's address. The address is a credential: the file names the variable, never the address, and a value that is not a variable's name is refused without being shown. The address must be `https:`, or `http:` on the loopback host for a relay on the same machine. The scheduled tick does not read a shell profile, so the variable reaches it through the job's own environment: on Linux a systemd drop-in for the dispatch service (`Environment=` or, better for a secret, `EnvironmentFile=` naming a file only the host's user can read), on macOS the launch agent's `EnvironmentVariables`, or a wrapper that exports it and then runs the launcher. An ntfy topic's name is its only secret on a public server: make it long and random (32 or more random characters), as for any password. Unset, empty or refused, the channel is unreachable: every notification on it waits, counting no failure, and the tick reports the channel once each tick in its receipt as the host's fault, naming the variable and never its value. The address never appears in a notification, the receipt, the outcome log or the outbound cost ledger, which keys the channel's requests by a hash of it |
+| `notify.channels[].url_env` | Required; the name of the environment variable, in the tick's environment, that holds the webhook's address. The address is a credential: the file names the variable, never the address, and a value that is not a variable's name is refused without being shown. The address must be `https:`, or `http:` on the loopback host for a relay on the same machine. The scheduled tick does not read a shell profile, so the variable reaches it through the job's own environment: on Linux a systemd drop-in for the dispatch service (`Environment=` or, better for a secret, `EnvironmentFile=` naming a file only the host's user can read), on macOS the launch agent's `EnvironmentVariables`, which `jig install dispatch --env <name>` writes and a reinstall keeps ([the scheduled tick's environment](#the-scheduled-ticks-environment)), or a wrapper that exports it and then runs the launcher. An ntfy topic's name is its only secret on a public server: make it long and random (32 or more random characters), as for any password. Unset, empty or refused, the channel is unreachable: every notification on it waits, counting no failure, and the tick reports the channel once each tick in its receipt as the host's fault, naming the variable and never its value. The address never appears in a notification, the receipt, the outcome log or the outbound cost ledger, which keys the channel's requests by a hash of it |
 | `notify.channels[].format` | `text`; how a notification is posted. `text` posts plain text with `Title` and, for a pull request, `Click` headers, which ntfy shows as a phone push (any endpoint that takes plain text reads the body). `slack` posts a Slack incoming webhook's `{"text": …}`, links not unfurled. `discord` posts a Discord webhook's `{"content": …}` with every mention off. Each notification opens with its key line, then the framed decisions, the acts that settle it, its address and its pull request's link, cut to what the destination takes (4,000 bytes for `text`, 3,900 characters for `slack`, 2,000 for `discord`). Each post has a 10-second deadline within the tick's remaining time. A 2xx answer is delivered. A 429 is not a failure: the notification waits, and the address is held in the host's budget record (`~/.local/state/jig/tracker/budget.sqlite`) until the answer's `Retry-After`, or, naming none, for a minute doubled with each 429 in a row up to fifteen; until then no repository's tick on this host posts to it, and its notifications wait. Any other refusal (4xx, 5xx, a redirect, which is never followed) or no answer within the deadline is a failed delivery, counted in the failure ledger. After a 5xx, a 429 or no answer, the tick's remaining notifications on that channel wait for the next tick, and a destination that did not answer is asked once before the rest the next tick |
 | `priorities.enforce` | `false`; whether the owner host's pickups start in the order the [declared priorities ranking](#priorities) gives. With `false` the ranking is reported beside dispatch's own selection and changes nothing it starts. With `true` the ranking places every pickup the tick plans to start (a pickup a session or launch record holds, or one waiting on a person, takes no place), and its order ranks pickups within their overlap tiers: the shortlist's eligible positions (Urgent issues, then High bugs, then the weighted lanes by weight and the peripheral floor), then the unallocated work, then any pickup the ranking did not place (an epic, an allocation conflict, an item whose ancestry did not read). The order holds within one repository: on a host that dispatches several, the repositories still take their turns as before, so one repository's Urgent issue can wait behind another's pickups until its turn comes. The weights divide starts, never slots: how many pickups start is still the load factor's, each account's free slots and walls', and `max_per_account` stays a ceiling. A pickup that cannot start now (its fresh read changed or no account is free) passes its start to the next, so no lane keeps a start free while other ready work could take it. A pickup whose lane is out of rotation (weight 0, or a [weights file](#the-weights-file) that fails closed) is withheld and listed as quiet (`lane-paused`); a batch member in such a lane leaves its batch, and a batch whose first item is in one is withheld whole. A ranking that fails leaves the plan's own order for that tick and says so. The report names, for each start, the lane and objective it is charged to and why, each pickup that passed its start on with the reason, and each one withheld. Turning it on is a person's call, made after reading the ranking's reports |
 | `load.enforce` | `false`; whether the [load factor](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) holds a launch one of the host's gauges refuses. Each tick reads the gauges once, under the act lock, when it builds what it launches against: memory (`MemAvailable` on Linux, the free memory the platform reports on Windows, not read on macOS), the one-minute load per core (not read on Windows), the test lock's holders and waiters, the least free space among the filesystems of the running workspaces and the repositories, the forge's budget the tick read at its start, and the accounts' free slots. Each gauge's fill against its line, and the fullest of them as the load factor with the gauge that binds ("82% · memory binds"), are on every receipt (`load`), the dashboard's line and the Running view; a gauge the host cannot read is left out and says why. A launch fits while every gauge stays under its line with its kind's memory reservation and every reservation the tick already admitted counted; the test lock's waiters stop only pickups and drive passes; and a pickup also keeps room for a drive or follow-up after it (the larger of their reservations above the memory floor, and one account slot free). With `false` a launch that does not fit still starts and the receipt lists it under `load.holds` as one the load factor would hold (`held: false`); with `true` it waits for a later tick, its launch naming the gauge, and is listed with `held: true`. The relaunch of a pickup whose push the host's test lock held past the pre-push hook's wait (`waits --reason test-lock`) waits on the validation and test-lock gauges with either value, and is listed with `held: true`; a gauge that does not read holds it with neither. A pickup is first asked whether any account has a free slot for it and, with `true`, whether the gauges hold it, before its fresh tracker reads: a pickup either holds sends the tracker no request, and its item is not read again that tick, so its hold says nothing of whether the item still qualifies. Turning it on is a person's call, made after reading a week of those receipts |
@@ -2325,6 +2401,59 @@ check (claimed on another host, or while the process table cannot be read)
 holds its account's slot until a person clears it with
 `jig dispatch clear <record>`; one claimed on this host before it last
 restarted has died and frees its slot.
+
+### The scheduled tick's environment
+
+The scheduled tick, and the change probe beside it, read no shell profile:
+a variable their runs need reaches them only through the installed job's own
+environment. That holds for the tracker credentials (`JIRA_TOKEN_COMMAND`,
+`JIRA_BEARER_TOKEN`, `JIRA_EMAIL` and `JIRA_API_TOKEN`, `LINEAR_API_KEY`;
+[environment variables](#environment-variables)) and for the variable each
+`notify.channels[].url_env` names. The install writes its own variables
+(`HOME`, `PATH`, `JIG_HOME`, the test lock's settings, the agent tools'
+directories, Orca's command) afresh every time; where the others live
+depends on the scheduler.
+
+- **macOS (launchd).** Run the install from a shell that exports the
+  variable, and name it with `--env`, once per variable:
+
+  ```sh
+  export JIRA_TOKEN_COMMAND='<broker> token'
+  jig install dispatch --env JIRA_TOKEN_COMMAND          # preview
+  jig install dispatch --env JIRA_TOKEN_COMMAND --yes    # write
+  ```
+
+  `--env` takes a name only, never `NAME=VALUE`, so a value never reaches
+  shell history or the process list; the install refuses that form, a name
+  that is unset or empty in the shell, and a variable it writes itself,
+  before it writes anything. The value goes into both launchd jobs, whose
+  files are readable by the host's user alone (mode `0600`). A later
+  `jig install dispatch --yes` keeps every variable the installed job holds
+  that the install does not write itself, whether `--env` put it there or a
+  person added it to the job's `EnvironmentVariables`; `--env` with the same
+  name replaces the kept value; to drop a kept variable, delete it from the
+  job's file (`~/Library/LaunchAgents/dev.jig.dispatch.plist`, and
+  `dev.jig.dispatch-probe.plist`) before reinstalling. An install refuses a
+  job file it cannot keep whole (a binary plist, which
+  `plutil -convert xml1` turns back into XML; a value that is not a string;
+  a kept value with a line break) rather than drop what it holds.
+  `jig upgrade` keeps the job's whole environment as it is. The preview names the variables it keeps and
+  captures and shows each value as `(hidden)`. `--env` is the dispatcher's
+  alone: `jig install` refuses it unless `dispatch` is the only component
+  named.
+- **Linux (systemd).** Set the variable in a drop-in for the dispatch
+  service, `jig-dispatch.service` (and `jig-dispatch-probe.service` when the
+  probe needs it), with `Environment=` or, better for a secret,
+  `EnvironmentFile=` naming a file only the host's user can read. A
+  reinstall leaves drop-ins alone. `--env` is refused here.
+- **Linux (cron).** Export the variable in a wrapper that then runs the
+  launcher; a reinstall rewrites the crontab line.
+
+A pass started with `runtime: process` runs with a built-in environment
+(the base variables, `LC_` locale variables and the platform's own values)
+plus the variables `process.env_keep` names, so on such a host a variable a
+pass needs from the tick's environment (a forge token, `LOCK_TIMEOUT`) is
+listed there as well.
 
 ### The host-local account launch weights file
 
@@ -2585,6 +2714,7 @@ dispatch:
     bound_patience: 24h
   followup_within: 1h
   followup_stale_after: 24h
+  followup_routine: [local-leftover, person-owed, drafted-items]
   notices_linger: 1h
   notices_branch: jig-dispatch-notices
   renotify_after: 24h
@@ -2778,6 +2908,7 @@ do_item:
   preflight_command: "<your start-rules command>"   # input and exits: see the Protocol's repo-commands chapter
   claim_from: [todo]                     # canonical states a claim may start from
   claim_marker: true                     # a claim marker, the claim's token across hosts (dispatch.pool needs it)
+  override_label: started-early          # added when a person starts an item ahead of its open blockers
   post_merge_state: done                 # done | ops_pending | in_review; short of done needs issue_link: refs
   post_merge_closer: the release lead    # who closes an item left short of done
   work_types:                            # fields of the depth table to override
@@ -2897,6 +3028,10 @@ reflection:
   github:
     repository: example/reflections      # owner/name
   journal: .scratch/reflection-journal.jsonl
+  classes:
+    - slug: missing-guard
+      shape: A required check is absent from a reusable workflow.
+  classes_from: ~/.jig/reflection-classes.yaml
   escalate_after: 3
   timeout_sec: 120
   mode: quick

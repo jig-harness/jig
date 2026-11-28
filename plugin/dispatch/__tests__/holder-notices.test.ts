@@ -34,7 +34,7 @@ describe("holderActions", () => {
     expect(action).toMatchObject({
       stage: "notify",
       target: "PR #7",
-      cause: "needs-person",
+      cause: "busy-holder",
       evidence: { stage: "rearm", holder: holder.path, branch: holder.branch },
     });
     expect(action?.notice?.key).toBe(

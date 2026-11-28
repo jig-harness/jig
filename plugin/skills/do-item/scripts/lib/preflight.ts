@@ -9,6 +9,10 @@
  *
  * - 0 proceeds;
  * - 3 refuses, and the first line of its standard output is the reason;
+ *   a second line that reads `kind: blockers` after trimming says the refusal is
+ *   only for the item's open blockers, which a person's
+ *   `--override-blockers` may clear (`blocker-override.ts`); an untagged
+ *   refusal never clears;
  * - any other exit, a command that cannot start, one still running past the
  *   deadline, or one writing too much output is a failed check, which
  *   refuses as well.
@@ -31,6 +35,7 @@ import { doItemSection } from "./overlay.ts";
 
 import {
   DEFAULT_PREFLIGHT_TIMEOUT_SEC,
+  PREFLIGHT_BLOCKERS_TAG,
   PREFLIGHT_REFUSAL_EXIT,
   PREFLIGHT_TIMEOUT_ENV,
 } from "../../../../shared/repo-commands.ts";
@@ -57,7 +62,16 @@ export type PreflightResult =
       /** `refused`: the command's exit 3; `failed`: any other way it did not answer. */
       kind: "refused" | "failed";
       reason: string;
+      /** An exit 3 whose second line of output is `kind: blockers`: a refusal only for open blockers. */
+      blockers?: true;
     };
+
+/** A blocker-only refusal the person's `--override-blockers` cleared: the claim goes on. */
+export interface PreflightOverridden {
+  outcome: "overridden";
+  issue: string;
+  reason: string;
+}
 
 /** A setting's value as a command; `null` for none, an error for anything else. */
 function asCommand(value: unknown, where: string): string | null {
@@ -148,11 +162,15 @@ export async function runPreflight(
     );
   if (result.code === 0) return { outcome: "proceed" };
   if (result.code === PREFLIGHT_REFUSAL_EXIT) {
-    const first = oneLine(result.stdout.split("\n")[0] ?? "");
+    const [line, tag] = result.stdout.split("\n");
+    const first = oneLine(line ?? "");
     return {
       outcome: "refused",
       kind: "refused",
       reason: first === "" ? `${name} refused it, giving no reason` : first,
+      ...(tag?.trim() === PREFLIGHT_BLOCKERS_TAG
+        ? { blockers: true as const }
+        : {}),
     };
   }
   return failed(
@@ -165,6 +183,7 @@ function refusal(
   key: string,
   reason: string,
   updatedAt?: unknown,
+  overridable = false,
 ): ClaimResult {
   return {
     outcome: "refused",
@@ -172,6 +191,7 @@ function refusal(
     why: "preflight",
     reason,
     ...(typeof updatedAt === "string" ? { updatedAt } : {}),
+    ...(overridable ? { overridable: true as const } : {}),
   };
 }
 
@@ -182,14 +202,17 @@ function refusal(
  * tracker, an unusable answer) refuses: the command never saw the item, and
  * a later successful read inside the claim must not stand in for it. A
  * refusal carries the item's `updatedAt` as the command saw it, so a
- * dispatcher holds the item until it changes.
+ * dispatcher holds the item until it changes. With `overrideBlockers` (the
+ * person passed `--override-blockers`), a refusal tagged `kind: blockers`
+ * lets the claim go on as `overridden`; every other refusal stands.
  */
 export async function preflightClaim(
   root: string,
   command: string,
   key: string,
   readIssue: () => Promise<Record<string, unknown>>,
-): Promise<ClaimResult | null> {
+  overrideBlockers = false,
+): Promise<ClaimResult | PreflightOverridden | null> {
   const issue = await readIssue();
   if (issue.found !== true)
     return refusal(
@@ -198,10 +221,13 @@ export async function preflightClaim(
     );
   const result = await runPreflight(root, command, JSON.stringify(issue));
   if (result.outcome === "proceed") return null;
+  if (result.blockers === true && overrideBlockers)
+    return { outcome: "overridden", issue: key, reason: result.reason };
   return refusal(
     key,
     `${key} was refused by the repository's preflight check: ${result.reason}`,
     issue.updatedAt,
+    result.blockers === true,
   );
 }
 

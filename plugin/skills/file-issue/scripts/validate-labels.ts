@@ -378,6 +378,109 @@ async function validateFiling(
   }
 }
 
+/** Whether a planned native type could turn this invalid draft into a valid epic. */
+export function placementMayChangeInvalidity(
+  initial: Validation,
+  taxonomy: Taxonomy,
+): boolean {
+  const epic = parseTrackerLabels(readConfig()).epic;
+  return (
+    taxonomy.groups.some(
+      (group) =>
+        initial.missing.includes(group.id) &&
+        group.notRequiredOn.includes(epic),
+    ) ||
+    taxonomy.categories.some(
+      (category) =>
+        (initial.parsed.categories[category.id]?.length ?? 0) !== 0 &&
+        category.requires.includes(epic),
+    ) ||
+    taxonomy.flags.some(
+      (flag) =>
+        initial.parsed.flags.includes(flag.id) && flag.requires.includes(epic),
+    )
+  );
+}
+
+/** Whether a prospective epic placement can clear every non-facet error. */
+function placementCouldChangeInvalidity(
+  initial: Validation,
+  taxonomy: Taxonomy,
+  issue: IssueRead,
+): boolean {
+  if (!placementMayChangeInvalidity(initial, taxonomy)) return false;
+  if (initial.errors.length === initial.missing.length) return true;
+  const labels = parseTrackerLabels(readConfig());
+  const nativeType = labels.epicTypes[0];
+  if (nativeType === undefined) return false;
+  return validateLabels(issue.labels, taxonomy, issue.facets, {
+    nativeType,
+    epics: labels,
+  }).valid;
+}
+
+/** The tracker the check reads, or the stop that says it could not be opened. */
+function openLabelTracker(deps: Deps): LabelTracker {
+  try {
+    return deps.openTracker();
+  } catch (e) {
+    throw new Stop(1, `ERROR: the tracker could not be opened: ${reason(e)}`, {
+      cause: e,
+    });
+  }
+}
+
+/**
+ * The verdict with the tracker's view added: the draft's screen first, then
+ * every label against the tracker's labels. An invalid set is already the
+ * verdict, so the labels are not read for it: that read could only hide it
+ * behind a failure of its own.
+ */
+async function checkTracker(
+  deps: Deps,
+  issue: IssueRead,
+  taxonomy: Taxonomy,
+  initial: Validation,
+): Promise<Validation> {
+  // Placement can only exempt a missing facet. Other taxonomy errors already
+  // decide the result, except where its native epic type can satisfy a label
+  // rule. In that case validateFiling must get the chance to revalidate it.
+  if (!initial.valid && initial.errors.length > initial.missing.length) {
+    let placementCanChange: boolean;
+    try {
+      placementCanChange = placementCouldChangeInvalidity(
+        initial,
+        taxonomy,
+        issue,
+      );
+    } catch (e) {
+      throw new Stop(
+        1,
+        `ERROR: the label roles (issue_tracker.labels) could not be read: ${reason(e)}`,
+        { cause: e },
+      );
+    }
+    if (!placementCanChange) return initial;
+  }
+  const tracker = openLabelTracker(deps);
+  const result = await validateFiling(tracker, issue, taxonomy, initial);
+  if (!result.valid) return result;
+  const { missing, ambiguous } = await unresolvedInTracker(
+    result.labels,
+    tracker,
+  );
+  if (missing.length)
+    result.errors.push(
+      `not in the tracker: ${missing.join(", ")} (create ${missing.length > 1 ? "them" : "it"} there, or fix the name; names match exactly, case included)`,
+    );
+  if (ambiguous.length)
+    result.errors.push(
+      `more than one tracker label named: ${ambiguous.join(", ")} (rename or merge them in the tracker so each name is one label)`,
+    );
+  if (missing.length || ambiguous.length) result.valid = false;
+  return result;
+}
+
 async function run(argv: string[], deps: Deps): Promise<number> {
   const options = parseArgs(argv);
   if (typeof options === "string") throw new Stop(2, `${options}\n${USAGE}`);
@@ -385,32 +488,8 @@ async function run(argv: string[], deps: Deps): Promise<number> {
   const { labels, facets, nativeType } = issue;
   const taxonomy = loadTaxonomy(options.taxonomy);
   let result = validateLabels(labels, taxonomy, facets, issueType(nativeType));
-  if (options.checkTracker) {
-    let tracker: LabelTracker;
-    try {
-      tracker = deps.openTracker();
-    } catch (e) {
-      throw new Stop(
-        1,
-        `ERROR: the tracker could not be opened: ${reason(e)}`,
-        { cause: e },
-      );
-    }
-    result = await validateFiling(tracker, issue, taxonomy, result);
-    const { missing, ambiguous } = await unresolvedInTracker(
-      result.labels,
-      tracker,
-    );
-    if (missing.length)
-      result.errors.push(
-        `not in the tracker: ${missing.join(", ")} (create ${missing.length > 1 ? "them" : "it"} there, or fix the name; names match exactly, case included)`,
-      );
-    if (ambiguous.length)
-      result.errors.push(
-        `more than one tracker label named: ${ambiguous.join(", ")} (rename or merge them in the tracker so each name is one label)`,
-      );
-    if (missing.length || ambiguous.length) result.valid = false;
-  }
+  if (options.checkTracker)
+    result = await checkTracker(deps, issue, taxonomy, result);
   print(result, options.json);
   return result.valid ? 0 : 3;
 }

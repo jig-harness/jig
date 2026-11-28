@@ -69,7 +69,7 @@ export const MARKER_SCHEMAS = {
         enveloped("drive-ledger", LEDGER_PAYLOAD_SHAPE),
         s.object({
           ...LEDGER_PAYLOAD_FIELDS,
-          ledgerVersion: s.enum([1, 2]),
+          ledgerVersion: s.enum([1, 2, 3]),
           kind: s.optional(s.never()),
         }),
       ]),
@@ -118,6 +118,7 @@ export const NON_JSON_MARKERS: Readonly<Record<string, string>> = {
   "deferred-batch": "A batch key on a marker line.",
   "tracker-related": "Relation keys on marker lines.",
   "tracker-blocked": "A prose state-transition marker.",
+  "tracker-blocker-override": "An attempt id on a marker line.",
   "issue-fields-sweep": "A prose facet-sweep marker.",
   "fleet-health-suspicion": "A prose suspicion marker.",
   "epic-acceptance-verdict": "A verdict word on a marker line.",
@@ -402,7 +403,7 @@ export const COMMENT_MARKERS: Chapter = {
   title: "Hidden comment markers on the forge and the tracker",
   summary:
     "The hidden markers Jig writes and reads in comments and bodies on the forge and the tracker: what record each marks, who writes it, its version and what it means.",
-  version: 1,
+  version: 2,
   status: "stable",
   planItems: [],
   module: "tools/protocol/chapters/comment-markers.ts",

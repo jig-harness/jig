@@ -48,11 +48,12 @@ afterEach(() => {
   current = null;
 });
 
-function fixture(): World {
+/** A world whose merged PR #9 owes a follow-up; `dispatch` adds lines to the repository's dispatch section. */
+function fixture(dispatch = ""): World {
   const w = world();
   current = w;
   w.setConfig(
-    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\ndispatch:\n  followup_command: /followup\n`,
+    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\ndispatch:\n  followup_command: /followup\n${dispatch}`,
   );
   withOrigin(w);
   w.setPrs("merged", [mergedPr(9, "feature/9-done", "2026-10-31T12:00:00Z")]);
@@ -235,6 +236,41 @@ it("leaves a follow-up whose question carries no routine tag waiting for a perso
   expect(action?.notice?.text).toContain("which version does this ship in?");
   expect(markers(w)).toHaveLength(1);
 }, 90_000);
+
+it("asks a person a question of a class the repository leaves out of dispatch.followup_routine, and never runs it again", async () => {
+  const w = fixture("  followup_routine: [local-leftover, person-owed]\n");
+  const first = await stops(
+    w,
+    "Question: [drafted-items] may I file the two items I drafted?",
+  );
+  const told = claudeRuns(w).at(-1)?.argv.at(-1) ?? "";
+  expect(told).toContain("- local-leftover: ");
+  expect(told).not.toContain("- drafted-items: ");
+  expect(told).toContain(
+    "Filing the follow-up items you drafted needs a person's leave",
+  );
+  expect(readRecord(first, dispatchState(w))?.routineClasses).toEqual([
+    "local-leftover",
+    "person-owed",
+  ]);
+
+  const after = await applyTick(w, false);
+  expect(readOutcomes(SLUG, dispatchState(w)).get(9)).toMatchObject({
+    record: first,
+    routine: null,
+  });
+  expect(launches(after)).toEqual([]);
+  const [action] = after.repos[0]?.actions ?? [];
+  expect(action).toMatchObject({ stage: "notify", cause: "followup-failed" });
+  expect(action?.evidence.question).toBe(
+    "[drafted-items] may I file the two items I drafted?",
+  );
+  expect(markers(w)).toHaveLength(1);
+
+  const later = await applyTick(w, false);
+  expect(launches(later)).toEqual([]);
+  expect(claudeRuns(w)).toHaveLength(1);
+}, 120_000);
 
 const OLD = "20261031T130000Z-aaaaaaaa";
 

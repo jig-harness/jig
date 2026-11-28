@@ -138,6 +138,8 @@ null_refused:
   - file_issue.sweep.move
   - routing.model_tiers
   - routing.stages
+  - reflection.classes
+  - reflection.classes_from
 
 # Sections a skill refuses outright, with what to do instead.
 refused:
@@ -189,7 +191,7 @@ fields:
     since: 0.105.0
   dispatch.person:
     type: string
-    pattern: "^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,38})(?:\\[bot\\])?$"
+    pattern: "^[A-Za-z0-9][A-Za-z0-9-]{0,38}(?:_[A-Za-z0-9]{3,8})?(?:\\[bot\\])?$"
     read_by: [drive-pr]
     since: 0.161.0
   dispatch.states:
@@ -328,6 +330,13 @@ fields:
     read_by: [dispatch]
     repository_only: true
     since: 0.149.0
+  dispatch.followup_routine:
+    type: list
+    items: { type: enum, values: [local-leftover, person-owed, drafted-items] }
+    distinct: true
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.319.0
   dispatch.notices_linger:
     type: string
     pattern: "^\\s*(?:0+\\s*[smh]|0*(?:(?:[1-9]\\d?|[1-4]\\d\\d|5[0-6]\\d|57[0-6])\\s*h|(?:[1-9]\\d{0,3}|[12]\\d{4}|3[0-3]\\d{3}|34[0-4]\\d{2}|345[0-5]\\d|34560)\\s*m|(?:[1-9]\\d{0,5}|1\\d{6}|20[0-6]\\d{4}|207[0-2]\\d{3}|2073[0-5]\\d{2}|2073600)\\s*s))\\s*$"
@@ -1083,6 +1092,13 @@ fields:
     read_by: [do-item, work-batch, dispatch]
     repository_only: true
     since: 0.198.0
+  do_item.override_label:
+    type: string
+    pattern: "\\S"
+    nullable: true
+    read_by: [do-item]
+    repository_only: true
+    since: next
   do_item.arm_drive:
     type: enum
     values: [auto, tab, background, print]
@@ -1471,6 +1487,21 @@ fields:
     type: path
     read_by: [reflect, resolve-review-comments]
     since: 0.28.0
+  reflection.classes:
+    type: list
+    items:
+      fields:
+        slug: { type: string, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+        shape: { type: string, pattern: '^[^\r\n\u2028\u2029]*$' }
+        source: string
+      optional: [source]
+    read_by: [reflect]
+    since: 0.318.0
+  reflection.classes_from:
+    type: path
+    pattern: '^(?!\s*[A-Za-z][A-Za-z0-9+.-]*://)(?!\s*[\\/]{2})[^\u0000]*$'
+    read_by: [reflect]
+    since: 0.318.0
   reflection.escalate_after:
     type: integer
     min: 1
