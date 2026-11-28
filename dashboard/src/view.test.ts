@@ -804,23 +804,26 @@ describe("a repository", () => {
 
   it("lists its stages, then its details", () => {
     expect(
-      repoRow({
-        ...REPO,
-        failedReads: [
-          {
-            record: "tracker",
-            source: "s",
-            detail: "The tracker cannot be opened",
-          },
-        ],
-        notes: ["this repository has no pickups"],
-      }).note,
+      repoRow(
+        {
+          ...REPO,
+          failedReads: [
+            {
+              record: "tracker",
+              source: "s",
+              detail: "The tracker cannot be opened",
+            },
+          ],
+          notes: ["this repository has no pickups"],
+        },
+        CLOCK,
+      ).note,
     ).toBe(
       "rearm, notify. The tracker cannot be opened. this repository has no pickups",
     );
   });
 
   it("names itself by its path when the forge could not say", () => {
-    expect(repoRow({ ...REPO, slug: null }).slug).toBe("/srv/work/web");
+    expect(repoRow({ ...REPO, slug: null }, CLOCK).slug).toBe("/srv/work/web");
   });
 });

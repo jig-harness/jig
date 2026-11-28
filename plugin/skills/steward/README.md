@@ -69,7 +69,11 @@ stopped drive a re-arm could resolve, an ended pass recommending a resume, a
 queued item missing a facet, a need nothing has framed yet, or a run that
 ended without a report. An empty or
 already judged backlog starts no pass, and the receipt and the dashboard say
-which. The host starts at most three steward passes an hour across its
+which. A person can ask for a pass whatever the backlog holds with
+`jig send steward@owner/name start` on the owner host
+([the plugin README](../../README.md#telling-a-station-what-to-do)); the
+next tick starts it under the same budget and hold, or says which refused
+it. The host starts at most three steward passes an hour across its
 repositories, under account and host-load admission. It uses the complex tier's model of
 the admitted account's vendor and has a 15-minute deadline. It starts no
 interactive session. Digests and submitted records stay in the owner host's

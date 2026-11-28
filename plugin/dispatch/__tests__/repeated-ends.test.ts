@@ -9,6 +9,7 @@ import { describe, expect, it } from "bun:test";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { driveHold, factsOf } from "../lib/actions/drive-hold.ts";
 import { latestRepeatedEnds } from "../lib/launch-keep.ts";
+import { NOT_SETTLED_ENDS_KEPT } from "../lib/repeated-end-caps.ts";
 import type { LaunchClaim, LaunchRecord, ReadRecord } from "../lib/launches.ts";
 import { stopNotice } from "../lib/notices.ts";
 import {
@@ -373,15 +374,15 @@ describe("what starts the count again or still counts", () => {
 });
 
 describe("launch record retention", () => {
-  it("keeps a drive's run of failed ends, up to the cap", () => {
+  it("keeps a drive's run of failed ends, up to the highest cap the machine file takes", () => {
     const records = [
-      notSettledRearm(1, 500),
-      ...Array.from({ length: NOT_SETTLED_REARMS + 1 }, (_, i) =>
-        notSettledRearm(i + 2, 400 - i * 60),
+      notSettledRearm(1, 1000),
+      ...Array.from({ length: NOT_SETTLED_ENDS_KEPT + 1 }, (_, i) =>
+        notSettledRearm(i + 2, 900 - i * 60),
       ),
     ];
     const kept = latestRepeatedEnds(records);
-    expect(kept.size).toBe(Math.max(NOT_SETTLED_REARMS, FAILED_TAKEOVERS));
+    expect(kept.size).toBe(Math.max(NOT_SETTLED_ENDS_KEPT, FAILED_TAKEOVERS));
     expect(kept.has(records.at(-1)?.record.id ?? "")).toBe(true);
     expect(kept.has(records[0]?.record.id ?? "")).toBe(false);
   });

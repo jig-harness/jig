@@ -1,4 +1,4 @@
-/** Epic execution plan holds and idle reasons. */
+/** Epic children's person holds and epic idle reasons; plan holds are in `epic-plan-needs.ts`. */
 import { PERSON_HOLD, queueHold, type QueueHoldPolicy } from "../queue-rank.ts";
 import type { Unplaced } from "../types.ts";
 import type {
@@ -9,7 +9,6 @@ import type {
 import { CANONICAL_STATES } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import { isUnavailable } from "../../../skills/do-item/scripts/lib/tracker/unavailable.ts";
 import { isRateLimited } from "../../../shared/outbound/budget.ts";
-import type { ServedPlan } from "./served-plan.ts";
 
 /** Report an unreadable child's relations. A tracker wall still stops the read. */
 export function noteUnreadChild(
@@ -62,20 +61,6 @@ function canonicalStatesFor(
     (state) =>
       tracker.stateName(state, context)?.trim().toLowerCase() === native,
   );
-}
-
-/** Why a child waits on its epic's plan; an epic with no plan holds its children to its width instead. */
-export function childPlanHold(
-  selection: ServedPlan,
-  child: string,
-): string | undefined {
-  if (selection.error !== undefined) return selection.error;
-  if (selection.holds[child] !== undefined) return selection.holds[child];
-  if (selection.present)
-    return selection.order.includes(child)
-      ? undefined
-      : "waiting on the epic execution plan";
-  return undefined;
 }
 
 /** Why a local pickup record keeps an item from starting. */

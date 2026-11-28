@@ -667,6 +667,16 @@ export const MIGRATIONS: readonly Migration[] = [
     sql: "ALTER TABLE steward_records ADD COLUMN refusal TEXT;",
   },
   { additive: true, sql: PICKUP_SUCCESSOR_SCHEMA },
+  {
+    // A person's request for one steward pass of a repository (`steward-requests.ts`): `jig send steward@… start` writes it, the tick takes it.
+    additive: true,
+    sql: `CREATE TABLE steward_requests (
+      repo TEXT PRIMARY KEY,
+      id TEXT NOT NULL,
+      requested_by TEXT NOT NULL,
+      requested_at TEXT NOT NULL
+    );`,
+  },
 ];
 
 /** The schema version this plugin writes. */

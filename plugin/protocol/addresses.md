@@ -6,14 +6,18 @@ An [address](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 names one [station](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 of the execution line (one fixed step a piece of work passes through) on one
 piece of work: the pick-up of a tracker item, the drive of a pull request,
-the follow-up of a merged one. `jig ask <address>` answers where that
-station stands, and `jig send <address> <verb>` tells it what to do. This
+the follow-up of a merged one, or a repository's
+[steward](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). `jig
+ask <address>` answers where that station stands, and `jig send <address>
+<verb>` tells it what to do; a steward address takes `jig send`'s `start`
+alone, and `jig ask` refuses it as a usage error. This
 chapter is for a program that forms addresses or sends verbs: a dashboard,
 a chat bridge, a workspace app, a script of a repository's own.
 
 An address is derived from the records the station leaves, never declared,
-so nothing registers one and an address nobody holds is still valid: `jig
-ask` answers that nobody holds it
+so nothing registers one and an address nobody holds is still valid: for
+the stations `jig ask` answers (a steward address is not one), it answers
+that nobody holds it
 ([ADR-0014](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0014-addresses-are-derived-and-requests-are-records.md)).
 
 ## The form of an address
@@ -32,7 +36,9 @@ An address is `station@owner/name#key`, such as `drive@jig-harness/jig#456`:
   pull request's number, with or without a leading `#`, or the tracker's
   item key as the tracker writes it (`#12` on GitHub Issues, `ENG-4` on
   Linear or Jira). Some shells give `#` a meaning of its own, so the key may
-  also follow as a second argument: `drive@jig 456`.
+  also follow as a second argument: `drive@jig 456`. A station whose key
+  the table below gives as none (`steward`) names the repository alone,
+  `steward@owner/name`, and an address that adds a key to it is malformed.
 
 Every answer prints an address in full: the repository as `owner/name`, a
 pull request's key after `#` without a second one, an item key as the
@@ -59,6 +65,7 @@ A reader that meets a station this table does not list refuses the address.
 | `pickup` | the tracker's item key | The pick-up of a tracker item: held by the session that claimed the item to start its work |
 | `drive` | the pull request's number | The drive of a pull request: the driver that runs its review rounds, whether a dispatched re-arm or takeover or one armed by hand |
 | `followup` | the pull request's number | The follow-up of a merged pull request: the pass, a dispatcher's tick or a person's run, that settles what the merge still owes |
+| `steward` | none: the address names the repository alone | The steward of a repository: held by the judgment pass its owner host's dispatcher started for it, one at a time |
 
 <!-- /protocol:generated -->
 
@@ -84,6 +91,7 @@ them. `--dry-run` shows what a verb would write without writing it.
 | `hold` | `[--until-merged <PR> \| --until-closed <ITEM>] (pickup only)` | `drive`, `followup`, `pickup` | yes | Keep the line off a pull request with the hold command label, or keep a tracker item out of pickups and batches with a hold on its dispatcher host |
 | `release` | — | `drive`, `followup`, `pickup` | yes | Withdraw the pull request's hold label or the tracker item's hold on its dispatcher host |
 | `answer` | `<key> <text> \| <key> --approve\|--choose <option> [--note <text>] [--decision <digest>] \| --all --approve [--decision-set <token>]` | `drive`, `followup`, `pickup` | yes | Answer a parked question or a need's decision by approving or choosing one of its options, at any of these stations; a drive also takes the person's own words, and --all to approve every parked question it may at once, which the other stations refuse. The bracketed --decision and --decision-set can be left out only on a dry run and, for an individual answer, on a park framed without a digest: a real structured answer to a framed decision needs its digest, and a real --all approval needs the set token the dry run printed. One answer comment per item, read by the re-arm or the dispatcher's next tick |
+| `start` | — | `steward` | yes | Ask the dispatcher of the host that owns the repository to start one steward pass on its next tick, whatever the judgment backlog holds: a request kept on that host, refused, with the rule named, while a steward pass holds the repository or the host's hourly steward budget is spent |
 | `pause` | — | `drive` | no | Pause a running drive at its next round boundary: a directive in the mailbox of the working tree that holds the drive on this machine |
 | `resume` | `<hold-push\|pause\|stop>` | `drive` | no | Withdraw the mailbox directive it names, so the drive goes on past it |
 | `stop` | — | `drive` | no | Stop a running drive at its next round boundary: a mailbox directive |

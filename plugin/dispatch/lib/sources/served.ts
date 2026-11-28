@@ -46,18 +46,20 @@ import {
   servedParentHold,
   servedParentSteps,
 } from "./served-parents.ts";
-import { blocksWithin } from "../../../skills/do-item/scripts/lib/blocker-chain.ts";
 import {
   closed,
   openBlockers,
   pullBlockers,
   ready,
-  whyNotPulled,
   type OpenBlocker,
   type PullOrigin,
 } from "./served-pull.ts";
 import {
   childPlanHold,
+  notePlanNeed,
+  type PlanNeeds,
+} from "./epic-plan-needs.ts";
+import {
   type PassOver,
   parkedOnPerson,
   noteUnreadChild,
@@ -70,7 +72,7 @@ import {
   type UnlabeledMode,
   unlabeledOutcome,
 } from "./served-repo.ts";
-import { freshAuthority } from "./served-authority.ts";
+import { freshAuthority, freshPulledAuthority } from "./served-authority.ts";
 import { childMergeEvidence, planKeys, servedPlan } from "./served-plan.ts";
 import type { ServedView, ServedViews } from "./served-reads.ts";
 import type { LiveIssue } from "../../../skills/do-item/scripts/lib/execution-plan.ts";
@@ -132,6 +134,7 @@ const itemOf = (i: PoolIssue) => ({
 /** What the walks of every served identity in one reading share about epics. */
 interface EpicState {
   walks: EpicWalk[];
+  planNeeds: PlanNeeds;
   /** Items whose failed read is already recorded, so a later visit does not report it again. */
   reported: Set<string>;
 }
@@ -239,6 +242,7 @@ export async function readServedPickups(
   const seen = new Set<string>();
   const shared: EpicState = {
     walks: [],
+    planNeeds: new Map(),
     reported: new Set(),
   };
   let limited: PersonReading["limited"] = null;
@@ -372,6 +376,7 @@ export async function freshServedPickup(
             blockingFor,
             ancestor,
             policy,
+            (item) => freshParentHold(tracker, item, policy),
           );
     if (authority !== null) return authority;
     return issue;
@@ -388,18 +393,18 @@ interface Pending {
   by: string | undefined;
   epicOrder: number | undefined;
   planHold: string | undefined;
+  /** Notes the epic's need once this node is placed held by `planHold`, never while it is only queued for the walk. */
+  planNote?: (() => void) | undefined;
   /** Set for a blocker pulled forward: the item whose authority it is worked on. */
   pull?: PullOrigin | undefined;
 }
-interface WalkContext {
+interface WalkContext extends EpicState {
   tracker: Tracker;
   identity: string;
   options: ServedOptions;
   cache: PickupReads;
   view: ServedView;
   seen: Set<string>;
-  walks: EpicWalk[];
-  reported: Set<string>;
 }
 /** What one node of the walk found, merged in the walk's order. */
 interface Found {
@@ -524,7 +529,7 @@ async function enqueueChildren(
   candidate: Candidate,
   found: Found,
 ): Promise<void> {
-  const { options } = ctx;
+  const { options, planNeeds } = ctx;
   const { children, unread } = await readChildren(ctx, meta, found);
   const planned = servedPlan(
     meta.description ?? "",
@@ -567,7 +572,8 @@ async function enqueueChildren(
       epicOrder: selection.present
         ? selection.order.indexOf(child.identifier)
         : undefined,
-      planHold: childPlanHold(selection, child.identifier),
+      planHold: childPlanHold(selection, child, issue),
+      planNote: () => notePlanNeed(planNeeds, issue, selection, child),
     });
   }
 }
@@ -754,6 +760,7 @@ async function placeLeaf(
     view,
     options.mergeEvidence,
     options.personHold,
+    ctx.planNeeds,
   );
   if (parentHoldUnread(parentHold)) itemFailed(found);
   if (parentHold !== null) return void unplace(parentHold);
@@ -774,7 +781,10 @@ function nodeHold(
   options: ServedOptions,
   tracker: Pick<Tracker, "stateName">,
 ): string | null {
-  if (node.planHold) return node.planHold;
+  if (node.planHold) {
+    node.planNote?.();
+    return node.planHold;
+  }
   if (parkedOnPerson(node.issue, tracker, options, true)) return PERSON_HOLD;
   if (
     node.ancestor === undefined &&
@@ -913,6 +923,7 @@ async function heldReason(
     view,
     options.mergeEvidence,
     options.personHold,
+    ctx.planNeeds,
   );
   if (parentHoldUnread(parentHold)) itemFailed(found);
   if (parentHold !== null) return parentHold;
@@ -954,46 +965,4 @@ async function heldReason(
     return `${pull.reason}; this issue service cannot assign a blocker on its own, so a person assigns it`;
   found.pending.push(...pulledNodes(pull, ctx.seen, candidate.by));
   return pull.reason;
-}
-
-/** A pulled blocker is empty; the served item it blocks must still hold the person's authority and wait on it. */
-async function freshPulledAuthority(
-  tracker: Tracker,
-  issue: PoolIssue,
-  identity: string,
-  blockingFor: string,
-  ancestor: string | undefined,
-  policy: ServedPolicy,
-): Promise<string | null> {
-  if (issue.assignee !== null)
-    return "the pulled blocker has acquired an assignee";
-  if (isEpicPickup(issue)) return "the pulled blocker has become an epic";
-  const origin = await tracker.poolIssue(blockingFor);
-  if (
-    origin === null ||
-    !ready(origin, tracker.stateName("blocked", origin.nativeType ?? null))
-  )
-    return `${blockingFor}, which it blocks, is no longer open and not started`;
-  if (queueHold({ issue: origin, blockers: [], unblocks: 0 }, policy) !== null)
-    return `${blockingFor}, which it blocks, needs a person to start`;
-  const originHold = await freshParentHold(tracker, origin, policy);
-  if (originHold !== null) return `${blockingFor}: ${originHold}`;
-  const authority = await freshAuthority(tracker, origin, identity, ancestor);
-  if (authority !== null) return `${blockingFor}: ${authority}`;
-  const through = async (via: string): Promise<boolean> => {
-    const item = await tracker.poolIssue(via);
-    return (
-      whyNotPulled(item, {
-        hitl: policy.hitl,
-        manualOps: policy.manualOps,
-        repoScope: policy.repoScope,
-        blockedState: (item) =>
-          tracker.stateName("blocked", item.nativeType ?? null),
-      }) === null &&
-      (await freshParentHold(tracker, item as PoolIssue, policy)) === null
-    );
-  };
-  return (await blocksWithin(tracker, blockingFor, issue.identifier, through))
-    ? null
-    : `it no longer blocks ${blockingFor}`;
 }

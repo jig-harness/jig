@@ -7,7 +7,10 @@ import { LinkedDetail, WorkLead } from "./work.tsx";
  * and each held slot a box inside it, so which session holds which slot is a
  * position rather than a join.
  */
-import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
+import type {
+  LineRepo,
+  LineSnapshot,
+} from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { Evidence, Hint, PanelHelp, Pips, StageHint, Term } from "./fold.tsx";
 import { slotCard } from "./cards.ts";
 import { GutterCard, GutterFold } from "./gutter.tsx";
@@ -69,6 +72,37 @@ function Slot({ slot }: { slot: SlotView }) {
         </>
       }
     />
+  );
+}
+
+/** The repositories and how each was read; one whose tracker part is kept from an earlier reading carries a mark and that reading's time. */
+export function RepoRows({
+  repos,
+  clock,
+}: {
+  repos: LineRepo[];
+  clock: Clock;
+}) {
+  return (
+    <dl className="kv">
+      {repos.map((r) => {
+        const row = repoRow(r, clock);
+        return (
+          <div key={r.path} style={{ display: "contents" }}>
+            <dt className="m">{row.slug}</dt>
+            <dd>
+              {row.note}
+              {row.kept === null ? null : (
+                <div className="trackerKept">
+                  <span className="chip">tracker kept</span>{" "}
+                  <span className="sm">{row.kept}</span>
+                </div>
+              )}
+            </dd>
+          </div>
+        );
+      })}
+    </dl>
   );
 }
 
@@ -163,17 +197,7 @@ export function LinePanel({
           label="The repositories and how each was read"
           head={<span className="sm">{repoSummary(line.repos)}</span>}
         >
-          <dl className="kv">
-            {line.repos.map((r) => {
-              const row = repoRow(r);
-              return (
-                <div key={r.path} style={{ display: "contents" }}>
-                  <dt className="m">{row.slug}</dt>
-                  <dd>{row.note}</dd>
-                </div>
-              );
-            })}
-          </dl>
+          <RepoRows repos={line.repos} clock={clock} />
         </GutterFold>
       )}
     </section>

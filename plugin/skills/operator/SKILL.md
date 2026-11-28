@@ -1,6 +1,6 @@
 ---
 name: operator
-description: "Ask and tell the line's stations for a person: where a pull request, item or follow-up stands, what waits on a person, and a person's command to a station (hold, release, drive, answer, pause, stop), through jig ask and jig send. Not for doing a station's work (use drive-pr) or how Jig works (use jig)."
+description: "Ask and tell the line's stations for a person: where a pull request, item or follow-up stands, what waits on a person, and a person's command to a station (hold, release, drive, answer, pause, stop, start a steward pass), through jig ask and jig send. Not for doing a station's work (use drive-pr) or how Jig works (use jig)."
 argument-hint: "[question | command]"
 allowed-tools: "Read AskUserQuestion Bash(jig ask *) Bash(jig send *)"
 ---
@@ -44,7 +44,8 @@ conversation.
 
 An address names one station on one piece of work: `station@owner/name#key`.
 Write the key as a second argument, never after a `#`, since some shells
-read `#` as the start of a comment. The stations and the verbs of `jig send`
+read `#` as the start of a comment. A `steward` address names the
+repository alone and takes no key. The stations and the verbs of `jig send`
 are listed in the Jig Protocol's [Addresses chapter](../../protocol/addresses.md).
 
 | The person names | The station | The key |
@@ -52,6 +53,7 @@ are listed in the Jig Protocol's [Addresses chapter](../../protocol/addresses.md
 | a pull request, its drive, its review | `drive` | the pull request's number |
 | what happens after a merge, the follow-up | `followup` | the merged pull request's number |
 | a tracker item, an issue to pick up | `pickup` | the item's key as the tracker writes it; on GitHub Issues the number alone |
+| a repository's steward, a steward pass | `steward` | none: the address is `steward@<owner>/<name>` alone, and `jig ask` does not take it |
 
 - **The repository** is `owner/name` in full when the person gave it or the
   conversation already settled it. Its short name works where the
@@ -109,7 +111,10 @@ pick-up's or a follow-up's thread is `--thread` on its own address. Write a
   is non-null or `tick` is null, relay why the line is unavailable, and
   offer to ask about one address instead. When `incomplete` lists
   repositories, the newest tick could not read them: what waits there is
-  as of the reading each names, or unknown; say so.
+  as of the reading each names, or unknown; say so. When `trackerKept`
+  lists repositories, the newest tick had no credential for their tracker:
+  their item cards and the needs about items are as of the reading each
+  names (`readAt`, `null` when none had one), for the `reason` it gives.
 - **What was settled recently.** `jig ask --settled` lists what left the
   line in the last day, with who settled each (a person's login, a rule of the
   tick, the steward, or no one because its facts changed) and how; an answer
@@ -162,6 +167,8 @@ every time, from one `jig ask --waiting`:
 
 **Not read:** <each repository `incomplete` lists: as read at <its readAt> | never read; why it was refused>
 
+**Tracker kept:** <each repository `trackerKept` lists: its items as read at <its readAt> | never read with a credential; its reason>
+
 **Not listed:** drives that are running or that settle by themselves. Name a pull request or an item for its status card.
 ```
 
@@ -169,7 +176,8 @@ One repository block per repository the answer lists, in its order, and
 one line per entry, in its order. First check `unread` and `tick`: when
 `unread` is non-null or `tick` is null, relay the unavailable-line reason
 in place of the card, and ask which pull request or item to look at.
-Put the **Not read** line only when `incomplete` lists a repository.
+Put the **Not read** line only when `incomplete` lists a repository, and
+the **Tracker kept** line only when `trackerKept` lists one.
 Only with a read tick, an empty waiting list and an empty `incomplete`, put `Nothing
 waits on a person.` in place of the blocks; with an empty waiting list and
 repositories not read, put `Nothing waits on a person in what was read.`
@@ -270,6 +278,7 @@ are not proof that full CI passed.
 | withdraw a pause | `jig send drive@<owner>/<name> <PR> resume pause --dry-run` |
 | stop a drive | `jig send drive@<owner>/<name> <PR> stop --dry-run` |
 | hand a tracker item to the line | `jig send pickup@<owner>/<name> <item key> assign --dry-run` |
+| start a steward pass for a repository now | `jig send steward@<owner>/<name> start --dry-run` |
 
 `assign` hands an unassigned item to the repository's factory identity. On
 a tracker whose history leaves out changes made just after an issue's
@@ -280,6 +289,18 @@ command tool's timeout above four minutes. An item already assigned to the
 factory identity whose history does not show who made the assignment (none
 recorded, or one made by an automation) is refused with the remedy: the person unassigns it on the tracker and sends again. The send
 never changes an existing assignment.
+
+`start` asks the dispatcher of the host that owns the repository to start
+one steward pass on its next tick, even when the judgment backlog is empty
+or every member of it was already judged: for a person who settled a
+parked item by hand, or who doubts the backlog. Send it on that host; any
+other refuses and says so. It is held to the rules a pass the backlog
+starts is held to, and `send` refuses, naming the rule, while a steward
+pass holds the repository or the host's budget of three passes in a
+rolling hour is spent. The tick checks both again: a request either rule
+refuses then is dropped, and the tick's receipt and the dashboard's line
+for the repository say which rule refused it. A second `start` while one
+is pending leaves the first standing.
 
 `resume` names the directive it withdraws: `resume pause`, `resume
 hold-push` or `resume stop`. The mailbox verbs (`pause`, `hold-push`,
@@ -362,7 +383,7 @@ tree's ownership again before launching; the command never creates one.
 A real send prints `sent` (the link to what it wrote, or the mailbox's
 path) and `next` (the reader that acts on it). Report both, and say that
 the effect comes at that reader's next run, not at once: the dispatcher's
-tick for a label or an assignment (the send woke it, now or within a
+tick for a label, an assignment or a steward request (the send woke it, now or within a
 minute, when `next` says so; otherwise its next tick), the re-arm for an
 answer, the
 driver's next round boundary (before its next push, for `hold-push`) for a

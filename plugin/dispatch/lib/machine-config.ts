@@ -30,12 +30,14 @@
  * followup_concurrency: 2
  * receipts_days: 30
  * unclaimed_after: 15m
+ * redrive_max: 1          # the most re-drives per change a repository may ask for
  * failures:
  *   backoff: 2m
  *   backoff_max: 1h
  *   notify_after: 3
  *   rerun_died: 1      # 0 runs no follow-up again after a death or an unwritten result
  *   group: cause            # or scope: one notice per failing scope
+ * not_settled: { backoff: 15m, notify_after: 3 } # exit-4 re-arms on one head: not-settled-config.ts
  * dashboard:
  *   listen: 100.64.0.7:8765
  *   require_token: true     # false only with a loopback listen: a front authenticates
@@ -66,21 +68,29 @@ import { OPEN_LIMIT_MS } from "../../shared/orca-workspace/limits.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { DEFAULT_DISPATCHER_SHARE } from "../../shared/outbound/budget.ts";
 import { load } from "../../shared/yaml.ts";
-import { FRONT_RULES, shownFront } from "./dashboard-front.ts";
 import {
   DEFAULT_STARTUP_THRESHOLD,
   FAILURE_DEFAULTS,
   type FailureGrouping,
   type FailureSettings,
 } from "./failures.ts";
-import { isLoopback, type Listen, parseListen } from "./listen.ts";
+import type { Listen } from "./listen.ts";
+import {
+  dashboard,
+  dashboardAllowedHosts,
+  dashboardFront,
+  dashboardRequireToken,
+} from "./machine-dashboard-config.ts";
 import { type LoadSettings, loadSettings } from "./load-config.ts";
 import {
   type NotifyChannelConfig,
   notifyChannels,
   notifyStageFault,
 } from "./notify-config.ts";
+import type { NotSettledSettings } from "./not-settled-config.ts";
+import { notSettledSettings } from "./not-settled-config.ts";
 import { type PreflightProbe, preflightSetting } from "./preflight-config.ts";
+import { redriveMax } from "./redrive-config.ts";
 import type { HolderPolicy } from "../../shared/orca-workspace/holder.ts";
 import { HOLDER_KEYS, holderSettings } from "./holder-config.ts";
 import { type ServedPerson, servedPeople } from "./serve-config.ts";
@@ -172,6 +182,8 @@ export interface MachineConfig {
   wallBackoffMs: number;
   runtimeTimeoutMs: number;
   workspaceTimeoutMs: number;
+  /** The most re-drives per change any repository on the host may ask for (`redrive_max`, `redrive-config.ts`). */
+  redriveMax?: number;
   /** Workspace opens per tick, including the reserved notices open. */
   opensPerTick: number;
   /** The follow-ups' own workspace opens per tick, beside `opensPerTick` (`followup_opens_per_tick`). */
@@ -207,6 +219,8 @@ export interface MachineConfig {
   preflight?: PreflightProbe[];
   /** The notification channels the tick sends through beside the Orca card (`notify.channels`); none when absent. */
   notifyChannels?: NotifyChannelConfig[];
+  /** How re-arms that keep stopping `NOT_SETTLED` on one head back off and when they are a person's (`not_settled`). */
+  notSettled?: NotSettledSettings;
   /** What the open detaches beyond an idle holder without asking (`detach_idle_holders`, `rescue_unpushed`): `holder-config.ts`. */
   holders?: HolderPolicy;
 }
@@ -241,6 +255,7 @@ const TOP_KEYS = [
   "followup_concurrency",
   "receipts_days",
   "unclaimed_after",
+  "redrive_max",
   "failures",
   "dashboard",
   "records",
@@ -252,9 +267,9 @@ const TOP_KEYS = [
   "tracker_share",
   "preflight",
   "notify",
+  "not_settled",
   ...HOLDER_KEYS,
 ];
-const DASHBOARD_KEYS = ["listen", "require_token", "allowed_hosts", "front"];
 const FAILURES_KEYS = [
   "backoff",
   "backoff_max",
@@ -611,10 +626,13 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   if (!priorities.ok) return priorities;
   const tracker = trackerSettings(top);
   if (!tracker.ok) return tracker;
+  const redrive = redriveSettings(top);
+  if (!redrive.ok) return redrive;
   const holders = holderSettings(top);
   if (!holders.ok) return holders;
   return ok({
     ...tracker.value,
+    ...redrive.value,
     ...holders.value,
     ...repos.value,
     path: where,
@@ -627,6 +645,17 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
     steward: steward.value,
     priorities: priorities.value,
   });
+}
+
+/** How re-drives back off and how many a change gets (`not_settled`, `redrive_max`). */
+function redriveSettings(
+  top: Record<string, unknown>,
+): Checked<Pick<MachineConfig, "notSettled" | "redriveMax">> {
+  const notSettled = notSettledSettings(top.not_settled);
+  if (!notSettled.ok) return notSettled;
+  const redrives = redriveMax(top.redrive_max);
+  if (!redrives.ok) return redrives;
+  return ok({ notSettled: notSettled.value, redriveMax: redrives.value });
 }
 
 /** The tick's share of each credential's budget, and the checks run on each account before a tracker stage. */
@@ -869,84 +898,6 @@ export function failureSettings(
   config: Pick<MachineConfig, "failures"> | null | undefined,
 ): FailureSettings {
   return config?.failures ?? { ...FAILURE_DEFAULTS };
-}
-
-/** The dashboard's address; `null` when the file names none. */
-function dashboard(value: unknown): Checked<Listen | null> {
-  if (value === undefined || value === null) return ok(null);
-  if (!isMapping(value)) return invalid("dashboard must be a mapping");
-  const known = only(value, DASHBOARD_KEYS, "dashboard");
-  if (!known.ok) return known;
-  if (value.listen === undefined || value.listen === null) return ok(null);
-  const address = text(value.listen, "dashboard.listen");
-  if (!address.ok) return address;
-  const listen = parseListen(address.value);
-  return listen.ok
-    ? listen
-    : invalid(`dashboard.listen: ${listen.failure.reason}`);
-}
-
-/** Whether the dashboard demands its token. Turning it off is accepted only where nothing but a front on this host can reach the port. */
-function dashboardRequireToken(value: unknown): Checked<boolean> {
-  const listen = dashboard(value);
-  if (!listen.ok) return listen;
-  const required = flag(
-    isMapping(value) ? value.require_token : undefined,
-    "dashboard.require_token",
-    true,
-  );
-  if (!required.ok) return required;
-  if (!required.value && (listen.value === null || !isLoopback(listen.value)))
-    return invalid(
-      "dashboard.require_token: false needs a loopback dashboard.listen (127.0.0.1 or ::1), since only a front on this host that authenticates the person may reach a page with no token",
-    );
-  return required;
-}
-
-/** The front host names a tokenless dashboard also answers to. */
-function dashboardAllowedHosts(value: unknown): Checked<string[]> {
-  const listed = isMapping(value) ? value.allowed_hosts : undefined;
-  if (listed === undefined || listed === null) return ok([]);
-  if (!Array.isArray(listed))
-    return invalid("dashboard.allowed_hosts must be a list");
-  const names = each(listed, (name, i) =>
-    text(name, `dashboard.allowed_hosts[${i}]`),
-  );
-  if (!names.ok) return names;
-  return ok(names.value.map((name) => name.toLowerCase()));
-}
-
-/**
- * The address a front publishes for a phone to open: an absolute `https:`
- * URL with no user name, password, query or fragment, and no escaped query
- * or parameter in its path, whose host is a name or a private address other
- * than loopback and link-local. It is printed in URL-canonical form, so it must not
- * carry a token anywhere. A name is taken as written: Jig never resolves it,
- * nor infers how far it reaches. Only a tokenless dashboard has a front to
- * name.
- */
-function dashboardFront(
-  value: unknown,
-  requireToken: boolean,
-): Checked<string | null> {
-  const given = isMapping(value) ? value.front : undefined;
-  if (given === undefined || given === null) return ok(null);
-  const address = text(given, "dashboard.front");
-  if (!address.ok) return address;
-  if (!URL.canParse(address.value))
-    return invalid(
-      "dashboard.front is not an absolute URL (its value is withheld, since it may hold a credential)",
-    );
-  const url = new URL(address.value);
-  const refuse = (why: string) =>
-    invalid(`dashboard.front: ${shownFront(url)} ${why}`);
-  const broken = FRONT_RULES.find(([holds]) => !holds(url, address.value));
-  if (broken !== undefined) return refuse(broken[1]);
-  if (requireToken)
-    return refuse(
-      "needs dashboard.require_token: false, since a front's address carries no token and only a dashboard that asks for none answers it",
-    );
-  return ok(url.href);
 }
 
 /**

@@ -59,6 +59,7 @@ const NEED_LABEL: Record<LineNeed["cause"], string> = {
   "pickup-ended": "Pickup ended without moving the item on",
   "double-claim": "Claimed twice",
   "assigner-cannot-write": "Assigned by someone who cannot write",
+  "epic-plan": "Its execution plan cannot place its children",
   "tracker-unreachable": "An account cannot reach the repository's issues",
   "low-quota": "Quota projected to run out",
   "calls-failing": "A caller's calls all fail",

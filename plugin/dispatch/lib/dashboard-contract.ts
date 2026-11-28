@@ -117,7 +117,8 @@ export interface LineNotified {
 
 /**
  * Causes that wait on a person and on nothing else: what the tick notifies,
- * an item assigned by someone who cannot write, and an account the tracker
+ * an item assigned by someone who cannot write, an epic whose execution plan
+ * holds children no rule will release, and an account the tracker
  * preflight holds a repository's tracker stages back on (`preflight.ts`),
  * which it only reports.
  * The failure ledger's causes are about the dispatcher, not a piece of work,
@@ -126,6 +127,7 @@ export interface LineNotified {
 export type NeedCause =
   | Exclude<NotifyCause, "waiting" | "drifting" | "ready" | FailureCause>
   | "assigner-cannot-write"
+  | "epic-plan"
   | "tracker-unreachable"
   | "account-sign-in"
   | "account-startup"

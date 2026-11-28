@@ -123,7 +123,9 @@ it.each(["none", "stdout", "stderr", "interleaved"])(
       )
       .get(id) as { class: string; reason: string };
     expect(row.class).toBe(quota ? "quota wall" : "refused");
-    expect(row.reason).toContain("could not start");
+    expect(row.reason).toContain(
+      quota ? "usage-limit notice" : "could not start",
+    );
     const next = retry.repos[0]?.launches?.some((l) => l.outcome === "launched")
       ? retry
       : await applyTick(w, false);

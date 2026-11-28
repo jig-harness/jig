@@ -217,6 +217,12 @@
       "The closed records a steward pass submitted. The next tick claims each before acting on it, and first checks again the stops, holds and budgets that apply."
     ],
     [
+      "dispatch-steward-request",
+      "dispatch/lib/steward-requests.ts",
+      "steward_requests",
+      "A person's request for one steward pass of a repository, with its identity, who sent it and when, kept on the host that owns the repository. The tick persists that identity on the launch reservation, keeps the request through pending acknowledgments, and settles it once wrapper or execution evidence matches that identity or a rule refuses it, with an outcome-log row naming which."
+    ],
+    [
       "dispatch-allocation-charge",
       "dispatch/lib/allocation-store.ts",
       "allocation_charge",

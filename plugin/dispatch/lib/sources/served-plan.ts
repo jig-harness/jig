@@ -33,8 +33,87 @@ export interface ServedPlan {
   present: boolean;
   order: string[];
   holds: Record<string, string>;
+  /** The issues the plan places as its steps, when it could be applied. */
+  steps?: string[];
   error?: string;
 }
+
+/** A plan step's state as a reader of the Queue says it. */
+const STATE_WORDS: Readonly<Record<string, string>> = {
+  triage: "in triage",
+  backlog: "in the backlog",
+  unstarted: "not started",
+  started: "in progress",
+  completed: "done",
+  canceled: "canceled",
+};
+
+/**
+ * Why a plan step does not start yet: the predecessors it waits on, each
+ * with its state (its plan edges not yet released and the other steps the
+ * tracker records as blocking it), or the plan alone when none is named.
+ */
+function waitReason(
+  plan: ExecutionPlan,
+  step: string,
+  live: Record<string, LiveIssue>,
+  merged: readonly string[],
+  held: Readonly<Record<string, string>> = {},
+): string {
+  const done = (key: string) => live[key]?.state === "completed";
+  const state = stateWord(live);
+  const waits = new Map<string, string>();
+  // A failed merge proof explains its own edge; every such edge keeps its reason beside the other waits.
+  const proofs: string[] = [];
+  for (const edge of plan.edges.filter((e) => e.to === step)) {
+    const proof = edge.completion === "merged" ? mergeKey(edge) : null;
+    if (proof !== null && merged.includes(proof)) continue;
+    if (proof !== null && held[proof]) proofs.push(held[proof]);
+    else if (proof !== null)
+      waits.set(edge.from, `${state(edge.from)}, until its merge is proven`);
+    else if (!done(edge.from)) waits.set(edge.from, state(edge.from));
+  }
+  addBlockers(waits, live, step, state);
+  return describeWaits(waits, proofs);
+}
+
+/** A step's state as a reader of the Queue says it. */
+function stateWord(live: Record<string, LiveIssue>): (key: string) => string {
+  return (key) => STATE_WORDS[live[key]?.state ?? ""] ?? "its state not read";
+}
+
+/** The other steps the tracker records as blocking `step` and not done, beside the plan's own edges. */
+function addBlockers(
+  waits: Map<string, string>,
+  live: Record<string, LiveIssue>,
+  step: string,
+  state: (key: string) => string,
+): void {
+  const blockers = live[step]?.blockedBy;
+  for (const key of Array.isArray(blockers) ? blockers : [])
+    if (live[key]?.state !== "completed" && !waits.has(key))
+      waits.set(key, state(key));
+}
+
+/** The key merge evidence records an edge under. */
+function mergeKey(edge: { from: string; to: string }): string {
+  return `${edge.from}>${edge.to}`;
+}
+
+/** The predecessors a step waits on, then the failed merge proofs; the plan alone when none is named. */
+function describeWaits(
+  waits: ReadonlyMap<string, string>,
+  proofs: readonly string[],
+): string {
+  if (waits.size === 0)
+    return proofs.length > 0
+      ? proofs.join("; ")
+      : "waiting on the epic execution plan";
+  const named = [...waits].map(([key, how]) => `${key} (${how})`);
+  const waiting = `waiting on ${named.join(", ")}, which the epic execution plan puts before it`;
+  return proofs.length > 0 ? `${waiting}; ${proofs.join("; ")}` : waiting;
+}
+
 export function servedPlan(
   description: string,
   epic: string,
@@ -81,28 +160,22 @@ export function servedPlan(
             )
           : item.blockedBy,
       };
-    const order = eligibleIssues(plan, inPlan, evidence?.merged ?? []);
+    const merged = evidence?.merged ?? [];
+    const order = eligibleIssues(plan, inPlan, merged);
     const holds: Record<string, string> = {};
     for (const step of plan.steps)
       if (!order.includes(step.issue))
-        holds[step.issue] = "waiting on the epic execution plan";
-    mergeHolds(plan, evidence?.held ?? {}, holds);
+        holds[step.issue] = waitReason(
+          plan,
+          step.issue,
+          inPlan,
+          merged,
+          evidence?.held,
+        );
     for (const gate of humanGates(plan)) holds[gate.issue] = PERSON_HOLD;
-    return { present: true, order, holds };
+    return { present: true, order, holds, steps: [...steps] };
   } catch (error) {
     return { present: true, order: [], holds: {}, error: failureText(error) };
-  }
-}
-
-/** A failed merge proof explains the conflict hold without overriding other plan gates. */
-function mergeHolds(
-  plan: ExecutionPlan,
-  reasons: Record<string, string>,
-  holds: Record<string, string>,
-): void {
-  for (const edge of plan.edges) {
-    const reason = reasons[`${edge.from}>${edge.to}`];
-    if (reason && holds[edge.to]) holds[edge.to] = reason;
   }
 }
 

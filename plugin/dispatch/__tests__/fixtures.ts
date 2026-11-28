@@ -158,6 +158,11 @@ if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("r
   const open = Number(fs.readFileSync(file, "utf8"));
   out({ data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false }, nodes: Array.from({ length: open }, () => ({ isResolved: false })) } } } } });
 }
+if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("query DispatchHeadReviews"))) {
+  // A pull request's reviews, as reviews-<pr>.json lists them: none when it does not exist.
+  const file = F + "/reviews-" + (args.find((a) => a.startsWith("pr=")) ?? "pr=0").slice(3) + ".json";
+  out({ data: { repository: { pullRequest: { reviews: { nodes: fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : [] } } } } });
+}
 const single = args[0] === "api" && args.includes("-X") ? /issues\\/comments\\/(\\d+)$/.exec(args.find((a) => /issues\\/comments\\/\\d+$/.test(a)) ?? "") : null;
 if (single !== null) {
   // A comment's update or removal, on whichever pull request's file holds it; an update is refused while comment-edit-fail exists.

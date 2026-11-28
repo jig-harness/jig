@@ -119,7 +119,7 @@ function parsed(text: string, what: string): Outcome<unknown, "unreadable"> {
 }
 
 /** What a `gh` read answered, parsed as JSON; `what` names it in the failure. */
-async function ghJson(
+export async function ghJson(
   args: string[],
   what: string,
   cwd?: string,

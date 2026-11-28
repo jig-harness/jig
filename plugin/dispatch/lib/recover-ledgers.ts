@@ -7,6 +7,7 @@ import {
 } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import { adoptionOf } from "./adopt.ts";
 import { canReconcileDriveLedgers } from "./reconcile-drive-ledgers.ts";
+import { redriveAllowanceOf } from "./redrive-config.ts";
 import { readDrives } from "./sources/ledgers.ts";
 import { allRecords, type TickContext } from "./tick-context.ts";
 import { settleDrives } from "./tick-shared.ts";
@@ -78,6 +79,8 @@ export async function recoverLedgers(
         [fresh],
         allRecords(context),
         observation.claims,
+        context.options.machine?.notSettled,
+        redriveAllowanceOf(opened.section, context.options.machine),
       )[0] as typeof fresh;
   }
 }

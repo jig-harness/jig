@@ -3,7 +3,10 @@
  * refused keeps the part of the line the tick that last read it found
  * (`line-merge.ts`), so the line is incomplete there: `jig ask --waiting` and
  * the dashboard's answer name each such repository, and the tick strip marks
- * a tick that could read none of the repositories it reported on. Pure, with
+ * a tick that could read none of the repositories it reported on. A
+ * repository whose tracker the newest tick could not ask, for want of a
+ * credential, keeps its tracker part from an earlier reading
+ * (`line-keyless.ts`), and both name that reading too. Pure, with
  * no imports but types, so the dashboard's page uses it as the plugin does.
  */
 import type { LineRepo, LineSnapshot, LineTick } from "./dashboard-contract.ts";
@@ -44,6 +47,34 @@ export function refusedRepos(line: LineSnapshot): RefusedRepo[] {
         ? null
         : (r.readAt ?? null);
     return [{ repo: known ?? r.path, refused: r.refused, readAt }];
+  });
+}
+
+/** A repository whose tracker part (its item cards and the needs about items) the newest tick kept from an earlier reading, because it had no credential for the tracker. */
+export interface KeptTrackerRepo {
+  /** Its slug, else the slug its path last had, else its path. */
+  repo: string;
+  /** When the tick its tracker part is from started; `null` when no tick has read its tracker with a credential, so the line holds none of it. */
+  readAt: string | null;
+  /** That tick's run id; `null` beside a `null` `readAt`, and on a line that did not record it. */
+  runId: string | null;
+  /** What was missing, verbatim (`no Linear key configured`). */
+  reason: string;
+}
+
+/** The line's repositories whose tracker part is kept from an earlier reading (`trackerKept`), in the machine file's order. */
+export function keptTrackerRepos(line: LineSnapshot): KeptTrackerRepo[] {
+  return line.repos.flatMap((r) => {
+    const kept = r.trackerKept;
+    if (kept === undefined) return [];
+    return [
+      {
+        repo: retainedSlug(r) ?? r.path,
+        readAt: kept.readAt,
+        runId: kept.runId ?? null,
+        reason: kept.reason,
+      },
+    ];
   });
 }
 

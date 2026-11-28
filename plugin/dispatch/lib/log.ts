@@ -62,7 +62,7 @@ import {
   type ReadRecord,
   targetOf,
 } from "./launches.ts";
-import { releaseOf } from "./release.ts";
+import { insertLogRow } from "./log-insert.ts";
 import { sessionResultClass } from "./session-result-class.ts";
 import { unwrittenResult } from "./session-startup.ts";
 import { type ReportFields, reportFields } from "./closing-report-store.ts";
@@ -245,41 +245,7 @@ export function bucket(row: LogRow): string {
  * what the row records, it lands with it or not at all.
  */
 export function insertRow(db: Database, given: LogRow): boolean {
-  const row = withRelease(given);
-  const done = db
-    .query(
-      `INSERT INTO log (key, kind, at, at_ms, repo, stage, account, bucket, reason, row, target, cause, report_by, release)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (key) DO NOTHING`,
-    )
-    .run(
-      row.key,
-      row.kind,
-      row.at,
-      parseMs(row.at),
-      row.repo,
-      row.stage,
-      row.account,
-      bucket(row),
-      row.reason,
-      JSON.stringify(row),
-      row.target,
-      row.kind === "ended" ? (row.cause ?? null) : null,
-      row.kind === "ended" ? (row.by ?? null) : null,
-      row.release ?? null,
-    );
-  return done.changes === 1;
-}
-
-/**
- * The row with the release it counts under: an ended row keeps the one its
- * launch record named (the run's release is the one at its launch, not the
- * one that logs its end); an event is the writing tick's own.
- */
-function withRelease(row: LogRow): LogRow {
-  if (row.release !== undefined || row.kind === "ended") return row;
-  const release = releaseOf();
-  return release === undefined ? row : { ...row, release };
+  return insertLogRow(db, given);
 }
 
 /**
@@ -521,12 +487,11 @@ function ordinaryStartupClass(
 ): { class: OutcomeClass; reason: string } | null {
   if (state.kind !== "ended" || state.exit.startup === undefined) return null;
   const quota = state.exit.startup === "quota";
-  const startup = quota
-    ? "vendor usage-limit notice"
-    : "quick unsuccessful exit without a transcript";
   return {
     class: quota ? "quota wall" : "refused",
-    reason: `session could not start: ${startup}; exit ${state.exit.code}`,
+    reason: quota
+      ? `session stopped on a vendor usage-limit notice; exit ${state.exit.code}`
+      : `session could not start: quick unsuccessful exit without a transcript; exit ${state.exit.code}`,
   };
 }
 

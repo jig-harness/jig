@@ -5,7 +5,9 @@ Version 1 · provisional, moved by [plan item 50](https://github.com/jig-harness
 The [steward](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is
 an agent pass a [dispatcher](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)'s
 host starts when a repository holds stopped or waiting work that no rule of
-the line settles. It reads a digest of that work, including logs, handoffs
+the line settles, or when a person requests one (`jig send` `start`), which
+can be with an empty backlog and so an empty digest. It reads a digest of
+that work, including logs, handoffs
 and tracker text that anyone could have written, so it is never allowed to
 act on what it finds. It writes
 [steward records](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
@@ -72,7 +74,7 @@ The registry's kind the host keeps the submitted records as:
 
 | Kind | Medium | Markers | Version | Key | Meaning |
 | --- | --- | --- | --- | --- | --- |
-| `dispatch-steward-record` | machine |  | 55 | — | The closed records a steward pass submitted. The next tick claims each before acting on it, and first checks again the stops, holds and budgets that apply. |
+| `dispatch-steward-record` | machine |  | 56 | — | The closed records a steward pass submitted. The next tick claims each before acting on it, and first checks again the stops, holds and budgets that apply. |
 
 <!-- /protocol:generated -->
 

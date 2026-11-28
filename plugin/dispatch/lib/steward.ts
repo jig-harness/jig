@@ -1,4 +1,5 @@
 /** The owner-local steward's closed records, digest and durable once-only decisions. */
+import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { isMapping } from "../../shared/config-layers.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
@@ -224,11 +225,13 @@ export function rearmableBySteward(pr: DrivenPr, held: boolean): boolean {
   );
 }
 
+/** The latest runs of `repo` (of every repository for `null`); a reader that must not migrate the database passes its own connection as `db`. */
 export function stewardRuns(
   repo: string | null,
   root = stateRoot(),
+  db: Database = stateDb(root),
 ): StewardRun[] {
-  return stateDb(root)
+  return db
     .query(
       "SELECT id, hash, at_ms AS at FROM steward_runs WHERE (? IS NULL OR repo = ?) ORDER BY at_ms DESC LIMIT 20",
     )

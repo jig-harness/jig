@@ -82,7 +82,8 @@
  * wall, which lifts at the reset the notice states (`wall_backoff` from now
  * when that does not read); otherwise its cause stays unknown and the
  * account backs off for `wall_backoff`. An unreadable transcript scan
- * withholds that classification.
+ * withholds that classification. A failing pass, however long it ran, whose
+ * output or transcript ends on the usage notice is a quota wall too.
  * Before it records the exit of a pass that left no closing report, the
  * wrapper records what it saw as the report, `by: wrapper` (a pass that
  * could not start, one it stopped at its deadline, any steward pass), or,
@@ -118,6 +119,7 @@
  * so nothing started.
  */
 import { runStage, type Ran, type RunOptions } from "./lib/run-stage.ts";
+import { ownPass, startupOf, startupOutputOf } from "./lib/pass-startup.ts";
 import { driverCleanupUncertain } from "./lib/stage-cleanup.ts";
 import { runProcessEntry } from "./lib/runtime/process-entry.ts";
 import { rememberProcessOwner } from "./lib/runtime/process-owner.ts";
@@ -183,24 +185,9 @@ import {
 } from "./lib/state.ts";
 import { writeUnwritten } from "./lib/unwritten-result.ts";
 import { stateRoot } from "./receipts.ts";
-import { DEFAULT_STARTUP_THRESHOLD } from "./lib/failures.ts";
 import { writeWall } from "./lib/walls.ts";
-import {
-  failedStartup,
-  passedStartupWindow,
-  quickStartupDeath,
-  readsStartup,
-  type SignInPhrase,
-  type StartupFailure,
-  startupReset,
-} from "./lib/session-startup.ts";
+import { type StartupFailure, startupWall } from "./lib/session-startup.ts";
 import { settleUnreported } from "./lib/end-report.ts";
-import {
-  recordAccountStartupProblem,
-  recordStartupDeath,
-  recordWorkingStartup,
-} from "./lib/account-startup.ts";
-import { forgetClaudeSignIn } from "./lib/claude-sign-in.ts";
 import { currentIso, currentMs, isoFromMs, parseMs } from "../shared/time.ts";
 
 const CLAIMED = 3;
@@ -358,15 +345,6 @@ function stageArgv(record: LaunchRecord): string[] {
     return followupPassArgv(record, claudeWords());
   if (!isInteractive(record)) return pickupPassArgv(record, claudeWords());
   return sessionArgv(record);
-}
-
-/** Whether the wrapper runs a record's stage as a pass of its own: a follow-up's or a pickup's, under its own deadline, its last question kept. */
-function ownPass(record: LaunchRecord): boolean {
-  return (
-    record.action === "steward" ||
-    record.action === "followup" ||
-    (record.action === "pickup" && !isInteractive(record))
-  );
 }
 
 /** How the wrapper runs a record's stage: its own pass under its deadline, its last question kept; a drive with the end of its error output kept; anything else as it is. */
@@ -607,74 +585,6 @@ async function supervise(id: string, token: string): Promise<number> {
   });
 }
 
-/** Evaluate account startup before the exit hands its slot back to the tick. */
-function startupOf(
-  record: LaunchRecord,
-  ran: Ran,
-): {
-  startup?: StartupFailure;
-  phrase?: SignInPhrase;
-} {
-  if (
-    !ownPass(record) ||
-    !readsStartup(record.vendor) ||
-    ran.started === undefined ||
-    ran.exited === undefined
-  )
-    return {};
-  const started = ran.started;
-  const exited = ran.exited;
-  if (
-    readResult(record.id) !== null ||
-    ran.code === 0 ||
-    ran.said ||
-    passedStartupWindow(started, exited)
-  ) {
-    recordWorkingStartup(record, isoFromMs(started));
-    return {};
-  }
-  if (!quickStartupDeath(record, ran.code, started, exited)) return {};
-  let phrase: SignInPhrase | undefined;
-  const startup = failedStartup(
-    record,
-    ran.code,
-    started,
-    startupOutputOf(ran),
-    exited,
-    (found) => {
-      phrase = found;
-    },
-    ran.head,
-  );
-  const threshold = record.startupFailureThreshold ?? DEFAULT_STARTUP_THRESHOLD;
-  const deaths = recordStartupDeath(
-    record,
-    startup ?? "died",
-    isoFromMs(started),
-    threshold,
-  );
-  const at = isoFromMs(exited);
-  if (startup === "sign-in") {
-    recordAccountStartupProblem(record, "sign-in", at);
-    try {
-      forgetClaudeSignIn(record.configDir);
-    } catch (error) {
-      swallow(error, "the cached sign-in probe could not be dropped");
-    }
-    return phrase === undefined ? { startup } : { startup, phrase };
-  }
-  if (startup !== "quota" && deaths >= threshold) {
-    recordAccountStartupProblem(record, "breaker", at);
-    return { startup: "breaker" };
-  }
-  return startup === undefined ? {} : { startup };
-}
-
-/** What a stage printed at its start, where a vendor's usage notice would be. */
-function startupOutputOf(ran: Ran): string {
-  return ran.startupOutput ?? ran.output ?? "";
-}
-
 /** The session id a pass printed at its start (Codex's); Claude Code's is the one the tick minted (`sessionId`). */
 function sessionOf(record: LaunchRecord, ran: Ran): string | null {
   const harness = harnessNamed(record.vendor);
@@ -684,26 +594,18 @@ function sessionOf(record: LaunchRecord, ran: Ran): string | null {
 }
 
 /**
- * Wall an account before releasing the slot held by an unstarted session:
- * until the reset its usage notice states, else `wall_backoff` from now. The
- * notice is read before the write, so only the write's failure is the
- * wall's to absorb.
+ * Wall an account before releasing the slot held by a pass that stopped on
+ * its account (`startupWall`). The notice is read before the write, so only
+ * the write's failure is the wall's to absorb.
  */
 function recordStartupWall(
   record: LaunchRecord,
   startup: string,
   output: string,
 ): boolean {
-  const now = currentMs();
-  const notice = startup === "quota" ? startupReset(output, now) : null;
+  const wall = startupWall(record, startup, output, currentMs());
   try {
-    writeWall({
-      account: record.account,
-      vendor: record.vendor,
-      configDir: record.configDir,
-      resetAt: notice?.resetAt ?? isoFromMs(now + record.wallBackoffMs),
-      source: startupWallSource(startup, notice),
-    });
+    writeWall(wall);
     return true;
   } catch (error) {
     swallow(
@@ -712,18 +614,6 @@ function recordStartupWall(
     );
     return false;
   }
-}
-
-/** Where a startup wall's reset came from: the notice's reset, or the backoff, naming a notice clause that did not read. */
-function startupWallSource(
-  startup: string,
-  notice: ReturnType<typeof startupReset>,
-): string {
-  if (notice?.resetAt != null)
-    return `session could not start (${startup}); the usage notice's reset`;
-  if (notice?.clause != null)
-    return `session could not start (${startup}); the notice's "${notice.clause.slice(0, 80)}" did not read; wall_backoff`;
-  return `session could not start (${startup}); wall_backoff`;
 }
 
 /** Keep the wrapper's explanation or transcript before publishing the exit. */

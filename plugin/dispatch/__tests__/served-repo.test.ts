@@ -5,7 +5,7 @@ import type {
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { PickupReads } from "../lib/pickup-reads.ts";
 import {
-  dropRepeatedLabelNeeds,
+  dropRepeatedItemNeeds,
   NEEDS_REPOSITORY_LABEL,
   otherRepoLabel,
   repoScopeOf,
@@ -257,7 +257,7 @@ describe("served items no repository label places", () => {
     expect(both.web.wanted).toEqual([]);
     expect(both.api.wanted).toEqual([]);
     const reports = [both.web, both.api];
-    dropRepeatedLabelNeeds(reports);
+    dropRepeatedItemNeeds(reports);
     const needs = reports.flatMap((r) => r.unplaced);
     expect(needs).toMatchObject([
       {
@@ -413,7 +413,7 @@ describe("served items no repository label places", () => {
       { unplaced: [need("ENG-1"), need("ENG-2")] },
       { unplaced: [need("ENG-1"), other] },
     ];
-    dropRepeatedLabelNeeds(reports);
+    dropRepeatedItemNeeds(reports);
     expect(reports[0]?.unplaced.map((u) => u.target)).toEqual([
       "ENG-1",
       "ENG-2",

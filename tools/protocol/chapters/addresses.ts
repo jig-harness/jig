@@ -20,6 +20,7 @@ const EXCLUDED: readonly string[] = [];
 const KEY_TEXT = {
   item: "the tracker's item key",
   "pull-request": "the pull request's number",
+  none: "none: the address names the repository alone",
 } as const;
 
 interface Row {
@@ -110,7 +111,7 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
     required: true,
     identifies: false,
     description:
-      "For a station, what its address's key is: item for the tracker's item key, pull-request for a pull request's number. Null for a verb.",
+      "For a station, what its address's key is: item for the tracker's item key, pull-request for a pull request's number, none for a station whose address names the repository alone. Null for a verb.",
   },
   stations: {
     type: "string",

@@ -4,6 +4,7 @@ import { swallow } from "../../shared/errors.ts";
 import { currentIso } from "../../shared/time.ts";
 import type { LineQueued } from "./dashboard-contract.ts";
 import type { LaunchRecord } from "./launches.ts";
+import type { Unplaced } from "./types.ts";
 import {
   type PickupCondition,
   pickupConditionWords,
@@ -32,6 +33,19 @@ export type QueuedFields = Pick<
   Partial<
     Pick<LineQueued, "stale" | "assignedBy" | "hold" | "pickupHold" | "launch">
   >;
+
+/**
+ * The need a tracker item the tick left unplaced raises on the line, or
+ * `null` for one it only queues. An epic's plan need is listed only as a
+ * need: the epic's own Queue line is its summary.
+ */
+export function unplacedNeedCause(
+  u: Pick<Unplaced, "cause">,
+): "assigner-cannot-write" | "epic-plan" | null {
+  return u.cause === "assigner-cannot-write" || u.cause === "epic-plan"
+    ? u.cause
+    : null;
+}
 
 /**
  * Whether the tick itself settles this hold: it reads the hold's dependency

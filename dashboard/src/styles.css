@@ -248,6 +248,9 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; overflow-wrap: anywhere; }
 .kv dd.prose { font-family: var(--sans); }
+/* a repository whose tracker part is kept from an earlier reading: the mark and that reading under its stages */
+.repoList .kv dd { flex-direction: column; justify-content: flex-start; gap: 2px; }
+.trackerKept { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
 .wallLine { font-size: var(--small); }
 /* Running's load: the headline, then every gauge against its own line on a bar to 150% */
 .load { container: load / inline-size; display: flex; flex-direction: column; gap: 4px; padding: 0 0 10px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }

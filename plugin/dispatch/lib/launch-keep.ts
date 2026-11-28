@@ -5,7 +5,7 @@ import type { ReadRecord } from "./launches.ts";
 import {
   FAILED_TAKEOVERS,
   failedTakeoverExit,
-  NOT_SETTLED_REARMS,
+  NOT_SETTLED_ENDS_KEPT,
 } from "./repeated-end-caps.ts";
 
 const isDrive = (action: string): boolean =>
@@ -98,12 +98,12 @@ function repeatedEnd(r: ReadRecord): boolean {
 /**
  * The ids of each pull request's drive records (re-arms and takeovers, not
  * cancelled before they ran) at the tail of its drive records that ended the
- * way `repeated-ends.ts` counts, as many as its longest cap: the only
+ * way `repeated-ends.ts` counts, as many as its longest cap can count: the only
  * evidence of how many launches in a row ended so, kept until a later launch
  * ends the run.
  */
 export function latestRepeatedEnds(records: ReadRecord[]): Set<string> {
-  const cap = Math.max(NOT_SETTLED_REARMS, FAILED_TAKEOVERS);
+  const cap = Math.max(NOT_SETTLED_ENDS_KEPT, FAILED_TAKEOVERS);
   const byPr = new Map<string, ReadRecord[]>();
   for (const r of records) {
     if (!isDrive(r.record.action) || cancelledBeforeExecution(r)) continue;

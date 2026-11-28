@@ -22,7 +22,10 @@ import {
   type NeedAct,
 } from "../../plugin/shared/acts.ts";
 import { uniqueLogins } from "../../plugin/shared/forge-logins.ts";
-import { refusedRepos } from "../../plugin/dispatch/lib/line-unread.ts";
+import {
+  keptTrackerRepos,
+  refusedRepos,
+} from "../../plugin/dispatch/lib/line-unread.ts";
 import { answerStateWords } from "../../plugin/shared/decision-card.ts";
 import { ago, clock, plural } from "./format.ts";
 import type { EveryoneAnswerState } from "./icons.ts";
@@ -124,6 +127,7 @@ function recordedWord(n: LineNeed, tracker: Tracker): string {
     return "repeated no-cause stops (needs a person)";
   if (n.cause === "parked") return "parked for a person";
   if (n.cause === "assigner-cannot-write") return "assigner cannot write";
+  if (n.cause === "epic-plan") return "epic plan cannot place its children";
   if (n.cause === "tracker-unreachable")
     return `${itemWords(tracker).name ?? "issues"} unreachable`;
   if (n.cause === "account-sign-in") return "sign-in refused";
@@ -711,6 +715,17 @@ function boardLimitText(line: LineSnapshot): string | null {
 }
 
 /** The answer when no need is open: sessions not moving still count, a repository not read is named, and a quiet line says what runs and what waits. */
+/** Whether some of the line is unread, limited or kept from an earlier reading, so a quiet answer covers only what was read. */
+function partialReading(
+  line: LineSnapshot,
+  unread: string | null,
+  boardLimit: string | null,
+): boolean {
+  return (
+    unread !== null || boardLimit !== null || keptTrackerRepos(line).length > 0
+  );
+}
+
 function quietBand(
   line: LineSnapshot,
   nowMs: number,
@@ -741,8 +756,8 @@ function quietBand(
       sub,
       loud: true,
     };
-  // A repository the line could not read may hold a need it cannot show, so the answer does not say nothing does.
-  if (unread !== null || boardLimit !== null)
+  // A repository the line could not read, or whose tracker part it kept from an earlier reading, may hold a need it cannot show, so the answer does not say nothing does.
+  if (partialReading(line, unread, boardLimit))
     return {
       title: pastTense
         ? `Nothing needed a person in what the ${tickClock} tick read.`

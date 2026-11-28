@@ -45,6 +45,8 @@ export interface DispatchSection {
   stalledScope: StalledScope;
   /** Whether a stalled pickup whose tree holds its unshipped work is relaunched once in that tree to push and record it (`stalled_relaunch`): `finish-once`, or `never`. */
   stalledRelaunch: StalledRelaunch;
+  /** The re-drives per change the repository asks for (`dispatch.redrive`), before the host's `redrive_max` caps them; absent, one of each. */
+  redrive?: import("./redrive-config.ts").RedriveCounts;
   /** What a pickup with no priority does (`missing_priority`): `hold`, absent included, keeps it off the line's starts until it has one; `start` starts it ranked after every low-priority item. */
   missingPriority?: MissingPriority;
   /** How long a dispatched session may wait before it is reported. */
@@ -268,6 +270,8 @@ export interface StaleCause {
   tree?: { actor: string; here: boolean };
   /** Changes an earlier launch of the same record may have acted on before a replay moved `change` on; each counts as re-driven. */
   earlier?: string[];
+  /** For a stall, a spent CI-repair budget or a stop on a conflict: the re-drives allowed at `change` (`redrive-config.ts`); absent, one. */
+  redrives?: number;
 }
 
 /** What the repository clone's drive doctor (`drives.ts --doctor`) reads of a pull request's lock holder. */
@@ -382,9 +386,11 @@ export interface Unplaced {
   url?: string | null;
   /**
    * Set for an item only a person can settle: assigned by someone who cannot
-   * write, or placed in no repository by its labels and no default.
+   * write, placed in no repository by its labels and no default, or an epic
+   * whose execution plan holds children no rule will release
+   * (`sources/epic-plan-needs.ts`).
    */
-  cause?: "assigner-cannot-write" | "needs-repository-label";
+  cause?: "assigner-cannot-write" | "needs-repository-label" | "epic-plan";
   /** A person held this pickup on the dispatcher host. */
   pickupHold?: { by: string; at: string };
   /** Set when reading the record failed (a comment listing, an unreadable ledger), as against a state the record legitimately leaves unplaced. */
@@ -797,12 +803,14 @@ export interface EndRunOutcome {
 }
 
 export interface RepoReport {
-  /** The steward on this tick: what it did, and for a pass the judgment backlog started or did not start, why (`trigger`). */
+  /** The steward on this tick: what it did, and for a pass the judgment backlog or a person's request started or did not start, why (`trigger`). */
   steward?: {
     status: string;
     hash?: string;
     records?: number;
-    trigger?: "empty" | "judged" | "budget" | "started";
+    trigger?: "empty" | "judged" | "budget" | "held" | "started";
+    /** Who requested the pass this tick acted on (`jig send steward@… start`); absent for a pass the backlog alone started. */
+    requestedBy?: string;
   };
   path: string;
   slug: string | null;

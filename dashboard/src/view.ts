@@ -14,6 +14,7 @@ import { retainedSlug } from "../../plugin/dispatch/lib/line-unread.ts";
 import { noLinkText } from "./links.ts";
 import { trackerOf } from "./tracker-name.ts";
 import { type Role, roleOf } from "./status.ts";
+import { parseMs } from "../../plugin/shared/time.ts";
 
 /** The server's clock and the host's zone. */
 export interface Clock {
@@ -757,21 +758,44 @@ function hasProblem(r: LineRepo): boolean {
   return r.refused !== null || r.failedReads.length > 0;
 }
 
-/** `5 repositories, 2 with a read or setup problem`. */
+/** `5 repositories, 2 with a read or setup problem, 1 with its tracker kept`. */
 export function repoSummary(repos: LineRepo[]): string {
   const problems = repos.filter(hasProblem).length;
-  return `${plural(repos.length, "repository", "repositories")}${problems > 0 ? `, ${problems} with a read or setup problem` : ""}`;
+  const kept = repos.filter((r) => r.trackerKept !== undefined).length;
+  return `${plural(repos.length, "repository", "repositories")}${problems > 0 ? `, ${problems} with a read or setup problem` : ""}${kept > 0 ? `, ${kept} with its tracker kept` : ""}`;
 }
 
-/** A repository's line in the fold: its stages, then what was refused, failed or noted. */
-export function repoRow(r: LineRepo): { slug: string; note: string } {
+/**
+ * What a repository's kept tracker part says (`trackerKept`): its item cards
+ * and the needs about items are from the reading named, which the ticks
+ * since did not repeat because they had no credential for its tracker, and
+ * what was missing; `null` when the newest tick asked its tracker.
+ */
+function trackerKeptNote(
+  r: LineRepo,
+  { nowMs, timeZone }: Clock,
+): string | null {
+  const kept = r.trackerKept;
+  if (kept === undefined) return null;
+  const read = kept.readAt === null ? Number.NaN : parseMs(kept.readAt);
+  if (!Number.isFinite(read))
+    return `No tick has read its tracker with a credential, so it shows no item cards or needs about items (${kept.reason}).`;
+  return `Its item cards and the needs about items are as of the ${stamp(read, hostDay(nowMs, timeZone), timeZone)} reading, ${ago(read, nowMs)} ago (${kept.reason}).`;
+}
+
+/** A repository's line in the fold: its stages, then what was refused, failed or noted, and what its kept tracker part is from. */
+export function repoRow(
+  r: LineRepo,
+  clockNow: Clock,
+): { slug: string; note: string; kept: string | null } {
   const details = [
     ...(r.refused === null ? [] : [r.refused]),
     ...r.failedReads.map((f) => f.detail),
     ...r.notes,
   ];
   return {
-    slug: r.slug ?? r.path,
+    slug: r.slug ?? retainedSlug(r) ?? r.path,
     note: [r.stages.join(", "), ...details].filter((x) => x !== "").join(". "),
+    kept: trackerKeptNote(r, clockNow),
   };
 }

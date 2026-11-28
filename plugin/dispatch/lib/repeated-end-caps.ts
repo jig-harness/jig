@@ -9,8 +9,10 @@ import {
   DRIVER_REFUSAL_EXITS,
 } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 
-/** The re-arms that may stop `NOT_SETTLED` on one head before the drive is a person's. */
+/** The re-arms that may stop `NOT_SETTLED` on one head before the drive is a person's, unless the machine file says otherwise (`not_settled.notify_after`). */
 export const NOT_SETTLED_REARMS = 3;
+/** The most re-arms stopped `NOT_SETTLED` at the tail of a drive that retention keeps, and so the highest `not_settled.notify_after` the machine file takes. */
+export const NOT_SETTLED_ENDS_KEPT = 10;
 /** The takeovers that may fail on one set of ledger facts before the drive is a person's. */
 export const FAILED_TAKEOVERS = 3;
 

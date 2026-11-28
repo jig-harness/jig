@@ -252,7 +252,7 @@ it("holds an item its parent plan does not place, read from the batch", async ()
   const item = await f.t.poolIssue("#20");
   assert(item);
   expect(await servedParentHold(f.t, item, none)).toBe(
-    "waiting on the epic execution plan",
+    "not in #1's execution plan, so it waits on the need raised on #1 for a person",
   );
 });
 

@@ -277,6 +277,10 @@ export async function askMain(args: AskArguments): Promise<number> {
     usage("--person goes with --waiting or --settled");
   const resolved = resolveAddress(args.address, args.key, usage);
   const { address, machine, tracker } = resolved;
+  if (address.station === "steward")
+    usage(
+      "a steward address takes jig send's start alone; where the steward stands is the dispatcher's receipt and the dashboard's line for the repository",
+    );
   const r = reading();
   if (!machine.ok)
     r.note({

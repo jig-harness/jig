@@ -118,7 +118,7 @@ function sessionWrapperReport(
   const steward = record.action === "steward";
   if (seen?.startup === "quota")
     return report(
-      "The pass could not start: its account was at its usage limit.",
+      "The pass stopped: its account was at its usage limit.",
       startupNext(record.action, "quota"),
       "usage-limit",
     );

@@ -11,11 +11,13 @@
  * A startup that stopped is recognised for every stage whose session the
  * wrapper starts (`failedStartup`), Claude Code's by its transcripts and
  * Codex's by its rollouts, and the wrapper walls its account: until the reset
- * a usage notice states (`startupReset`), else for `wall_backoff`. A pickup
- * stopped by a notice is wanted again once a wall keeps it off that account
- * (`pickup-hold.ts`). Every pickup the tick starts is such a headless pass;
- * an interactive pickup runs in its terminal, whose exit the wrapper never
- * sees, so no startup of one is read.
+ * a usage notice states (`startupReset`), else for `wall_backoff`. A failing
+ * pass of a Claude Code session that stopped on the vendor's usage notice, in
+ * its output or as its transcript's last entry (`usageNotice`), is read the
+ * same way however long it ran. A pickup stopped by a notice is wanted again
+ * once a wall keeps it off that account (`pickup-hold.ts`). Every pickup the
+ * tick starts is such a headless pass; an interactive pickup runs in its
+ * terminal, whose exit the wrapper never sees, so no startup of one is read.
  */
 import { type Dirent, statSync } from "node:fs";
 import { harnessNamed } from "../../shared/agent-harness/index.ts";
@@ -35,6 +37,7 @@ import { currentMs, isoFromMs, parseMs } from "../../shared/time.ts";
 import { noticeReset } from "./notice-reset.ts";
 import { claudeTranscript } from "./transcript-copy.ts";
 import { isMapping } from "../../shared/config-layers.ts";
+import type { Wall } from "./walls.ts";
 
 /** Startup failures are limited to the first minute of the vendor process. */
 const STARTUP_MS = 60_000;
@@ -191,19 +194,140 @@ function transcriptAbsent(record: LaunchRecord, started: number): boolean {
  * never arbitrary output.
  */
 function quotaNotice(output: string): string | null {
+  let found: string | null = null;
   for (const line of output.split(/\r?\n/)) {
-    const parts = line.trim().split("·");
-    if (parts.length !== 2) continue;
-    const reset = (parts[1] ?? "").trim();
-    if (
-      /^you(?:'|’)ve hit your (?:session |weekly |usage )?limit$/i.test(
-        (parts[0] ?? "").trim(),
-      ) &&
-      /^resets\s+\S/i.test(reset)
-    )
-      return reset;
+    const clause = noticeClause(line);
+    if (clause !== null) found = clause;
+  }
+  return found;
+}
+
+/** The `resets …` clause of `line` when the line is the vendor's usage notice, else `null`. */
+function noticeClause(line: string): string | null {
+  const parts = line.trim().split("·");
+  if (parts.length !== 2) return null;
+  const reset = (parts[1] ?? "").trim();
+  return /^you(?:'|’)ve hit your (?:session |weekly |usage )?limit$/i.test(
+    (parts[0] ?? "").trim(),
+  ) && /^resets\s+\S/i.test(reset)
+    ? reset
+    : null;
+}
+
+/** The text parts of an assistant entry's message, never a tool call's. */
+function assistantTexts(entry: Record<string, unknown>): string[] {
+  const content = isMapping(entry.message) ? entry.message.content : undefined;
+  if (typeof content === "string") return [content];
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((part) =>
+    isMapping(part) && part.type === "text" && typeof part.text === "string"
+      ? [part.text]
+      : [],
+  );
+}
+
+/** The text of a rate-limit error entry that holds one text part and no line break; `undefined` for any other entry. */
+function noticeText(entry: Record<string, unknown>): string | undefined {
+  if (entry.error !== "rate_limit" || entry.isApiErrorMessage !== true)
+    return undefined;
+  const texts = assistantTexts(entry);
+  const text = texts.length === 1 ? (texts[0] ?? "").trim() : "";
+  return /[\r\n]/.test(text) ? undefined : text;
+}
+
+/**
+ * The usage notice a Claude Code session's transcript ends on: its last
+ * assistant entry (user entries and tool output are skipped) is an entry the vendor marked as a rate-limit
+ * error (`error: "rate_limit"` with `isApiErrorMessage`) whose text is the notice and nothing else;
+ * ordinary model output that reads like the notice is none (`undefined`: the
+ * transcript was read and rejected it); `null` when the transcript holds no
+ * assistant entry to judge (no session, no file, unreadable). A notice in a user entry, in a tool's output or call, or
+ * inside longer text is none. Only the notice is returned, never other
+ * content.
+ */
+function transcriptUsageNotice(
+  record: LaunchRecord,
+): string | undefined | null {
+  const lines = transcriptTail(
+    record,
+    65_536,
+    "the transcript could not be read for a usage notice",
+  );
+  for (const line of lines.reverse()) {
+    const entry = transcriptEntry(line);
+    if (entry === undefined) continue;
+    if (entry.type !== "assistant") continue;
+    const text = noticeText(entry);
+    return text !== undefined && noticeClause(text) !== null ? text : undefined;
   }
   return null;
+}
+
+/** One transcript line as an entry; a partial line, or one that is no JSON mapping, is none. */
+function transcriptEntry(line: string): Record<string, unknown> | undefined {
+  if (!line.startsWith("{")) return undefined;
+  const entry = attempt(
+    "invalid",
+    "Transcript entry is not JSON",
+    (): unknown => JSON.parse(line),
+  );
+  return entry.ok && isMapping(entry.value) ? entry.value : undefined;
+}
+
+/** The lines of the last `bytes` of a Claude Code session's transcript; none when it has no session, no transcript, or the read fails (`why`). */
+function transcriptTail(
+  record: LaunchRecord,
+  bytes: number,
+  why: string,
+): string[] {
+  const session = record.sessionId;
+  if (session === null || session === undefined) return [];
+  try {
+    const path = claudeTranscript(record.configDir, session);
+    if (path === null) return [];
+    return readBoundedTail(path, bytes).trimEnd().split("\n");
+  } catch (error) {
+    swallow(error, why);
+    return [];
+  }
+}
+
+/**
+ * The usage notice the session's transcript ends on (the vendor's own error
+ * entry), else, only when no transcript could be judged, the last standalone
+ * notice in the output: an earlier notice never outranks a later one, and a
+ * readable transcript's verdict outranks the output.
+ */
+function noticeOf(record: LaunchRecord, output: string): string | undefined {
+  const verified = transcriptUsageNotice(record);
+  // A transcript that was read and rejected the notice is the provenance
+  // check's answer: echoed or model-produced output text never overrides it.
+  if (verified !== null) return verified;
+  const notices = output
+    .split(/\r?\n/)
+    .filter((line) => noticeClause(line) !== null);
+  return notices.pop()?.trim();
+}
+
+/**
+ * The vendor's usage notice a failing pass of a Claude Code session the
+ * wrapper started stopped on, however long it ran (`noticeOf`); `undefined`
+ * when there is none, for a pass that exited cleanly, and for another
+ * stage's pass.
+ */
+export function usageNotice(
+  record: LaunchRecord,
+  code: number | null,
+  output: string,
+): string | undefined {
+  if (
+    !ownSession(record) ||
+    harnessNamed(record.vendor)?.capabilities.signInProbe !== true ||
+    code === null ||
+    code === 0
+  )
+    return undefined;
+  return noticeOf(record, output);
 }
 
 /**
@@ -221,6 +345,38 @@ export function startupReset(
   return {
     clause,
     resetAt: at === null ? null : isoFromMs(at.epochMilliseconds),
+  };
+}
+
+/**
+ * The wall for the account of a pass that stopped on it: until the reset a
+ * usage notice states, else `wall_backoff` from `nowMs`, its source saying
+ * which, and naming a notice clause that did not read.
+ */
+export function startupWall(
+  record: LaunchRecord,
+  startup: string,
+  output: string,
+  nowMs: number,
+): Wall {
+  const notice =
+    startup === "quota"
+      ? startupReset(noticeOf(record, output) ?? "", nowMs)
+      : null;
+  const from =
+    startup === "quota"
+      ? "session stopped at its usage limit (quota)"
+      : `session could not start (${startup})`;
+  let source = `${from}; wall_backoff`;
+  if (notice?.resetAt != null) source = `${from}; the usage notice's reset`;
+  else if (notice != null)
+    source = `${from}; the notice's reset did not read; wall_backoff`;
+  return {
+    account: record.account,
+    vendor: record.vendor,
+    configDir: record.configDir,
+    resetAt: notice?.resetAt ?? isoFromMs(nowMs + record.wallBackoffMs),
+    source,
   };
 }
 
@@ -303,18 +459,14 @@ function transcriptLineSignIn(line: string): SignInPhrase | undefined {
 }
 
 function transcriptSignIn(record: LaunchRecord): SignInPhrase | undefined {
-  const session = record.sessionId;
-  if (session === null || session === undefined) return undefined;
-  try {
-    const path = claudeTranscript(record.configDir, session);
-    if (path === null) return undefined;
-    const lines = readBoundedTail(path, 16_384).trimEnd().split("\n");
-    for (const line of lines.slice(-8).reverse()) {
-      const phrase = transcriptLineSignIn(line);
-      if (phrase !== undefined) return phrase;
-    }
-  } catch (error) {
-    swallow(error, "the startup transcript could not be read");
+  const lines = transcriptTail(
+    record,
+    16_384,
+    "the startup transcript could not be read",
+  );
+  for (const line of lines.slice(-8).reverse()) {
+    const phrase = transcriptLineSignIn(line);
+    if (phrase !== undefined) return phrase;
   }
   return undefined;
 }
@@ -337,12 +489,12 @@ export function quickStartupDeath(
 }
 
 /**
- * How a quick, unsuccessful exit of a session the wrapper started reads:
- * a sign-in problem, a usage notice, a session that never started, or
- * `undefined` for a pass that died. `output` is the end of what the stage
- * printed; `head` its start, where a harness that prints its session id
- * puts it (`Ran.head`), the end standing in for it when the stage printed
- * nothing it kept as a head.
+ * Why a failing pass of a session the wrapper started stopped on its
+ * account: within the startup window, a sign-in problem, a usage notice, or
+ * a session that never started; past it, only a usage notice; or `undefined`
+ * for a pass that died. `output` is the end of what the stage printed; `head`
+ * its start, where a harness that prints its session id puts it (`Ran.head`),
+ * the end standing in for it when the stage printed nothing it kept as a head.
  */
 export function failedStartup(
   record: LaunchRecord,
@@ -353,7 +505,11 @@ export function failedStartup(
   keepPhrase?: (phrase: SignInPhrase) => void,
   head?: string,
 ): Exclude<StartupFailure, "breaker"> | undefined {
-  if (!quickStartupDeath(record, code, started, exited)) return;
+  if (!quickStartupDeath(record, code, started, exited))
+    return usageNotice(record, code, output) === undefined
+      ? undefined
+      : "quota";
+  if (usageNotice(record, code, output) !== undefined) return "quota";
   // The sign-in phrases are Claude Code's; no other harness's are read yet.
   const phrase =
     harnessNamed(record.vendor)?.capabilities.signInProbe === true
@@ -400,11 +556,13 @@ export function startupNext(
   };
 }
 
-/** Persisted startup evidence permits only the follow-up attempt that never began to retry. */
+/** Persisted startup evidence permits only a follow-up that left neither a result nor a question to retry. */
 export function retryableStartup(r: ReadRecord): boolean {
   return (
     r.record.action === "followup" &&
     r.result === null &&
+    questionOf(r.state) === null &&
+    r.report?.report.question === undefined &&
     r.state.kind === "ended" &&
     r.state.exit.startup !== undefined
   );

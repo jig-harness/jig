@@ -1042,9 +1042,17 @@ Launches of one drive that keep ending the same way are backed off and
 capped from this host's launch records (`repeated-ends.ts`), whether or not
 they moved the ledger. A re-arm of a ledger stopped `4` (not judgeable yet)
 whose own run stopped `4` again at the pull request head the ledger shows now
-counts once: the next re-arm on that head waits 15 minutes after the first,
-doubling with each, and after 3 in a row the drive needs a person, notified
-once for that head and ledger. A takeover of a silent driver a launch of this
+counts once: the next re-arm on that head waits `not_settled.backoff` (15
+minutes) after the first, doubling with each, and after
+`not_settled.notify_after` (3) in a row the drive needs a person, notified
+once for that head and ledger with the states the stops reported
+(`AWAITING_REVIEWER`, `HEAD_LAG` and the rest of exit `4`'s family). The wait
+ends early on what the tick observes the stop waited for: a review of that
+head submitted after the last stop, read only for a drive that waits, or
+mergeability the forge has settled after a stop on `MERGEABILITY_UNKNOWN`;
+the count runs on, so the cap still bounds a head that never settles. While
+it waits, the tick's report says until when and what would end the wait. A
+takeover of a silent driver a launch of this
 host started that ended on a non-zero exit no other rule answers (not a
 second driver's refusal, the usage error or a wall), on the ledger facts the
 ledger still shows, counts the same way: 10 minutes after the first, doubling,
@@ -1949,7 +1957,24 @@ one of them. A tick that starts no pass says why on its
 receipt and in the line the dashboard reads: the backlog was empty, its
 members were all judged, or the hourly budget was spent.
 
-A person's on-demand start of a pass through `jig send` is not built.
+A person starts a pass on demand with `jig send steward@owner/name
+start`, for judgment now: after settling a parked item by hand, or when
+they doubt the backlog. A steward address names the repository alone
+([`jig send`](../plugin/protocol/addresses.md)). The send runs on the host
+that owns the repository and keeps the request in that host's state
+database; the host's next tick starts one pass for it whatever the backlog
+holds, empty or judged. The request is held to the same rules as a
+triggered pass: the repository's steward stage and owner, the host's budget
+of three passes in a rolling hour, and one pass holding a repository at a
+time. The send refuses a request one of them refuses already, naming the
+rule; the tick checks them again, and a request a rule refuses then is
+taken, the rule named on its receipt and in the line the dashboard reads.
+A request the tick cannot act on yet, for a read that failed or an account
+with no free slot, waits for the next tick. A requested pass reads the same
+digest a triggered one does, and the tick records the request in the
+outcome log, a `steward-requested` row naming the pass it started or a
+`steward-request-refused` row naming the rule, so the log tells requested
+passes from triggered ones.
 
 ### What it never does
 
@@ -2789,7 +2814,7 @@ the machine file alone decides what that tick starts: Jig's Orca plugin,
 when an agent waits, blocks or finishes or a workspace is removed
 ([Waking the dispatcher](orca-integration.md)); and `jig send`, once it
 has written a record the tick reads (`assign`, `drive`, `hold`, `release`,
-`answer`), where the machine file lists the repository with the stage the
+`answer`, `start`), where the machine file lists the repository with the stage the
 tick acts under ([`jig send`](../plugin/protocol/addresses.md)). Both follow one rule: one
 tick at a time for a repository, no sooner than a minute after the last
 one started, a request made inside that minute taken by one trailing

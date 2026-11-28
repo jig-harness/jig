@@ -11,6 +11,7 @@ import {
   type ReadRecord,
   newRecordId,
   newToken,
+  readLaunches,
   targetOf,
 } from "../launches.ts";
 import { loadReport } from "../load.ts";
@@ -34,6 +35,18 @@ import {
   stewardRuns,
   type StewardDigest,
 } from "../steward.ts";
+import {
+  answersStewardRequest,
+  countedRuns,
+  pendingForStewardRequest,
+  pendingStewardRequest,
+  requestRow,
+  STEWARD_RULES,
+  type StewardRequest,
+  type StewardRule,
+  stewardHeld,
+  takeStewardRequest,
+} from "../steward-requests.ts";
 import {
   type Backlog,
   type BacklogInput,
@@ -88,9 +101,11 @@ function triggerReason(
 
 /**
  * Start the steward when the judgment backlog holds a member no earlier pass
- * saw: at once, within the host's hourly budget, while no other pass holds
- * the repository. An empty or already judged backlog starts nothing, and the
- * receipt says which.
+ * saw, or a person requested a pass (`steward-requests.ts`): at once, within
+ * the host's hourly budget, while no other pass holds the repository. An
+ * empty or already judged backlog starts nothing unless a pass was
+ * requested, and the receipt says which. A request either rule refuses is
+ * taken with the rule named, on the receipt and in the outcome log.
  */
 export async function applySteward(
   state: ApplyState,
@@ -98,50 +113,19 @@ export async function applySteward(
   station: StationContext,
   readDigest: typeof digestOf = digestOf,
 ): Promise<void> {
-  const { opened, forge } = observation;
+  const { opened } = observation;
   const { repo, report } = opened;
   const config = state.machine.steward;
   const skip = (status: string) => {
     report.steward = { status };
   };
-  if (!opened.owner) return skip("another host owns this repository");
-  if (!opened.stages.has("steward") || !config?.enabled)
-    return skip("steward is disabled on this host");
+  const off = notRunning(opened, config);
+  if (off !== null) return skip(off);
   await replayPending(state, repo.slug, report);
-  if (
-    state.records.some(
-      (r) =>
-        r.record.repo === repo.slug &&
-        r.record.action === "steward" &&
-        holds(r.state),
-    )
-  )
-    return skip("a steward pass already holds this repository");
-  if (!forge.ok || report.records.some((r) => !r.ok))
-    return skip("the digest's records did not all read");
-  const released = new Set(
-    state.records
-      .filter(
-        (r) =>
-          r.record.action === "steward" &&
-          r.state.kind === "ended" &&
-          (r.state.exit.startup === "sign-in" ||
-            r.state.exit.startup === "breaker"),
-      )
-      .map((r) => r.record.id),
-  );
-  if (
-    stewardBudgetSpent(
-      stewardRuns(null, state.root).filter((run) => !released.has(run.id)),
-      currentMs(),
-    )
-  ) {
-    report.steward = {
-      status: "the host's hourly steward budget is spent",
-      trigger: "budget",
-    };
-    return;
-  }
+  const prepared = await prepareRequest(state, repo.slug, skip);
+  if (prepared === null) return;
+  const { request, currentRecords } = prepared;
+  if (!mayStart(state, observation, request, currentRecords)) return;
   const judged = judgedMembers(
     repo.slug,
     state.root,
@@ -161,10 +145,11 @@ export async function applySteward(
       state.root,
     ),
   );
-  if (trigger.kind !== "due") {
+  if (trigger.kind !== "due" && request === null) {
     report.steward = notStarted(trigger);
     return;
   }
+  const counts = countsOf(trigger);
   const read = await readDigest(state, observation, backlog, found.value.queue);
   if (!read.ok) return skip(read.failure.reason);
   const digest = read.value;
@@ -173,7 +158,7 @@ export async function applySteward(
     stage: "steward",
     target: "the steward",
     record: "runtime",
-    reason: triggerReason(trigger),
+    reason: `${request === null ? "" : `${request.by} requested a steward pass; `}${trigger.kind === "due" ? triggerReason(trigger) : `${counts.unjudged} of the judgment backlog's ${counts.members} members wait on the steward's judgment`}`,
     evidence: { hash },
   };
   const admitted = await admitAccount(
@@ -205,28 +190,217 @@ export async function applySteward(
     report.launches.push(openedWorkspace.outcome);
     return skip(openedWorkspace.outcome.detail);
   }
-  const vendor = admittedVendor(slots.account);
-  const runtime = harnessFor(vendor).runtime;
-  const models = parseRoutingModels(opened.values, "steward");
-  const family = models[runtime]?.complex;
-  if (family === undefined) {
+  const model = stewardModel(opened.values, slots.account);
+  if (model === undefined) {
     report.launches.push(
       waits(action, "the complex tier has no model for the admitted runtime"),
     );
     return;
   }
-  const record: LaunchRecord = {
-    version: 1,
+  const record = stewardRecord(state, observation, {
     id,
+    account: slots.account,
+    vendor: model.vendor,
+    model: model.model,
+    facts: hash,
+    workspace: openedWorkspace.workspace,
+    mark: named.mark,
+    ...(request === null ? {} : { stewardRequest: request.id }),
+  });
+  const launch = await startKept(state, record, slots, digest);
+  report.launches.push(launch);
+  const kept = state.records.some((r) => r.record.id === record.id);
+  report.steward = stewardStatus(launch, kept, counts, hash, request);
+  // Keep the request while its reservation is pending (even after a runtime
+  // acknowledgment): only wrapper or execution evidence matching `request.id`
+  // settles it (`answerRequest`), so clearing an unclaimed stuck launch leaves
+  // the request to start anew.
+}
+
+/** Why the steward does not run on this repository at all, or `null`. */
+function notRunning(
+  opened: RepoObservation["opened"],
+  config: ApplyState["machine"]["steward"],
+): string | null {
+  if (!opened.owner) return "another host owns this repository";
+  if (!opened.stages.has("steward") || !config?.enabled)
+    return "steward is disabled on this host";
+  return null;
+}
+
+/**
+ * Read any pending steward request beside fresh launch rows from SQLite so
+ * reconciliation and refusal rules never judge from a stale tick snapshot.
+ * Returns `null` once the request is settled or kept waiting for this tick.
+ */
+async function prepareRequest(
+  state: ApplyState,
+  slug: string,
+  skip: (status: string) => void,
+): Promise<{
+  request: StewardRequest | null;
+  currentRecords: ReadRecord[] | null;
+} | null> {
+  const request = pendingStewardRequest(stateDb(state.root), slug);
+  if (request === null) return { request: null, currentRecords: null };
+  const fresh = await readLaunches(state.root);
+  if (fresh.unreadable.length > 0) {
+    skip("the steward's launches did not all read");
+    return null;
+  }
+  if (settleRequest(state, slug, request, fresh.records, skip)) return null;
+  return { request, currentRecords: fresh.records };
+}
+
+/**
+ * Reconcile a pending steward request by its identity: positive wrapper or
+ * execution evidence on its launch settles it (`answerRequest`), while a
+ * still-pending reservation or ambiguous malformed claim for that request
+ * keeps it waiting so operator resolution leaves the request to start anew.
+ * Whether the request needs no further handling this tick.
+ */
+function settleRequest(
+  state: ApplyState,
+  slug: string,
+  request: StewardRequest,
+  records: readonly ReadRecord[],
+  skip: (status: string) => void,
+): boolean {
+  if (answerRequest(state, slug, request, records, skip)) return true;
+  const pending = records.find((r) => pendingForStewardRequest(r, request));
+  if (pending === undefined) return false;
+  if (pending.state.kind === "unknown") {
+    skip(
+      `${request.by}'s request is kept: steward launch ${pending.record.id} has an ambiguous claim (${pending.state.reason}) and awaits operator resolution`,
+    );
+    return true;
+  }
+  const ack = pending.record.attempts.some((a) => a.outcome === "sent");
+  skip(
+    ack
+      ? `${request.by}'s request is kept: steward launch ${pending.record.id} is acknowledged and awaiting wrapper claim`
+      : `${request.by}'s request is kept: steward launch ${pending.record.id} is still pending`,
+  );
+  return true;
+}
+
+/** The vendor and complex-tier model the admitted account runs the steward on; `undefined` when the runtime has none. */
+function stewardModel(
+  values: RepoObservation["opened"]["values"],
+  account: Parameters<typeof admittedVendor>[0],
+): { vendor: ReturnType<typeof admittedVendor>; model: string } | undefined {
+  const vendor = admittedVendor(account);
+  const runtime = harnessFor(vendor).runtime;
+  const family = parseRoutingModels(values, "steward")[runtime]?.complex;
+  return family === undefined
+    ? undefined
+    : { vendor, model: runtimeModel(runtime, family) };
+}
+
+/**
+ * Settle a request once a steward launch carrying its identity has positive
+ * wrapper or execution evidence. Whether it was settled.
+ */
+function answerRequest(
+  state: ApplyState,
+  slug: string,
+  request: StewardRequest,
+  records: readonly ReadRecord[],
+  skip: (status: string) => void,
+): boolean {
+  const answered = records.find((r) => answersStewardRequest(r, request));
+  if (answered === undefined) return false;
+  takeStewardRequest(
+    request,
+    requestRow(request, slug, { started: answered.record.id }),
+    state.root,
+  );
+  skip(
+    `${request.by}'s request is answered by steward pass ${answered.record.id}`,
+  );
+  return true;
+}
+
+/** Report or consume a rule refusal on `report`, returning `false`. */
+function denyStart(
+  state: ApplyState,
+  request: StewardRequest | null,
+  report: RepoReport,
+  rule: StewardRule,
+): false {
+  if (request !== null) refuseRequest(state, request, report, rule);
+  else if (rule === "budget")
+    report.steward = { status: STEWARD_RULES.budget, trigger: "budget" };
+  else report.steward = { status: STEWARD_RULES.held };
+  return false;
+}
+
+/**
+ * Whether the rules let a pass start now: no pass holds the repository, the
+ * digest's records all read, and the host's hourly budget is not spent.
+ * When not, the receipt says why, and a request a rule refuses is taken
+ * with the rule named — after checking against current database state so a
+ * holder that ended before a replacement request arrived never consumes it.
+ */
+function mayStart(
+  state: ApplyState,
+  observation: RepoObservation,
+  request: StewardRequest | null,
+  currentRecords: readonly ReadRecord[] | null,
+): boolean {
+  const { opened, forge } = observation;
+  const { repo, report } = opened;
+  const authoritative = currentRecords ?? state.records;
+  if (stewardHeld(authoritative, repo.slug))
+    return denyStart(state, request, report, "held");
+  if (request !== null && stewardHeld(state.records, repo.slug)) {
+    report.steward = {
+      status: `${request.by}'s request waits for the next tick: the earlier steward holder ended during this tick`,
+      requestedBy: request.by,
+    };
+    return false;
+  }
+  if (!forge.ok || report.records.some((r) => !r.ok)) {
+    report.steward = { status: "the digest's records did not all read" };
+    return false;
+  }
+  const runs = countedRuns(authoritative, stewardRuns(null, state.root));
+  return stewardBudgetSpent(runs, currentMs())
+    ? denyStart(state, request, report, "budget")
+    : true;
+}
+
+/** What a steward launch is started with, beside what every steward record holds. */
+interface StewardLaunch {
+  id: string;
+  account: { name: string; configDir: string };
+  vendor: LaunchRecord["vendor"];
+  model: LaunchRecord["model"];
+  facts: string;
+  workspace: LaunchRecord["workspace"];
+  mark: NonNullable<LaunchRecord["mark"]> | null;
+  stewardRequest?: string;
+}
+
+/** The launch record of a headless steward pass on the repository `observation` opened. */
+function stewardRecord(
+  state: ApplyState,
+  observation: RepoObservation,
+  launch: StewardLaunch,
+): LaunchRecord {
+  const { repo } = observation.opened;
+  return {
+    version: 1,
+    id: launch.id,
     token: newToken(),
     action: "steward",
     repo: repo.slug,
     repoPath: repo.path,
     pr: null,
     item: null,
-    account: slots.account.name,
-    vendor,
-    configDir: slots.account.configDir,
+    account: launch.account.name,
+    vendor: launch.vendor,
+    configDir: launch.account.configDir,
     wallBackoffMs: state.machine.wallBackoffMs,
     ...(state.machine.failures?.startupThreshold === undefined
       ? {}
@@ -234,28 +408,53 @@ export async function applySteward(
     passTimeoutSec: STEWARD_DEADLINE_SEC,
     ...codexLaunchFields(state.codexOptIn),
     replaces: null,
-    facts: hash,
+    facts: launch.facts,
     createdAt: currentIso(),
-    workspace: openedWorkspace.workspace,
+    workspace: launch.workspace,
     attempts: [],
     agentId: null,
-    model: runtimeModel(runtime, family),
+    model: launch.model,
     effort: null,
     released: false,
     command: null,
     marker: null,
     headless: true,
-    sessionId: sessionIdFor(vendor),
-    mark: named.mark,
+    sessionId: sessionIdFor(launch.vendor),
+    mark: launch.mark,
+    ...(launch.stewardRequest === undefined
+      ? {}
+      : { stewardRequest: launch.stewardRequest }),
   };
-  const launch = await startKept(state, record, slots, digest);
-  report.launches.push(launch);
-  report.steward = stewardStatus(
-    launch,
-    state.records.some((r) => r.record.id === record.id),
-    trigger,
-    hash,
+}
+
+/** How many members the judgment backlog holds, and how many no pass has judged. */
+function countsOf(trigger: StewardTrigger): BacklogCounts {
+  if (trigger.kind === "due") return trigger;
+  if (trigger.kind === "judged")
+    return { members: trigger.members, unjudged: 0 };
+  return { members: 0, unjudged: 0 };
+}
+
+type BacklogCounts = { members: number; unjudged: number };
+
+/** Take a requested pass a rule refused, saying which on the receipt and in the outcome log. */
+function refuseRequest(
+  state: ApplyState,
+  request: StewardRequest,
+  report: RepoReport,
+  rule: StewardRule,
+): void {
+  const reason = STEWARD_RULES[rule];
+  takeStewardRequest(
+    request,
+    requestRow(request, report.slug ?? request.repo, { rule, reason }),
+    state.root,
   );
+  report.steward = {
+    status: `${request.by}'s request refused: ${reason}`,
+    trigger: rule,
+    requestedBy: request.by,
+  };
 }
 
 /**
@@ -266,22 +465,27 @@ export async function applySteward(
 function stewardStatus(
   launch: LaunchOutcome,
   kept: boolean,
-  trigger: Extract<StewardTrigger, { kind: "due" }>,
+  counts: BacklogCounts,
   hash: string,
+  request: StewardRequest | null,
 ): NonNullable<RepoReport["steward"]> {
-  if (!kept) return { status: `not started: ${launch.detail}`, hash };
+  const by = request === null ? {} : { requestedBy: request.by };
+  if (!kept) return { status: `not started: ${launch.detail}`, hash, ...by };
   if (launch.outcome !== "launched" && launch.outcome !== "retried")
     return {
       status: `launch pending, a later tick retries it: ${launch.detail}`,
       hash,
+      ...by,
     };
   return {
-    status:
-      trigger.members === 0
-        ? `started for ${trigger.unjudged} refused order(s) awaiting the steward's reading`
-        : `started for ${trigger.unjudged} unjudged of ${trigger.members} in the judgment backlog`,
+    status: `started ${request === null ? "" : `on ${request.by}'s request, `}${
+      counts.members === 0 && counts.unjudged > 0
+        ? `for ${counts.unjudged} refused order(s) awaiting the steward's reading`
+        : `for ${counts.unjudged} unjudged of ${counts.members} in the judgment backlog`
+    }`,
     hash,
     trigger: "started",
+    ...by,
   };
 }
 
@@ -299,9 +503,13 @@ async function replayPending(
       reason: "retry the pending steward launch under its existing token",
       evidence: {},
     };
-    report.launches.push(
-      await replay(state, record, action, await accountBlock(state, record)),
+    const launch = await replay(
+      state,
+      record,
+      action,
+      await accountBlock(state, record),
     );
+    report.launches.push(launch);
     if (!state.records.some((r) => r.record.id === record.id))
       forgetStewardRun(record.id, state.root);
   }
