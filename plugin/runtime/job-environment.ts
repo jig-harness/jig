@@ -54,6 +54,11 @@ export function unxml(value: string): string {
   );
 }
 
+const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff;
+const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
+const isForbiddenBmp = (code: number) =>
+  (code < 0x20 && code !== 0x09) || code === 0xfffe || code === 0xffff;
+
 /**
  * Whether `value` holds a character a scheduled job or XML 1.0 plist cannot
  * carry: line breaks, NUL, XML 1.0 forbidden control characters, U+FFFE,
@@ -62,15 +67,10 @@ export function unxml(value: string): string {
 export function hasUnwritableChar(value: string): boolean {
   for (let i = 0; i < value.length; i++) {
     const code = value.charCodeAt(i);
-    if (code < 0x20 && code !== 0x09) return true;
-    if (code === 0xfffe || code === 0xffff) return true;
-    if (code >= 0xd800 && code <= 0xdbff) {
-      const next = value.charCodeAt(i + 1);
-      if (next >= 0xdc00 && next <= 0xdfff) i += 1;
-      else return true;
-    } else if (code >= 0xdc00 && code <= 0xdfff) {
-      return true;
-    }
+    if (isForbiddenBmp(code) || isLowSurrogate(code)) return true;
+    if (!isHighSurrogate(code)) continue;
+    if (!isLowSurrogate(value.charCodeAt(i + 1))) return true;
+    i += 1;
   }
   return false;
 }
@@ -152,32 +152,39 @@ class PlistCursor {
     );
   }
 
+  private atDoctype(): boolean {
+    return (
+      this.text.startsWith("<!DOCTYPE", this.at) &&
+      /^[ \t\r\n]/.test(this.text[this.at + 9] ?? "")
+    );
+  }
+
+  private skipTriviaOnce(
+    allowDoctype: boolean,
+  ): Outcome<"comment" | "pi" | "doctype" | "done", "unreadable"> {
+    if (this.text.startsWith("<!--", this.at)) {
+      const comment = this.skipComment();
+      return comment.ok ? ok("comment") : comment;
+    }
+    if (this.text.startsWith("<?", this.at)) {
+      const pi = this.skipPi();
+      return pi.ok ? ok("pi") : pi;
+    }
+    if (allowDoctype && this.atDoctype()) {
+      const doctype = this.skipDoctype();
+      return doctype.ok ? ok("doctype") : doctype;
+    }
+    return ok("done");
+  }
+
   skipTrivia(allowDoctype = false): Outcome<void, "unreadable"> {
-    let seenDoctype = false;
+    let canDoctype = allowDoctype;
     while (this.at < this.text.length) {
       this.skipSpace();
-      if (this.text.startsWith("<!--", this.at)) {
-        const comment = this.skipComment();
-        if (!comment.ok) return comment;
-        continue;
-      }
-      if (this.text.startsWith("<?", this.at)) {
-        const pi = this.skipPi();
-        if (!pi.ok) return pi;
-        continue;
-      }
-      if (
-        allowDoctype &&
-        !seenDoctype &&
-        this.text.startsWith("<!DOCTYPE", this.at) &&
-        /^[ \t\r\n]/.test(this.text[this.at + 9] ?? "")
-      ) {
-        seenDoctype = true;
-        const doctype = this.skipDoctype();
-        if (!doctype.ok) return doctype;
-        continue;
-      }
-      break;
+      const step = this.skipTriviaOnce(canDoctype);
+      if (!step.ok) return step;
+      if (step.value === "done") break;
+      if (step.value === "doctype") canDoctype = false;
     }
     return ok(undefined);
   }
@@ -190,20 +197,40 @@ class PlistCursor {
     return match[0];
   }
 
+  private readCloseTag(): Outcome<Tag, "unreadable"> {
+    this.at += 2;
+    const name = this.readName();
+    if (!name) return failed("unreadable", "it holds a malformed closing tag");
+    this.skipSpace();
+    if (this.text[this.at] !== ">")
+      return failed("unreadable", "it holds a malformed closing tag");
+    this.at += 1;
+    return ok({ kind: "close", name });
+  }
+
+  private skipAttribute(): Outcome<void, "unreadable"> {
+    if (!this.readName())
+      return failed("unreadable", "it holds a malformed XML attribute");
+    this.skipSpace();
+    if (this.text[this.at] !== "=")
+      return failed("unreadable", "it holds a malformed XML attribute");
+    this.at += 1;
+    this.skipSpace();
+    const quote = this.text[this.at];
+    if (quote !== '"' && quote !== "'")
+      return failed("unreadable", "it holds an unquoted XML attribute");
+    this.at += 1;
+    const end = this.text.indexOf(quote, this.at);
+    if (end < 0 || this.text.slice(this.at, end).includes("<"))
+      return failed("unreadable", "it holds a malformed XML attribute value");
+    this.at = end + 1;
+    return ok(undefined);
+  }
+
   readTag(): Outcome<Tag, "unreadable"> {
     if (this.text[this.at] !== "<")
       return failed("unreadable", "it holds malformed XML markup");
-    if (this.text.startsWith("</", this.at)) {
-      this.at += 2;
-      const name = this.readName();
-      if (!name)
-        return failed("unreadable", "it holds a malformed closing tag");
-      this.skipSpace();
-      if (this.text[this.at] !== ">")
-        return failed("unreadable", "it holds a malformed closing tag");
-      this.at += 1;
-      return ok({ kind: "close", name });
-    }
+    if (this.text.startsWith("</", this.at)) return this.readCloseTag();
     this.at += 1;
     const name = this.readName();
     if (!name) return failed("unreadable", "it holds a malformed XML tag");
@@ -219,24 +246,45 @@ class PlistCursor {
       }
       if (space === 0)
         return failed("unreadable", "it holds a malformed XML attribute");
-      const attr = this.readName();
-      if (!attr)
-        return failed("unreadable", "it holds a malformed XML attribute");
-      this.skipSpace();
-      if (this.text[this.at] !== "=")
-        return failed("unreadable", "it holds a malformed XML attribute");
-      this.at += 1;
-      this.skipSpace();
-      const quote = this.text[this.at];
-      if (quote !== '"' && quote !== "'")
-        return failed("unreadable", "it holds an unquoted XML attribute");
-      this.at += 1;
-      const end = this.text.indexOf(quote, this.at);
-      if (end < 0 || this.text.slice(this.at, end).includes("<"))
-        return failed("unreadable", "it holds a malformed XML attribute value");
-      this.at = end + 1;
+      const attr = this.skipAttribute();
+      if (!attr.ok) return attr;
     }
     return failed("unreadable", "it holds an XML tag that is not closed");
+  }
+
+  expectClose(name: string, reason: string): Outcome<void, "unreadable"> {
+    const close = this.readTag();
+    if (!close.ok || close.value.kind !== "close" || close.value.name !== name)
+      return failed("unreadable", reason);
+    return ok(undefined);
+  }
+
+  nextContainerTag(
+    container: string,
+    mismatchReason: string,
+  ): Outcome<Tag | null, "unreadable"> {
+    const trivia = this.skipTrivia();
+    if (!trivia.ok) return trivia;
+    const tag = this.readTag();
+    if (!tag.ok) return tag;
+    if (tag.value.kind !== "close") return ok(tag.value);
+    return tag.value.name === container
+      ? ok(null)
+      : failed("unreadable", mismatchReason);
+  }
+
+  walkContainer(
+    container: string,
+    mismatchReason: string,
+    onChild: (tag: Tag) => Outcome<void, "unreadable">,
+  ): Outcome<void, "unreadable"> {
+    while (true) {
+      const next = this.nextContainerTag(container, mismatchReason);
+      if (!next.ok) return next;
+      if (next.value === null) return ok(undefined);
+      const step = onChild(next.value);
+      if (!step.ok) return step;
+    }
   }
 
   readPlainText(
@@ -251,14 +299,79 @@ class PlistCursor {
     this.at = nextLt;
     if (!this.text.startsWith("</", this.at))
       return failed("unreadable", nonPlainReason);
-    const close = this.readTag();
-    if (
-      !close.ok ||
-      close.value.kind !== "close" ||
-      close.value.name !== tag.name
-    )
-      return failed("unreadable", nonPlainReason);
+    const closed = this.expectClose(tag.name, nonPlainReason);
+    if (!closed.ok) return closed;
     return ok(unxml(raw));
+  }
+
+  private skipDictEntry(
+    keyTag: Tag,
+    depth: number,
+  ): Outcome<void, "unreadable"> {
+    if (keyTag.name !== "key")
+      return failed("unreadable", "a dictionary entry is missing its <key>");
+    const key = this.readPlainText(
+      keyTag,
+      "a dictionary key is not plain text",
+    );
+    if (!key.ok) return key;
+    const afterKey = this.skipTrivia();
+    if (!afterKey.ok) return afterKey;
+    return this.skipValue(depth + 1);
+  }
+
+  private skipBoolean(name: string): Outcome<void, "unreadable"> {
+    const trivia = this.skipTrivia();
+    if (!trivia.ok) return trivia;
+    return this.expectClose(name, "it holds a malformed boolean element");
+  }
+
+  private skipCdata(): Outcome<void, "unreadable"> {
+    const end = this.text.indexOf("]]>", this.at + 9);
+    if (end < 0)
+      return failed(
+        "unreadable",
+        "it holds a CDATA section that is not closed",
+      );
+    this.at = end + 3;
+    return ok(undefined);
+  }
+
+  private skipScalarMarkup(
+    name: string,
+  ): Outcome<"continue" | "closed", "unreadable"> {
+    if (this.text.startsWith("<!--", this.at)) {
+      const comment = this.skipComment();
+      return comment.ok ? ok("continue") : comment;
+    }
+    if (this.text.startsWith("<![CDATA[", this.at)) {
+      const cdata = this.skipCdata();
+      return cdata.ok ? ok("continue") : cdata;
+    }
+    if (this.text.startsWith("<?", this.at)) {
+      const pi = this.skipPi();
+      return pi.ok ? ok("continue") : pi;
+    }
+    if (this.text.startsWith("</", this.at)) {
+      const closed = this.expectClose(
+        name,
+        "it holds a mismatched closing tag",
+      );
+      return closed.ok ? ok("closed") : closed;
+    }
+    return failed("unreadable", `its <${name}> element holds nested markup`);
+  }
+
+  private skipScalar(name: string): Outcome<void, "unreadable"> {
+    while (true) {
+      const nextLt = this.text.indexOf("<", this.at);
+      if (nextLt < 0)
+        return failed("unreadable", `its <${name}> element is not closed`);
+      this.at = nextLt;
+      const step = this.skipScalarMarkup(name);
+      if (!step.ok) return step;
+      if (step.value === "closed") return ok(undefined);
+    }
   }
 
   skipValue(depth: number, firstTag?: Tag): Outcome<void, "unreadable"> {
@@ -270,101 +383,52 @@ class PlistCursor {
     if (tag.kind === "close" || !PLIST_VALUES.has(tag.name))
       return failed("unreadable", "it holds an unrecognized plist value");
     if (tag.kind === "self") return ok(undefined);
-    if (tag.name === "array") {
-      while (true) {
-        const trivia = this.skipTrivia();
-        if (!trivia.ok) return trivia;
-        const next = this.readTag();
-        if (!next.ok) return next;
-        if (next.value.kind === "close") {
-          return next.value.name === "array"
-            ? ok(undefined)
-            : failed("unreadable", "it holds a mismatched closing tag");
-        }
-        const item = this.skipValue(depth + 1, next.value);
-        if (!item.ok) return item;
-      }
-    }
-    if (tag.name === "dict") {
-      while (true) {
-        const trivia = this.skipTrivia();
-        if (!trivia.ok) return trivia;
-        const next = this.readTag();
-        if (!next.ok) return next;
-        if (next.value.kind === "close") {
-          return next.value.name === "dict"
-            ? ok(undefined)
-            : failed("unreadable", "it holds a mismatched closing tag");
-        }
-        if (next.value.name !== "key")
-          return failed(
-            "unreadable",
-            "a dictionary entry is missing its <key>",
-          );
-        const key = this.readPlainText(
-          next.value,
-          "a dictionary key is not plain text",
-        );
-        if (!key.ok) return key;
-        const afterKey = this.skipTrivia();
-        if (!afterKey.ok) return afterKey;
-        const val = this.skipValue(depth + 1);
-        if (!val.ok) return val;
-      }
-    }
-    if (tag.name === "true" || tag.name === "false") {
-      const trivia = this.skipTrivia();
-      if (!trivia.ok) return trivia;
-      const close = this.readTag();
-      if (
-        !close.ok ||
-        close.value.kind !== "close" ||
-        close.value.name !== tag.name
-      )
-        return failed("unreadable", "it holds a malformed boolean element");
-      return ok(undefined);
-    }
-    while (true) {
-      const nextLt = this.text.indexOf("<", this.at);
-      if (nextLt < 0)
-        return failed("unreadable", `its <${tag.name}> element is not closed`);
-      this.at = nextLt;
-      if (this.text.startsWith("<!--", this.at)) {
-        const comment = this.skipComment();
-        if (!comment.ok) return comment;
-        continue;
-      }
-      if (this.text.startsWith("<![CDATA[", this.at)) {
-        const end = this.text.indexOf("]]>", this.at + 9);
-        if (end < 0)
-          return failed(
-            "unreadable",
-            "it holds a CDATA section that is not closed",
-          );
-        this.at = end + 3;
-        continue;
-      }
-      if (this.text.startsWith("<?", this.at)) {
-        const pi = this.skipPi();
-        if (!pi.ok) return pi;
-        continue;
-      }
-      if (this.text.startsWith("</", this.at)) {
-        const close = this.readTag();
-        if (
-          !close.ok ||
-          close.value.kind !== "close" ||
-          close.value.name !== tag.name
-        )
-          return failed("unreadable", "it holds a mismatched closing tag");
-        return ok(undefined);
-      }
-      return failed(
-        "unreadable",
-        `its <${tag.name}> element holds nested markup`,
+    if (tag.name === "array")
+      return this.walkContainer(
+        "array",
+        "it holds a mismatched closing tag",
+        (item) => this.skipValue(depth + 1, item),
       );
-    }
+    if (tag.name === "dict")
+      return this.walkContainer(
+        "dict",
+        "it holds a mismatched closing tag",
+        (entry) => this.skipDictEntry(entry, depth),
+      );
+    if (tag.name === "true" || tag.name === "false")
+      return this.skipBoolean(tag.name);
+    return this.skipScalar(tag.name);
   }
+}
+
+const NON_STRING_ENV_REASON =
+  "an EnvironmentVariables entry is not a string (a plain <string> without CDATA); make each value one, then install again";
+
+function readEnvironmentEntry(
+  cursor: PlistCursor,
+  keyTag: Tag,
+  seen: Set<string>,
+  entries: [string, string][],
+): Outcome<void, "unreadable"> {
+  if (keyTag.name !== "key") return failed("unreadable", NON_STRING_ENV_REASON);
+  const name = cursor.readPlainText(keyTag, NON_STRING_ENV_REASON);
+  if (!name.ok) return name;
+  if (seen.has(name.value))
+    return failed(
+      "unreadable",
+      `EnvironmentVariables names ${name.value} more than once, so which value it holds is unclear; keep one entry, then install again`,
+    );
+  seen.add(name.value);
+  const between = cursor.skipTrivia();
+  if (!between.ok) return between;
+  const valueTag = cursor.readTag();
+  if (!valueTag.ok) return valueTag;
+  if (valueTag.value.kind === "close" || valueTag.value.name !== "string")
+    return failed("unreadable", NON_STRING_ENV_REASON);
+  const value = cursor.readPlainText(valueTag.value, NON_STRING_ENV_REASON);
+  if (!value.ok) return value;
+  entries.push([name.value, value.value]);
+  return ok(undefined);
 }
 
 function readEnvironmentDict(
@@ -372,43 +436,79 @@ function readEnvironmentDict(
 ): Outcome<Record<string, string>, "unreadable"> {
   const entries: [string, string][] = [];
   const seen = new Set<string>();
-  const nonStringReason =
-    "an EnvironmentVariables entry is not a string (a plain <string> without CDATA); make each value one, then install again";
-  while (true) {
-    const trivia = cursor.skipTrivia();
-    if (!trivia.ok) return trivia;
-    const keyTag = cursor.readTag();
-    if (!keyTag.ok) return keyTag;
-    if (keyTag.value.kind === "close") {
-      if (keyTag.value.name !== "dict")
-        return failed(
-          "unreadable",
-          "its EnvironmentVariables dictionary is not closed",
-        );
-      break;
-    }
-    if (keyTag.value.name !== "key")
-      return failed("unreadable", nonStringReason);
-    const name = cursor.readPlainText(keyTag.value, nonStringReason);
-    if (!name.ok) return name;
-    if (seen.has(name.value))
-      return failed(
-        "unreadable",
-        `EnvironmentVariables names ${name.value} more than once, so which value it holds is unclear; keep one entry, then install again`,
-      );
-    seen.add(name.value);
-    const between = cursor.skipTrivia();
-    if (!between.ok) return between;
-    const valueTag = cursor.readTag();
-    if (!valueTag.ok) return valueTag;
-    if (valueTag.value.kind === "close" || valueTag.value.name !== "string")
-      return failed("unreadable", nonStringReason);
-    const value = cursor.readPlainText(valueTag.value, nonStringReason);
-    if (!value.ok) return value;
-    entries.push([name.value, value.value]);
-  }
+  const walked = cursor.walkContainer(
+    "dict",
+    "its EnvironmentVariables dictionary is not closed",
+    (keyTag) => readEnvironmentEntry(cursor, keyTag, seen, entries),
+  );
+  if (!walked.ok) return walked;
   // Own data properties, so a variable named `__proto__` stays a variable.
   return ok(Object.fromEntries(entries));
+}
+
+function readEnvironmentValue(
+  cursor: PlistCursor,
+): Outcome<Record<string, string>, "unreadable"> {
+  const dictTag = cursor.readTag();
+  if (
+    !dictTag.ok ||
+    dictTag.value.kind === "close" ||
+    dictTag.value.name !== "dict"
+  )
+    return failed(
+      "unreadable",
+      "its EnvironmentVariables is not a dictionary; make it a <dict> of <string> values, then install again",
+    );
+  return dictTag.value.kind === "self" ? ok({}) : readEnvironmentDict(cursor);
+}
+
+function readTopLevelKey(
+  cursor: PlistCursor,
+  keyTag: Tag,
+): Outcome<string, "unreadable"> {
+  if (keyTag.name !== "key")
+    return failed("unreadable", "a top-level plist entry is missing its <key>");
+  const key = cursor.readPlainText(
+    keyTag,
+    "it names a plist key in a form this reader does not recognize; write the key as plain text, then install again",
+  );
+  if (!key.ok) return key;
+  if (
+    key.value !== "EnvironmentVariables" &&
+    key.value.trim() === "EnvironmentVariables"
+  )
+    return failed(
+      "unreadable",
+      "it names EnvironmentVariables in a form this reader does not recognize; write the key as plain text, then install again",
+    );
+  return key;
+}
+
+function readTopLevelDict(
+  cursor: PlistCursor,
+): Outcome<Record<string, string>, "unreadable"> {
+  let env: Record<string, string> | null = null;
+  const walked = cursor.walkContainer(
+    "dict",
+    "its top-level dictionary is not closed",
+    (keyTag) => {
+      const key = readTopLevelKey(cursor, keyTag);
+      if (!key.ok) return key;
+      const between = cursor.skipTrivia();
+      if (!between.ok) return between;
+      if (key.value !== "EnvironmentVariables") return cursor.skipValue(0);
+      if (env !== null)
+        return failed(
+          "unreadable",
+          "it names EnvironmentVariables more than once; keep one dictionary, then install again",
+        );
+      const read = readEnvironmentValue(cursor);
+      if (!read.ok) return read;
+      env = read.value;
+      return ok(undefined);
+    },
+  );
+  return walked.ok ? ok(env ?? {}) : walked;
 }
 
 /**
@@ -434,82 +534,21 @@ export function parseLaunchdEnvironment(
   if (!top.ok || top.value.kind === "close" || top.value.name !== "dict")
     return failed("unreadable", "its top-level plist value is not a <dict>");
 
-  let env: Record<string, string> | null = null;
-  if (top.value.kind === "open") {
-    while (true) {
-      const trivia = cursor.skipTrivia();
-      if (!trivia.ok) return trivia;
-      const keyTag = cursor.readTag();
-      if (!keyTag.ok) return keyTag;
-      if (keyTag.value.kind === "close") {
-        if (keyTag.value.name !== "dict")
-          return failed("unreadable", "its top-level dictionary is not closed");
-        break;
-      }
-      if (keyTag.value.name !== "key")
-        return failed(
-          "unreadable",
-          "a top-level plist entry is missing its <key>",
-        );
-      const key = cursor.readPlainText(
-        keyTag.value,
-        "it names a plist key in a form this reader does not recognize; write the key as plain text, then install again",
-      );
-      if (!key.ok) return key;
-      if (
-        key.value !== "EnvironmentVariables" &&
-        key.value.trim() === "EnvironmentVariables"
-      )
-        return failed(
-          "unreadable",
-          "it names EnvironmentVariables in a form this reader does not recognize; write the key as plain text, then install again",
-        );
-      const between = cursor.skipTrivia();
-      if (!between.ok) return between;
-      if (key.value === "EnvironmentVariables") {
-        if (env !== null)
-          return failed(
-            "unreadable",
-            "it names EnvironmentVariables more than once; keep one dictionary, then install again",
-          );
-        const dictTag = cursor.readTag();
-        if (
-          !dictTag.ok ||
-          dictTag.value.kind === "close" ||
-          dictTag.value.name !== "dict"
-        )
-          return failed(
-            "unreadable",
-            "its EnvironmentVariables is not a dictionary; make it a <dict> of <string> values, then install again",
-          );
-        if (dictTag.value.kind === "self") {
-          env = {};
-        } else {
-          const read = readEnvironmentDict(cursor);
-          if (!read.ok) return read;
-          env = read.value;
-        }
-      } else {
-        const skipped = cursor.skipValue(0);
-        if (!skipped.ok) return skipped;
-      }
-    }
-  }
+  const env = top.value.kind === "open" ? readTopLevelDict(cursor) : ok({});
+  if (!env.ok) return env;
 
   const afterDict = cursor.skipTrivia();
   if (!afterDict.ok) return afterDict;
-  const closePlist = cursor.readTag();
-  if (
-    !closePlist.ok ||
-    closePlist.value.kind !== "close" ||
-    closePlist.value.name !== "plist"
-  )
-    return failed("unreadable", "its <plist> element is not closed");
+  const closed = cursor.expectClose(
+    "plist",
+    "its <plist> element is not closed",
+  );
+  if (!closed.ok) return closed;
   const trailing = cursor.skipTrivia();
   if (!trailing.ok) return trailing;
   if (cursor.at !== cursor.text.length)
     return failed("unreadable", "it holds unexpected content after </plist>");
-  return ok(env ?? {});
+  return env;
 }
 
 /** What a preview shows in place of a value it must not print. */
