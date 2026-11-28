@@ -4472,7 +4472,7 @@ see `mailbox.ts`'s own doc comment for why acking is not folded into
   mutation, and a later comment that is **transparent** is compatible with
   the hold: no line opens with an outcome token, and it carries its author's
   confirmation marker (CodeRabbit's measured one whether or not
-  `review.bots` lists it), or its author is a bot `review.bots` lists and it
+  `review.bots` lists it), or its author is in the effective reviewer bot list and it
   carries that bot's chat marker and none of its finding shape (a severity
   line, read by a format known to be the bot's: declared in
   `review.severity_formats`, or built in). Any other later comment — human, an unlisted bot's chat reply, an

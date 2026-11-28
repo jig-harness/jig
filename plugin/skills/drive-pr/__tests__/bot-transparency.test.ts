@@ -52,28 +52,23 @@ function readsThroughConfig(
   reviewerApp: string | null,
   declared = false,
 ): boolean[] {
-  const dir = mkdtempSync(join(tmpdir(), "bot-transparency-"));
-  try {
-    const overlay = join(dir, "overlay.yaml");
-    writeFileSync(
-      overlay,
-      [
-        "review:",
-        ...(reviewerApp === null ? [] : [`  reviewer_app: "${reviewerApp}"`]),
-        "  bots:",
-        '    - login: "example-review[bot]"',
-        '      chat_marker: "<!-- example-chat -->"',
-        ...(declared
-          ? [
-              "  severity_formats:",
-              '    - login: "example-review[bot]"',
-              "      shape: bold-token",
-              "      severities: { blocker: blocker, high: high, medium: medium, low: low }",
-            ]
-          : []),
-      ].join("\n"),
-    );
-    const script = [
+  return readsOverlay(
+    [
+      "review:",
+      ...(reviewerApp === null ? [] : [`  reviewer_app: "${reviewerApp}"`]),
+      "  bots:",
+      '    - login: "example-review[bot]"',
+      '      chat_marker: "<!-- example-chat -->"',
+      ...(declared
+        ? [
+            "  severity_formats:",
+            '    - login: "example-review[bot]"',
+            "      shape: bold-token",
+            "      severities: { blocker: blocker, high: high, medium: medium, low: low }",
+          ]
+        : []),
+    ].join("\n"),
+    [
       `import { isTransparentFollowUp } from ${JSON.stringify(join(SCRIPTS, "lib/bot-confirmation.ts"))};`,
       `import { qualifyingOutcome } from ${JSON.stringify(join(SCRIPTS, "lib/outcome.ts"))};`,
       "const reads = [",
@@ -82,7 +77,15 @@ function readsThroughConfig(
       '  "<!-- example-chat -->\\nNoted.",',
       '].map((body) => isTransparentFollowUp({ authorLogin: "example-review", body }, qualifyingOutcome));',
       "console.log(JSON.stringify(reads));",
-    ].join("\n");
+    ].join("\n"),
+  );
+}
+
+function readsOverlay(config: string, script: string): boolean[] {
+  const dir = mkdtempSync(join(tmpdir(), "bot-transparency-"));
+  try {
+    const overlay = join(dir, "overlay.yaml");
+    writeFileSync(overlay, config);
     const env = Object.fromEntries(
       Object.entries(process.env).filter(
         ([k]) => !k.startsWith("DRIVE_PR_") && !k.startsWith("JIG__"),
@@ -111,6 +114,24 @@ const ACKNOWLEDGEMENT = [
 ].join("\n");
 
 describe("a transparent follow-up", () => {
+  test.each([
+    ["", true],
+    ['  bots: ["example-review[bot]"]', false],
+    ["  bots: []", false],
+  ])(
+    "uses the known reviewer app as the default bot list (%s)",
+    (bots, expected) => {
+      const script = [
+        `import { isTransparentFollowUp } from ${JSON.stringify(join(SCRIPTS, "lib/bot-confirmation.ts"))};`,
+        `import { qualifyingOutcome } from ${JSON.stringify(join(SCRIPTS, "lib/outcome.ts"))};`,
+        `console.log(JSON.stringify([isTransparentFollowUp({ authorLogin: "coderabbitai[bot]", body: ${JSON.stringify(ACKNOWLEDGEMENT)} }, qualifyingOutcome)]));`,
+      ].join("\n");
+      expect(
+        readsOverlay(`review:\n  reviewer_app: coderabbitai\n${bots}`, script),
+      ).toEqual([expected]);
+    },
+  );
+
   test("a listed bot's chat acknowledgement with no outcome token and no severity line", () => {
     expect(transparent("coderabbitai", ACKNOWLEDGEMENT)).toBe(true);
   });

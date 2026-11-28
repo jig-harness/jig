@@ -350,7 +350,7 @@ dispatching via the wrapper. After the claim, the wrapper re-reads the
 thread's live comments and refuses (restoring the hold) when anything landed
 after the held reply — except a thread already resolved on GitHub, which
 drains without a mutation, and a transparent follow-up (a bot's
-confirmation marker, or the chat marker of a bot `review.bots` lists with no
+confirmation marker, or the chat marker of a bot in the effective reviewer bot list with no
 finding shape a severity format known to be the bot's reads, and no outcome
 token), which is compatible with the hold. Calling `release-held --key` on a thread
 afterward finds nothing there and refuses loudly, by the same "no silent

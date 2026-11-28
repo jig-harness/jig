@@ -84,6 +84,7 @@ import {
 } from "../../../shared/consumer.ts";
 import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
 import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
+import { reviewerProfile } from "../../drive-pr/scripts/lib/reviewer-profiles.ts";
 import { trackerProbeable } from "./lib/tracker-probe.ts";
 import { trackerFindings, reachTracker } from "./lib/tracker-fit.ts";
 import { ghCall } from "../../../shared/proc.ts";
@@ -777,7 +778,12 @@ async function reviewBotFindings(
       severity: "warning",
       message: `review.bots names ${bot}, which reviewed or commented on none of the last ${pulls.length} merged pull requests`,
     }));
-  if (declaredBots.length > 0) return findings;
+  const app = at(config, "review.reviewer_app");
+  if (
+    Array.isArray(at(config, "review.bots")) ||
+    (typeof app === "string" && reviewerProfile(app)?.botLogin)
+  )
+    return findings;
   const { found, unconfirmed } = await reviewBots(pulls, root);
   const bots = found.map((bot) =>
     suggest(

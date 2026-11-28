@@ -1,7 +1,7 @@
 /**
  * The AI reviewers Jig knows by their GitHub App slug, so a repository names
  * one with `review.reviewer_app` alone: the name of the reviewer's check run
- * and where it records the commit it reviewed. Each value was measured on the
+ * where it records the commit it reviewed, and its bot login. Each value was measured on the
  * reviewer's own output; a repository's explicit fields override any of them.
  *
  * Two kinds of reviewer evidence (`review.reviewer_evidence`):
@@ -29,6 +29,8 @@ export type ReviewBodyFormat = "coderabbit";
 
 /** What Jig knows of one reviewer. */
 export interface ReviewerProfile {
+  /** Its account login on the forge. */
+  botLogin: string;
   /** Its check run's name, as an anchored pattern. */
   checkPattern: string;
   evidence: ReviewerEvidence;
@@ -47,6 +49,7 @@ export interface ReviewerProfile {
  */
 export const REVIEWER_PROFILES: Readonly<Record<string, ReviewerProfile>> = {
   coderabbitai: {
+    botLogin: "coderabbitai[bot]",
     checkPattern: "^CodeRabbit$",
     evidence: "review_object",
     skipsDrafts: true,

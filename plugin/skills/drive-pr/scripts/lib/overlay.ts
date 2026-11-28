@@ -301,12 +301,15 @@ export function skipNoticeMarker(): string {
 
 /**
  * `review.bots` as entries, each a login or `{login, …markers}`; `undefined`
- * when the field is not a list. Entries of another shape are dropped, as
- * this best-effort reader always has.
+ * when neither a list nor a known reviewer app supplies entries. An explicit
+ * list replaces the app default. Entries of another shape are dropped.
  */
 export function reviewBotEntries(): (string | ReviewBot)[] | undefined {
   const bots = section("review").bots;
-  if (!Array.isArray(bots)) return undefined;
+  if (!Array.isArray(bots)) {
+    const profile = reviewerProfile(reviewerApp());
+    return profile ? [profile.botLogin] : undefined;
+  }
   return bots.filter(
     (b): b is string | ReviewBot =>
       (typeof b === "string" && b !== "") ||
