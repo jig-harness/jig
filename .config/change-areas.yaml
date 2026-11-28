@@ -664,6 +664,7 @@ areas:
           - "plugin/dispatch/lib/steward-record-shapes.ts"
           - "plugin/dispatch/lib/steward-record-values.ts"
           - "plugin/shared/acts.ts"
+          - "plugin/shared/forge-logins.ts"
           - "plugin/ask/lib/drive.ts"
           - "plugin/shared/orca-tabs.ts"
           - "plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts"

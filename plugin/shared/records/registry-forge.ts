@@ -50,7 +50,7 @@ export const FORGE: RecordKind[] = [
     owner: `${STATE}ledger-mirror.ts`,
     at: "one comment on the pull request",
     markers: ["drive-pr-ledger", "drive-pr-ledger-data"],
-    version: 2,
+    version: 3,
     key: PR_NUMBER,
     meaning:
       "The drive's resumable state, mirrored onto the pull request at each round boundary, park and takeover: who drives it, its round, what is parked and how the drive stands, so a drive started in another clone or on another machine resumes where the last one left off. Only a driver writes it; of two ledgers the earliest trusted comment is the ledger.",

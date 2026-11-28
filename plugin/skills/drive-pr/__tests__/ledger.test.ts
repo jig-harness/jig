@@ -216,11 +216,11 @@ describe("render and parse", () => {
     );
   });
 
-  it("writes authoritative operator stops as version 2 while ordinary ledgers remain version 1", () => {
+  it("writes ordinary ledgers and operator stops at v2", () => {
     const ordinary = renderLedger(ledger());
     expect("error" in ordinary).toBe(false);
     if ("error" in ordinary) return;
-    expect(ordinary.ledger.ledgerVersion).toBe(1);
+    expect(ordinary.ledger.ledgerVersion).toBe(2);
     const stopping = ledger();
     stopping.driver.personStop = {
       at: "2026-10-01T11:00:00.000Z",
@@ -238,15 +238,15 @@ describe("render and parse", () => {
     expect(parseLedger(ordinary.body)?.kind).toBe("ledger");
     expect(
       parseLedger(
-        written.body.replace('"ledgerVersion":2', '"ledgerVersion":3'),
+        written.body.replace('"ledgerVersion":2', '"ledgerVersion":4'),
       ),
-    ).toEqual({ kind: "unknown-version", version: 3 });
+    ).toEqual({ kind: "unknown-version", version: 4 });
   });
 
   it("names a version it does not read, and leaves other comments alone", () => {
     const rendered = renderLedger(ledger());
     if ("error" in rendered) throw new Error(rendered.error);
-    const v9 = rendered.body.replace('"ledgerVersion":1', '"ledgerVersion":9');
+    const v9 = rendered.body.replace('"ledgerVersion":2', '"ledgerVersion":9');
     expect(parseLedger(v9)).toEqual({ kind: "unknown-version", version: 9 });
     expect(parseLedger(`quoting ${LEDGER_MARKER} in a discussion`)).toBeNull();
     expect(parseLedger(`${LEDGER_MARKER}\nno data`)?.kind).toBe("malformed");

@@ -1,6 +1,6 @@
 # Hidden comment markers on the forge and the tracker
 
-Version 1 · stable
+Version 2 · stable
 
 Jig's parts leave records for each other where everyone who can read the
 repository reads them: comments and the pull request's body on the
@@ -61,7 +61,7 @@ Jig only reads.
 | Kind | Medium | Markers | Version | Key | Written by | Meaning |
 | --- | --- | --- | --- | --- | --- | --- |
 | `dispatch-rearm-request` | forge | `jig-dispatch-rearm-request`, `jig-dispatch-rearm-request-data` | 1 | `^rearm$` | Jig | Binds the rearm label to the ledger comment and generation that a person asked to restart. The newest trusted record for the label takes precedence, and a withdrawal ends the request. |
-| `drive-ledger` | forge | `drive-pr-ledger`, `drive-pr-ledger-data` | 2 | `^[1-9]\d*$` | Jig | The drive's resumable state, mirrored onto the pull request at each round boundary, park and takeover: who drives it, its round, what is parked and how the drive stands, so a drive started in another clone or on another machine resumes where the last one left off. Only a driver writes it; of two ledgers the earliest trusted comment is the ledger. |
+| `drive-ledger` | forge | `drive-pr-ledger`, `drive-pr-ledger-data` | 3 | `^[1-9]\d*$` | Jig | The drive's resumable state, mirrored onto the pull request at each round boundary, park and takeover: who drives it, its round, what is parked and how the drive stands, so a drive started in another clone or on another machine resumes where the last one left off. Only a driver writes it; of two ledgers the earliest trusted comment is the ledger. |
 | `summary-answer` | forge | `drive-pr-addressed`, `drive-pr-summary-answer` | 0 | — | Jig | The drive's answer to a review finding the reviewer could not anchor to a line of the diff. A round groups its answers in one comment, with a distinct outcome, reason and fingerprint marker for each finding. Trusted markers let a retry skip delivered answers. |
 | `thread-reply` | forge | `triage-thread:leave-open`, `reply-to-thread:no-outcome`, `reply-to-thread:provisional` | 0 | — | Jig | A reply on a review thread. Its last-line marker says the thread was answered and is deliberately left unresolved, the reply asks a question and carries no outcome, or its outcome is provisional and a person may reverse it. A marker counts only as the reply's last line, and does not prove who wrote it. |
 | `deferred-section` | forge | `jig-deferred`, `deferred-entry` | 0 | — | Jig | The findings a pull request deferred, one entry each in its body, which are filed as tracker issues once it merges or closes. A person's text outside the markers is never touched. |
