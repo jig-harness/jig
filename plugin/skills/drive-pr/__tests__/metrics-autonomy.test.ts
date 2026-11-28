@@ -35,7 +35,7 @@ const PROVISIONAL = {
 const CHAT = {
   author: "coderabbitai",
   association: "NONE",
-  body: "Understood, nothing further.\n<!-- coderabbit-ai-generated:v1 -->",
+  body: "Understood, nothing further is required.\n<!-- coderabbit-ai-generated:v1 -->",
 };
 const at = (hour: number) =>
   new Date(Date.UTC(2026, 9, 27, hour)).toISOString();

@@ -158,6 +158,25 @@ describe("a transparent follow-up", () => {
     expect(transparent("coderabbitai", body)).toBe(false);
   });
 
+  test.each([
+    [
+      "a negated acknowledgement",
+      "Noted, but it is not true that nothing further is required.",
+    ],
+    [
+      "a quoted acknowledgement",
+      "The earlier message said `Thanks, nothing further is required.`",
+    ],
+    [
+      "an acknowledgement followed by feedback",
+      "Thanks, nothing further is required. The guard still permits unauthorized requests.",
+    ],
+  ])("does not accept %s", (_name, prose) => {
+    expect(
+      transparent("coderabbitai", `${CODERABBIT_CHAT_MARKER}\n${prose}`),
+    ).toBe(false);
+  });
+
   test("the login matches without regard to case or a [bot] suffix", () => {
     expect(transparent("CodeRabbitAI[bot]", ACKNOWLEDGEMENT)).toBe(true);
   });

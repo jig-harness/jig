@@ -181,8 +181,19 @@ export function carriesFindingShape(
  * uses it for findings as well as acknowledgements.
  */
 export function carriesAcknowledgement(body: string): boolean {
-  return /\b(?:nothing further|no further (?:action|changes?|feedback|work))(?:\s+is)?\s+(?:requested|needed|required)\b/iu.test(
-    body,
+  const prose = body
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(
+      (line) =>
+        line !== "" && !line.startsWith(">") && !/^<!--.*-->$/u.test(line),
+    )
+    .map((line) => line.replace(/`[^`]*`/gu, "").trim());
+  const [acknowledgement] = prose;
+  if (prose.length !== 1 || acknowledgement === undefined) return false;
+
+  return /^(?=[^.!?]{1,280}[.!?]?$)(?=[^.!?]*\b(?:acknowledged?|confirm(?:ed|ing)?|noted|thanks?|thank you|understood)\b)(?![^.!?]*\b(?:not|never)\b[^.!?]*\b(?:nothing further|no further (?:action|changes?|feedback|work))(?:\s+is)?\s+(?:requested|needed|required)\b)[^.!?]*\b(?:nothing further|no further (?:action|changes?|feedback|work))(?:\s+is)?\s+(?:requested|needed|required)\b[^.!?]*[.!?]?$/iu.test(
+    acknowledgement,
   );
 }
 
