@@ -23,7 +23,10 @@
  * the open pull request's ledger is re-read, and the write waits for a
  * later tick when the ledger changed since this tick read it, so a drive's
  * label for its newer ledger is not replaced from the older one
- * (`label-freshness.ts`).
+ * (`label-freshness.ts`). A write refused for a dispatch label the
+ * repository does not have yet creates the label and writes again, and a
+ * create the forge refuses is one need for the repository
+ * (`label-create.ts`).
  */
 import type { Contention } from "../contention.ts";
 import type { ActionBook } from "../failures.ts";
@@ -43,6 +46,13 @@ import {
   markerChange,
 } from "../pr-markers.ts";
 import { failureText } from "../text.ts";
+import {
+  createsSettled,
+  createWaits,
+  type LabelCreate,
+  labelCreator,
+  missingOf,
+} from "./label-create.ts";
 import type {
   DrivenPr,
   LabelCommand,
@@ -261,6 +271,8 @@ export interface WriteMode {
   book?: ActionBook | null;
   /** Just before a write, why it is skipped this tick (its pull request's ledger changed since the tick read it, `label-freshness.ts`); `null` to write it. */
   current?: (change: LabelChange) => Promise<string | null>;
+  /** The labels the tick creates when a write misses one (`label-create.ts`); none are created without it. */
+  create?: LabelCreate;
 }
 
 /** The failure ledger's key of a pull request's label write; its markers' write keeps a key of its own. */
@@ -278,9 +290,49 @@ async function waitsFor(
 ): Promise<string | null> {
   const late = mode.late();
   if (late !== null) return late;
-  const backing = mode.book?.waits(key) ?? null;
+  const backing = mode.book?.waits(key) ?? createWaits(change.add, mode.book);
   if (backing !== null) return backing;
   return (await mode.current?.(change)) ?? null;
+}
+
+type Refusal = { why: string; missing: string[] } | null;
+
+/**
+ * Write once, then, while the forge names labels the repository lacks and the
+ * tick may create them, create those and write again. A single edit can name
+ * its missing labels one at a time, so retry no more often than the labels it
+ * adds, keeping creation de-duplication and the tick's deadline and freshness
+ * guard between remote calls. `early` is the outcome that ends the change.
+ */
+async function retryMissing(
+  change: LabelChange,
+  key: string,
+  mode: WriteMode,
+  creator: ReturnType<typeof labelCreator>,
+  attempt: (change: LabelChange) => Promise<Refusal>,
+): Promise<{
+  refusal: Refusal;
+  early: { outcome: "failed" | "waits"; detail: string } | null;
+}> {
+  let refusal = await attempt(change);
+  for (
+    let retries = 0;
+    creator !== null && retries < change.add.length;
+    retries++
+  ) {
+    const missing = refusal?.missing ?? [];
+    if (missing.length === 0 || !missing.every(creator.knows)) break;
+    const uncreated = await creator.ensure(missing);
+    if (uncreated !== null) {
+      const detail = `${describe(change)} was refused, and a later tick tries again: ${uncreated}`;
+      return { refusal: null, early: { outcome: "failed", detail } };
+    }
+    const wait = await waitsFor(change, key, mode);
+    if (wait !== null)
+      return { refusal: null, early: { outcome: "waits", detail: wait } };
+    refusal = await attempt(change);
+  }
+  return { refusal, early: null };
 }
 
 /** Write each change in one call, in pull request order; each outcome goes into the receipt. */
@@ -291,6 +343,16 @@ export async function writeLabels(
   edit = editLabels,
 ): Promise<LabelWrite[]> {
   const out: LabelWrite[] = [];
+  const creator = labelCreator(slug, mode.create, mode.book);
+  const attempt = async (change: LabelChange): Promise<Refusal> => {
+    try {
+      const edited = await edit(slug, change.pr, change.add, change.remove);
+      if (edited.ok) return null;
+      return { why: edited.failure.reason, missing: missingOf(edited.failure) };
+    } catch (error) {
+      return { why: failureText(error), missing: [] };
+    }
+  };
   for (const change of [...changes].sort((a, b) => a.pr - b.pr)) {
     const base = {
       target: `PR #${change.pr}`,
@@ -308,25 +370,25 @@ export async function writeLabels(
       continue;
     }
     const of = { key, kind: "label" as const, target: base.target };
-    const refused = (why: string) => {
-      out.push({
-        ...base,
-        outcome: "failed",
-        detail: `${describe(change)} was refused, and a later tick tries again: ${why}`,
-      });
-      mode.book?.ran(of, `${describe(change)} was refused: ${why}`);
-    };
-    let edited: Awaited<ReturnType<typeof edit>>;
-    try {
-      edited = await edit(slug, change.pr, change.add, change.remove);
-    } catch (error) {
-      refused(failureText(error));
+    const retried = await retryMissing(change, key, mode, creator, attempt);
+    if (retried.early !== null) {
+      out.push({ ...base, ...retried.early });
       continue;
     }
-    if (edited.ok) {
+    const refusal = retried.refusal;
+    if (refusal === null) {
       out.push({ ...base, outcome: "written", detail: describe(change) });
       mode.book?.ran(of, null);
-    } else refused(edited.failure.reason);
+      createsSettled(slug, change.add, mode.book);
+      continue;
+    }
+    const why = refusal.why;
+    out.push({
+      ...base,
+      outcome: "failed",
+      detail: `${describe(change)} was refused, and a later tick tries again: ${why}`,
+    });
+    mode.book?.ran(of, `${describe(change)} was refused: ${why}`);
   }
   return out;
 }

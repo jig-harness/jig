@@ -221,7 +221,13 @@ function needsPersonFacts(
   if (holder !== null && branch !== null)
     return { kind: "checkout", target, branch, path: holder };
   // A held drive moves once its hold is settled: re-arming it would be refused.
-  if (pr === null || text(evidence, "heldSince") !== null) return null;
+  // A follow-up's need is no drive's: it moves once its workspace is settled.
+  if (
+    pr === null ||
+    text(evidence, "heldSince") !== null ||
+    text(evidence, "stage") === "followup"
+  )
+    return null;
   const exit = evidence.exit;
   return {
     kind: "drive",

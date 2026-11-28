@@ -28,7 +28,7 @@ import { skillPrompt } from "../../skills/drive-pr/scripts/lib/pass-command.ts";
 import type { LaunchRecord, LaunchState } from "./launches.ts";
 import type { BatchItem } from "./queue-batch.ts";
 import type { RecordedResult } from "./session-result-types.ts";
-import { ROUTINE_QUESTIONS, routineQuestion } from "./routine-questions.ts";
+import { offeredClasses, routineQuestion } from "./routine-questions.ts";
 import { isCarriedReleaseDone } from "./station-answer-store.ts";
 import { STEWARD_RESUME } from "./steward.ts";
 import { NEED_ACTS } from "../../shared/acts.ts";
@@ -426,13 +426,18 @@ function earlierQuestion(question: string | null): string[] {
  * earlier pass stopped on and the standing answers to apply.
  */
 function routineLines(record: LaunchRecord): string[] {
-  const tags = [
-    `When your question is only about one of these routine classes, put the class's tag in brackets right after "${QUESTION_PREFIX}" (${QUESTION_PREFIX} [${ROUTINE_QUESTIONS[0]?.id}] …); tag no other question:`,
-    ...ROUTINE_QUESTIONS.map((q) => `- ${q.id}: ${q.covers}`),
-  ];
+  const offered = offeredClasses(record);
+  const tags =
+    offered.length === 0
+      ? []
+      : [
+          `When your question is only about one of these routine classes, put the class's tag in brackets right after "${QUESTION_PREFIX}" (${QUESTION_PREFIX} [${offered[0]?.id}] …); tag no other question:`,
+          ...offered.map((q) => `- ${q.id}: ${q.covers}`),
+        ];
   const standing = record.standing;
   if (standing === undefined || standing === null) return tags;
   const answers = standing.classes
+    .filter((id) => offered.some((q) => q.id === id))
     .map(routineQuestion)
     .filter((q) => q !== undefined)
     .map((q) => `- ${q.id} (${q.covers}): ${q.answer}`);
@@ -443,6 +448,26 @@ function routineLines(record: LaunchRecord): string[] {
     ...answers,
     "Apply that answer, finish every other arm and record done; stop on a question only for a decision none of these answers covers.",
   ];
+}
+
+/**
+ * What the pass settles without asking, for each routine class its record
+ * offers: a class the repository left out (`dispatch.followup_routine`) is
+ * asked as any other question.
+ */
+function unattendedLines(record: LaunchRecord): string[] {
+  const offered = new Set(offeredClasses(record).map((q) => q.id));
+  const owed = offered.has("person-owed")
+    ? "A step the merge owes that only a person can take or authorize (a live check against a real service, a rollout to another repository, an organization's setting, an operational action, a release gate that failed) is no reason to stop: report it as owed by a person, file it as an item where your authority covers filing, and count its arm settled."
+    : null;
+  const drafted = offered.has("drafted-items")
+    ? `Filing the follow-up items you drafted needs nobody's leave${owed === null ? "" : " either"}.`
+    : "Filing the follow-up items you drafted needs a person's leave, whatever the skill's authority table says: do not file them; carry out the rest, then stop on a question that asks for that leave.";
+  const withheld =
+    owed === null
+      ? "A step only a person can take or authorize is not settled by reporting or filing it, whatever the skill's directions say: carry out the rest, then stop on a question about it."
+      : null;
+  return [[owed, withheld, drafted].filter((l) => l !== null).join(" ")];
 }
 
 /** The prompt a follow-up's headless pass starts with. */
@@ -464,8 +489,12 @@ function followupPrompt(record: LaunchRecord): string {
     ...answeredLines(record),
     `It claimed the follow-up with the marker comment ${marker} on the pull request. That claim is this pass's: post no marker of your own. Before each act that writes outside the pull request (an issue closed, a tag pushed), check that you still hold the claim, and stop on any nonzero exit (an earlier marker, an unreadable forge, a missing marker): ${jigCommand(["marker", "check", pr, "--comment", marker, "--repo", record.repo])}`,
     "Leave routine local housekeeping (branch retention, retired workspaces and scratch notes) to periodic cleanup, even when no collector covers a leftover yet. Do not ask a person about it or treat it as an incomplete arm or a failed result. Evidence of unlanded work or an active operational problem still belongs in the follow-up.",
-    "A step the merge owes that only a person can take or authorize (a live check against a real service, a rollout to another repository, an organization's setting, an operational action, a release gate that failed) is no reason to stop: report it as owed by a person, file it as an item where your authority covers filing, and count its arm settled. Filing the follow-up items you drafted needs nobody's leave either.",
-    `For a release that still owes a tag and needs a person, record "[person-owed] release <version> owed" in the release arm's evidence. Run ${jigCommand(["release-owed", record.id, record.token])} <tag> --state <state> with the quoted tag and that version's state from the tag plan before filing. Follow the skill's instructions for the returned status. Finish the other arms and record done when settled. The release need carries the decision on its own, so do not emit a Question line for it.`,
+    ...unattendedLines(record),
+    ...(offeredClasses(record).some((q) => q.id === "person-owed")
+      ? [
+          `For a release that still owes a tag and needs a person, record "[person-owed] release <version> owed" in the release arm's evidence. Run ${jigCommand(["release-owed", record.id, record.token])} <tag> --state <state> with the quoted tag and that version's state from the tag plan before filing. Follow the skill's instructions for the returned status. Finish the other arms and record done when settled. The release need carries the decision on its own, so do not emit a Question line for it.`,
+        ]
+      : []),
     `Where an arm you may carry out cannot go on without a person's decision, do not guess: carry out what does not depend on it, then stop, and end your output with one line that starts "${QUESTION_PREFIX}" and states what the person must decide, with no secret or personal data in it. The dispatcher sends that line to a person.`,
     ...framingLines(record),
     ...routineLines(record),
