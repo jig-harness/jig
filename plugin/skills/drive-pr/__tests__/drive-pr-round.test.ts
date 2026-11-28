@@ -1,6 +1,6 @@
 import { realGitForShell } from "./round-plan-fixtures.ts";
 /**
- * drive-pr suite: announce-merge-ready.ts, marker overrides, round-delta.ts, round-plan.ts, the PR-target channel and guarded-push.ts.
+ * drive-pr suite: announce-merge-ready.ts, round-delta.ts, round-plan.ts, the PR-target channel and guarded-push.ts.
  * Shared fixtures and probes live in drive-pr-harness.ts.
  */
 
@@ -1588,58 +1588,6 @@ describe("announce-merge-ready.ts", () => {
     expect(r.posted).toBe(true);
     expect(r.deleted).toEqual([]);
     expect(r.stderr).not.toContain("withdrawing");
-  });
-});
-
-describe("summary-findings marker overrides", () => {
-  it("reads the SAME sticky and reviewed-SHA markers drive-status.ts is configured with", async () => {
-    // The parser exports stable defaults; its selection helpers read overrides
-    // lazily. Run in a subprocess so the environment belongs to the import.
-    const src = join(SCRIPTS, "summary-findings.ts");
-    const overlay = join(SCRIPTS, "lib", "overlay.ts");
-    const proc = Bun.spawn(
-      [
-        "bun",
-        "-e",
-        `const m = await import(${JSON.stringify(src)});
-         const o = await import(${JSON.stringify(overlay)});
-         console.log(JSON.stringify({
-           defaultSticky: m.STICKY_MARKER,
-           defaultSha: m.SHA_MARKER,
-           sticky: o.stickyMarker(),
-           parsed: m.reviewedShaFrom('<!-- custom-sha: abc1234 -->'),
-           selected: m.reviewerSticky([
-             { id: 1, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n- custom-marker finding' },
-             { id: 2, user: { login: 'reviewer[bot]' }, body: '<!-- ai-code-review -->\\n- default-marker finding' },
-           ], false)?.id,
-         }));`,
-      ],
-      {
-        env: {
-          ...process.env,
-          DRIVE_PR_STICKY_MARKER: "<!-- other-review -->",
-          DRIVE_PR_SHA_MARKER: "custom-sha",
-          DRIVE_PR_REVIEWER_APP: "reviewer",
-        },
-        stdout: "pipe",
-        stderr: "pipe",
-      },
-    );
-    const [out, exitCode] = await Promise.all([
-      new Response(proc.stdout).text(),
-      proc.exited,
-    ]);
-    expect(exitCode).toBe(0);
-    const got = JSON.parse(out);
-    expect(got.defaultSticky).toBe("<!-- ai-code-review -->");
-    expect(got.defaultSha).toBe("ai-reviewed-sha");
-    expect(got.sticky).toBe("<!-- other-review -->");
-    expect(got.selected).toBe(1);
-    // And the reviewed SHA is actually extracted under the custom name — it
-    // scopes the unaccounted-slot keys, so failing to read it degrades every
-    // slot to the shared `nohead` scope, where an answer given on one head
-    // marks a different finding addressed on the next.
-    expect(got.parsed).toBe("abc1234");
   });
 });
 

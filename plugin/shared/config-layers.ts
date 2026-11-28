@@ -118,6 +118,7 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "issue_tracker.jira.api_base",
   "review.repo_slug",
   "review.repo_label",
+  "review.skip_excluded_paths",
   "ci.required_checks",
   "ci.hold_sentinels",
   "ci.advisory_checks",

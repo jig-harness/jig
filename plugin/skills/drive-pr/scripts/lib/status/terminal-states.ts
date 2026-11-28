@@ -217,9 +217,9 @@ export const TERMINAL_STATES: Readonly<
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
     meaning:
-      "The pull request is ready to merge: the reviewer reviewed this exact head and nothing is left open. `drive.ts` exits `0` for it, once its own working tree is clean.",
+      "Review work is settled: either no AI reviewer is configured, the reviewer reviewed this exact head, the draft-only skip is provisional until the PR is marked Ready and reviewed, an earlier reviewed head has the same pull-request diff after a current-head skip notice, or a current-head skip notice and configured excluded-path proof establish there is nothing to review. Nothing is left open. `drive.ts` exits `0` only after its own working tree is clean and its exact-head required CI proof passes; convergence alone does not make the pull request ready to merge.",
     report: {
-      stop: "converged: the reviewer reviewed its head and nothing is left open",
+      stop: "converged: review evidence covers its head and nothing is left open",
       next: {
         step: "Merge the pull request once its required checks pass.",
         owner: "person",
@@ -350,12 +350,12 @@ export const TERMINAL_STATES: Readonly<
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
     meaning:
-      "The reviewer skipped this head and its review of an earlier head does not cover it, so no review will come. A person has this head reviewed, then re-arms.",
+      "The reviewer reported a skip or pause for this Ready PR head. An earlier review does not cover it, a skip notice has no stamp and Jig cannot verify that the diff is empty after the configured exclusions, or a review-object check reports `Review paused…` or `Review skipped…`; a draft-only skip instead remains provisional while the drive marks the PR Ready and waits for review. A person resumes the reviewer or has this head reviewed, then re-arms.",
     report: {
       stop: "stopped: the reviewer skipped its head and will not review it",
       cause: "environment",
       next: {
-        step: "Have this head reviewed, then re-arm the drive.",
+        step: "Resume the reviewer or have this head reviewed, then re-arm the drive.",
         owner: "person",
         act: "Do",
       },

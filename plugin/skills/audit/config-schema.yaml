@@ -541,6 +541,13 @@ fields:
     type: string
     read_by: [drive-pr, dispatch]
     since: 0.169.0
+  review.skip_excluded_paths:
+    type: list
+    items: { type: string, pattern: "^(?!\\s*$)(?!/)(?!\\\\)(?![A-Za-z]:[\\\\/])(?![\\s\\S]*//)(?![\\s\\S]*\\x00)(?![\\s\\S]*[\\r\\n\\u2028\\u2029])(?![\\s\\S]*(?:^|/)\\.{1,2}(?:/|$))(?![\\s\\S]*\\/$)[^\\r\\n\\u2028\\u2029\\u0000]+$" }
+    distinct: true
+    repository_only: true
+    read_by: [drive-pr]
+    since: next
   review.code_scanning_severities:
     type: map
     nullable: true

@@ -64,20 +64,41 @@ async function commitOf(
 async function refreshTrackingRef(
   root: string,
   ref: string,
-): Promise<{ error: string } | null> {
+): Promise<{ commit: string; branch: string } | { error: string }> {
   const remote = readRemoteName(root);
   if ("error" in remote) return remote;
   const prefix = `refs/remotes/${remote.remote}/`;
   if (!ref.startsWith(prefix)) return { error: `${ref} is not a tracking ref` };
   const branch = ref.slice(prefix.length);
+  const observed = await git(
+    ["-C", root, "ls-remote", "--refs", remote.remote, `refs/heads/${branch}`],
+    {
+      stderr: "pipe",
+      timeoutSec: gitCallTimeoutSeconds(),
+      env: gitIdentityEnv(),
+    },
+  );
+  // `ls-remote` treats its patterns as globs.  A branch that disappeared can
+  // therefore still leave a similarly named ref (or tag) in the response; a
+  // policy proof may use only the exact branch it asked to observe.
+  const exact = observed.stdout
+    .split("\n")
+    .map((line) => line.split("\t", 2))
+    .find((fields) => fields[1] === `refs/heads/${branch}`);
+  const commit = exact?.[0] ?? "";
+  if (observed.code !== 0 || !/^[0-9a-f]{40}$/.test(commit))
+    return {
+      error: `cannot fetch ${remote.remote}/${branch}, so its current commit is unknown${observed.stderrTail ? ` (${observed.stderrTail.trim()})` : ""}`,
+    };
   const r = await git(
     [
       "-C",
       root,
       "fetch",
       "--quiet",
+      "--no-write-fetch-head",
       remote.remote,
-      `+refs/heads/${branch}:${ref}`,
+      commit,
     ],
     {
       stderr: "pipe",
@@ -85,11 +106,38 @@ async function refreshTrackingRef(
       env: gitIdentityEnv(),
     },
   );
-  return r.code === 0
-    ? null
-    : {
-        error: `cannot fetch ${remote.remote}/${branch}, so its current commit is unknown${r.stderrTail ? ` (${r.stderrTail.trim()})` : ""}`,
-      };
+  if (r.code !== 0)
+    return {
+      error: `cannot fetch ${remote.remote}/${branch}, so its current commit is unknown${r.stderrTail ? ` (${r.stderrTail.trim()})` : ""}`,
+    };
+  // The immutable object named above belongs to this observation. Do not read
+  // the shared tracking ref: another worktree may advance it between fetch and
+  // policy parsing.
+  const verified = await commitOf(root, commit);
+  return "error" in verified ? verified : { commit: verified.commit, branch };
+}
+
+/** A freshly fetched base-branch commit (and integration bound for a stack), or why it failed. */
+export type ResolvedPolicyBase =
+  | { commit: string; branch: string; bound?: string }
+  | { error: string };
+
+/**
+ * Resolve pull request `pr`'s freshly fetched base-branch commit (and, for a
+ * stacked base, the freshly fetched integration-branch bound commit) without
+ * modifying `process.env`.
+ */
+export async function resolvePolicyBase(
+  pr: string,
+  root: string = consumerRoot(),
+): Promise<ResolvedPolicyBase> {
+  const base = await freshPrBaseRef(root, pr, gitCallTimeoutSeconds());
+  if ("error" in base) return base;
+  const resolved = await refreshTrackingRef(root, base.ref);
+  if ("error" in resolved) return resolved;
+  const bound = await integrationBound(root, base.ref, resolved);
+  if (bound !== null && "error" in bound) return bound;
+  return bound === null ? resolved : { ...resolved, bound: bound.commit };
 }
 
 /**
@@ -102,26 +150,13 @@ export async function exportPolicyBase(
   pr: string,
   root: string = consumerRoot(),
 ): Promise<{ commit: string } | { error: string }> {
-  const base = await freshPrBaseRef(root, pr, gitCallTimeoutSeconds());
-  const fetched =
-    "error" in base ? null : await refreshTrackingRef(root, base.ref);
-  const resolved =
-    "error" in base
-      ? base
-      : fetched !== null
-        ? fetched
-        : await commitOf(root, base.ref);
-  const bound =
-    "error" in base || "error" in resolved
-      ? null
-      : await integrationBound(root, base.ref);
-  const result = bound !== null && "error" in bound ? bound : resolved;
+  const result = await resolvePolicyBase(pr, root);
   const failed = "error" in result;
   process.env[POLICY_BASE_VARIABLE] = failed ? "" : result.commit;
-  if (!failed && bound !== null && "commit" in bound)
-    process.env[POLICY_BOUND_VARIABLE] = bound.commit;
+  if (!failed && result.bound !== undefined)
+    process.env[POLICY_BOUND_VARIABLE] = result.bound;
   else delete process.env[POLICY_BOUND_VARIABLE];
-  return result;
+  return failed ? result : { commit: result.commit };
 }
 
 /**
@@ -132,6 +167,7 @@ export async function exportPolicyBase(
 async function integrationBound(
   root: string,
   baseRef: string,
+  base: { commit: string },
 ): Promise<{ commit: string } | { error: string } | null> {
   const remote = readRemoteName(root);
   if ("error" in remote) return remote;
@@ -145,13 +181,15 @@ async function integrationBound(
     root,
     remote.remote,
     defaultBranch,
+    baseRef === `refs/remotes/${remote.remote}/${defaultBranch}`
+      ? base
+      : undefined,
   );
   if (declared !== null && "error" in declared) return declared;
   const branch = declared?.branch ?? defaultBranch;
   const ref = `refs/remotes/${remote.remote}/${branch}`;
   if (ref === baseRef) return null;
-  const fetched = await refreshTrackingRef(root, ref);
-  return fetched !== null ? fetched : commitOf(root, ref);
+  return await refreshTrackingRef(root, ref);
 }
 
 /**
@@ -166,13 +204,15 @@ async function declaredIntegrationBranch(
   root: string,
   remote: string,
   defaultBranch: string,
+  observedDefault?: { commit: string },
 ): Promise<{ branch: string } | { error: string } | null> {
   if ((process.env.DRIVE_PR_BASE_BRANCH ?? "").trim() !== "") return null;
   const ref = `refs/remotes/${remote}/${defaultBranch}`;
-  const fetched = await refreshTrackingRef(root, ref);
-  if (fetched !== null) return fetched;
-  const at = await commitOf(root, ref);
-  if ("error" in at) return at;
+  // If the PR already targets the default branch, reuse the exact fetched
+  // observation that supplied its policy. A second fetch could observe a
+  // revoked policy yet leave the earlier commit in force for this evaluation.
+  const at = observedDefault ?? (await refreshTrackingRef(root, ref));
+  if (!("commit" in at)) return at;
   const snapshot = readSnapshotAt(
     at.commit,
     POLICY_BASE_VARIABLE,

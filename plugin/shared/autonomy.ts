@@ -646,6 +646,7 @@ export function readSnapshotAt(
   branch: string,
   env: Env,
   root: string,
+  validateAutonomy = true,
 ): PolicySnapshot {
   if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(commit))
     return {
@@ -678,6 +679,7 @@ export function readSnapshotAt(
     return { from: "unreadable", reason: failureReason(err, PARSE_ERRORS) };
   }
   const snapshot: PolicySnapshot = { from: "base", commit, values };
+  if (!validateAutonomy) return snapshot;
   try {
     const section = values.autonomy;
     if (section !== undefined && section !== null && !isMapping(section))

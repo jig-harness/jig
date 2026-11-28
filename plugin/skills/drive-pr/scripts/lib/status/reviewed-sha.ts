@@ -27,11 +27,15 @@
  * down a file does not make it look different, and a merge that moved or
  * edited the change's lines does. Any doubt leaves the head unreviewed.
  */
+import { isAbsolute } from "node:path";
+import { readSnapshotAt } from "../../../../../shared/autonomy.ts";
 import {
   consumerRoot,
   readRemoteName,
 } from "../../../../../shared/consumer.ts";
+import { isRecord } from "../../../../../shared/guards.ts";
 import { fetchTimeoutSeconds } from "../base-drift.ts";
+import { resolvePolicyBase } from "../driver/policy-base.ts";
 import { reviewerLabel } from "../overlay.ts";
 import {
   git,
@@ -66,12 +70,28 @@ export async function resolveMarkerSha(
 ): Promise<string> {
   if (marker === "") return "";
   if (marker.length === 40) return marker;
-  const rp = await localGit(
-    ["rev-parse", "--verify", "--quiet", `${marker}^{commit}`],
+  // Only an object-id abbreviation resolves here: `rev-parse <name>` would
+  // prefer a ref of that name (a branch or tag spelled like the hex) over the
+  // object, so the prefix is listed as object ids instead.
+  if (!/^[0-9a-f]{4,39}$/i.test(marker)) return "";
+  const listed = await localGit(
+    ["rev-parse", `--disambiguate=${marker.toLowerCase()}`],
     gitCallTimeoutSeconds(),
     cwd,
   );
-  return rp.code === 0 ? rp.stdout.trim() : "";
+  if (listed.code !== 0) return "";
+  const ids = listed.stdout
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const id = ids[0];
+  if (ids.length !== 1 || id === undefined) return "";
+  const kind = await localGit(
+    ["cat-file", "-t", id],
+    gitCallTimeoutSeconds(),
+    cwd,
+  );
+  return kind.code === 0 && kind.stdout.trim() === "commit" ? id : "";
 }
 
 /**
@@ -90,6 +110,20 @@ function localGit(
     timeoutSec,
     ...(anchor ? { cwd: anchor } : {}),
   });
+}
+
+/**
+ * Whether a skip notice's head names `apiHead`. An abbreviation Git cannot
+ * resolve is unverified evidence, not proof of another commit: it names the
+ * head when it is a prefix of it.
+ */
+async function noticeNamesHead(
+  noticeHead: string,
+  apiHead: string,
+): Promise<boolean> {
+  const resolved = await resolveMarkerSha(noticeHead);
+  if (resolved !== "") return resolved === apiHead;
+  return apiHead.startsWith(noticeHead.toLowerCase());
 }
 
 /** What stops the evaluation at this gate; `null` lets it go on. */
@@ -111,16 +145,13 @@ export interface ReviewedShaStop {
  * accepted wrong one costs the whole guard.
  */
 export async function reviewedShaGate(
+  pr: string,
   report: StatusReport,
   marker: string,
   markerFull: string,
   skip: SkipNotice | null,
 ): Promise<ReviewedShaStop | null> {
-  if (marker === "") {
-    report.reviewedSha = report.apiHead;
-    report.reviewedShaSource = "check-run";
-    return null;
-  }
+  if (marker === "") return unstampedSkipGate(pr, report, skip);
   report.reviewedSha = marker;
   report.reviewedShaSource = "comment-marker";
   if (marker.length !== 40) {
@@ -132,8 +163,33 @@ export async function reviewedShaGate(
     }
     report.reviewedSha = markerFull;
   }
-  if (markerFull === report.apiHead) return null;
+  if (markerFull === report.apiHead) return contradictedStamp(report, skip);
   const named = marker === markerFull ? marker : `${marker} (${markerFull})`;
+  return skippedHeadGate(report, markerFull, named, skip);
+}
+
+/** A stamp naming this head holds unless a skip notice names it too. */
+async function contradictedStamp(
+  report: StatusReport,
+  skip: SkipNotice | null,
+): Promise<ReviewedShaStop | null> {
+  // A stamp and a skip notice that both name this head contradict each
+  // other: neither shows which one the reviewer meant, so fail closed.
+  if (skip === null || !(await noticeNamesHead(skip.head, report.apiHead)))
+    return null;
+  return {
+    state: "STALE_REVIEW",
+    reason: `${reviewerLabel()} recorded reviewing the PR head ${report.apiHead} and also a skip notice naming it ("${skip.text}") — contradictory evidence, so no review of this head is taken as proven. Have this head reviewed again, then re-arm`,
+  };
+}
+
+/** A stamp for an earlier head: stale, unless a skip notice for this head covers an identical diff. */
+async function skippedHeadGate(
+  report: StatusReport,
+  markerFull: string,
+  named: string,
+  skip: SkipNotice | null,
+): Promise<ReviewedShaStop | null> {
   const stale: ReviewedShaStop = {
     state: "STALE_REVIEW",
     reason: `${reviewerLabel()} last recorded reviewing ${named}, but the PR head is ${report.apiHead}`,
@@ -162,6 +218,243 @@ export async function reviewedShaGate(
     state: "REVIEW_SKIPPED",
     reason: `${reviewerLabel()} skipped the PR head ${report.apiHead} and last recorded reviewing ${named}; ${notice}, and the pull request's diff at ${report.apiHead} differs from its diff at ${markerFull}, so no review of this head will come and the drive cannot converge on it. Fix: review the change since ${markerFull} yourself and have ${reviewerLabel()} review this head, or push a commit it reviews; then re-arm`,
   };
+}
+
+async function unstampedSkipGate(
+  pr: string,
+  report: StatusReport,
+  skip: SkipNotice | null,
+): Promise<ReviewedShaStop | null> {
+  if (skip === null || (await resolveMarkerSha(skip.head)) !== report.apiHead) {
+    report.reviewedSha = report.apiHead;
+    report.reviewedShaSource = "check-run";
+    return null;
+  }
+  const notice = `its skip notice for this head reads "${skip.text}"`;
+  const excluded = await skipExcludedPathsAt(pr, report);
+  if ("reason" in excluded) return skippedStop(report, notice, excluded.reason);
+  const diffStop = await checkExcludedBases(
+    report,
+    notice,
+    new Set(excluded.paths),
+    excluded.policyBase,
+  );
+  if (diffStop !== null) return diffStop;
+  report.reviewedSha = report.apiHead;
+  report.reviewedShaSource = "skip-notice";
+  return null;
+}
+
+async function checkExcludedBases(
+  report: StatusReport,
+  notice: string,
+  excluded: ReadonlySet<string>,
+  policyBase: string,
+): Promise<ReviewedShaStop | null> {
+  const bases =
+    policyBase === report.baseHead
+      ? [report.baseHead]
+      : [report.baseHead, policyBase];
+  for (const base of bases) {
+    const remaining = await changedPathsOutsideExcluded(
+      base,
+      report.apiHead,
+      excluded,
+    );
+    if (typeof remaining === "string")
+      return skippedStop(
+        report,
+        notice,
+        `Jig cannot read the pull request diff after applying review.skip_excluded_paths (${remaining})`,
+      );
+    if (remaining !== 0)
+      return skippedStop(
+        report,
+        notice,
+        `the pull request still changes ${remaining} path${remaining === 1 ? "" : "s"} outside review.skip_excluded_paths`,
+      );
+  }
+  return null;
+}
+
+function skippedStop(
+  report: StatusReport,
+  notice: string,
+  why: string,
+): ReviewedShaStop {
+  return {
+    state: "REVIEW_SKIPPED",
+    reason: `${reviewerLabel()} skipped the PR head ${report.apiHead}; ${notice}, but ${why}. Have this head reviewed, then re-arm`,
+  };
+}
+
+/**
+ * Count paths in the PR diff that the reviewer's configured exact excludes do not
+ * cover. Rename detection is disabled, so a rename is a deletion and an
+ * addition and both exact paths must be excluded. Submodules stay visible.
+ */
+async function changedPathsOutsideExcluded(
+  base: string,
+  head: string,
+  excluded: ReadonlySet<string>,
+): Promise<number | string> {
+  const mergeBase = await localGit([
+    "--no-replace-objects",
+    "merge-base",
+    "--all",
+    base,
+    head,
+  ]);
+  const from = mergeBase.stdout.trim();
+  if (mergeBase.bufferExceeded || mergeBase.code !== 0 || from === "")
+    return gitFailure(`merge-base ${base} ${head}`, mergeBase.stderrTail)
+      .failed;
+  if (from.includes("\n")) return "the pull request has multiple merge bases";
+  const changed = await localGit([
+    "--no-replace-objects",
+    "diff",
+    "--name-only",
+    "-z",
+    "--no-renames",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--ignore-submodules=none",
+    "--no-relative",
+    from,
+    head,
+    "--",
+  ]);
+  if (changed.bufferExceeded || changed.code !== 0)
+    return gitFailure(`diff --name-only ${from} ${head}`, changed.stderrTail)
+      .failed;
+  const paths = changed.stdout.split("\0");
+  if (paths.pop() !== "")
+    return "git returned a malformed NUL-delimited path list";
+  let remaining = 0;
+  for (const path of paths) {
+    if (path === "") return "git returned an empty path";
+    if (!excluded.has(path)) remaining += 1;
+  }
+  return remaining;
+}
+
+/** Review exclusions are policy, so only the PR base branch may supply them. */
+async function skipExcludedPathsAt(
+  pr: string,
+  report: StatusReport,
+): Promise<{ paths: string[]; policyBase: string } | { reason: string }> {
+  const configured = await excludedPathsConfig(pr, report);
+  if ("reason" in configured) return configured;
+  const value = configured.value;
+  if (!Array.isArray(value))
+    return {
+      reason:
+        "review.skip_excluded_paths on the pull request base is not a list of exact repository-relative UTF-8 paths",
+    };
+  const paths: string[] = [];
+  for (const path of value) {
+    if (typeof path !== "string" || !isExactRepositoryPath(path))
+      return {
+        reason:
+          "review.skip_excluded_paths on the pull request base contains a path that is not an exact repository-relative UTF-8 path",
+      };
+    paths.push(path);
+  }
+  if (new Set(paths).size !== paths.length)
+    return {
+      reason:
+        "review.skip_excluded_paths on the pull request base names a path more than once",
+    };
+  return { paths, policyBase: configured.policyBase };
+}
+
+/** Whether `older` is an ancestor of (or equal to) `newer` in the driven clone. */
+async function isAncestor(older: string, newer: string): Promise<boolean> {
+  if (older === newer) return true;
+  const r = await localGit([
+    "--no-replace-objects",
+    "merge-base",
+    "--is-ancestor",
+    older,
+    newer,
+  ]);
+  return r.code === 0;
+}
+
+/** The raw `review.skip_excluded_paths` value from a freshly resolved reviewed policy. */
+async function excludedPathsConfig(
+  pr: string,
+  report: StatusReport,
+): Promise<{ value: unknown; policyBase: string } | { reason: string }> {
+  // Always refresh the reviewed policy on an unstamped skip rather than
+  // reusing an inherited DRIVE_PR_POLICY_BASE from an earlier poll, and bind
+  // that observation to the base branch and commit being judged.
+  const root = process.env.DRIVE_PR_WORKTREE || undefined;
+  const policy = await resolvePolicyBase(pr, root);
+  if ("error" in policy)
+    return {
+      reason: `the reviewed policy base could not be resolved (${policy.error})`,
+    };
+  if (report.baseRefName !== "" && policy.branch !== report.baseRefName)
+    return {
+      reason: `the refreshed policy targets '${policy.branch}', which does not match the evaluated base '${report.baseRefName}'`,
+    };
+  if (!(await isAncestor(report.baseHead, policy.commit)))
+    return {
+      reason: `the refreshed policy base (${policy.commit}) does not cover the evaluated base commit (${report.baseHead})`,
+    };
+  const commit = policy.bound ?? policy.commit;
+  const snapshot = readSnapshotAt(
+    commit,
+    policy.bound === undefined ? "pull request base" : "DRIVE_PR_POLICY_BOUND",
+    policy.bound === undefined ? "base" : "integration",
+    process.env,
+    root ?? consumerRoot(),
+    false,
+  );
+  if (snapshot.from === "unreadable")
+    return {
+      reason: `the pull request base configuration cannot be read (${snapshot.reason})`,
+    };
+  if (snapshot.from !== "base")
+    return { reason: "the pull request base configuration cannot be read" };
+  const skipPolicy = reviewSkipPolicy(snapshot.values.review);
+  return "reason" in skipPolicy
+    ? skipPolicy
+    : { value: skipPolicy.value, policyBase: policy.commit };
+}
+
+/** `review.skip_excluded_paths` from the review section of the base configuration. */
+function reviewSkipPolicy(
+  review: unknown,
+): { value: unknown } | { reason: string } {
+  if (review != null && !isRecord(review))
+    return {
+      reason: "the pull request base's review section is not a mapping",
+    };
+  const value = review?.skip_excluded_paths;
+  if (value === undefined || value === null)
+    return {
+      reason:
+        "the pull request base configures no review.skip_excluded_paths policy",
+    };
+  return { value };
+}
+
+function isExactRepositoryPath(path: string): boolean {
+  if (
+    path === "" ||
+    path.trim() === "" ||
+    path.includes("\0") ||
+    /[\r\n\u2028\u2029]/.test(path)
+  )
+    return false;
+  if (/^[A-Za-z]:[\\/]/.test(path)) return false;
+  if (path.startsWith("\\")) return false;
+  if (isAbsolute(path) || path.startsWith("/")) return false;
+  return path
+    .split("/")
+    .every((part) => part !== "" && part !== "." && part !== "..");
 }
 
 /**
@@ -199,7 +492,9 @@ async function fetchMissing(commits: string[]): Promise<string | null> {
  */
 export function skipNote(report: StatusReport): string {
   return report.reviewedShaSource === "skip-notice"
-    ? ` — ${reviewerLabel()} last reviewed ${report.reviewedSha} and skipped ${report.apiHead} (its skip notice names this head); the pull request's diff is the same at both, so that review stands for this head`
+    ? report.reviewedSha === report.apiHead
+      ? ` — ${reviewerLabel()} skipped ${report.apiHead} as having nothing to review after its configured excludes (its skip notice names this head)`
+      : ` — ${reviewerLabel()} last reviewed ${report.reviewedSha} and skipped ${report.apiHead} (its skip notice names this head); the pull request's diff is the same at both, so that review stands for this head`
     : "";
 }
 
@@ -207,11 +502,17 @@ export function skipNote(report: StatusReport): string {
  * What the merge-ready announcement says the reviewer did, for the
  * `reviewedShaSource` and `reviewedSha` of a converged report.
  */
-export function reviewedClaim(source: string, reviewedSha: string): string {
+export function reviewedClaim(
+  source: string,
+  reviewedSha: string,
+  head?: string,
+): string {
   if (source === "review-check-run")
     return "completed its check run on this exact head, with no new review to post";
   return source === "skip-notice"
-    ? `reviewed \`${reviewedSha.slice(0, 12)}\` and skipped this head, whose pull-request diff is the same`
+    ? reviewedSha === head
+      ? "skipped this head because nothing remained to review after its configured excludes"
+      : `reviewed \`${reviewedSha.slice(0, 12)}\` and skipped this head, whose pull-request diff is the same`
     : "completed its review of this exact head";
 }
 

@@ -483,6 +483,17 @@ async function evaluateFresh(
         `cannot re-read #${ctx.pr}'s base to confirm it did not move while the witnesses were gathered`,
       );
     }
+    if (
+      report.baseRefName !== "" &&
+      now.snapshot.baseRefName !== "" &&
+      now.snapshot.baseRefName !== report.baseRefName
+    ) {
+      return terminal(
+        report,
+        "HEAD_MOVED",
+        `#${ctx.pr}'s base branch changed from ${report.baseRefName} to ${now.snapshot.baseRefName} while this evaluation ran — mergeability and reviewer witnesses above describe the old base, so no terminal claim about it holds`,
+      );
+    }
     if (baseNow !== report.baseHead) {
       return terminal(
         report,
@@ -867,12 +878,12 @@ async function evaluateFresh(
       if (report.reviewerConclusion === "skipped") {
         // A conclusion the job never reached. It attested to nothing, unless
         // the reviewer's own sticky carries a skip notice naming this head:
-        // that goes on to the reviewed-SHA gate, which decides whether the
-        // last review stands for it (`reviewed-sha.ts`). The sticky is read
-        // once and shared with that gate.
+        // the reviewed-SHA gate decides whether an earlier review covers
+        // the head or whether nothing remained to review. Both gates use
+        // the same sticky read.
         earlySticky = await reviewerStamp(ctx, earlySticky);
         const noticeHead =
-          earlySticky?.skip == null || earlySticky.sha === ""
+          earlySticky?.skip == null
             ? ""
             : await resolveMarkerSha(earlySticky.skip.head);
         if (noticeHead !== report.apiHead) {
@@ -941,6 +952,7 @@ async function evaluateFresh(
     // Second witness: the reviewer's stamp must name THIS head, or the head
     // it reviewed before skipping this one unchanged (`reviewed-sha.ts`).
     const stop = await reviewedShaGate(
+      ctx.pr,
       report,
       marker,
       markerFull,

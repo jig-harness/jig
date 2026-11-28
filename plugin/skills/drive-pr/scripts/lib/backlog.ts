@@ -35,11 +35,23 @@ export interface BacklogEntry {
  * behind it.
  */
 export function decodeBacklog(body: string): BacklogEntry[] {
-  const m = body.match(/<!--\s*ai-review-backlog:\s*([A-Za-z0-9+/=]+)\s*-->/);
-  if (!m) return [];
+  const markers = [
+    ...body.matchAll(/<!--\s*ai-review-backlog:\s*([A-Za-z0-9+/=]+)\s*-->/g),
+  ];
+  const m = markers[0];
   const fail = (why: string): never => {
     throw new Error(`ai-review-backlog present but ${why}`);
   };
+  // An opener that is not a complete, valid marker is malformed protocol
+  // evidence, not an absent backlog. Treating it as empty can erase a prior
+  // summary when a newer round marker selects this comment.
+  const declared = [...body.matchAll(/<!--\s*ai-review-backlog\s*:/g)];
+  if (!m) {
+    if (declared.length > 0) return fail("is not a complete base64 marker");
+    return [];
+  }
+  if (markers.length !== 1 || declared.length !== 1)
+    return fail("appears more than once or is malformed");
   let parsed: unknown;
   try {
     parsed = JSON.parse(Buffer.from(m[1] ?? "", "base64").toString("utf8"));

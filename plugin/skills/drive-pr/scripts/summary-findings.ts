@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 import { MARKER_SAFE_FINGERPRINT } from "./lib/summary-answer.ts";
 export { MARKER_SAFE_FINGERPRINT } from "./lib/summary-answer.ts";
-import { withoutFencedExamples } from "./lib/markdown-examples.ts";
 import { summaryAnswerBlocks } from "../../../shared/summary-answer-blocks.ts";
 import { definedFields } from "../../../shared/defined-fields.ts";
 import { swallow } from "../../../shared/errors.ts";
@@ -91,6 +90,17 @@ import {
 } from "./lib/reviewer-profiles.ts";
 import { reviewsBy } from "./lib/status/review-object.ts";
 import {
+  parseReviewRound,
+  reviewerStickyBody,
+  reviewedShaIn,
+} from "./lib/status/reviewer-sticky.ts";
+import {
+  parseDeclaredUnanchored,
+  selectReviewerSticky,
+} from "./lib/status/summary-sticky.ts";
+
+export { parseDeclaredUnanchored };
+import {
   headerOf,
   SEVERITY_FIELD,
   severityOf,
@@ -162,10 +172,7 @@ export const SHA_MARKER = DEFAULT_REVIEWED_SHA_MARKER;
 
 /** Extract the reviewed SHA the reviewer stamped, under whatever marker name. */
 export function reviewedShaFrom(body: string): string | undefined {
-  const re = new RegExp(
-    `<!--\\s*${reviewedShaMarker().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:\\s*([0-9a-f]{7,40})\\s*-->`,
-  );
-  return body.match(re)?.[1];
+  return reviewedShaIn(body, reviewedShaMarker()) || undefined;
 }
 
 /**
@@ -351,13 +358,6 @@ export function winddownFingerprintsOf(stickyBody: string): Set<string> {
   );
 }
 
-export function parseDeclaredUnanchored(body: string): number {
-  const m = withoutFencedExamples(body).match(
-    /^[ \t]*>\s*(\d+)\s+finding\(s\)\s+without\s+a\s+diff-anchorable\s+line\b/im,
-  );
-  return m ? Number.parseInt(m[1] ?? "", 10) : 0;
-}
-
 /**
  * The `🏷️ category: <token>` field the reviewer renders next to severity on
  * both an inline finding's tag line and a backlog/body bullet's header — per
@@ -482,12 +482,6 @@ export function categoryOf(text: string): string {
   }
   const m = fields[1]?.trim().match(CATEGORY_FIELD);
   return m ? (m[1] ?? "").toLowerCase() : "unknown";
-}
-
-/** `<!-- ai-review-round: N -->` from a sticky or inline reviewer comment. */
-export function parseReviewRound(body: string): number | null {
-  const m = body.match(/<!--\s*ai-review-round:\s*(\d+)\s*-->/);
-  return m ? Number.parseInt(m[1] ?? "", 10) : null;
 }
 
 export interface ClassifyInput {
@@ -1106,26 +1100,37 @@ async function issueCommentsFor(
 }
 
 /**
- * The reviewer's sticky summary comment, if any: the last comment from the
- * reviewer's login carrying the sticky marker. With `configuredOnly` (the
+ * The reviewer's sticky summary comment, if any. With `configuredOnly` (the
  * drive's gate, `--configured-reviewer-only`), a repository that names no AI
- * reviewer (`reviewerExpected`) has none to read: a summary comment from a bot
- * in `review.bots` is not reviewer protocol evidence for the drive, so its
- * backlog and reviewed-SHA stamp are never decoded. Without it, a `review.bots`
- * login's sticky is read, which is what the standalone resolver relies on.
+ * reviewer has none to read; see `selectReviewerSticky` for the selection.
  */
 export function reviewerSticky(
   comments: IssueComment[],
   configuredOnly: boolean,
 ): IssueComment | undefined {
   if (configuredOnly && !reviewerExpected()) return undefined;
-  return comments
-    .filter(
-      (c) =>
-        isReviewerLogin(c.user?.login ?? "") &&
-        c.body?.includes(stickyMarker()),
-    )
-    .pop();
+  return selectReviewerSticky(
+    comments,
+    (body) =>
+      decodeBacklog(body).length > 0 ||
+      parseBodyFindings(body).length > 0 ||
+      parseDeclaredUnanchored(body) > 0,
+  );
+}
+
+function structuralStickyEvidence(sticky: IssueComment | undefined): {
+  body: string | null;
+  round: number | null;
+  winddownDeferred: Set<string>;
+} {
+  const body = sticky
+    ? reviewerStickyBody(sticky, isReviewerLogin, stickyMarker())
+    : null;
+  return {
+    body,
+    round: body ? parseReviewRound(body) : null,
+    winddownDeferred: body ? winddownFingerprintsOf(body) : new Set<string>(),
+  };
 }
 
 /** The PR number from `argv`, else the current branch's PR. */
@@ -1229,12 +1234,16 @@ export async function summaryReport(
 
     const issueComments =
       comments ?? (await issueCommentsFor(repo, prNumber, undefined));
-    const sticky = reviewerSticky(issueComments, configuredReviewerOnly);
-    const stickyRound = sticky ? parseReviewRound(sticky.body) : null;
     const bodyFormat = reviewBodyFormat();
     if (bodyFormat !== undefined)
       return reviewBodyReportFor(prNumber, repo, issueComments, bodyFormat);
-    if (!sticky) return emptyReport(prNumber);
+    const sticky = reviewerSticky(issueComments, configuredReviewerOnly);
+    // Selection is deliberately based on the structural body. Keep using that
+    // exact body below: parsing the raw comment after selection would let a
+    // fenced or quoted example alter the selected summary's evidence.
+    const { body: stickyBody, round: stickyRound } =
+      structuralStickyEvidence(sticky);
+    if (!sticky || stickyBody === null) return emptyReport(prNumber);
 
     const reviewComments: ReviewComment[] = JSON.parse(
       await slurp(
@@ -1249,15 +1258,15 @@ export async function summaryReport(
             .filter((c) => isReviewerLogin(c.user?.login ?? ""))
             .filter((c) => parseReviewRound(c.body ?? "") === stickyRound)
             .map((c) => anchorKey(c.path, c.line ?? null));
-    const reviewedSha = reviewedShaFrom(sticky.body);
+    const reviewedSha = reviewedShaFrom(stickyBody);
     const addressed = collectAddressed(markerSourcesOf(issueComments), {
       reviewerPosition: (sha) => reviewerPosition(sha, reviewedSha),
-      backlogFingerprints: backlogFingerprintsOf(sticky.body),
+      backlogFingerprints: backlogFingerprintsOf(stickyBody),
     });
     return classify({
       pr: prNumber,
       stickyCommentId: sticky.id,
-      stickyBody: sticky.body,
+      stickyBody,
       stickyAuthor: sticky.user.login,
       anchoredKeys,
       addressedFingerprints: addressed,

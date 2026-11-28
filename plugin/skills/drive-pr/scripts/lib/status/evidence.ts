@@ -787,11 +787,11 @@ export async function ciReportFor(
  * Every field comes off the SAME comment, never independently: pairing a
  * fresh round, a timestamp or a skip notice from one comment with a stale SHA
  * from another would misreport what the reviewer actually witnessed. A
- * comment carrying no SHA marker therefore updates none of them, so a later
- * sticky-marked reply with no `ai-reviewed-sha` (an auxiliary comment, say)
- * cannot pair its own fields against an EARLIER comment's SHA. Within one
- * body the last SHA marker wins (matchAll, not `.match`). `parseReviewRound`
- * is `summary-findings.ts`'s parser, so the round grammar has one recognizer.
+ * comment carrying no SHA marker may be the no-stamp skip witness only where
+ * no stamped sticky exists; it can never pair its fields with an earlier
+ * SHA. Within one body the last SHA marker wins (matchAll, not `.match`).
+ * `parseReviewRound` is `summary-findings.ts`'s parser, so the round grammar
+ * has one recognizer.
  *
  * `null` when the query itself failed, and `{ sha: '', … }` when the reviewer
  * has posted no sticky. The distinction is the whole point of the second
