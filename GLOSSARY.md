@@ -1908,6 +1908,21 @@ make, use the entry's term instead.
 - **Reflection journal** — a worktree's own file of findings captured as they
   happen and not yet sent to the *reflection store*, so capturing one never
   depends on the store being reachable.
+
+<a id="reflection-class"></a>
+
+- **Reflection class** — the short kebab-case name for the kind of failure a
+  finding describes, such as `missing-guard`. Reflection counts findings of the
+  same class together and uses that count to decide when to escalate the
+  recurring problem to a tracker issue.
+
+<a id="class-vocabulary"></a>
+
+- **Class vocabulary** — reflection classes supplied ahead of time through
+  `reflection.classes` or `reflection.classes_from`. Reflection merges these
+  seeded classes across configuration layers and offers them alongside classes
+  from the store. A seeded class with no stored findings appears with a count
+  of zero.
 - **Unhelpful content** — a kind of reflection finding: instruction text, in
   an instructions file or a skill, that cost an agent context without helping
   it, such as a section it loaded and never used, or one that misled it.

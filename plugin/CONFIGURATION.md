@@ -107,7 +107,7 @@ Command-line flags, where a script has them, override all three.
 - **Merging.** Sections merge field by field: a user file that sets
   `review.sticky_marker` and a repository file that sets `review.bots` give
   both. Any other value (text, a number, a date, a list, `null`) replaces the
-  lower layer's value whole. The reflection class vocabulary combines
+  lower layer's value whole. Reflection's [class vocabulary](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#class-vocabulary) combines
   entries from the active layers as described under [reflection](#reflection).
 - **Environment variables.** Two underscores separate the levels and the
   names are read in lower case: `JIG__ISSUE_TRACKER__TEAM=ENG` sets
@@ -870,7 +870,7 @@ it. Until then, opt in only to take part in that measurement.
 | `issue_tracker.labels.manual_ops` | label | `manual-ops` | do-item, work-batch, dispatch | A step a person performs outside the code. The ordinary parent roll-up parks an epic at `ops_pending`. The epic closure sweep transfers outstanding operator steps to the person-checks list before closing. With the dispatch labels on, the dispatcher also puts it on a pull request whose `## Out-of-tree follow-ups` section lists a step not yet checked off; it then must hold no comma and be none of the dispatcher's own labels (under `dispatch.labels.prefix`, `automation` or `automation:…`), or the dispatcher writes no owed-steps label and says so |
 | `issue_tracker.labels.followup` | label | `review.taxonomy.provenance_label`, else `pr-followup` | do-item, resolve-review-comments, drive-pr (fleet health), work-batch | Marks an issue filed from a review finding |
 | `issue_tracker.labels.bug` | list of labels | `[bug, type:bug]` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch, resolve-review-comments | Any of these marks a bug |
-| `issue_tracker.labels.pattern_prefix` | text | `pattern:` | do-item, reflect, review-reflections | A recurring pattern's label is `<prefix><slug>`; a reflection class's issue is `<prefix><class>` |
+| `issue_tracker.labels.pattern_prefix` | text | `pattern:` | do-item, reflect, review-reflections | A recurring pattern's label is `<prefix><slug>`; a [reflection class](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#reflection-class)'s issue is `<prefix><class>` |
 | `issue_tracker.labels.batch_sizes` | list of sizes | `[xs, small, medium]` | do-item, work-batch | Sizes whose issues the batch check may group into one pull request. Each entry is read as a size value or as the label of one, so the list keeps working whatever store the size facet is in |
 | `issue_tracker.labels.extractable_tails` | list of labels | `<hitl>`, `<hitl>:legal`, `<hitl>:tactical`, `<manual_ops>`, `<followup>` | do-item | Labels on open sub-issues an epic may hand off at closure. A configured list replaces the label defaults. The configured `ops_pending` state also identifies a person check |
 | `issue_tracker.person_checks` | issue key | The sweep refuses to transfer person checks | do-item | Key of the standing open issue that receives person-only checks and outstanding operator steps at epic closure |
@@ -1343,8 +1343,9 @@ turns reflection on for every repository on the machine; a repository's own
 file can turn it on for everyone working in it, override the store, or turn it
 off with `enabled: false`. The [dispatcher](README.md#the-dispatcher) reads the
 section for each repository it ticks, the repository's layer from its default
-branch as it reads its `dispatch` section, and records there each class that
-recurs on the repository.
+branch as it reads its `dispatch` section, and records each
+[reflection class](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#reflection-class) that recurs on the
+repository.
 
 ```yaml
 reflection:
@@ -1367,10 +1368,11 @@ reflection:
 | `reflection.timeout_sec` | whole number of seconds, at most 86400 | `120` | reflect, review-reflections, dispatch | The deadline for one store operation; `list` and `diagnose` get five times as long |
 | `reflection.mode` | `quick`, `comprehensive` | `quick` | reflect | The reflection's default depth: what went wrong only, or also what worked and what could improve |
 
-Seed classes to share a vocabulary across repositories or to reuse a class
-before the first finding is stored. Each entry's `slug` uses lowercase
-letters and digits in hyphen-separated groups. Its `shape` is a non-empty
-description on one line and `source` can name the reference it came from.
+Use the [class vocabulary](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#class-vocabulary) to share class names
+across repositories or to reuse a class before the first finding is stored.
+Each entry's `slug` uses lowercase letters and digits in hyphen-separated
+groups. Its `shape` is a non-empty description on one line and `source` can
+name the reference it came from.
 
 ```yaml
 reflection:
