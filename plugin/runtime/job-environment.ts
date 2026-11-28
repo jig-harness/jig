@@ -557,25 +557,69 @@ export const HIDDEN_VALUE = "(hidden)";
 /** A variable's name as a shell exports it. */
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+/** What every refusal of an installed job tells the person to do. */
+const CONVERT = "convert it with plutil -convert xml1, then install again";
+/** How an XML plist begins, after an optional byte order mark. */
+const XML_START = /^\s*(<\?xml|<!DOCTYPE|<plist)/;
+
 /**
- * The variables the installed launchd job (`plist`, null when there is
- * none) holds that are not `managed`: what a reinstall keeps. A job whose
- * variables cannot all be read and written back is `unreadable`, never read
- * as one with none: a binary plist, an entry whose value is not a string,
- * or a kept value with a line break or XML 1.0 forbidden character. No
- * reason repeats a value.
+ * Why a plist's XML declaration keeps it from being read as UTF-8, or null:
+ * the job Jig writes in its place declares UTF-8, so a value decoded under
+ * another encoding would be rewritten altered. US-ASCII is UTF-8's subset.
+ * A declared name that is not an encoding's name is never repeated.
+ */
+function declaredEncodingRefusal(prolog: string): string | null {
+  const declaration = /^\s*<\?xml\s[^?]*?\bencoding\s*=\s*(["'])(.*?)\1/.exec(
+    prolog,
+  );
+  const name = declaration?.[2];
+  if (name === undefined || /^(utf-?8|(us-)?ascii)$/i.test(name)) return null;
+  const shown = /^[A-Za-z][A-Za-z0-9._-]{0,39}$/.test(name)
+    ? `the encoding ${name}`
+    : "an encoding other than UTF-8";
+  return `it declares ${shown}, which this reader does not decode; ${CONVERT}`;
+}
+
+/**
+ * The installed job's bytes as text: refused when they are not an XML
+ * plist, when its XML declaration names an encoding other than UTF-8, or
+ * when they are not valid UTF-8, rather than decoded with replacement
+ * characters.
+ */
+export function decodedPlist(bytes: Uint8Array): Outcome<string, "unreadable"> {
+  const bom = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf;
+  // Markup and the declaration are ASCII under every encoding it may name.
+  const view = new TextDecoder("latin1").decode(bytes.subarray(bom ? 3 : 0));
+  if (!XML_START.test(view))
+    return failed("unreadable", `it is not an XML plist; ${CONVERT}`);
+  const refusal = declaredEncodingRefusal(view);
+  if (refusal !== null) return failed("unreadable", refusal);
+  try {
+    // The decoder drops the byte order mark.
+    return ok(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    return failed("unreadable", `it is not valid UTF-8; ${CONVERT}`);
+  }
+}
+
+/**
+ * The variables the installed launchd job (`installed`, its file's bytes,
+ * null when there is none) holds that are not `managed`: what a reinstall
+ * keeps. It takes bytes, never text, so it alone decides how they decode.
+ * A job whose variables cannot all be read and written back is
+ * `unreadable`, never read as one with none: a binary plist, one declaring
+ * an encoding other than UTF-8 or whose bytes are not UTF-8, an entry whose
+ * value is not a string, or a kept value with a line break or XML 1.0
+ * forbidden character. No reason repeats a value.
  */
 export function carriedEnvironment(
-  plist: string | null,
+  installed: Uint8Array | null,
   managed: ReadonlySet<string>,
 ): Outcome<Record<string, string>, "unreadable"> {
-  if (plist === null) return ok({});
-  if (!/^\uFEFF?\s*(<\?xml|<!DOCTYPE|<plist)/.test(plist))
-    return failed(
-      "unreadable",
-      "it is not an XML plist; convert it with plutil -convert xml1, then install again",
-    );
-  const read = parseLaunchdEnvironment(plist);
+  if (installed === null) return ok({});
+  const decoded = decodedPlist(installed);
+  if (!decoded.ok) return decoded;
+  const read = parseLaunchdEnvironment(decoded.value);
   if (!read.ok) return failed("unreadable", read.failure.reason);
   const env = read.value;
   const carried = Object.entries(env).filter(([name]) => !managed.has(name));

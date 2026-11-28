@@ -30,6 +30,7 @@ import {
   hasUnwritableChar,
   HIDDEN_VALUE,
   maskedEnvironment,
+  decodedPlist,
 } from "./job-environment.ts";
 import type { JobSpec } from "./job-spec.ts";
 
@@ -355,7 +356,8 @@ function carriedFromInstalled(
   const managed = managedEnvironment(spec);
   for (const name of Object.keys(spec.capturedEnv ?? {})) managed.add(name);
   const path = join(jobDirectory("launchd"), `${spec.label}.plist`);
-  const carried = carriedEnvironment(readOptional(path), managed);
+  // Bytes, not text: the reader refuses a job that is not UTF-8.
+  const carried = carriedEnvironment(readOptionalBytes(path), managed);
   if (!carried.ok)
     throw new GcError(
       `The installed job ${path} cannot be kept: ${carried.failure.reason}`,
@@ -580,8 +582,28 @@ function restoreLauncher(
   }
 }
 function readOptional(path: string): string | null {
+  return readOptionalBytes(path)?.toString("utf8") ?? null;
+}
+/**
+ * A launchd job's text, refused (thrown, so the snapshot is unreadable) when
+ * its bytes are not UTF-8 XML: a replacement-decoded copy would be parsed,
+ * rewritten and restored altered.
+ */
+function readLaunchdJob(path: string): string | null {
+  const bytes = readOptionalBytes(path);
+  if (bytes === null) return null;
+  const decoded = decodedPlist(bytes);
+  if (!decoded.ok)
+    throw new GcError(
+      `The installed job ${path} cannot be read: ${decoded.failure.reason}`,
+    );
+  // The decoder drops a byte order mark; a restore must write it back.
+  const bom = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf;
+  return bom ? `\uFEFF${decoded.value}` : decoded.value;
+}
+function readOptionalBytes(path: string): Buffer | null {
   try {
-    return readFileSync(path, "utf8");
+    return readFileSync(path);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
@@ -740,7 +762,12 @@ async function readSnapshot(
       ? [`${LABEL}.plist`]
       : [`${spec.name}.service`, timerUnit(spec)];
   const files = Object.fromEntries(
-    names.map((name) => [join(dir, name), readOptional(join(dir, name))]),
+    names.map((name) => [
+      join(dir, name),
+      scheduler === "launchd"
+        ? readLaunchdJob(join(dir, name))
+        : readOptional(join(dir, name)),
+    ]),
   );
   if (scheduler === "launchd") {
     const loaded = await launchdLoaded(`gui/${process.getuid?.()}/${LABEL}`);
