@@ -181,6 +181,10 @@ describe("a transparent follow-up", () => {
       "Thanks, nothing further is required. The guard still permits unauthorized requests.",
     ],
     [
+      "a mixed acknowledgement and finding clause",
+      "Thanks, nothing further is required, but the guard still permits unauthorized requests.",
+    ],
+    [
       "feedback before a closing acknowledgement",
       "Thanks. The guard still permits unauthorized requests. Nothing further is required.",
     ],

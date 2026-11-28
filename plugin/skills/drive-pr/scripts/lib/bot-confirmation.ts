@@ -194,23 +194,21 @@ export function carriesAcknowledgement(body: string): boolean {
   if (acknowledgement === "") return false;
 
   const noFurther =
-    /\b(?:nothing further|no further (?:action|changes?|feedback|work))(?:\s+is)?\s+(?:requested|needed|required)\b(?:\s+on\s+(?:this|the)\s+thread)?/iu;
+    "(?:nothing further|no further (?:action|changes?|feedback|work))(?:\\s+is)?\\s+(?:requested|needed|required)(?:\\s+on\\s+(?:this|the)\\s+thread)?";
   const sentences = acknowledgement.match(/[^.!?]+[.!?]?/gu) ?? [];
-  const acknowledgementSentence =
-    /^(?:acknowledged?|confirm(?:ed|ing)?|noted|thanks?|thank you|understood)\b/iu;
+  const acknowledgementSentence = new RegExp(
+    `^(?:${noFurther}|(?:acknowledged?|confirm(?:ed|ing)?|noted|thanks?|thank you|understood)(?:\\s+(?:for|on)\\s+(?:the\\s+)?(?:update|fix|reply|confirmation))?(?:[:,]\\s*(?:the\\s+)?(?:fix|change|reply)\\s+is\\s+(?:noted|acknowledged))?(?:\\s*(?:,|and)\\s*)?${noFurther}|(?:acknowledged?|confirm(?:ed|ing)?|noted|thanks?|thank you|understood)(?:\\s+(?:for|on)\\s+(?:the\\s+)?(?:update|fix|reply|confirmation))?)[.!?]?$`,
+    "iu",
+  );
 
   return (
     acknowledgement.length <= 280 &&
-    noFurther.test(acknowledgement) &&
-    !/\b(?:not|never)\b[^.!?]*\b(?:nothing further|no further (?:action|changes?|feedback|work))(?:\s+is)?\s+(?:requested|needed|required)\b/iu.test(
+    new RegExp(`\\b${noFurther}\\b`, "iu").test(acknowledgement) &&
+    !new RegExp(`\\b(?:not|never)\\b[^.!?]*\\b${noFurther}\\b`, "iu").test(
       acknowledgement,
     ) &&
     sentences.length > 0 &&
-    sentences.every(
-      (sentence) =>
-        acknowledgementSentence.test(sentence.trim()) ||
-        noFurther.test(sentence.trim()),
-    )
+    sentences.every((sentence) => acknowledgementSentence.test(sentence.trim()))
   );
 }
 
