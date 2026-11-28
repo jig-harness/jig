@@ -3320,6 +3320,21 @@ make, use the entry's term instead.
   so a change takes effect without a pull request or a restart; a missing
   file or entry means the defaults.
   See [lanes and their weights](design/priorities-and-overview.md#lanes-and-their-weights).
+- **Person profile** — one person's own preferences on a host, planned to
+  hold their time zone, their routine with its timed override, and how chat
+  reaches them (direct messages, quiet hours). It is a host-local file,
+  never committed and never sent to a *hub*: `$JIG_HOME/person.yaml` on a
+  machine one person uses, or the file `serve[].profile` names in the
+  [machine file](plugin/CONFIGURATION.md#the-machines-dispatch-file)
+  (`$JIG_HOME/dispatch.yaml`) on a host serving several. It holds no
+  authorization and no priorities: `serve[]` keeps who the host serves, and the individual
+  *priorities record* has a file of its own
+  ([ADR-0028](docs/adr/ADR-0028-a-person-profile-stays-on-the-host.md)).
+- **IANA time zone** — a time zone named by a region and city from the
+  time-zone database IANA (the Internet Assigned Numbers Authority)
+  publishes, such as `Europe/Berlin`. Unlike a fixed offset (`+02:00`), it
+  follows the place's daylight-saving changes, which is why a schedule in a
+  *person profile* names one.
 - **File draft** — the proposed record of an issue a progress review
   suggests, prepared through the filing skill's checks (type, priority,
   duplicates, scope) and kept with their evidence and age. It is not an issue
