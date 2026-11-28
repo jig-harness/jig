@@ -34,6 +34,7 @@ import {
   sectionRefusal,
   trackerRefusal,
 } from "./configuration-refusals.ts";
+import { swallow } from "../../shared/errors.ts";
 import { readSection, trackerConfigOf } from "./section.ts";
 import { configuredCatalog, repositoryPath } from "./sources/contention.ts";
 import { failureText } from "./text.ts";
@@ -141,7 +142,11 @@ function committed(root: string, path: string): boolean {
       },
     );
     return true;
-  } catch {
+  } catch (error) {
+    swallow(
+      error,
+      "the path is not in the committed tree, or git is unavailable",
+    );
     return false;
   }
 }
