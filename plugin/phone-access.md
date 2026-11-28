@@ -178,16 +178,21 @@ header today; the socket is the listener it would read one on.
    dashboard:
      listen: 127.0.0.1:8765
      socket: /run/user/1000/jig-dashboard.sock
+     front: https://<host>.<tailnet>.ts.net:8443/
    ```
 
    Use a path in a directory only you can enter (a runtime directory is
-   right), at most 100 bytes. The reader creates the socket mode 0600 and
-   removes it when it stops; it replaces one a crashed reader left, and
-   refuses a path that holds anything else. The reader restarts on its own
-   when the setting changes (allow up to two minutes).
+   right, such as `/run/user/<uid>`, not `/tmp`), at most 100 bytes. The
+   socket's parent directory must be your own and closed to writes by others;
+   the reader refuses to bind otherwise, and refuses a socket another
+   listener still holds. The reader creates the socket mode 0600 and removes
+   it when it stops; it replaces one a crashed reader left, and refuses a
+   path that holds anything else. The reader restarts on its own when the
+   setting changes (allow up to two minutes).
 
-2. **Point the front at it.** Tailscale's daemon runs as root, which a 0600
-   socket admits, and serving a Unix socket needs root too:
+2. **Point the front at it and re-enable the loopback token.** Tailscale's
+   daemon runs as root, which a 0600 socket admits, and serving a Unix socket
+   needs root too:
 
    ```sh
    sudo tailscale serve --bg --https=8443 unix:/run/user/1000/jig-dashboard.sock
@@ -195,28 +200,33 @@ header today; the socket is the listener it would read one on.
    ```
 
    Replace the route from the Serve section on the same port; read
-   `tailscale serve status` first, as there. The socket takes no token and no
-   `Host` name, so `require_token` and `allowed_hosts` still guard the
-   loopback port only. With a socket configured, `front` is accepted
-   beside `require_token: true`, so the loopback port can keep asking for its
-   token while the front reaches the socket.
-   The socket's parent directory must be your own and closed to writes by
-   others (`/run/user/<uid>`, not `/tmp`); the reader refuses to bind
-   otherwise, and refuses a socket another listener still holds.
+   `tailscale serve status` first, as there.
+
+   Then, if you followed the Serve section above, remove `require_token: false`
+   (or set `require_token: true`) and remove `allowed_hosts` from the machine
+   file. The socket takes no token and no `Host` name, while `require_token`
+   and `allowed_hosts` still govern the loopback port independently of the
+   socket: leaving `require_token: false` lets every other local user on the
+   host read the dashboard through the loopback port. With `socket` set,
+   `front` is accepted alongside `require_token: true` (the default), so the
+   loopback port asks for its token again while the front reaches the socket
+   without one. Wait for the reader to restart (allow up to two minutes).
 
 3. **Check it.** `jig dispatch dashboard --status` prints `socket:` and
    `funnel:` lines and exits non-zero when the socket is missing, is not
    mode 0600 and yours, or does not answer, and when Tailscale Funnel (which
    publishes to the open internet) is on for a route to the socket or the
    dashboard's port. A Funnel for another service is not named. From the
-   host, a second user cannot open it:
+   host, a second user cannot open the socket, and a tokenless request to the
+   loopback port is refused:
 
    ```sh
    sudo -u nobody curl -sS --unix-socket /run/user/1000/jig-dashboard.sock http://dashboard/
+   curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8765/
    ```
 
-   answers a permission error, and `curl -X POST` to the loopback port still
-   answers `405`.
+   The first answers a permission error, the second answers `403`, and
+   `curl -X POST` to the loopback port still answers `405`.
 
 4. **The day-1 probe, run by a person.** What the front adds to a request is
    a fact about Tailscale and the tailnet's policy, so it is observed, not
@@ -237,8 +247,10 @@ header today; the socket is the listener it would read one on.
    record below, then remove the route (`sudo tailscale serve --https=8444
 --set-path=/ off`), stop the listener and delete `jig-probe.sock`.
 
-Undo it by removing `socket` from the machine file and pointing the front
-back at the loopback port; the reader removes the socket file itself.
+Undo it by restoring `require_token: false` and `allowed_hosts` if the front
+is returning to the loopback port, pointing the front back at the loopback
+port, and removing `socket` from the machine file; the reader removes the
+socket file itself.
 
 ## Without Orca or Tailscale: an authenticated reverse proxy
 
