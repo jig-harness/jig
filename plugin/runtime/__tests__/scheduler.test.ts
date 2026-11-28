@@ -173,7 +173,7 @@ test("a launchd job that is not UTF-8 makes the snapshot unreadable, so a refres
 import { gcJobSpec } from ${JSON.stringify(gcJob)};
 const spec = gcJobSpec();
 const read = await snapshotScheduler("launchd", spec);
-console.log(JSON.stringify({ ok: read.ok, reason: read.ok ? "" : read.failure.reason, label: spec.label }));
+console.log(JSON.stringify({ ok: read.ok, reason: read.ok ? "" : read.failure.reason, label: spec.label, text: read.ok ? Object.values(read.value.files)[0] : null }));
 `,
   );
   const run = () =>
@@ -200,4 +200,41 @@ console.log(JSON.stringify({ ok: read.ok, reason: read.ok ? "" : read.failure.re
   );
   expect(report.ok).toBe(false);
   expect(report.reason).toContain("not valid UTF-8");
+});
+
+test("a launchd job with a UTF-8 byte order mark keeps it in the snapshot", () => {
+  const home = mkdtempSync(join(tmpdir(), "gc-launchd-bom-"));
+  const agents = join(home, "Library/LaunchAgents");
+  mkdirSync(agents, { recursive: true });
+  const driver = join(home, "driver.ts");
+  writeFileSync(
+    driver,
+    `import { snapshotScheduler } from ${JSON.stringify(scheduler)};
+import { gcJobSpec } from ${JSON.stringify(gcJob)};
+const spec = gcJobSpec();
+const read = await snapshotScheduler("launchd", spec);
+console.log(JSON.stringify({ label: spec.label, text: read.ok ? Object.values(read.value.files)[0] : read.failure.reason }));
+`,
+  );
+  const bin = join(home, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "launchctl"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  const run = () =>
+    Bun.spawnSync([process.execPath, driver], {
+      env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` },
+    });
+  const label = JSON.parse(
+    run().stdout.toString().trim().split("\n").at(-1) ?? "",
+  ).label as string;
+  const xml = '<?xml version="1.0"?><plist><dict></dict></plist>';
+  writeFileSync(
+    join(agents, `${label}.plist`),
+    Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(xml)]),
+  );
+  const done = run();
+  expectSpawnExit(done, 0);
+  const report = JSON.parse(
+    done.stdout.toString().trim().split("\n").at(-1) ?? "",
+  );
+  expect(report.text).toBe(`\uFEFF${xml}`);
 });

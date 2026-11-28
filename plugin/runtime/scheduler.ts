@@ -597,7 +597,9 @@ function readLaunchdJob(path: string): string | null {
     throw new GcError(
       `The installed job ${path} cannot be read: ${decoded.failure.reason}`,
     );
-  return decoded.value;
+  // The decoder drops a byte order mark; a restore must write it back.
+  const bom = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf;
+  return bom ? `\uFEFF${decoded.value}` : decoded.value;
 }
 function readOptionalBytes(path: string): Buffer | null {
   try {
