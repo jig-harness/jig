@@ -403,7 +403,7 @@ export const COMMENT_MARKERS: Chapter = {
   title: "Hidden comment markers on the forge and the tracker",
   summary:
     "The hidden markers Jig writes and reads in comments and bodies on the forge and the tracker: what record each marks, who writes it, its version and what it means.",
-  version: 2,
+  version: 3,
   status: "stable",
   planItems: [],
   module: "tools/protocol/chapters/comment-markers.ts",

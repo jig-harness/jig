@@ -322,6 +322,7 @@ areas:
           - "dashboard/**"
           - "website/public/brand/jig-mark-adaptive.svg"
           - "plugin/dispatch/lib/dashboard-contract.ts"
+          - "plugin/shared/forge-logins.ts"
         command: "bun dashboard/build.ts"
         check: "bun dashboard/build.ts --check"
         notes: >-
