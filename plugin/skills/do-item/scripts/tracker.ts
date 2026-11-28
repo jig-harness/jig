@@ -117,24 +117,17 @@
  * as `blocks` relations the tracker lacks, so a dependency is stated in both
  * places; run it after the plan is written.
  *
- * Output: JSON on stdout. Exit codes: 0 done, 2 usage (input the operation
- * cannot take, with the usage text), 1 the operation failed (the reason on
- * stderr), a label, project or issue that does not resolve to exactly one
- * included; 3 refused: a well-formed request the tracker or the
- * repository's configuration does not allow (filing an issue with no
- * priority, removing a Jira issue type, giving a field's value as a label),
- * nothing written, the reason alone on stderr; for `claim`, 3 refused and 4
- * stood down; for `attach` and `fetch-attachment`, 3 refused. A call to the
- * tracker that failed exits with its failure class
- * (`shared/outbound/failure.ts`, `EXIT_OF_CLASS`), the reason on stderr
- * after the class: 5 `rate-limited`, the credential's rate limit spent, with
- * the time it resets on stderr (`RATE-LIMITED until <time>`): the request it
- * names was not sent or was refused; 6 `unreachable`, no answer (stderr
- * adds "the request may have been applied" when it left); 7 `too-costly`;
- * 8 `server-fault`; 9 `unauthorized`; 10 `not-found`; 11 `invalid`. 5, 6,
- * 7 and 8 clear by waiting. A claim refused part way may have written its
- * first step; the dispatcher's stall check then reports the item as claimed
- * with no session.
+ * Output: JSON on stdout. Exit codes: 0 done, 2 usage (usage text), 1 the
+ * operation failed (reason on stderr), 3 refused (a well-formed request the
+ * tracker or the repository's configuration does not allow; the reason alone
+ * on stderr), 4 a `claim` stood down. A failed call to the tracker exits with
+ * its failure class (`shared/outbound/failure.ts`, `EXIT_OF_CLASS`), the
+ * reason on stderr after the class: 5 `rate-limited` (`RATE-LIMITED until
+ * <time>`), 6 `unreachable` (stderr adds "the request may have been applied"
+ * when it left), 7 `too-costly`, 8 `server-fault`, 9 `unauthorized`,
+ * 10 `not-found`, 11 `invalid`. 5 to 8 clear by waiting. A claim refused
+ * part way may have written its first step; the dispatcher's stall check
+ * then reports the item as claimed with no session.
  */
 
 import { jiraStateMaps } from "./lib/tracker/jira/state-maps.ts";
