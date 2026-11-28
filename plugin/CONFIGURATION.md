@@ -1860,6 +1860,47 @@ repository. What a run may start is the machine's to say, in
 [the machine's dispatch file](#the-machines-dispatch-file); see
 [the plugin's README](README.md#the-dispatcher).
 
+A configuration the tick refuses fails the repository's every turn on the
+host until a person fixes it, so check it before it merges, in the
+repository's CI. `jig dispatch check [--repo <path>]` reads the checkout's
+`.config/jig.yaml` with the tick's own readers: this section, the tracker
+`issue_tracker` names with its [issue facets](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (resolved against the
+checkout's label taxonomy, as the tick resolves them against the host's
+checkout, which holds the merged taxonomy only once the host has updated),
+and the change-area catalog `drive.change_areas_catalog` names.
+It prints each reading the tick would refuse, with the tick's own message,
+and exits `1`; it exits `0` when the tick reads the configuration whole.
+Where a message names a file, the check names it by its path in the
+checkout and the tick by the repository and branch it read it from. Run on
+a pull request's tree, it checks what the default branch will hold once the
+pull request merges; the label taxonomy is the exception a host must
+receive too, since the tick reads it from the host's own checkout. The
+command refuses a `--repo` path (or an implicit root) that is not a git
+checkout, reads only files inside it, and refuses a file larger than the
+forge's inline content limit (1 MiB, measured on the committed blob), which the tick could not read either; the label taxonomy must be a path inside the checkout. It reads files only and sends nothing to the tracker
+or the forge, so what only they can say (a field the organization lacks,
+the store detection finds for a facet) is still the tick's to find. The
+readers take the environment the tick takes: a dispatch host that sets
+`JIRA_ALLOWED_HOSTS` for a Jira site outside Atlassian Cloud needs the same
+value in the CI job. The plugin runs from any copy of its directory with
+Bun alone, so a CI job can run a release the hosts run that includes the
+command. Name the Bun version in the workflow itself, since the action otherwise reads it from the checkout under review. Run Bun from the plugin's own copy, so the checkout under review
+cannot supply its Bun configuration or preloads, and name the checkout with
+`--repo`:
+
+```yaml
+- uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+  with:
+    bun-version: "X.Y.Z" # replace with the Bun version the chosen Jig release pins (`packageManager` in its root `package.json`); set it here, never from the checkout under review
+- name: Check what the dispatcher reads
+  env:
+    JIG_VERSION: "X.Y.Z" # replace with a plugin version that includes `dispatch check`, the one the dispatch hosts run
+  run: |
+    git clone --quiet --depth 1 --branch "v$JIG_VERSION" https://github.com/jig-harness/jig "$RUNNER_TEMP/jig"
+    cd "$RUNNER_TEMP/jig"
+    bun --no-env-file plugin/jig.ts dispatch check --repo "$GITHUB_WORKSPACE"
+```
+
 | Field | Type | Default / meaning | Read by |
 |-------|------|-------------------|---------|
 | `dispatch.identity` | string: a GitHub login; a Linear user's email or display name; or, on Jira, an Atlassian account id, or an email or display name that matches exactly one user (more or fewer matches are refused) | None: the repository has no pickups. A factory-inherited `do-item` claim requires the identity on the default branch and refuses when it is absent or unreadable | dispatch, do-item |

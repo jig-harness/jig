@@ -404,6 +404,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.321.0] - 2026-11-28
+
+### Added
+
+- `jig dispatch check [--repo <path>]` checks the configuration the dispatcher's tick reads from a repository (its `dispatch` section, the tracker `issue_tracker` names with its issue facets, and the change-area catalog `drive.change_areas_catalog` names) with the tick's own readers, and exits 1 with the tick's message for each reading the tick would refuse. A repository runs it in CI so that such an error is refused before it merges, not found by the host's tick at every turn. It reads files only (inside the checkout, up to the forge's inline content limit) and sends nothing to the tracker or the forge. The tick resolves the label taxonomy from the host's own checkout, so a taxonomy change must reach the dispatch hosts as well. [CONFIGURATION.md § `dispatch`](plugin/CONFIGURATION.md#dispatch) shows a CI step that runs it.
+
 ## [0.320.0] - 2026-11-28
 
 ### Fixed
@@ -11628,7 +11634,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.320.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.321.0...HEAD
+[0.321.0]: https://github.com/jig-harness/jig/compare/v0.320.0...v0.321.0
 [0.320.0]: https://github.com/jig-harness/jig/compare/v0.319.0...v0.320.0
 [0.319.0]: https://github.com/jig-harness/jig/compare/v0.318.0...v0.319.0
 [0.318.0]: https://github.com/jig-harness/jig/compare/v0.317.1...v0.318.0

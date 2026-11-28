@@ -37,6 +37,7 @@ import {
 import { planMergeReader } from "./sources/plan-merges.ts";
 import { readPickups } from "./sources/tracker.ts";
 import { facetBound } from "./sources/tracker-facets.ts";
+import { trackerRefusal } from "./configuration-refusals.ts";
 import { failureText } from "./text.ts";
 import { lowBudget, type TickReads } from "./tick-reads.ts";
 import type {
@@ -101,7 +102,7 @@ function trackerFailure(
     record: "tracker",
     source: where,
     ok: false,
-    detail: `the issue service cannot be opened: ${failureText(error)}`,
+    detail: trackerRefusal(failureText(error)),
     ...(failure === undefined ? {} : { failure }),
   };
 }
