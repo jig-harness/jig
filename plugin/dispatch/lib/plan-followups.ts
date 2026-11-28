@@ -75,6 +75,7 @@ import { holding } from "./holding.ts";
 import { testLockNote } from "./test-lock-waits.ts";
 import { holds, type ReadRecord, targetOf } from "./launches.ts";
 import { followupFailedNotice, staleClaimNotice } from "./notices.ts";
+import { followupUnreportedNeed } from "./followup-unreported.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import { localRecoverySpent } from "./no-cause-stops.ts";
 import { RECOVERY_FACTS } from "./recovery-facts.ts";
@@ -128,7 +129,11 @@ export interface FollowupInput {
 }
 
 type Plan = Pick<RepoReport, "actions" | "running" | "unplaced" | "quiet">;
-type Want = (action: Action, joined: (w: Workspace) => boolean) => void;
+type Want = (
+  action: Action,
+  joined: (w: Workspace) => boolean,
+  recover?: (workspace: string, reason: string) => Action,
+) => void;
 
 function age(createdAt: string, nowMs: number): string {
   const at = parseMs(createdAt);
@@ -737,12 +742,13 @@ function wantFollowup(
     want(failedRerun(input, pr, again, spent), joined);
     return;
   }
+  const reason = wantReason(input, pr, again);
   want(
     {
       stage: "followup",
       target: `PR #${pr.number}`,
       record: "forge",
-      reason: wantReason(input, pr, again),
+      reason,
       ...againFields(again),
       evidence: {
         url: pr.url,
@@ -758,6 +764,7 @@ function wantFollowup(
       },
     },
     joined,
+    followupUnreportedNeed(input.slug, pr, input.command, reason),
   );
 }
 
