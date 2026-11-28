@@ -114,9 +114,7 @@ const CLAIM_DATA = "drive-pr-takeover-claim-data";
 /** The ledger's kind in the records registry (`shared/records/registry.ts`). */
 export const LEDGER_KIND = "drive-ledger";
 
-/** The ledger shape this version reads and writes: the envelope's `v`, and `ledgerVersion` beside it. */
-export const LEDGER_VERSION = 3;
-const OPERATOR_STOP_LEDGER_VERSION = 2;
+export { LEDGER_VERSION } from "./ledger-version.ts";
 
 /** How much of the handoff narrative travels with the ledger. */
 export const NARRATIVE_LINES = 20;
@@ -134,6 +132,12 @@ import {
   type LedgerClaimRef,
 } from "./ledger-shapes.ts";
 import { CONVERGED_CI_PHASE } from "./ledger-values.ts";
+import {
+  isFutureVersion,
+  isReadableVersion,
+  OPERATOR_STOP_LEDGER_VERSION,
+  writtenVersion,
+} from "./ledger-version.ts";
 import { matches } from "../../../../../shared/shapes.ts";
 import {
   TAKEOVER_GENERATION_SHAPE,
@@ -214,8 +218,6 @@ export function ledgerFromState(
   },
 ): Ledger {
   return {
-    // New ordinary ledgers remain readable by hosts that predate the
-    // managed-user grammar. A managed recipient raises this on render.
     ledgerVersion: OPERATOR_STOP_LEDGER_VERSION,
     generation: opts.generation,
     pr: s.pr,
@@ -413,14 +415,6 @@ function bytes(text: string): number {
 export const RESOLVED_PARKS_CUT = "the resolved parks";
 export const OLDER_PARKS_CUT = "the older resolved parks";
 
-/** The lowest ledger version that carries what this ledger holds: a managed recipient needs the newest, an operator stop the one before. */
-function writtenVersion(ledger: Ledger): number {
-  if (ledger.parked.some((park) => park.person?.includes("_") === true))
-    return LEDGER_VERSION;
-  if (ledger.driver.personStop === undefined) return ledger.ledgerVersion;
-  return Math.max(ledger.ledgerVersion, OPERATOR_STOP_LEDGER_VERSION);
-}
-
 /**
  * The comment body for `ledger`, cut to `limit`: CI telemetry and older stops'
  * finish details go first, the resolved parks' receipts, held items' outcomes
@@ -499,9 +493,6 @@ export function renderLedger(
 export function opensWith(body: string, marker: string): boolean {
   return body.replaceAll("\r", "").trimStart().startsWith(marker);
 }
-
-const isCount = (v: unknown): v is number =>
-  typeof v === "number" && Number.isInteger(v) && v >= 0;
 
 /** A driver's timestamps are instants as well as strings in its JSON shape. */
 function isLedgerDriver(v: unknown): v is LedgerDriver {
@@ -589,12 +580,9 @@ function envelopedFields(data: Record<string, unknown>): LedgerFields {
  */
 function ledgerFields(data: Record<string, unknown>): LedgerFields {
   const version = data.ledgerVersion;
-  if (isCount(version) && version > LEDGER_VERSION)
-    return { kind: "unknown-version", version };
+  if (isFutureVersion(version)) return { kind: "unknown-version", version };
   if ("kind" in data) return envelopedFields(data);
-  return version === 1 ||
-    version === OPERATOR_STOP_LEDGER_VERSION ||
-    version === LEDGER_VERSION
+  return isReadableVersion(version)
     ? { fields: data }
     : malformed(
         `ledgerVersion ${JSON.stringify(version) ?? "is missing"} is not a version`,
