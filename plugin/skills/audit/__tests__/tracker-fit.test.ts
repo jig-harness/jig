@@ -322,7 +322,9 @@ describe("the audit's open population scope counts", () => {
         signal?.addEventListener("abort", () => {
           aborted = true;
         });
-        return new Promise(() => {});
+        return new Promise(() => {
+          // Never settles.
+        });
       },
     } as unknown as Tracker;
     const started = performance.now();

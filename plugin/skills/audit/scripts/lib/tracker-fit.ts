@@ -48,10 +48,11 @@ async function within<T>(
     }, ms);
     timer.unref();
   });
-  const answer = ask(deadline.signal);
-  // An answer that settles after the bound is no longer awaited.
-  answer.catch(() => {});
   try {
+    const answer = ask(deadline.signal);
+    answer.catch(() => {
+      // An answer that settles after the bound is no longer awaited.
+    });
     return await Promise.race([answer, expired]);
   } finally {
     clearTimeout(timer);
