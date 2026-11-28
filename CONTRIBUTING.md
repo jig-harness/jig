@@ -330,9 +330,12 @@ design. Run all with one command: `bun run gates`. The set, cheapest first:
    fresh, through M2's runner (`scripts/check-generated-files.ts`, see
    § Derived files); the AI reviewer's high-risk paths
    matching the catalog's `reviewRisk: high` areas
-   (`bun scripts/review-risk.ts --write` regenerates them); and every
+   (`bun scripts/review-risk.ts --write` regenerates them); every
    ROADMAP.md item in `design/plan.md` in the same group and order
-   (`scripts/check-roadmap.ts`);
+   (`scripts/check-roadmap.ts`); and the configuration the dispatcher's
+   tick reads from this repository (its `dispatch` section, its issue
+   facets, its change-area catalog) read with the tick's own readers
+   (`bun plugin/jig.ts dispatch check`);
 4. unused code, and the changed files' complexity and duplication (fallow);
 5. the ratchet (below);
 6. gate self-tests, the plugin hook's tests among them, then build.
