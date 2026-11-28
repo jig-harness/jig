@@ -667,6 +667,11 @@ export const MIGRATIONS: readonly Migration[] = [
     sql: "ALTER TABLE steward_records ADD COLUMN refusal TEXT;",
   },
   { additive: true, sql: PICKUP_SUCCESSOR_SCHEMA },
+  {
+    // Recurrence rows find one pull request's drive launches by this key instead of scanning retained launch history.
+    additive: true,
+    sql: "CREATE INDEX launches_repo_pr_action_created ON launches (repo, pr, action, created_at);",
+  },
 ];
 
 /** The schema version this plugin writes. */
