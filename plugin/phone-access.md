@@ -81,7 +81,7 @@ let a second person through the front expecting a narrower page.
 ## Recommended: Tailscale Serve
 
 [Tailscale Serve](https://tailscale.com/kb/1312/serve) publishes a local
-server to your private network (a *tailnet*) over HTTPS with a certificate
+server to your private network (a _tailnet_) over HTTPS with a certificate
 Tailscale obtains, and only devices the tailnet admits can connect. It is the
 first implementation of the front; the next section covers a browser path
 without it.
@@ -163,6 +163,95 @@ without it.
    phone's ordinary browser. Confirm the browser shows an address with no
    token in it, and bookmark it. Then run the [phone checks](#phone-checks).
 
+## A private socket for the front
+
+Pointing the front at the loopback port has a cost: every process of every
+user on the host can open that port too, so the dashboard cannot tell the
+front's requests from anyone else's. A **Unix socket** that only the reader's
+own user and root can open removes that, and is where a front that adds the
+viewer's login can be trusted later. The dashboard does not read an identity
+header today; the socket is the listener it would read one on.
+
+1. **Name the socket.** In the machine file, beside `listen`:
+
+   ```yaml
+   dashboard:
+     listen: 127.0.0.1:8765
+     socket: /run/user/1000/jig-dashboard.sock
+     front: https://<host>.<tailnet>.ts.net:8443/
+   ```
+
+   Use a path in a directory only you can enter (a runtime directory is
+   right, such as `/run/user/<uid>`, not `/tmp`), at most 100 bytes. The
+   socket's parent directory must be your own and closed to writes by others;
+   the reader refuses to bind otherwise, and refuses a socket another
+   listener still holds. The reader creates the socket mode 0600 and removes
+   it when it stops; it replaces one a crashed reader left, and refuses a
+   path that holds anything else. The reader restarts on its own when the
+   setting changes (allow up to two minutes).
+
+2. **Point the front at it and re-enable the loopback token.** Tailscale's
+   daemon runs as root, which a 0600 socket admits, and serving a Unix socket
+   needs root too:
+
+   ```sh
+   sudo tailscale serve --bg --https=8443 unix:/run/user/1000/jig-dashboard.sock
+   tailscale serve status
+   ```
+
+   Replace the route from the Serve section on the same port; read
+   `tailscale serve status` first, as there.
+
+   Then, if you followed the Serve section above, remove `require_token: false`
+   (or set `require_token: true`) and remove `allowed_hosts` from the machine
+   file. The socket takes no token and no `Host` name, while `require_token`
+   and `allowed_hosts` still govern the loopback port independently of the
+   socket: leaving `require_token: false` lets every other local user on the
+   host read the dashboard through the loopback port. With `socket` set,
+   `front` is accepted alongside `require_token: true` (the default), so the
+   loopback port asks for its token again while the front reaches the socket
+   without one. Wait for the reader to restart (allow up to two minutes).
+
+3. **Check it.** `jig dispatch dashboard --status` prints `socket:` and
+   `funnel:` lines and exits non-zero when the socket is missing, is not
+   mode 0600 and yours, or does not answer, and when Tailscale Funnel (which
+   publishes to the open internet) is on for a route to the socket or the
+   dashboard's port. A Funnel for another service is not named. From the
+   host, a second user cannot open the socket, and a tokenless request to the
+   loopback port is refused:
+
+   ```sh
+   sudo -u nobody curl -sS --unix-socket /run/user/1000/jig-dashboard.sock http://dashboard/
+   curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8765/
+   ```
+
+   The first answers a permission error, the second answers `403`, and
+   `curl -X POST` to the loopback port still answers `405`.
+
+4. **The day-1 probe, run by a person.** What the front adds to a request is
+   a fact about Tailscale and the tailnet's policy, so it is observed, not
+   assumed. Use a socket of its own and a spare HTTPS port, so the reader and
+   its route stay as they are. Serve a throwaway listener that prints the two
+   headers, and point a temporary route at it:
+
+   ```sh
+   CAPABILITY=example.com/cap/jig   # the capability your tailnet grants
+   bun -e 'Bun.serve({unix:"/run/user/1000/jig-probe.sock",fetch:(r)=>{console.log(r.headers.get("tailscale-user-login"),r.headers.get("tailscale-app-capabilities"));return new Response("ok")}})' &
+   sudo tailscale serve --bg --https=8444 --accept-app-caps="$CAPABILITY" unix:/run/user/1000/jig-probe.sock
+   ```
+
+   Open `https://<host>.<tailnet>.ts.net:8444/` from the phone, then
+   `curl` it from the host itself. The phone's request must print the
+   viewer's login and, with a grant for the capability, the capability; the
+   host's own request must print neither. Record both in the verification
+   record below, then remove the route (`sudo tailscale serve --https=8444
+--set-path=/ off`), stop the listener and delete `jig-probe.sock`.
+
+Undo it by restoring `require_token: false` and `allowed_hosts` if the front
+is returning to the loopback port, pointing the front back at the loopback
+port, and removing `socket` from the machine file; the reader removes the
+socket file itself.
+
 ## Without Orca or Tailscale: an authenticated reverse proxy
 
 Any [reverse proxy](https://en.wikipedia.org/wiki/Reverse_proxy) that
@@ -241,18 +330,18 @@ Jig does not ship a proxy and does not install one.
 Run these on the phone, in its ordinary browser, after either front. A check
 passes only when the result is the one in the table.
 
-| Check | Result |
-| --- | --- |
-| Open the address from a device the front admits | The page loads over HTTPS with no certificate warning and no token in the address bar |
-| Open it from a device or sign-in the front does not admit | No page and no data: a refused connection, a sign-in page or `401` |
-| Send a made-up identity header to the front from such a device (for example with `curl -H 'Tailscale-User-Login: someone@example.com'`) | Still refused |
-| Open a decision on Needs you and read its question, recommendation and alternatives | The whole decision is readable without horizontal scrolling |
-| Tap a copy control on a merge command or an answer line | The page confirms the copy, and pasting elsewhere gives the complete line |
-| Refuse the browser's clipboard permission, then tap copy again | The page offers the complete text for selecting by hand |
-| Tap a pull request or issue link | The forge or tracker opens in its own page and its own sign-in |
-| Under Send from here on Needs you, paste a fine-grained token, name the repository owners it answers for (or leave them blank) and tap Test and keep | The panel names the login GitHub gives for the token and the owners it answers for; on a parked drive's card of those owners, Send appears beside Copy |
-| Pick an option on a parked card and tap Send | The card links the comment it posted for each decision, whose answer line reads as the copy would on the pull request |
-| Open the menu in Chrome and choose Install app (tokenless path only) | The offer appears, the installed app opens in its own window with no browser bar, and no token is in any address it shows, and copying a command still works |
+| Check                                                                                                                                                | Result                                                                                                                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Open the address from a device the front admits                                                                                                      | The page loads over HTTPS with no certificate warning and no token in the address bar                                                                        |
+| Open it from a device or sign-in the front does not admit                                                                                            | No page and no data: a refused connection, a sign-in page or `401`                                                                                           |
+| Send a made-up identity header to the front from such a device (for example with `curl -H 'Tailscale-User-Login: someone@example.com'`)              | Still refused                                                                                                                                                |
+| Open a decision on Needs you and read its question, recommendation and alternatives                                                                  | The whole decision is readable without horizontal scrolling                                                                                                  |
+| Tap a copy control on a merge command or an answer line                                                                                              | The page confirms the copy, and pasting elsewhere gives the complete line                                                                                    |
+| Refuse the browser's clipboard permission, then tap copy again                                                                                       | The page offers the complete text for selecting by hand                                                                                                      |
+| Tap a pull request or issue link                                                                                                                     | The forge or tracker opens in its own page and its own sign-in                                                                                               |
+| Under Send from here on Needs you, paste a fine-grained token, name the repository owners it answers for (or leave them blank) and tap Test and keep | The panel names the login GitHub gives for the token and the owners it answers for; on a parked drive's card of those owners, Send appears beside Copy       |
+| Pick an option on a parked card and tap Send                                                                                                         | The card links the comment it posted for each decision, whose answer line reads as the copy would on the pull request                                        |
+| Open the menu in Chrome and choose Install app (tokenless path only)                                                                                 | The offer appears, the installed app opens in its own window with no browser bar, and no token is in any address it shows, and copying a command still works |
 
 Copying only puts text in the clipboard. Send posts from the phone's
 browser straight to GitHub. Neither path sends a command or writes anything
@@ -361,17 +450,20 @@ A row is filled in by the person who ran the check, with the product versions
 they used. A row with no result has not been run, and nothing in this guide
 claims it works until it has.
 
-| What was tested | Result |
-| --- | --- |
-| Front and version (`tailscale version`) | Passed, 2026-11-15: Tailscale Serve on Tailscale 1.104.7, `--https=8443`, tailnet only; the host's tailnet address no longer answers on the dashboard's own port |
-| Phone browser and version | Not complete: a phone was used for the install check below on 2026-11-15, but its browser product and version were not recorded. Fill them in before the install row is read as a tested configuration |
-| Ordinary-browser access to the HTTPS address, no token in it | Passed, 2026-11-15: `/` answers `200` through the front with no token in the address, and the phone opens it |
-| Refusal for a device or sign-in the front does not admit | Not yet run |
-| Forged identity header from a refused device | Not yet run |
-| `Host` allowlist: `200` for the front name, `403` for another | Passed, 2026-11-15: `200` through the front; a request with another `Host` on the loopback port answers `403` |
-| Existing Serve routes unchanged after setup and after undo | Not yet run |
-| QR code and text for the token-free address, scanned on the phone | Passed, 2026-11-15: scanning the QR code `jig dispatch dashboard --access` printed opened the dashboard on the phone at the Tailscale Serve front's address |
-| Reading a decision, copying a command and an answer line, opening the forge link | Not yet run |
-| Copy after the clipboard permission is refused | Not yet run |
+| What was tested                                                                                                            | Result                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Front and version (`tailscale version`)                                                                                    | Passed, 2026-11-15: Tailscale Serve on Tailscale 1.104.7, `--https=8443`, tailnet only; the host's tailnet address no longer answers on the dashboard's own port                                                                                                                                                                                                        |
+| Phone browser and version                                                                                                  | Not complete: a phone was used for the install check below on 2026-11-15, but its browser product and version were not recorded. Fill them in before the install row is read as a tested configuration                                                                                                                                                                  |
+| Ordinary-browser access to the HTTPS address, no token in it                                                               | Passed, 2026-11-15: `/` answers `200` through the front with no token in the address, and the phone opens it                                                                                                                                                                                                                                                            |
+| Refusal for a device or sign-in the front does not admit                                                                   | Not yet run                                                                                                                                                                                                                                                                                                                                                             |
+| Forged identity header from a refused device                                                                               | Not yet run                                                                                                                                                                                                                                                                                                                                                             |
+| `Host` allowlist: `200` for the front name, `403` for another                                                              | Passed, 2026-11-15: `200` through the front; a request with another `Host` on the loopback port answers `403`                                                                                                                                                                                                                                                           |
+| Existing Serve routes unchanged after setup and after undo                                                                 | Not yet run                                                                                                                                                                                                                                                                                                                                                             |
+| QR code and text for the token-free address, scanned on the phone                                                          | Passed, 2026-11-15: scanning the QR code `jig dispatch dashboard --access` printed opened the dashboard on the phone at the Tailscale Serve front's address                                                                                                                                                                                                             |
+| Reading a decision, copying a command and an answer line, opening the forge link                                           | Not yet run                                                                                                                                                                                                                                                                                                                                                             |
+| Copy after the clipboard permission is refused                                                                             | Not yet run                                                                                                                                                                                                                                                                                                                                                             |
 | Install app offered in Chrome on the phone; the installed app opens in its own window, reads the page and copies a command | Partly run, 2026-11-15: the page installs as an app on the phone from the HTTPS front; the manifest (`start_url` `/`, `display` `standalone`) and its 192, 512 and maskable 512 icons each answer `200` through the front. Not yet observed: the installed app opening without a browser bar, showing no token in its addresses, reading the page and copying a command |
-| Reverse-proxy path, with its product and version | Not yet run |
+| Reverse-proxy path, with its product and version                                                                           | Not yet run                                                                                                                                                                                                                                                                                                                                                             |
+| Private socket: a second user cannot open it; the loopback port still answers `405` to every request that is not a read    | Not yet run (the tests check the socket's mode and owner; the second-user check is the host's)                                                                                                                                                                                                                                                                          |
+| Day-1 probe: the phone's request through the socket carries the login and the capability; the host's own carries neither   | Not yet run                                                                                                                                                                                                                                                                                                                                                             |
+| `jig dispatch dashboard --status` fails with Funnel on for the socket, and passes with it off                              | Not yet run                                                                                                                                                                                                                                                                                                                                                             |

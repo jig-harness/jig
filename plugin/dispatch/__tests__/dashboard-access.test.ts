@@ -131,6 +131,15 @@ describe("dashboard.front in the machine file", () => {
     );
   });
 
+  it("accepts a token-asking dashboard when a private socket carries the front", () => {
+    expect(
+      frontOf(
+        FRONT,
+        "dashboard:\n  listen: 127.0.0.1:8765\n  require_token: true\n  socket: /run/user/1000/d.sock\n",
+      ),
+    ).toBe(FRONT);
+  });
+
   it("needs require_token: false, since only a tokenless dashboard answers a front", () => {
     expect(frontOf(FRONT, "dashboard:\n  listen: 127.0.0.1:8765\n")).toContain(
       "needs dashboard.require_token: false",

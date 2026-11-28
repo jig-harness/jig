@@ -41,6 +41,8 @@ import {
 } from "./dashboard-reader.ts";
 import { attempt, failed, ok, type Outcome } from "../shared/outcome.ts";
 import { DEFAULT_PORT } from "./dashboard.ts";
+import { frontStatus } from "./dashboard-front-status.ts";
+import { pageAnswers } from "./dashboard-socket.ts";
 import type { Listen } from "./lib/listen.ts";
 import { currentMs } from "../shared/time.ts";
 
@@ -290,27 +292,16 @@ function settingsMatch(
         machine.value.dashboardListen,
         machine.value.dashboardRequireToken,
         machine.value.dashboardAllowedHosts,
+        machine.value.dashboardSocket,
       )
   );
 }
 
-async function answers(url: string): Promise<boolean> {
-  // Never print a fetch error: it may carry the private URL.
-  const pending = attempt("not-answering", "reader not answering", () =>
-    fetch(url, { redirect: "error", signal: AbortSignal.timeout(3000) }),
+function answers(url: string): Promise<boolean> {
+  return pageAnswers(
+    () => fetch(url, { redirect: "error", signal: AbortSignal.timeout(3000) }),
+    "reader not answering",
   );
-  if (!pending.ok) return false;
-  const response = await pending.value.then(
-    (value) => ok(value),
-    (cause) => failed("not-answering", "reader not answering", cause),
-  );
-  if (!response.ok) return false;
-  // A body that errors after the headers arrive makes cancel() reject.
-  const cancelled = await Promise.resolve(response.value.body?.cancel()).then(
-    () => true,
-    () => false,
-  );
-  return cancelled && response.value.ok;
 }
 
 export async function dashboardStatus(): Promise<number> {
@@ -338,6 +329,8 @@ export async function dashboardStatus(): Promise<number> {
       ? `reader: ${healthy ? "healthy" : "not answering"} (pid ${access.value.identity.pid}); private URL: jig dispatch dashboard --access`
       : `reader: ${access.failure.reason}`,
   );
+  const front = await frontStatus(readMachineConfig(), DEFAULT_PORT);
+  for (const line of front.lines) console.log(line);
   const refused = await availability();
   if (refused !== null) console.log(`availability: ${refused}`);
   console.log(`logs: ${schedulerLogs(scheduler.ok ? scheduler.value : null)}`);
@@ -346,9 +339,15 @@ export async function dashboardStatus(): Promise<number> {
       "configuration: reader does not match the current readable dashboard settings; waiting for renewal",
     );
   if (copy !== null) console.log(copy);
-  return healthy && viable && matches && copy === null && refused === null
-    ? 0
-    : 1;
+  const asInstalled = [
+    healthy,
+    viable,
+    matches,
+    copy === null,
+    refused === null,
+    front.ok,
+  ];
+  return asInstalled.every(Boolean) ? 0 : 1;
 }
 
 /** Poll cheap config/generation every second; resolve the installed entry at most once a minute. */
@@ -379,6 +378,7 @@ export async function scheduledDashboard(script: string): Promise<number> {
     listen: machine.value.dashboardListen,
     requireToken: machine.value.dashboardRequireToken,
     allowedHosts: machine.value.dashboardAllowedHosts,
+    socket: machine.value.dashboardSocket,
     entry: ownEntry,
     current: async () => {
       const currentConfig = attempt(

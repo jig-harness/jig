@@ -51,6 +51,7 @@ const MACHINE: MachineConfig = {
   dashboardRequireToken: true,
   dashboardAllowedHosts: [],
   dashboardFront: null,
+  dashboardSocket: null,
   sharedRecords: "forge",
   changeProbe: true,
   send: true,

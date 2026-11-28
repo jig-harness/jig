@@ -784,6 +784,7 @@ function dashboardCommand(port: number | undefined): Promise<number> {
     machineConfigPath(),
     machine?.dashboardRequireToken ?? true,
     machine?.dashboardAllowedHosts ?? [],
+    machine?.dashboardSocket ?? null,
   );
 }
 
