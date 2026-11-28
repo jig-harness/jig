@@ -8,9 +8,6 @@ release: minor
   [Enterprise Managed User](../GLOSSARY.md) login (`mona_acme`) as its person
   now reads as damaged: Jig writes such a ledger at version 3 only, so an
   earlier version naming one comes from no writer that follows the format.
-  Every path that writes a ledger, a person's stop included, now takes its
-  version from one choice, which keeps the version it read and raises it
-  only for a stop or a managed recipient.
 - **Breaking:** The [hidden comment markers](../plugin/protocol/comment-markers.md)
   protocol is now version 3. Its drive-ledger schema has one alternative per
   group of ledger versions and takes a managed login as a parked question's

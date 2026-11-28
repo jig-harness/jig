@@ -15,7 +15,7 @@ function payloadShape(version: number) {
 }
 
 /** The shape this test's ledgers are written at. */
-const LEDGER_PAYLOAD_SHAPE = payloadShape(2);
+const V2_PAYLOAD_SHAPE = payloadShape(2);
 
 function ledger() {
   return ledgerFromState(freshState(12), {
@@ -39,7 +39,7 @@ test("the ledger writer emits the declared payload shape", () => {
   expect(text.ok).toBe(true);
   if (!text.ok) return;
   const value: unknown = JSON.parse(text.value);
-  expect(matches(LEDGER_PAYLOAD_SHAPE, value)).toBe(true);
+  expect(matches(V2_PAYLOAD_SHAPE, value)).toBe(true);
   expect(parseLedger(rendered.body)?.kind).toBe("ledger");
 });
 
@@ -52,7 +52,7 @@ test("the ledger description rejects damaged nested held items and driver fields
     { ...valid, claims: [{ id: "1", clone: "clone", generation: 1 }] },
     { ...valid, narrative: [1] },
   ])
-    expect(matches(LEDGER_PAYLOAD_SHAPE, bad)).toBe(false);
+    expect(matches(V2_PAYLOAD_SHAPE, bad)).toBe(false);
 });
 
 test("the ledger shape preserves legacy optional fields and unconstrained quota park objects", () => {
@@ -65,10 +65,8 @@ test("the ledger shape preserves legacy optional fields and unconstrained quota 
     churnAckRound: _ca,
     ...legacy
   } = ledger();
-  expect(matches(LEDGER_PAYLOAD_SHAPE, legacy)).toBe(true);
-  expect(matches(LEDGER_PAYLOAD_SHAPE, { ...legacy, quotaPark: {} })).toBe(
-    true,
-  );
+  expect(matches(V2_PAYLOAD_SHAPE, legacy)).toBe(true);
+  expect(matches(V2_PAYLOAD_SHAPE, { ...legacy, quotaPark: {} })).toBe(true);
 });
 
 test("a parked person is any GitHub login, an Enterprise Managed User's included", () => {
