@@ -1092,6 +1092,13 @@ fields:
     read_by: [do-item, work-batch, dispatch]
     repository_only: true
     since: 0.198.0
+  do_item.override_label:
+    type: string
+    pattern: "\\S"
+    nullable: true
+    read_by: [do-item]
+    repository_only: true
+    since: next
   do_item.arm_drive:
     type: enum
     values: [auto, tab, background, print]

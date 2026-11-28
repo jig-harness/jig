@@ -118,6 +118,7 @@ export const NON_JSON_MARKERS: Readonly<Record<string, string>> = {
   "deferred-batch": "A batch key on a marker line.",
   "tracker-related": "Relation keys on marker lines.",
   "tracker-blocked": "A prose state-transition marker.",
+  "tracker-blocker-override": "An attempt id on a marker line.",
   "issue-fields-sweep": "A prose facet-sweep marker.",
   "fleet-health-suspicion": "A prose suspicion marker.",
   "epic-acceptance-verdict": "A verdict word on a marker line.",
