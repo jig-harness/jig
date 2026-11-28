@@ -80,6 +80,18 @@ test("a parked person is any GitHub login, an Enterprise Managed User's included
     if (got?.kind === "ledger")
       expect(got.ledger.parked[0]?.person).toBe(person);
   }
-  for (const person of ["@mona_acme", "mona acme", "org/team", "", "_mona"])
+  for (const person of [
+    "@mona_acme",
+    "mona acme",
+    "org/team",
+    "",
+    "_mona",
+    "a".repeat(40),
+    `${"a".repeat(39)}_acme`,
+    "mona-",
+    "mona--lisa_acme",
+  ]) {
+    expect(matches(LEDGER_PAYLOAD_SHAPE, parked(person))).toBe(false);
     expect(read(person)?.kind).toBe("malformed");
+  }
 });

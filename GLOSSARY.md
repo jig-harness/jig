@@ -596,10 +596,16 @@ make, use the entry's term instead.
   watchdog notices it; when the job belongs to serialized post-merge
   verification, the watchdog also cancels the run, since it holds the slot
   every newer run waits behind.
-- **Enterprise Managed User** — a GitHub account that an organization's
-  identity provider creates and owns, whose login joins a handle and the
-  enterprise's short code with an underscore (`mona_acme`). Jig takes this
-  login form wherever it reads a GitHub login.
+- **Enterprise Managed User** — a GitHub account that an enterprise
+  manages through its identity provider: GitHub creates it when the
+  identity provider provisions the user, from an identifier the identity
+  provider supplies, and its login joins a handle and the enterprise's
+  short code with an underscore (`mona_acme`), at most 39 characters in
+  all. Jig takes this login form where it reads a person's or a bot's
+  login (a served person, the signed-in login, a reviewer, a parked
+  question's person, a dashboard token owner), but not where it reads a
+  repository's owner (an address, the GitHub tracker settings, an
+  `owner/repo` slug).
 - **Expression injection** — a value an outsider can set (a branch name, a
   pull-request title, a commit message, a dispatch input) that a CI
   provider's expression syntax substitutes into a script's text before the

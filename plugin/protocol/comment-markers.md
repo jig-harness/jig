@@ -1,6 +1,6 @@
 # Hidden comment markers on the forge and the tracker
 
-Version 2 · stable
+Version 3 · stable
 
 Jig's parts leave records for each other where everyone who can read the
 repository reads them: comments and the pull request's body on the

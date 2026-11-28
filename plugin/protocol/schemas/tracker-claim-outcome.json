@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://jig-harness.dev/protocol/comment-markers/v2/schemas/tracker-claim-outcome.json",
+  "$id": "https://jig-harness.dev/protocol/comment-markers/v3/schemas/tracker-claim-outcome.json",
   "allOf": [
     {
       "type": "object",

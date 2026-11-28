@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://jig-harness.dev/protocol/comment-markers/v2/schemas/dispatch-rearm-request.json",
+  "$id": "https://jig-harness.dev/protocol/comment-markers/v3/schemas/dispatch-rearm-request.json",
   "allOf": [
     {
       "type": "object",

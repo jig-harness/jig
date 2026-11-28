@@ -40,6 +40,12 @@ const NOT_LOGINS = [
   "-mona",
   "mona.acme",
   "a".repeat(40),
+  `${"a".repeat(39)}_acme`,
+  `${"a".repeat(34)}_acme1`,
+  "mona-",
+  "mona-_acme",
+  "mona--lisa",
+  "mona--lisa_acme",
   "mona[bot]x",
   "mona__acme",
   "mona_",
@@ -51,7 +57,14 @@ const NOT_LOGINS = [
 
 describe("isGithubLogin", () => {
   test("takes logins, Enterprise Managed Users' included", () => {
-    for (const login of ["mona", "A1", "a".repeat(39), ...EMU])
+    for (const login of [
+      "mona",
+      "A1",
+      "a".repeat(39),
+      `${"a".repeat(34)}_acme`,
+      "mona-lisa-x",
+      ...EMU,
+    ])
       expect(isGithubLogin(login)).toBe(true);
   });
 
@@ -93,6 +106,10 @@ test("REVIEWER takes a login with or without @, and org/team", () => {
     "mona_acme/team-name",
     "example-org-/team",
     "mona__acme",
+    "a".repeat(40),
+    `@${"a".repeat(39)}_acme`,
+    "mona-",
+    "mona--lisa_acme",
   ])
     expect(REVIEWER.test(r)).toBe(false);
 });
