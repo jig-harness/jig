@@ -96,40 +96,74 @@ describe("a repository with no automated reviewer, against Team/Standard", () =>
     expect(survey).toContain(
       "Count only activity timestamped within that 90-day window",
     );
-    expect(survey).toContain("For reporting, distinguish an unchecked channel");
-    expect(survey).toContain("historical records the host no longer retains");
     expect(survey).toContain(
-      "judge evidence completeness per criterion against that criterion's scope for either kind of missing evidence — an unchecked channel or unretained host history",
+      "Distinguish three states of missing host activity evidence",
+    );
+    expect(survey).toContain(
+      "routine turnover of ephemeral intermediate revisions",
+    );
+    expect(survey).toContain("materially unretained host history");
+    expect(survey).toContain(
+      "routine turnover of ephemeral intermediate revisions does not make the census incomplete",
+    );
+    expect(survey).toContain(
+      "that surviving record is sufficient to establish the active reviewers (or `absent` when none appear)",
+    );
+    expect(survey).toContain(
+      "inaccessible governing evidence about a confirmed reviewer",
+    );
+    expect(survey).toContain(
+      "branch-protection and ruleset rules visible only to an administrator",
     );
     expect(survey).toContain("opened by `--examine-all`");
-    expect(survey).toContain("stop and report the audit incomplete");
     expect(survey).toContain(
-      "naming the criterion and the unchecked channel or unretained host history",
+      "preserve and report the independently established observations",
+    );
+    expect(survey).toContain(
+      "leave that criterion unresolved, and stop to report the audit incomplete",
+    );
+    expect(survey).toContain(
+      "unchecked channel, materially unretained host history, or inaccessible reviewer configuration or enforcement",
     );
     expect(survey).toContain(
       "Only where confirmed observations already fix the criterion's exact rung",
     );
     expect(survey).toContain(
-      "a confirmed in-scope reviewer is already at `absent`",
+      "a confirmed in-scope reviewer is already proven `absent` from readable evidence",
+    );
+    expect(survey).toContain(
+      "never guessing `absent` for a confirmed reviewer whose unreadable settings could satisfy the criterion",
     );
     expect(survey).not.toContain(
       "a confirmed reviewer already fails the criterion",
     );
+    expect(survey).not.toContain(
+      "for either kind of missing evidence — an unchecked channel or unretained host history",
+    );
     const skill = readFileSync(`${root}SKILL.md`, "utf8");
     expect(skill).toContain(
-      "missing host evidence — an unchecked channel or unretained host history",
+      "materially unretained host history as distinguished from routine turnover of ephemeral intermediate revisions in survey 4",
     );
     expect(skill).toContain(
-      "preserve the confirmed observations, close any unchecked channel yourself",
+      "inaccessible configuration, policy source, or host enforcement for a confirmed reviewer",
+    );
+    expect(skill).toContain(
+      "preserve and report the confirmed observations, close any unchecked channel or readable gap yourself",
     );
     expect(skill).toContain(
       "only where confirmed observations already fix the criterion's exact rung",
     );
     expect(skill).toContain(
-      "a confirmed in-scope reviewer already at `absent`",
+      "a confirmed in-scope reviewer already proven `absent` from readable evidence",
+    );
+    expect(skill).toContain(
+      "never guessing `absent` when unreadable settings could satisfy the criterion",
     );
     expect(skill).not.toContain(
       "where confirmed observations already settle the score",
+    );
+    expect(skill).not.toContain(
+      "missing host evidence — an unchecked channel or unretained host history",
     );
     const criteria = readFileSync(
       `${root}criteria/M7-pr-lifecycle-review.yaml`,
