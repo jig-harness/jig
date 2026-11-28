@@ -119,7 +119,7 @@ function parsed(text: string, what: string): Outcome<unknown, "unreadable"> {
 }
 
 /** What a `gh` read answered, parsed as JSON; `what` names it in the failure. */
-async function ghJson(
+export async function ghJson(
   args: string[],
   what: string,
   cwd?: string,
@@ -733,73 +733,6 @@ export async function unresolvedThreadCount(
   if (field(field(threads, "pageInfo"), "hasNextPage") === true)
     return unreadable(`PR #${pr} has more review threads than one read holds`);
   return ok(nodes.filter((n) => field(n, "isResolved") === false).length);
-}
-
-/** A pull request's latest reviews: each one's commit and when it was submitted. */
-const REVIEWS_QUERY = `query DispatchHeadReviews($owner: String!, $name: String!, $pr: Int!) {
-  repository(owner: $owner, name: $name) {
-    pullRequest(number: $pr) {
-      reviews(last: 20) { nodes { state submittedAt commit { oid } } }
-    }
-  }
-}`;
-
-/** One submitted review: the commit it reviewed and when. */
-export interface SubmittedReview {
-  commit: string;
-  submittedAt: string;
-}
-
-/**
- * A pull request's latest submitted reviews, by anyone, oldest first; a
- * pending review, which only its author sees, is passed over. One call of
- * one page, given `timeoutSec` when the caller holds a deadline.
- */
-export async function submittedReviews(
-  slug: string,
-  pr: number,
-  timeoutSec?: number,
-): Promise<Outcome<SubmittedReview[], "unreadable">> {
-  const [owner, name] = slug.split("/");
-  const answer = await ghJson(
-    [
-      "api",
-      "graphql",
-      "-f",
-      `query=${REVIEWS_QUERY}`,
-      "-f",
-      `owner=${owner}`,
-      "-f",
-      `name=${name}`,
-      "-F",
-      `pr=${pr}`,
-    ],
-    "the reviews answer",
-    undefined,
-    timeoutSec,
-    slug,
-  );
-  if (!answer.ok) return answer;
-  const nodes = field(
-    field(
-      field(field(field(answer.value, "data"), "repository"), "pullRequest"),
-      "reviews",
-    ),
-    "nodes",
-  );
-  if (!Array.isArray(nodes))
-    return unreadable(`PR #${pr}'s reviews did not read`);
-  return ok(
-    nodes.flatMap((n) => {
-      const commit = field(field(n, "commit"), "oid");
-      const at = field(n, "submittedAt");
-      return field(n, "state") !== "PENDING" &&
-        typeof commit === "string" &&
-        typeof at === "string"
-        ? [{ commit, submittedAt: at }]
-        : [];
-    }),
-  );
 }
 
 /** Whether a pull request merged (true) or was closed unmerged (false); `not-closed` while it is open. */
