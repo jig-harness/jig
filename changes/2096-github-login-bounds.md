@@ -14,7 +14,10 @@ release: minor
   check alone marks the built page stale.
 - **Breaking:** The [hidden comment markers](../plugin/protocol/comment-markers.md)
   protocol is now version 3. Its drive-ledger schema narrows a parked
-  question's person to the bounded login form above; a reader that loads
-  the version 2 schema by its address must load version 3.
-  **Consumer action:** advised at machine. A reader that validates drive
-  ledgers against the published schema loads it from version 3.
+  question's person to the bounded login form above, so a ledger whose
+  parked person is longer than 39 characters or has a leading, trailing or
+  doubled hyphen now reads as malformed. A reader of version 2 still
+  accepts every version 3 ledger.
+  **Consumer action:** advised at machine. A tool that validates drive
+  ledgers against the published schema loads version 3, which takes only
+  GitHub's own login form.

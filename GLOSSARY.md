@@ -601,11 +601,11 @@ make, use the entry's term instead.
   identity provider provisions the user, from an identifier the identity
   provider supplies, and its login joins a handle and the enterprise's
   short code with an underscore (`mona_acme`), at most 39 characters in
-  all. Jig takes this login form where it reads a person's or a bot's
-  login (a served person, the signed-in login, a reviewer, a parked
-  question's person, a dashboard token owner), but not where it reads a
-  repository's owner (an address, the GitHub tracker settings, an
-  `owner/repo` slug).
+  all. Jig takes this login form where it reads an account's login on its
+  own (a served person, the signed-in login, a reviewer, a parked
+  question's person, the owners a dashboard token answers for), but not
+  where it reads a repository's owner out of a repository's name (an
+  address, the GitHub tracker settings, an `owner/repo` slug).
 - **Expression injection** — a value an outsider can set (a branch name, a
   pull-request title, a commit message, a dispatch input) that a CI
   provider's expression syntax substitutes into a script's text before the
