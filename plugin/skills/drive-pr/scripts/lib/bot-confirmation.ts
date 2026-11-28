@@ -189,10 +189,10 @@ export function carriesAcknowledgement(body: string): boolean {
         line !== "" && !line.startsWith(">") && !/^<!--.*-->$/u.test(line),
     )
     .map((line) => line.replace(/`[^`]*`/gu, "").trim());
-  const [acknowledgement] = prose;
-  if (prose.length !== 1 || acknowledgement === undefined) return false;
+  const acknowledgement = prose.join(" ");
+  if (acknowledgement === "") return false;
 
-  return /^(?=[^.!?]{1,280}[.!?]?$)(?=[^.!?]*\b(?:acknowledged?|confirm(?:ed|ing)?|noted|thanks?|thank you|understood)\b)(?![^.!?]*\b(?:not|never)\b[^.!?]*\b(?:nothing further|no further (?:action|changes?|feedback|work))(?:\s+is)?\s+(?:requested|needed|required)\b)[^.!?]*\b(?:nothing further|no further (?:action|changes?|feedback|work))(?:\s+is)?\s+(?:requested|needed|required)\b[^.!?]*[.!?]?$/iu.test(
+  return /^(?=.{1,280}$)(?=.*\b(?:acknowledged?|confirm(?:ed|ing)?|noted|thanks?|thank you|understood)\b)(?!.*\b(?:not|never)\b[^.!?]*\b(?:nothing further|no further (?:action|changes?|feedback|work))(?:\s+is)?\s+(?:requested|needed|required)\b).*\b(?:nothing further|no further (?:action|changes?|feedback|work))(?:\s+is)?\s+(?:requested|needed|required)\b(?:\s+on\s+(?:this|the)\s+thread)?[.!?]?$/iu.test(
     acknowledgement,
   );
 }

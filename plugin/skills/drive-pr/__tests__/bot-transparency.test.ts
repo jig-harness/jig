@@ -150,6 +150,15 @@ describe("a transparent follow-up", () => {
     expect(transparent("coderabbitai", ACKNOWLEDGEMENT)).toBe(true);
   });
 
+  test("a two-line acknowledgement", () => {
+    expect(
+      transparent(
+        "coderabbitai",
+        `${CODERABBIT_CHAT_MARKER}\nThanks for the update!\nNothing further is required.`,
+      ),
+    ).toBe(true);
+  });
+
   test("generated chat prose without an acknowledgement is not transparent", () => {
     const body = [
       CODERABBIT_CHAT_MARKER,
