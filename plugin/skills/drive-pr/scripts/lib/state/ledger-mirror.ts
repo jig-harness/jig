@@ -38,6 +38,7 @@ import {
   effectiveClaims,
   ledgerFromState,
   ledgerOfStoppedDriver,
+  LEDGER_VERSION,
   newerClaim,
   parseLedger,
   seedFromLedger,
@@ -319,7 +320,11 @@ async function mirrorUnlocked(
     const narrative = narrativeOf(handoff);
     const watching =
       driver.watchingConvergedCi === true && driver.stopped === undefined;
-    return ledgerFromState(
+    const existingVersion =
+      snapshot.canonical?.parsed?.kind === "ledger"
+        ? snapshot.canonical.parsed.ledger.ledgerVersion
+        : undefined;
+    const ledger = ledgerFromState(
       watching ? { ...state, phase: CONVERGED_CI_PHASE } : state,
       {
         generation:
@@ -338,6 +343,18 @@ async function mirrorUnlocked(
         })),
       },
     );
+    // Preserve an existing reader-compatible version. Rendering raises it
+    // only for an operator stop (v2) or a managed recipient (v3).
+    return existingVersion === undefined
+      ? ledger
+      : {
+          ...ledger,
+          ledgerVersion:
+            existingVersion < LEDGER_VERSION &&
+            ledger.parked.some((park) => park.person?.includes("_") === true)
+              ? LEDGER_VERSION
+              : existingVersion,
+        };
   });
   if (result.kind !== "written") {
     console.error(`ledger: not written — ${result.reason}.`);
