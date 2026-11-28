@@ -284,13 +284,19 @@ export const LEDGER_PAYLOADS = [
   payload([3], GITHUB_LOGIN_SOURCE),
 ] as const;
 
-/** The fields of a ledger at `version`; undefined for a version no ledger is written at. */
+/**
+ * The fields a ledger at `version` is checked against: its own version's,
+ * the earliest group's for a version no ledger is written at, so the reader
+ * never takes more than a conforming writer could have written.
+ */
 export function ledgerPayloadFields(
   version: unknown,
-): (typeof LEDGER_PAYLOADS)[number]["fields"] | undefined {
-  return LEDGER_PAYLOADS.find((p) =>
-    (p.versions as readonly unknown[]).includes(version),
-  )?.fields;
+): (typeof LEDGER_PAYLOADS)[number]["fields"] {
+  return (
+    LEDGER_PAYLOADS.find((p) =>
+      (p.versions as readonly unknown[]).includes(version),
+    ) ?? LEDGER_PAYLOADS[0]
+  ).fields;
 }
 
 export type LedgerHeld = Infer<typeof LEDGER_HELD_SHAPE>;

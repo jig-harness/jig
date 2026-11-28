@@ -531,10 +531,7 @@ function ledgerFault(v: Record<string, unknown>): string {
     roundsGranted: () => isOptionalRetryCount(v.roundsGranted),
     driver: () => isLedgerDriver(v.driver),
   };
-  // The version's own fields: a parked person takes the managed form only from version 3.
-  const fields = ledgerPayloadFields(v.ledgerVersion);
-  if (fields === undefined) return "ledgerVersion";
-  return Object.entries(fields)
+  return Object.entries(ledgerPayloadFields(v.ledgerVersion))
     .filter(
       ([name, shape]) =>
         name !== "ledgerVersion" &&

@@ -11,10 +11,7 @@ import { markerText } from "../../../shared/records/envelope.ts";
 
 /** The payload shape of a ledger at `version`. */
 function payloadShape(version: number) {
-  const fields = ledgerPayloadFields(version);
-  if (fields === undefined)
-    throw new Error(`no ledger is written at ${version}`);
-  return s.object(fields);
+  return s.object(ledgerPayloadFields(version));
 }
 
 /** The shape this test's ledgers are written at. */
