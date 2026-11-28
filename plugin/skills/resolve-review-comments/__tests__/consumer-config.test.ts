@@ -55,6 +55,14 @@ test("a known reviewer app supplies the effective bot identity", () => {
   expect(result.stdout).toContain("review.bots: coderabbitai[bot]\n");
 });
 
+test("a standalone resolver starts without the drive-pr skill", () => {
+  const result = runConfig(
+    "gates:\n  command: make check\nreview:\n  reviewer_app: coderabbitai\n",
+  );
+  expectSpawnExit(result, 0);
+  expect(result.stdout).toContain("review.bots: coderabbitai[bot]\n");
+});
+
 test("a configuration without the gate command is refused", () => {
   const result = runConfig('review:\n  bots: ["example-review[bot]"]\n');
   expectSpawnExit(result, 2);

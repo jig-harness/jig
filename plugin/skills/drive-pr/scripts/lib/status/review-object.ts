@@ -22,7 +22,7 @@
  */
 import { isRecord } from "../../../../../shared/guards.ts";
 import { readArrayPages } from "../paged-read.ts";
-import { runTitleSays } from "../reviewer-profiles.ts";
+import { runTitleSays } from "../../../../../shared/reviewer-profiles.ts";
 import type { CheckRun } from "./evidence.ts";
 import { parseMs } from "../../../../../shared/time.ts";
 

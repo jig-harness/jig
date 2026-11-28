@@ -23,7 +23,7 @@ import {
   botMarkers,
   isTransparentFollowUp,
 } from "./bot-confirmation.ts";
-import { reviewBotEntries } from "./overlay.ts";
+import { hasConfiguredReviewBots, reviewBotEntries } from "./overlay.ts";
 import { reversalInThread } from "./provisional.ts";
 import { TRUSTED_ASSOCIATIONS } from "../summary-findings.ts";
 import type { UnattendedDecision } from "./state/decisions.ts";
@@ -79,7 +79,10 @@ function isChatAcknowledgement(
 export function threadAutonomy(
   nodes: readonly Record<string, unknown>[],
   truncated: boolean,
-  bots: readonly BotMarkers[] = botMarkers(reviewBotEntries()),
+  bots: readonly BotMarkers[] = botMarkers(
+    reviewBotEntries(),
+    hasConfiguredReviewBots(),
+  ),
 ): ThreadAutonomy {
   if (truncated) return UNREAD;
   const comments = nodes.map((n) => ({

@@ -23,7 +23,7 @@ import {
   withSource,
 } from "../../../shared/consumer.ts";
 import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
-import { reviewerProfile } from "../../drive-pr/scripts/lib/reviewer-profiles.ts";
+import { reviewerProfile } from "../../../shared/reviewer-profiles.ts";
 
 function text(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value : undefined;

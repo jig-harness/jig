@@ -88,7 +88,7 @@ import {
 import {
   type ReviewBodyFormat,
   reviewerProfile,
-} from "./lib/reviewer-profiles.ts";
+} from "../../../shared/reviewer-profiles.ts";
 import { reviewsBy } from "./lib/status/review-object.ts";
 import {
   headerOf,

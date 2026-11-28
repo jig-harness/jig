@@ -12,7 +12,7 @@ import { checkPattern } from "../../skills/drive-pr/scripts/lib/merge-ready.ts";
 import {
   reviewerBotLogin,
   reviewerProfile,
-} from "../../skills/drive-pr/scripts/lib/reviewer-profiles.ts";
+} from "../../shared/reviewer-profiles.ts";
 import { checkRunsFor } from "../../skills/drive-pr/scripts/lib/status/commit-observations.ts";
 import {
   judgeReviewObject,

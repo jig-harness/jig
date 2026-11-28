@@ -7,7 +7,7 @@ import {
   reviewsDrafts,
 } from "../overlay.ts";
 import { readArrayPages } from "../paged-read.ts";
-import { commentSaysDraftSkip } from "../reviewer-profiles.ts";
+import { commentSaysDraftSkip } from "../../../../../shared/reviewer-profiles.ts";
 
 /**
  * Read current bodies, never a remembered comment id: the reviewer may edit

@@ -40,7 +40,7 @@
  * what counts as transparent cannot land in one caller and not the others.
  */
 import { botEntries, type ReviewBot } from "../../../../shared/consumer.ts";
-import { reviewBotEntries } from "./overlay.ts";
+import { hasConfiguredReviewBots, reviewBotEntries } from "./overlay.ts";
 import {
   hasSeverityFormat,
   normalizeLogin,
@@ -108,6 +108,7 @@ function markerOf(
  */
 export function botMarkers(
   entries: readonly (string | ReviewBot)[] | undefined,
+  allowChatMarkers = true,
 ): BotMarkers[] {
   const listed = botEntries(entries ?? []).map((e) => {
     const builtin = BUILTIN_MARKERS[normalizeLogin(e.login)];
@@ -117,7 +118,9 @@ export function botMarkers(
         e.confirmation_marker,
         builtin?.confirmation_marker,
       ),
-      chatMarker: markerOf(e.chat_marker, builtin?.chat_marker),
+      chatMarker: allowChatMarkers
+        ? markerOf(e.chat_marker, builtin?.chat_marker)
+        : null,
     };
   });
   const unlisted = Object.entries(BUILTIN_MARKERS)
@@ -173,7 +176,10 @@ export function carriesFindingShape(
 export function isTransparentFollowUp(
   c: ConfirmationCandidate,
   qualifyingOutcome: (body: string) => unknown,
-  bots: readonly BotMarkers[] = botMarkers(reviewBotEntries()),
+  bots: readonly BotMarkers[] = botMarkers(
+    reviewBotEntries(),
+    hasConfiguredReviewBots(),
+  ),
   formats?: readonly SeverityFormat[],
 ): boolean {
   if (c.authorLogin === null) return false;

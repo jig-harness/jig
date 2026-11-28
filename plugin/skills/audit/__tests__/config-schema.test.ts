@@ -38,7 +38,7 @@ import {
   GITHUB_STATE_SOURCES,
   PRIORITY_NAMES,
 } from "../../do-item/scripts/lib/tracker/github/settings.ts";
-import { REVIEWER_EVIDENCE } from "../../drive-pr/scripts/lib/reviewer-profiles.ts";
+import { REVIEWER_EVIDENCE } from "../../../shared/reviewer-profiles.ts";
 import { specialCiSettings } from "../../drive-pr/scripts/lib/ci-special-checks.ts";
 import {
   ARM_DRIVE_MODES,

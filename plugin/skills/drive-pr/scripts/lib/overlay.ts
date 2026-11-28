@@ -38,7 +38,7 @@ import {
   type ReviewerEvidence,
   reviewerBotLogin,
   reviewerProfile,
-} from "./reviewer-profiles.ts";
+} from "../../../../shared/reviewer-profiles.ts";
 import { attachedTree } from "./driven-branch.ts";
 import { codexPassArgsProblem } from "./codex-pass-args.ts";
 import { ghCall, git, gitCallTimeoutSeconds } from "./proc.ts";
@@ -320,6 +320,11 @@ export function reviewBotEntries(): (string | ReviewBot)[] | undefined {
         typeof (b as { login?: unknown }).login === "string" &&
         (b as { login: string }).login !== ""),
   );
+}
+
+/** Whether the consumer explicitly configured a bot list. */
+export function hasConfiguredReviewBots(): boolean {
+  return section("review").bots !== undefined;
 }
 
 /** `review.bots`: the logins the review skill treats as reviewers. */
