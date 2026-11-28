@@ -105,9 +105,10 @@ value of the wrong kind, in any field the
 checks that never run, a tracker that cannot be reached (on Jira, with each
 `issue_tracker.jira.field_labels` entry resolved against the site), configured
 facet stores that cannot be used (GitHub, Jira and Linear; on Jira, a facet's
-field missing from the create screen of an issue type Jig files), counts
-of open Jira issues before and after `issue_tracker.jira.pool_issue_types`
-limits the pool, recent integration-branch commit subjects that do not follow
+field missing from the create screen of an issue type Jig files), Jira's
+estimate of the open issues before and after `issue_tracker.jira.pool_issue_types`
+limits the pool (one estimate request each; the transport may resend one after a transient failure; past 5 seconds the counts are a warning,
+`unchecked:issue_tracker.pool_scope`, naming the bound), recent integration-branch commit subjects that do not follow
 `pull_requests.title_pattern` (an inference about pull request titles that holds
 for squash merges; merge or rebase merging leaves other subjects), a base `pull_requests.base_rules`
 names that the repository lacks, declared values the
