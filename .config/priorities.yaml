@@ -8,8 +8,8 @@ revision: 1
 objectives:
   - id: upstream-issues
     class: core
-    purpose: Prioritize issues reported from consumer repositories (labeled source:upstream) by default so real field friction is resolved first
-    endState: Open source:upstream issues are picked up and resolved ahead of non-upstream backlog items
+    purpose: Route eligible issues reported from consumer repositories (labeled source:upstream) into the core lane so field friction is prioritized ahead of unallocated backlog work
+    endState: Open source:upstream issues outside the urgent and assigned-bug lanes are ranked in the core lane ahead of unallocated non-upstream backlog items
     owner: jig maintainers
     epics:
       - scope: jig-harness/jig
