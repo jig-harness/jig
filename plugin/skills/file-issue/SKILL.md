@@ -171,8 +171,12 @@ level, which the level itself answers.
    field behind `issue_tracker.jira.field_labels`, such as Fix versions as
    `fixversion:2.4`). `validate-labels.ts` lists it under `fieldOnly`, with
    a `WARNING`, and leaves it out of `labels`: leave it out of the `labels`
-   of the JSON file [step 10](#10-write) files (the adapter refuses it), and
-   set the value on the tracker field after filing.
+   of the JSON file [step 10](#10-write) files (the adapter refuses it).
+   No Jig script writes that field, so never set the value yourself, by the
+   tracker scripts or the tracker's own interface: it is a step a person
+   owes in the tracker after filing, and the confirmation and the report
+   name it as owed. Under a drive, record it with the filing (drive-pr
+   § 8), so a person finds it.
 3. **A gate's flag goes on the item that ships the change.** A flag whose
    `scope` is `shipping-item` goes on the issue (or sub-issue) whose pull
    request makes the change, never on the container above it; a
@@ -404,8 +408,8 @@ It prints `confirm: <level>` or `skip: <level>`, then the filed-by line.
   its person chose a level): show the user the plan, each issue's title,
   labels, priority, parent and relations, and each issue's body in full,
   children's included: the body is what step 10 writes. Name each
-  field-only value (rule 2) apart from the labels, as set on the tracker
-  field after filing. Write nothing until
+  field-only value (rule 2) apart from the labels, as a step a person owes
+  on the tracker field after filing. Write nothing until
   the user accepts; apply their changes and validate again.
 - **`skip`** (the `unattended` level a driver pass reads where the repository
   allows it): put the printed filed-by line at the end of each issue's body,
@@ -517,7 +521,7 @@ tracker, then assign it again after the window.
 ## Filed <KEY>: <title>
 
 - Labels: <labels> (warnings: <any, or none>)
-- Set on the tracker field after filing: <each field-only value (rule 2), or none>
+- Owed on the tracker field, by a person (Jig does not write it): <each field-only value (rule 2), or none>
 - Priority: <priority> · Category: <category>
 - Parent: <key, or none> · Sub-issues: <keys, or none>
 - Relations: <KEY blocks …, related …, or none>
@@ -587,8 +591,8 @@ with `addLabels` and `removeLabels` rather than a whole label list, and a
 changed type, priority or size in its own field (`"type"`, `"priority"`,
 `"size"`), which takes the old value off wherever it is kept. A
 field-only value (rule 2) the issue shows among its labels is neither added
-nor removed here: a change to it is made on the tracker field, and the
-report names it. When a
+nor removed here: a change to it is a step a person owes on the tracker
+field, and the report names it as owed. When a
 child cannot be created, stop before the update: the issue keeps its flags,
 so no flag is lost, and report which children exist (with their keys) and
 which do not. Do not retry blindly; ask the user whether to create the rest

@@ -526,9 +526,10 @@ function fieldOnlyReferenceProblems(
   const problems: string[] = [];
   const required = [
     ...flags.map((f) => ({ what: `flag '${f.id}'`, requires: f.requires })),
+    // A category requiring its own label is reported as that already.
     ...categories.map((c) => ({
       what: `category '${c.id}'`,
-      requires: c.requires,
+      requires: c.requires.filter((l) => !c.labels.includes(l)),
     })),
   ];
   for (const { what, requires } of required)

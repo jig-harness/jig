@@ -103,6 +103,16 @@ describe("the taxonomy lint and a field-only category", () => {
     ]);
   });
 
+  test("a field-only category requiring its own label is reported once", () => {
+    expect(
+      problemsOf(
+        taxonomyText(`${FIELD_ONLY}\n    requires: ["fixversion:2.4"]`),
+      ),
+    ).toEqual([
+      "category 'fixversion' requires 'fixversion:2.4', one of its own labels",
+    ]);
+  });
+
   test("the lint command passes a field-only category and fails a malformed one", () => {
     const dir = mkdtempSync(join(tmpdir(), "field-only-lint-"));
     const good = join(dir, "good.yaml");
@@ -151,12 +161,23 @@ describe("the label validator and a field-only category", () => {
     expect(plain.warnings).toEqual([]);
   });
 
-  test("without the declaration the same label is unknown", () => {
+  test("without the declaration the label is an ordinary one, and without the category it is unknown", () => {
     const plain = lintTaxonomyText(taxonomyText('    open: "[0-9][0-9.]*"'))
       .taxonomy as Taxonomy;
-    const result = validateLabels(["feature", "fixversion:2.4"], plain);
-    expect(result.fieldOnly).toEqual([]);
-    expect(result.labels).toEqual(["feature", "fixversion:2.4"]);
+    const ordinary = validateLabels(["feature", "fixversion:2.4"], plain);
+    expect(ordinary.fieldOnly).toEqual([]);
+    expect(ordinary.labels).toEqual(["feature", "fixversion:2.4"]);
+    const absent = lintTaxonomyText(
+      taxonomyText('    open: "[0-9][0-9.]*"').replace(
+        / {2}- id: fixversion[\s\S]*$/,
+        "",
+      ),
+    ).taxonomy as Taxonomy;
+    const unknown = validateLabels(["feature", "fixversion:2.4"], absent);
+    expect(unknown.valid).toBe(false);
+    expect(unknown.errors).toEqual([
+      "unknown label: fixversion:2.4 (not in the taxonomy)",
+    ]);
   });
 });
 
@@ -217,6 +238,42 @@ describe("validate-labels.ts with a field-only category", () => {
     expect(result.labels).toEqual(["feature", "area:api"]);
     expect(result.fieldOnly).toEqual(["fixversion:2.4"]);
     expect(result.errors).toEqual([]);
+  });
+
+  test("with --check-tracker and a filing draft: placement is read, and the field-only value is still left out", async () => {
+    const file = join(dir, "draft.json");
+    writeFileSync(
+      file,
+      JSON.stringify({
+        title: "Ship it",
+        description: "Body",
+        labels: ["area:api", "fixversion:2.4"],
+        type: "feature",
+        priority: 3,
+      }),
+    );
+    const drafts: string[][] = [];
+    const deps: Deps = {
+      openTracker: () => ({
+        listLabels: async () =>
+          ["feature", "area:api"].map((name) => ({ name, group: null })),
+        filedAs: async (draft) => {
+          drafts.push(draft.labels);
+          return { nativeType: null, labels: draft.labels };
+        },
+        unavailableFacets: async () => [],
+      }),
+      readStdin: async () => "",
+    };
+    const { code, out } = await capture(
+      ["--check-tracker", "--json", "--taxonomy", path, "--input", file],
+      deps,
+    );
+    expect(code).toBe(0);
+    expect(drafts).toHaveLength(1);
+    const result = JSON.parse(out);
+    expect(result.labels).toEqual(["area:api"]);
+    expect(result.fieldOnly).toEqual(["fixversion:2.4"]);
   });
 
   test("with --check-tracker: a real label still missing from the tracker fails", async () => {

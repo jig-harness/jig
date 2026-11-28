@@ -180,7 +180,7 @@ categories:
   # - id: fixversion
   #   prefix: "fixversion:"
   #   field_only: true
-  #   open: "[0-9][0-9.]*"
+  #   open: "[0-9A-Za-z][0-9A-Za-z._-]*"  # version names such as 2.4, v2.4, 2.4-rc1
   #   notes: the release an item is targeted at, kept in Jira's Fix versions
 
 # ---------------------------------------------------------------------------
