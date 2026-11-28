@@ -131,6 +131,80 @@ describe("the variables kept from the installed launchd job", () => {
   });
 });
 
+describe("the installed job's bytes, read only as UTF-8", () => {
+  const job = (declaration: string, value: string) =>
+    `${declaration}<plist version="1.0"><dict><key>EnvironmentVariables</key><dict><key>TOKEN</key><string>${value}</string></dict></dict></plist>`;
+
+  test("keep a non-ASCII value of a UTF-8 job intact", () => {
+    const bytes = new TextEncoder().encode(
+      job(`<?xml version="1.0" encoding="utf-8"?>`, "pässwörd"),
+    );
+    expect(carriedEnvironment(bytes, managed)).toEqual({
+      ok: true,
+      value: { TOKEN: "pässwörd" },
+    });
+  });
+
+  test("keep a job with a byte order mark and no declared encoding", () => {
+    const text = job(`<?xml version="1.0"?>`, "ünï");
+    const bytes = new Uint8Array([
+      0xef,
+      0xbb,
+      0xbf,
+      ...new TextEncoder().encode(text),
+    ]);
+    expect(carriedEnvironment(bytes, managed)).toEqual({
+      ok: true,
+      value: { TOKEN: "ünï" },
+    });
+  });
+
+  test("refuse a job that declares ISO-8859-1, naming the encoding and not the value", () => {
+    const bytes = Buffer.from(
+      job(`<?xml version="1.0" encoding="ISO-8859-1"?>`, "zq-hidden-ä"),
+      "latin1",
+    );
+    const refused = carriedEnvironment(bytes, managed);
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    expect(refused.failure.reason).toContain("ISO-8859-1");
+    expect(refused.failure.reason).toContain("plutil -convert xml1");
+    expect(refused.failure.reason).not.toContain("zq-hidden");
+  });
+
+  test("refuse a decoded job that declares an encoding other than UTF-8", () => {
+    const refused = carriedEnvironment(
+      job(`<?xml version='1.0' encoding='windows-1252'?>`, "plain"),
+      managed,
+    );
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    expect(refused.failure.reason).toContain("windows-1252");
+  });
+
+  test("refuse bytes that are not UTF-8 even with no declared encoding", () => {
+    const bytes = Buffer.from(
+      job(`<?xml version="1.0"?>`, "zq-hidden-ä"),
+      "latin1",
+    );
+    const refused = carriedEnvironment(bytes, managed);
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    expect(refused.failure.reason).toContain("not valid UTF-8");
+    expect(refused.failure.reason).not.toContain("zq-hidden");
+  });
+
+  test("never repeat a declared encoding that is not an encoding's name", () => {
+    const refused = carriedEnvironment(
+      job(`<?xml version="1.0" encoding="secret value"?>`, "plain"),
+      managed,
+    );
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    expect(refused.failure.reason).not.toContain("secret");
+  });
+});
+
 describe("an environment read whole or not at all", () => {
   const wrap = (inner: string) =>
     `<?xml version="1.0"?>\n<plist version="1.0"><dict><key>EnvironmentVariables</key>${inner}</dict></plist>`;

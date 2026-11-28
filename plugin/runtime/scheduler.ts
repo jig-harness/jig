@@ -355,7 +355,8 @@ function carriedFromInstalled(
   const managed = managedEnvironment(spec);
   for (const name of Object.keys(spec.capturedEnv ?? {})) managed.add(name);
   const path = join(jobDirectory("launchd"), `${spec.label}.plist`);
-  const carried = carriedEnvironment(readOptional(path), managed);
+  // Bytes, not text: the reader refuses a job that is not UTF-8.
+  const carried = carriedEnvironment(readOptionalBytes(path), managed);
   if (!carried.ok)
     throw new GcError(
       `The installed job ${path} cannot be kept: ${carried.failure.reason}`,
@@ -580,8 +581,11 @@ function restoreLauncher(
   }
 }
 function readOptional(path: string): string | null {
+  return readOptionalBytes(path)?.toString("utf8") ?? null;
+}
+function readOptionalBytes(path: string): Buffer | null {
   try {
-    return readFileSync(path, "utf8");
+    return readFileSync(path);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
