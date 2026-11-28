@@ -404,6 +404,57 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.322.0] - 2026-11-28
+
+### Added
+
+- `jig install dispatch --env NAME` (and `jig dispatch install --env NAME`),
+  repeatable, writes the named variable's value from the installing shell
+  into the dispatcher's launchd jobs on macOS, so a tracker credential or a
+  notification channel's address reaches the scheduled tick. It takes a name
+  only, never `NAME=VALUE`, and refuses a variable that is unset or empty
+  before it writes anything. Elsewhere it is refused with the systemd
+  drop-in to use instead.
+
+### Fixed
+
+- Reinstalling a launchd job with `jig install` no longer drops the
+  variables a person added to its `EnvironmentVariables`: the install keeps
+  every variable it does not write itself and refreshes its own. The
+  preview names the variables it keeps or captures and never shows their
+  values.
+
+## [0.321.0] - 2026-11-28
+
+### Added
+
+- `jig dispatch check [--repo <path>]` checks the configuration the dispatcher's tick reads from a repository (its `dispatch` section, the tracker `issue_tracker` names with its issue facets, and the change-area catalog `drive.change_areas_catalog` names) with the tick's own readers, and exits 1 with the tick's message for each reading the tick would refuse. A repository runs it in CI so that such an error is refused before it merges, not found by the host's tick at every turn. It reads files only (inside the checkout, up to the forge's inline content limit) and sends nothing to the tracker or the forge. The tick resolves the label taxonomy from the host's own checkout, so a taxonomy change must reach the dispatch hosts as well. [CONFIGURATION.md § `dispatch`](plugin/CONFIGURATION.md#dispatch) shows a CI step that runs it.
+
+## [0.320.0] - 2026-11-28
+
+### Fixed
+
+- [Enterprise Managed User](GLOSSARY.md) logins, which join a handle and
+  the enterprise's short code with an underscore (`mona_acme`), are now taken
+  where Jig reads a GitHub login: a host's `serve[].forge`, the drive's and
+  `jig ask`'s and `jig send`'s signed-in login, the outbound budget's
+  credential owner, the reviewers a change area or
+  `pull_requests.reviewers_from_issue` requests, `dispatch.person`, a parked
+  question's person and the dispatch dashboard's token owners. Before, each
+  refused such a login. A repository owned by a managed user is not yet
+  supported by the readers of a repository's owner (the address parser, the
+  GitHub tracker settings and the hub's partitions). A `[bot]` login is still
+  taken only where it was before. One check in `plugin/shared/forge-logins.ts`
+  holds the rule for all of them: a short code of three to eight letters or
+  digits, and no other underscore.
+- **Breaking:** The [hidden comment markers](plugin/protocol/comment-markers.md)
+  protocol is now version 2. Its drive-ledger schema constrains a parked
+  question's person to a GitHub login, including an Enterprise Managed User
+  login. Upgrade every host that reads a shared ledger before a managed user
+  is routed a parked question; earlier hosts refuse the version 3 ledger.
+  **Consumer action:** required at machine. Upgrade every host that reads
+  shared drive ledgers.
+
 ## [0.319.0] - 2026-11-28
 
 ### Added
@@ -11603,7 +11654,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.319.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.322.0...HEAD
+[0.322.0]: https://github.com/jig-harness/jig/compare/v0.321.0...v0.322.0
+[0.321.0]: https://github.com/jig-harness/jig/compare/v0.320.0...v0.321.0
+[0.320.0]: https://github.com/jig-harness/jig/compare/v0.319.0...v0.320.0
 [0.319.0]: https://github.com/jig-harness/jig/compare/v0.318.0...v0.319.0
 [0.318.0]: https://github.com/jig-harness/jig/compare/v0.317.1...v0.318.0
 [0.317.1]: https://github.com/jig-harness/jig/compare/v0.317.0...v0.317.1

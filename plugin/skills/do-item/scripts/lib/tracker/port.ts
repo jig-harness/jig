@@ -12,8 +12,21 @@
  * on these reads would otherwise report a partial read as an improvement.
  */
 
-import type { DependencyState, RelationMigration } from "./relation-port.ts";
-export type { DependencyState, RelationMigration } from "./relation-port.ts";
+import {
+  type DependencyState,
+  type IssueRelation,
+  RELATION_TYPES,
+  type RelationMigration,
+  type RelationType,
+  type TrackerVisibility,
+} from "./relation-port.ts";
+export {
+  type DependencyState,
+  type IssueRelation,
+  RELATION_TYPES,
+  type RelationMigration,
+  type RelationType,
+};
 import type { StoreHealth } from "./unavailable.ts";
 import type { TrackerAssignmentWindow } from "./assignment-window.ts";
 import type { TrackerAttachments } from "./attachment.ts";
@@ -28,7 +41,6 @@ import type {
 import type { DispatchSource } from "./dispatch-source.ts";
 export type { DispatchRawIssue, DispatchSource } from "./dispatch-source.ts";
 import type { PoolScopeCounts } from "./pool-counts.ts";
-
 /**
  * The workflow states the skills reason about, by role; `issue_tracker.states`
  * maps each to the tracker's name. `pr_open` is work with an open pull request;
@@ -587,23 +599,6 @@ export interface IssuePatch {
   removeLabels?: string[];
 }
 
-/** The relations an issue can be given to another. */
-export const RELATION_TYPES = ["blocks", "related", "duplicate"] as const;
-
-export type RelationType = (typeof RELATION_TYPES)[number];
-
-/**
- * One relation of an issue, seen from that issue: `blocks` it blocks
- * `issue`, `blocked_by` `issue` blocks it; `duplicate` it is a duplicate of
- * `issue`, `duplicated_by` `issue` is a duplicate of it; `related` links the
- * two in either direction.
- */
-export interface IssueRelation {
-  type: RelationType | "blocked_by" | "duplicated_by";
-  /** The other issue's key. */
-  issue: string;
-}
-
 // ── Served queues ──────────────────────────────────────────────────────────
 
 /** A relation as a queue read carries it, with the other issue's state category; `null` when the read did not carry it. */
@@ -675,7 +670,8 @@ export interface Tracker
   extends TrackerAttachments,
     TrackerAssignmentWindow,
     TrackerBlockedFields,
-    TrackerFootprints {
+    TrackerFootprints,
+    TrackerVisibility {
   /** Native queue reads and this repository’s interpretation, for shared dispatch scopes. */
   readonly dispatchSource?: DispatchSource;
   /** The adapter name, as `issue_tracker.adapter` spells it. */

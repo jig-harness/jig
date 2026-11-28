@@ -19,7 +19,7 @@ import {
   checkLauncherResolves,
   detectScheduler,
   installedScript,
-  jobPreview,
+  jobPreviewOutcome,
   pluginPrograms,
   updateJob,
   snapshotScheduler,
@@ -133,7 +133,12 @@ export async function dashboardInstall(
   script: string,
 ): Promise<number> {
   if (!remove && !(await dashboardPreflight())) return 1;
-  console.log(jobPreview(dashboardJobSpec(), remove));
+  const preview = jobPreviewOutcome(dashboardJobSpec(), remove);
+  if (!preview.ok) {
+    console.error(preview.failure.reason);
+    return 1;
+  }
+  console.log(preview.value);
   if (!confirm) {
     console.log("Preview only; add --yes to apply.");
     return 0;

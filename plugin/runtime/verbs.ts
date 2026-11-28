@@ -137,6 +137,11 @@ export function verbCommands(names: readonly string[]) {
         noUpgrade: option("--no-upgrade", {
           description: message`Opt this machine out of the timers' upgrades: writes upgrade.enabled: false to the user file (~/.jig/jig.yaml).`,
         }),
+        env: multiple(
+          option("--env", string({ metavar: "NAME" }), {
+            description: message`With dispatch named alone, on macOS: write this variable's value from this shell into the dispatcher's launchd jobs; a name only, never NAME=VALUE. Repeat for more. The preview names it and never shows its value.`,
+          }),
+        ),
         confirm,
       }),
       {
@@ -364,12 +369,31 @@ function upgradeOf(args: Upgrade, context: VerbContext): Promise<number> {
   return scheduledUpgradeVerb(programs, context);
 }
 
+/**
+ * `--env` captures credentials the dispatcher's runs need, so it is refused
+ * (exit 2) unless `dispatch` is the only component named: no other job gets them.
+ */
+function refuseEnvBeyondDispatch(
+  args: Extract<VerbArguments, { verb: "install" }>,
+): void {
+  if (args.env.length === 0) return;
+  if (
+    args.components.length === 0 ||
+    args.components.some((name) => name !== "dispatch")
+  )
+    throw new ExitError(
+      USAGE_EXIT,
+      "--env captures a variable for the dispatcher's jobs only: name it alone, jig install dispatch --env NAME",
+    );
+}
+
 /** `jig install`: the opt-out when asked, each component's job, then the `jig` command. */
 async function installVerb(
   args: Extract<VerbArguments, { verb: "install" }>,
   context: VerbContext,
 ): Promise<number> {
   const { components, script } = context;
+  refuseEnvBeyondDispatch(args);
   const free = checkCommandPath();
   if (!free.ok) return failureExit(free.failure);
   const jobless = withoutJobs(args, context);
@@ -391,6 +415,7 @@ async function installVerb(
             repository: args.repository,
             confirm: args.confirm,
             script,
+            ...(args.env.length === 0 ? {} : { env: args.env }),
           });
         },
         console.log,

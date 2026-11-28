@@ -15,6 +15,7 @@
  * write.
  */
 import { swallow } from "../../../../../shared/errors.ts";
+import { isGithubLogin } from "../../../../../shared/forge-logins.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { failed, ok, type Outcome } from "../../../../../shared/outcome.ts";
 import {
@@ -158,7 +159,7 @@ async function readDirectLogin(
       ...(r.unsent ? { unsent: true } : {}),
     };
   const login = r.stdout.trim();
-  if (!/^[A-Za-z0-9-]+(\[bot\])?$/.test(login))
+  if (!isGithubLogin(login, { bot: true }))
     return failed("malformed", "the answer names no login");
   return ok(login);
 }

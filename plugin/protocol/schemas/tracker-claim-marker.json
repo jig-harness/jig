@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://jig-harness.dev/protocol/comment-markers/v1/schemas/tracker-claim-marker.json",
+  "$id": "https://jig-harness.dev/protocol/comment-markers/v2/schemas/tracker-claim-marker.json",
   "allOf": [
     {
       "type": "object",
@@ -68,7 +68,8 @@
         },
         "claimant": {
           "type": "string"
-        }
+        },
+        "override": true
       },
       "required": ["session", "branch", "claimant"],
       "additionalProperties": true

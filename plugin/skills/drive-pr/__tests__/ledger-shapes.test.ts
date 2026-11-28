@@ -62,3 +62,24 @@ test("the ledger shape preserves legacy optional fields and unconstrained quota 
     true,
   );
 });
+
+test("a parked person is any GitHub login, an Enterprise Managed User's included", () => {
+  const parked = (person: string) => ({
+    ...ledger(),
+    parked: [{ key: "t1", kind: "thread", reason: "why", round: 1, person }],
+  });
+  const read = (person: string) => {
+    const rendered = renderLedger(parked(person) as ReturnType<typeof ledger>);
+    if (!("body" in rendered)) throw new Error("the ledger did not render");
+    return parseLedger(rendered.body);
+  };
+  for (const person of ["mona_acme", "Mona_ACME", "review-bot[bot]"]) {
+    expect(matches(LEDGER_PAYLOAD_SHAPE, parked(person))).toBe(true);
+    const got = read(person);
+    expect(got?.kind).toBe("ledger");
+    if (got?.kind === "ledger")
+      expect(got.ledger.parked[0]?.person).toBe(person);
+  }
+  for (const person of ["@mona_acme", "mona acme", "org/team", "", "_mona"])
+    expect(read(person)?.kind).toBe("malformed");
+});

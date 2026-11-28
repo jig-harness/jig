@@ -180,3 +180,30 @@ test("uninstall on Windows leaves out every component's job, which no scheduler 
   expect(calls).toEqual([]);
   expect(said.join("\n")).toContain("== the jig command ==");
 });
+
+test.each([
+  ["no component named", []],
+  ["another component beside dispatch", ["dispatch", "gc"]],
+  ["another component alone", ["gc"]],
+])(
+  "install refuses --env with %s, before any component installs",
+  async (_, components) => {
+    const calls: string[] = [];
+    await expect(
+      verb(
+        {
+          verb: "install",
+          components,
+          repository: undefined,
+          noUpgrade: false,
+          env: ["JIRA_API_TOKEN"],
+          confirm: false,
+        },
+        [standIn("dispatch", calls), standIn("gc", calls)],
+      ),
+    ).rejects.toThrow(
+      "--env captures a variable for the dispatcher's jobs only",
+    );
+    expect(calls).toEqual([]);
+  },
+);

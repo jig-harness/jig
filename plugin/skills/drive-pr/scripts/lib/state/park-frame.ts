@@ -11,6 +11,7 @@ import { isDecisionDigest } from "../../../../../shared/decisions/digest.ts";
  */
 import type { ParkedDecision } from "../../../../../shared/decisions/park.ts";
 import { parseMs } from "../../../../../shared/time.ts";
+import { isGithubLogin } from "../../../../../shared/forge-logins.ts";
 export interface ParkedItem {
   /** The person this question routes to; absent only on older parks. */
   person?: string;
@@ -30,10 +31,7 @@ export interface ParkedItem {
 
 /** A forge login, excluding whitespace and mention syntax. */
 export function isPerson(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,38})(?:\[bot\])?$/.test(value)
-  );
+  return isGithubLogin(value, { bot: true });
 }
 
 /** A parked item every reader can match and render (`ParkedItem`). */

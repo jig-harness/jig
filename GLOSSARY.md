@@ -128,6 +128,14 @@ make, use the entry's term instead.
   conditional create for a comment, so the token narrows a race between
   hosts and does not exclude it
   ([plugin/RECORDS.md](plugin/RECORDS.md)).
+- **Blocker override** — a person's recorded decision to start a tracker
+  item before the items it is blocked by are finished. A claim refuses an
+  item with an open blocker; in an interactive session the person may claim
+  it anyway with a reason (`tracker.ts claim --override-blockers`), which
+  clears that refusal alone. The claim states what starting early risks,
+  then records who decided, why and which blockers were open, on the item
+  and in its pull request. An agent never decides one on its own
+  ([do-item](plugin/skills/do-item/README.md#starting-ahead-of-open-blockers)).
 - **Tracker namespace** — the stable name of the tracker collection whose
   served assignments a repository reads: `linear:<team>` for Linear, or
   `jira:<site>:<project>` for Jira, where the site is its `https://` address. The adapter and, for Jira, its site keep
@@ -588,6 +596,10 @@ make, use the entry's term instead.
   watchdog notices it; when the job belongs to serialized post-merge
   verification, the watchdog also cancels the run, since it holds the slot
   every newer run waits behind.
+- **Enterprise Managed User** — a GitHub account that an organization's
+  identity provider creates and owns, whose login joins a handle and the
+  enterprise's short code with an underscore (`mona_acme`). Jig takes this
+  login form wherever it reads a GitHub login.
 - **Expression injection** — a value an outsider can set (a branch name, a
   pull-request title, a commit message, a dispatch input) that a CI
   provider's expression syntax substitutes into a script's text before the
@@ -3321,6 +3333,21 @@ make, use the entry's term instead.
   so a change takes effect without a pull request or a restart; a missing
   file or entry means the defaults.
   See [lanes and their weights](design/priorities-and-overview.md#lanes-and-their-weights).
+- **Person profile** — one person's own preferences on a host, planned to
+  hold their time zone, their routine with its timed override, and how chat
+  reaches them (direct messages, quiet hours). It is a host-local file,
+  never committed and never sent to a *hub*: `$JIG_HOME/person.yaml` on a
+  machine one person uses, or the file `serve[].profile` names in the
+  [machine file](plugin/CONFIGURATION.md#the-machines-dispatch-file)
+  (`$JIG_HOME/dispatch.yaml`) on a host serving several. It holds no
+  authorization and no priorities: `serve[]` keeps who the host serves, and the individual
+  *priorities record* has a file of its own
+  ([ADR-0028](docs/adr/ADR-0028-a-person-profile-stays-on-the-host.md)).
+- **IANA time zone** — a time zone named by a region and city from the
+  time-zone database IANA (the Internet Assigned Numbers Authority)
+  publishes, such as `Europe/Berlin`. Unlike a fixed offset (`+02:00`), it
+  follows the place's daylight-saving changes, which is why a schedule in a
+  *person profile* names one.
 - **File draft** — the proposed record of an issue a progress review
   suggests, prepared through the filing skill's checks (type, priority,
   duplicates, scope) and kept with their evidence and age. It is not an issue

@@ -269,8 +269,8 @@ jig dispatch [--apply] [--repo <path>]... [--followup-since <date>] [--json]
 
 `jig dispatch --help` lists its options, and `jig dispatch dashboard --help`,
 `jig dispatch log --help`, `jig dispatch line --help`,
-`jig dispatch clear --help`, `jig dispatch attach --help` and
-`jig dispatch probe --help` list those of
+`jig dispatch clear --help`, `jig dispatch attach --help`,
+`jig dispatch probe --help` and `jig dispatch check --help` list those of
 each subcommand. For each
 repository (`--repo`, else the machine file's, else the current one) it
 prints every action it would take, each with the record that wants it and
@@ -292,6 +292,14 @@ records that keep a notification or a nudge from going twice, and the
 outcome log) is one SQLite database beside them, `state.sqlite`; a
 database written by a newer plugin is refused, with its version named,
 until the plugin is updated.
+
+A repository's CI runs `jig dispatch check` to refuse, before the merge, a
+configuration the tick would refuse at every turn: it reads the checkout's
+dispatch section, issue facets and change-area catalog with the tick's own
+readers and prints the tick's message for each reading that fails
+([configuration](CONFIGURATION.md#dispatch)). The tick reads the label
+taxonomy from the host's checkout, so a taxonomy change reaches the tick
+only once the dispatch hosts have it too.
 
 The machine file can select [`runtime: process`](CONFIGURATION.md#the-machines-dispatch-file)
 on Linux and macOS to run without Orca. The dispatcher opens plain Git
@@ -1762,8 +1770,14 @@ its next `jig install dispatch --yes`. `jig install dispatch
 repository turns on and lacks, and those whose description an earlier
 release wrote, and creates or updates them with `--yes`, as
 `jig dispatch labels` does with no job installed. The earlier
-`jig dispatch install [--interval 5m] [--yes] [--uninstall]` keeps working,
-and is the one form that sets an interval other than the machine file's.
+`jig dispatch install [--interval 5m] [--env NAME] [--yes] [--uninstall]`
+keeps working, and is the one form that sets an interval other than the
+machine file's. On macOS, `jig install dispatch --env NAME` (repeatable)
+writes the named variable's value from the installing shell into both
+launchd jobs, for a tracker or notification credential the scheduled tick
+needs, and a reinstall keeps every variable a person added to the installed
+launchd job; the preview names those variables and never shows their
+values ([the scheduled tick's environment](CONFIGURATION.md#the-scheduled-ticks-environment)).
 
 The session runtime it reads and launches in is
 [Orca](https://www.onorca.dev) (`ORCA_CLI_COMMAND`, else the command in
