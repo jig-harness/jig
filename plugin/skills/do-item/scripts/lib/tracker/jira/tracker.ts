@@ -176,7 +176,7 @@ export function jiraTracker(client: Client): Tracker {
     const level = levelOf(parent, types);
     if (level < 0)
       throw new TrackerRequestError(
-        "invalid",
+        "refused",
         `${parent.key} is a sub-task, and Jira gives a sub-task no children`,
       );
     if (level >= 1) return settings.issueType;

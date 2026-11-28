@@ -181,14 +181,14 @@ export function checkFacetValue(slot: FacetSlot, value: string): string {
     if (slot.problem !== null)
       throw new TrackerConfigError("issue_tracker.taxonomy", slot.problem);
     throw new TrackerRequestError(
-      "invalid",
+      "refused",
       `this repository has no ${slot.facet} facet: its label taxonomy has no ${slot.facet} group`,
     );
   }
   const found = canonical(slot.values, value);
   if (found === null)
     throw new TrackerRequestError(
-      "invalid",
+      "refused",
       `'${value}' is not a ${slot.facet} of this repository (${slot.values.join(", ")})`,
     );
   return found;
