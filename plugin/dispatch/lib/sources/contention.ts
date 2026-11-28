@@ -17,6 +17,7 @@ import {
   readContention,
   UNREAD_CONTENTION,
 } from "../contention.ts";
+import { catalogRefusal } from "../configuration-refusals.ts";
 import { defaultBranchFile, type ListedPr } from "../forge.ts";
 import {
   type FilesObservation,
@@ -50,7 +51,7 @@ export function configuredCatalog(
 }
 
 /** The configured catalog as a path on the default branch; `invalid` when it cannot name one. */
-function repositoryPath(value: string): Outcome<string, "invalid"> {
+export function repositoryPath(value: string): Outcome<string, "invalid"> {
   if (
     value.trim() === "" ||
     value.startsWith("/") ||
@@ -93,7 +94,7 @@ function catalogRecord(
   const failure = contention.readFailed?.failure;
   const detail =
     contention.failure !== undefined
-      ? `the change-area catalog cannot be read, so no re-arm starts on a pull request whose serialized areas cannot be told: ${contention.failure}`
+      ? catalogRefusal(contention.failure)
       : contention.readFailed !== undefined
         ? "a pull request's changed files or review threads cannot be read, so its place in a serialized area cannot be told this tick"
         : `the change-area catalog serializes ${contention.report?.areas.join(", ") || "no area"}`;
