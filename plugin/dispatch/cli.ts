@@ -185,6 +185,11 @@ const installation = (wholeMinutes: boolean) =>
       uninstall: option("--uninstall", {
         description: message`Remove the job instead.`,
       }),
+      env: multiple(
+        option("--env", string({ metavar: "NAME" }), {
+          description: message`On macOS, write this variable's value from this shell into the launchd jobs; a name only, never NAME=VALUE. Repeat for more. The preview names it and never shows its value.`,
+        }),
+      ),
     }),
     {
       brief: message`Install the timer that runs dispatch --apply.`,
@@ -900,6 +905,7 @@ function subcommandMain(
       intervalMs: args.intervalMs ?? null,
       confirm: args.confirm,
       uninstall: args.uninstall,
+      env: args.env,
     },
     script,
     args.uninstall ? null : machineFile(),

@@ -10,6 +10,7 @@
  * dispatcher checks its running sessions for that case.
  */
 
+import type { OpenBlocker } from "./blocker-override.ts";
 import {
   EPIC_PICKUP_REASON,
   isEpicPickup,
@@ -43,8 +44,9 @@ export type ClaimResult =
        * Nothing was written to the item's assignee or state: someone already
        * holds the issue, its state is not one `do_item.claim_from` lets work
        * start from, the repository's `do_item.preflight_command` refused
-       * it, or, with `do_item.claim_marker`, another claim's marker is
-       * earlier or this claim's own could not be posted and read back.
+       * it, a plain claim found open blockers (`blocker-override.ts`), or,
+       * with `do_item.claim_marker`, another claim's marker is earlier or
+       * this claim's own could not be posted and read back.
        */
       outcome: "refused";
       issue: string;
@@ -56,8 +58,15 @@ export type ClaimResult =
         | "state"
         | "preflight"
         | "blocked"
+        | "blockers"
         | "marker";
       reason: string;
+      /** A refusal `--override-blockers` clears: open blockers, or a preflight refusal tagged `kind: blockers`. */
+      overridable?: true;
+      /** A `blockers` refusal: the open blockers, as the claim read them. */
+      blockers?: OpenBlocker[];
+      /** A `blockers` refusal: what starting ahead of them risks. */
+      consequence?: string;
       /** A preflight refusal: the item's `updatedAt` as the command saw it. */
       updatedAt?: string;
     }
@@ -290,6 +299,52 @@ async function transitionStillAllowed(
   if (!holders.some((u) => u.id === me.id))
     return `another claim landed first: ${key} is no longer assigned to ${me.name}`;
   return freshAssigneeRefusal(key, issue, me)?.reason ?? null;
+}
+
+/**
+ * The reads a claim makes before it writes, and the refusal they lead to:
+ * an item in progress, in `pr_open` or `blocked`, outside
+ * `do_item.claim_from`, or assigned to anyone but the viewer. Writes nothing.
+ */
+async function admit(
+  tracker: ClaimTracker,
+  key: string,
+  rules: ClaimRules,
+): Promise<
+  | { refusal: ClaimResult }
+  | { me: TrackerUser; started: string; holders: TrackerUser[] }
+> {
+  const me = await tracker.viewer();
+  const before = await tracker.poolIssue(key);
+  if (before === null)
+    throw new TrackerRequestError("unresolved", `issue ${key} does not exist`);
+  const admission = startAdmission(tracker, key, before, rules);
+  if ("refusal" in admission) return admission;
+  const holders = await tracker.assignees(key);
+  const others = holders.filter((u) => u.id !== me.id);
+  if (others.length > 0)
+    return {
+      refusal: {
+        outcome: "refused",
+        issue: key,
+        why: "assigned",
+        reason: `${key} is assigned to ${names(others)}, not to ${me.name}`,
+      },
+    };
+  return { me, started: admission.started, holders };
+}
+
+/**
+ * Read-only: the refusal `claimIssue` would return before it writes, `null`
+ * when it would go on to write. Writes nothing.
+ */
+export async function refusalBeforeWrite(
+  tracker: ClaimTracker,
+  key: string,
+  rules: ClaimRules = { claimFrom: null },
+): Promise<ClaimResult | null> {
+  const admitted = await admit(tracker, key, rules);
+  return "refusal" in admitted ? admitted.refusal : null;
 }
 
 /**
