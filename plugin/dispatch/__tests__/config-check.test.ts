@@ -286,6 +286,20 @@ describe("checkConfiguration reads only what the tick can read", () => {
     expect(checkConfiguration(root).map((f) => f.part)).toEqual(["dispatch"]);
   });
 
+  it("refuses a configuration under a directory link that leaves the checkout, rather than reading defaults", () => {
+    const outside = dir({});
+    const root = dir({});
+    symlinkSync(outside, join(root, ".config"));
+    expect(checkConfiguration(root).map((f) => f.part)).toEqual(["dispatch"]);
+  });
+
+  it("refuses a committed configuration missing from the checkout, as a sparse checkout leaves it", () => {
+    const root = dir({ ".config/jig.yaml": TRACKER });
+    commitAll(root);
+    rmSync(join(root, ".config"), { recursive: true });
+    expect(checkConfiguration(root).map((f) => f.part)).toEqual(["dispatch"]);
+  });
+
   it("refuses a label taxonomy outside the checkout before the tracker reads it", () => {
     const outside = dir({ "taxonomy.yaml": "SECRET-BYTES: [" });
     const root = dir({

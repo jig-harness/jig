@@ -98,11 +98,12 @@ function leavesCheckout(inside: string): boolean {
 }
 
 /**
- * The first link among `entry`'s ancestors below `base` that exists but whose
- * target does not, as a path relative to `base`; `null` when none does. An
- * entry under such a link is unreadable, not absent.
+ * Why an absent entry cannot be taken as absent, judged by its ancestors
+ * below `base`: one that is a link whose target does not exist, or whose
+ * target leaves the checkout, makes the entry unreadable. `null` when every
+ * existing ancestor is a plain part of the checkout.
  */
-function danglingAncestor(base: string, entry: string): string | null {
+function ancestorProblem(base: string, entry: string): string | null {
   const parts = relative(base, entry).split(sep).slice(0, -1);
   let current = base;
   for (const part of parts) {
@@ -113,15 +114,36 @@ function danglingAncestor(base: string, entry: string): string | null {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
     }
+    let real: string;
     try {
-      realpathSync(current);
+      real = realpathSync(current);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT")
-        return relative(base, current);
+        return `${relative(base, current)} is a link whose target does not exist`;
       throw error;
     }
+    if (leavesCheckout(relative(base, real)))
+      return `${relative(base, current)} resolves outside the checkout`;
   }
   return null;
+}
+
+/** Whether the committed tree holds `path`: a file absent from disk but committed is a sparse checkout's omission, not an absent file. */
+function committed(root: string, path: string): boolean {
+  try {
+    execFileSync(
+      "git",
+      ["--literal-pathspecs", "cat-file", "-e", `HEAD:${path}`],
+      {
+        cwd: root,
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 10_000,
+      },
+    );
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -142,9 +164,12 @@ function fileText(
       lstatSync(entry);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      const link = danglingAncestor(base, entry);
-      if (link !== null)
-        return { refused: `${link} is a link whose target does not exist` };
+      const problem = ancestorProblem(base, entry);
+      if (problem !== null) return { refused: problem };
+      if (committed(base, path))
+        return {
+          refused: `${path} is committed but missing from the checkout`,
+        };
       return null;
     }
     let real: string;
