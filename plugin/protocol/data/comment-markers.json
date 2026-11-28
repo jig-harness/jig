@@ -1,7 +1,7 @@
 {
   "chapter": "comment-markers",
   "title": "Hidden comment markers on the forge and the tracker",
-  "version": 1,
+  "version": 2,
   "status": "stable",
   "fields": {
     "kind": {
@@ -128,7 +128,7 @@
       "fieldType": null,
       "fieldRequired": null,
       "medium": "forge",
-      "version": 2,
+      "version": 3,
       "key": "^[1-9]\\d*$",
       "writtenBy": "Jig",
       "meaning": "The drive's resumable state, mirrored onto the pull request at each round boundary, park and takeover: who drives it, its round, what is parked and how the drive stands, so a drive started in another clone or on another machine resumes where the last one left off. Only a driver writes it; of two ledgers the earliest trusted comment is the ledger."
@@ -141,7 +141,7 @@
       "fieldType": null,
       "fieldRequired": null,
       "medium": "forge",
-      "version": 2,
+      "version": 3,
       "key": "^[1-9]\\d*$",
       "writtenBy": "Jig",
       "meaning": "The drive's resumable state, mirrored onto the pull request at each round boundary, park and takeover: who drives it, its round, what is parked and how the drive stands, so a drive started in another clone or on another machine resumes where the last one left off. Only a driver writes it; of two ledgers the earliest trusted comment is the ledger."
@@ -830,7 +830,7 @@
                 "v": {
                   "type": "integer",
                   "minimum": 1,
-                  "maximum": 2
+                  "maximum": 3
                 },
                 "key": {
                   "type": "string",
@@ -879,7 +879,7 @@
               "type": "object",
               "properties": {
                 "ledgerVersion": {
-                  "enum": [1, 2]
+                  "enum": [1, 2, 3]
                 },
                 "generation": {
                   "type": "integer",
@@ -953,7 +953,7 @@
                       },
                       "person": {
                         "type": "string",
-                        "pattern": "^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,38})(?:\\[bot\\])?$"
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,38}(?:_[A-Za-z0-9]{3,8})?(?:\\[bot\\])?$"
                       },
                       "at": {
                         "type": "string"
@@ -1744,7 +1744,7 @@
           "type": "object",
           "properties": {
             "ledgerVersion": {
-              "enum": [1, 2]
+              "enum": [1, 2, 3]
             },
             "generation": {
               "type": "integer",
@@ -1818,7 +1818,7 @@
                   },
                   "person": {
                     "type": "string",
-                    "pattern": "^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,38})(?:\\[bot\\])?$"
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,38}(?:_[A-Za-z0-9]{3,8})?(?:\\[bot\\])?$"
                   },
                   "at": {
                     "type": "string"

@@ -114,9 +114,7 @@ const CLAIM_DATA = "drive-pr-takeover-claim-data";
 /** The ledger's kind in the records registry (`shared/records/registry.ts`). */
 export const LEDGER_KIND = "drive-ledger";
 
-/** The ledger shape this version reads and writes: the envelope's `v`, and `ledgerVersion` beside it. */
-export const LEDGER_VERSION = 1;
-const OPERATOR_STOP_LEDGER_VERSION = 2;
+export { LEDGER_VERSION } from "./ledger-version.ts";
 
 /** How much of the handoff narrative travels with the ledger. */
 export const NARRATIVE_LINES = 20;
@@ -134,6 +132,12 @@ import {
   type LedgerClaimRef,
 } from "./ledger-shapes.ts";
 import { CONVERGED_CI_PHASE } from "./ledger-values.ts";
+import {
+  isFutureVersion,
+  isReadableVersion,
+  OPERATOR_STOP_LEDGER_VERSION,
+  writtenVersion,
+} from "./ledger-version.ts";
 import { matches } from "../../../../../shared/shapes.ts";
 import {
   TAKEOVER_GENERATION_SHAPE,
@@ -214,7 +218,7 @@ export function ledgerFromState(
   },
 ): Ledger {
   return {
-    ledgerVersion: LEDGER_VERSION,
+    ledgerVersion: OPERATOR_STOP_LEDGER_VERSION,
     generation: opts.generation,
     pr: s.pr,
     round: s.rounds,
@@ -426,10 +430,7 @@ export function renderLedger(
 ): { body: string; ledger: Ledger } | { error: string } {
   let l: Ledger = {
     ...ledger,
-    ledgerVersion:
-      ledger.driver.personStop === undefined
-        ? ledger.ledgerVersion
-        : OPERATOR_STOP_LEDGER_VERSION,
+    ledgerVersion: writtenVersion(ledger),
     // A receipt or churn-evidence loss the state already carries stays named, whatever this render drops.
     cut: ledger.cut.filter(
       (c) =>
@@ -492,9 +493,6 @@ export function renderLedger(
 export function opensWith(body: string, marker: string): boolean {
   return body.replaceAll("\r", "").trimStart().startsWith(marker);
 }
-
-const isCount = (v: unknown): v is number =>
-  typeof v === "number" && Number.isInteger(v) && v >= 0;
 
 /** A driver's timestamps are instants as well as strings in its JSON shape. */
 function isLedgerDriver(v: unknown): v is LedgerDriver {
@@ -582,10 +580,9 @@ function envelopedFields(data: Record<string, unknown>): LedgerFields {
  */
 function ledgerFields(data: Record<string, unknown>): LedgerFields {
   const version = data.ledgerVersion;
-  if (isCount(version) && version > OPERATOR_STOP_LEDGER_VERSION)
-    return { kind: "unknown-version", version };
+  if (isFutureVersion(version)) return { kind: "unknown-version", version };
   if ("kind" in data) return envelopedFields(data);
-  return version === LEDGER_VERSION || version === OPERATOR_STOP_LEDGER_VERSION
+  return isReadableVersion(version)
     ? { fields: data }
     : malformed(
         `ledgerVersion ${JSON.stringify(version) ?? "is missing"} is not a version`,

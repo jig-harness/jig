@@ -1,6 +1,7 @@
 /** People this host serves, read only from its machine file. */
 import { isMapping } from "../../shared/config-layers.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { isGithubLogin } from "../../shared/forge-logins.ts";
 
 const TRACKERS = ["github", "linear", "jira"] as const;
 export interface ServedPerson {
@@ -72,7 +73,7 @@ function forgeLogins(
     return invalid(`${where}.forge must list nonempty forge logins`);
   const forge = value.map((login) => login.trim());
   for (const login of forge) {
-    if (!/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(login))
+    if (!isGithubLogin(login))
       return invalid(`${where}.forge has an invalid login: ${login}`);
     if (logins.has(login.toLowerCase()))
       return invalid(`${where}.forge login is listed twice: ${login}`);
