@@ -4,7 +4,7 @@
  * picked up again on another account, with no person asked.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { MAX_AHEAD_MS, noticeReset } from "../lib/notice-reset.ts";
 import {
@@ -210,6 +210,135 @@ describe("which stages recognise a startup", () => {
     expect(failedStartup(record, 1, started, "", started + 5_000)).toBe(
       "sign-in",
     );
+  });
+
+  describe("a Codex session", () => {
+    const session = "01a1f361-96b7-7832-b2b2-9bff016c5883";
+    const codexOf = (fields: Record<string, unknown>) =>
+      recordOf({ vendor: "codex", sessionId: null, ...fields });
+    const rollout = (configDir: string, started: number, name: string) => {
+      const [year, month, day] = isoFromMs(started).slice(0, 10).split("-");
+      const dir = join(
+        configDir,
+        "sessions",
+        String(year),
+        String(month),
+        String(day),
+      );
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, name), '{"type":"session_meta"}\n');
+    };
+
+    it.each([
+      { action: "pickup", headless: true },
+      { action: "steward" },
+      { action: "followup" },
+    ])(
+      "classes a %o session that stopped at once with no rollout as unstarted",
+      (fields) => {
+        const started = Date.now() - 10_000;
+        const output = `session id: ${session}\nERROR: usage limit\n`;
+        expect(
+          failedStartup(codexOf(fields), 1, started, output, started + 5_000),
+        ).toBe("unstarted");
+        expect(
+          failedStartup(codexOf(fields), 1, started, "", started + 5_000),
+        ).toBe("unstarted");
+      },
+    );
+
+    it("counts a session that left its rollout as a pass that died", () => {
+      const record = codexOf({ action: "followup" });
+      const started = Date.now() - 10_000;
+      rollout(record.configDir, started, `rollout-x-${session}.jsonl`);
+      const output = `session id: ${session}\n`;
+      expect(
+        failedStartup(record, 1, started, output, started + 5_000),
+      ).toBeUndefined();
+    });
+
+    it("reads the session id from the head of a long output, so a session that left its rollout still died", () => {
+      const record = codexOf({ action: "followup" });
+      const started = Date.now() - 10_000;
+      rollout(record.configDir, started, `rollout-x-${session}.jsonl`);
+      const head = `session id: ${session}\n${"tool output\n".repeat(400)}`;
+      const tail = "tool output\n".repeat(800).slice(-8192);
+      expect(tail).not.toContain(session);
+      expect(
+        failedStartup(
+          record,
+          1,
+          started,
+          tail,
+          started + 5_000,
+          undefined,
+          head,
+        ),
+      ).toBeUndefined();
+    });
+
+    it("classes a session whose id is only in the head and that left no rollout as unstarted", () => {
+      const record = codexOf({ action: "followup" });
+      const started = Date.now() - 10_000;
+      const head = `session id: ${session}\nERROR: usage limit\n`;
+      const tail = "ERROR: usage limit\n";
+      expect(
+        failedStartup(
+          record,
+          1,
+          started,
+          tail,
+          started + 5_000,
+          undefined,
+          head,
+        ),
+      ).toBe("unstarted");
+    });
+
+    it("withholds the retry of a session that printed text but no session id", () => {
+      const record = codexOf({ action: "followup" });
+      const started = Date.now() - 10_000;
+      const output = "ERROR: usage limit\n";
+      expect(
+        failedStartup(
+          record,
+          1,
+          started,
+          output,
+          started + 5_000,
+          undefined,
+          output,
+        ),
+      ).toBeUndefined();
+      expect(
+        failedStartup(record, 1, started, "\n", started + 5_000, undefined, ""),
+      ).toBe("unstarted");
+    });
+
+    it("reads past another session's rollout, and withholds the retry when the walk meets a link", () => {
+      const record = codexOf({ action: "followup" });
+      const started = Date.now() - 10_000;
+      const output = `session id: ${session}\n`;
+      rollout(record.configDir, started, "rollout-x-another.jsonl");
+      expect(failedStartup(record, 1, started, output, started + 5_000)).toBe(
+        "unstarted",
+      );
+      const [year, month, day] = isoFromMs(started).slice(0, 10).split("-");
+      symlinkSync(
+        join(root, "elsewhere.jsonl"),
+        join(
+          record.configDir,
+          "sessions",
+          String(year),
+          String(month),
+          String(day),
+          "a-link.jsonl",
+        ),
+      );
+      expect(
+        failedStartup(record, 1, started, output, started + 5_000),
+      ).toBeUndefined();
+    });
   });
 
   it.each([{ action: "pickup" }, { action: "rearm" }])(

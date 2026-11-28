@@ -107,8 +107,8 @@ Command-line flags, where a script has them, override all three.
 - **Merging.** Sections merge field by field: a user file that sets
   `review.sticky_marker` and a repository file that sets `review.bots` give
   both. Any other value (text, a number, a date, a list, `null`) replaces the
-  lower layer's value whole, so a list is never part one layer's and part
-  another's.
+  lower layer's value whole. The reflection class vocabulary combines
+  entries from the active layers as described under [reflection](#reflection).
 - **Environment variables.** Two underscores separate the levels and the
   names are read in lower case: `JIG__ISSUE_TRACKER__TEAM=ENG` sets
   `issue_tracker.team`. `true`, `false`, `null`, decimal numbers (`400`,
@@ -1361,9 +1361,35 @@ reflection:
 | `reflection.notion.database` | a Notion database id, or a link to it | **Required** with `store: notion` | reflect, review-reflections, dispatch | The database `notion-store.ts init` created. The integration's secret is read from the `NOTION_TOKEN` environment variable, never from a file |
 | `reflection.github.repository` | `owner/name` | **Required** with `store: github` | reflect, review-reflections, dispatch | The repository whose issues hold the reflections, often a private one kept for them. Requests go through `gh`, signed in as it is; the account needs write access, and the repository a `jig-reflection` label (`check` names the command that creates it) |
 | `reflection.journal` | file path | `<git-dir>/jig/reflection-journal.jsonl` | reflect, resolve-review-comments | The worktree's journal; a path git would track, or a file it already tracks, is refused. Parking still uses it when the section says `enabled: false` |
+| `reflection.classes` | list of class entries | empty | reflect | Class names to reuse, each with a `slug`, a `shape` and an optional non-empty text `source` |
+| `reflection.classes_from` | local YAML or JSON file path | unset | reflect | A top-level list of class entries, at most 500 and in a file of at most 256 KiB. A `.json` file is parsed as JSON, any other as YAML. Paths expand `~` to the home directory and resolve relative to the repository root; a URL, a network share path (`\\host\share`, `//host/share`), a path with a NUL character and a path whose last component is a link are refused |
 | `reflection.escalate_after` | whole number, at least 1 | `3` | reflect, review-reflections | The recurrence count at which a class is escalated to one tracker issue |
 | `reflection.timeout_sec` | whole number of seconds, at most 86400 | `120` | reflect, review-reflections, dispatch | The deadline for one store operation; `list` and `diagnose` get five times as long |
 | `reflection.mode` | `quick`, `comprehensive` | `quick` | reflect | The reflection's default depth: what went wrong only, or also what worked and what could improve |
+
+Seed classes to share a vocabulary across repositories or to reuse a class
+before the first finding is stored. Each entry's `slug` uses lowercase
+letters and digits in hyphen-separated groups. Its `shape` is a non-empty
+description on one line and `source` can name the reference it came from.
+
+```yaml
+reflection:
+  classes_from: ~/.jig/reflection-classes.yaml
+  classes:
+    - slug: missing-guard
+      shape: A required check is absent from a reusable workflow.
+      source: Team reflection register
+```
+
+`reflect gather` combines vocabularies from the user, repository and
+environment layers. For duplicate slugs, the higher layer supplies the whole
+entry. Within a layer, an inline entry takes precedence over the file.
+Missing or unreadable files produce a warning and gathering continues.
+Malformed entries, a slug repeated within one list and invalid YAML or JSON are configuration errors; so is a list over the entry limit, while a file over the size limit is a warning and is not read. Only `reflect gather` validates and reads the vocabularies, so a mistake in a vocabulary entry or file never stops the journal or the review of stored findings. The configuration check validates the merged setting and does not read the vocabulary files. Every command's settings reader still loads and parses all configuration layers, so a configuration layer that cannot be parsed at all stops every command, vocabularies aside.
+A seed's shape supplies the example, and the store still supplies the
+finding count. When a store read fails, `store_error` reports the failure
+and any available seeds appear with zero findings. Escalation and review
+count actual findings.
 
 Escalation reads `issue_tracker.labels.pattern_prefix` (a class's issue is
 labelled `<prefix><class>` and carries an owner marker, a
@@ -1899,6 +1925,7 @@ cannot supply its Bun configuration or preloads, and name the checkout with
 | `dispatch.overlap.bound_patience` | duration | `24h`: a pickup that has waited in tier 3 longer than this is promoted to tier 1, ahead of every pickup that has not, the longest waiter first, until it starts or is no longer wanted | dispatch |
 | `dispatch.followup_within` | duration | `1h`: a follow-up the dispatcher launched that has not ended by then drifts; and a follow-up whose passes record `waits --reason pending` (an arm still pending) is notified as a failed follow-up naming the arm once a pass still finds it pending this long after the first pass that found that arm so (a pass naming newer release tags or a newer deploy run starts the window again, up to three windows after the run's first pending pass), unless the release tags the arm names all exist and the deploy runs it links to have all finished, none cancelled, when the tick reads them again, within 15 minutes of the pass's end, which runs the follow-up once more | dispatch |
 | `dispatch.followup_stale_after` | duration | `24h`: a follow-up claim no run will finish (a person's run's marker not marked done, or another host's with no answer) that is older than this, with no session joined to its pull request, is released: the host that owns the repository deletes the marker, once per pull request, and the follow-up starts again. A claim on it that goes stale again after that is notified to a person, never released twice | dispatch |
+| `dispatch.followup_routine` | list of `local-leftover`, `person-owed`, `drafted-items`, each once | Every class: the [routine question classes](README.md#every-need-is-a-decision) a follow-up's pass may settle unattended, with the class's standing answer. A class left out is not offered to the pass, its unattended rule is left out of the pass's prompt (with `drafted-items` left out, the pass asks before it files the items it drafted), and a question tagged with it is a person's, notified and never run again. Routine local housekeeping is an exception: it remains periodic cleanup rather than a question. The classes, their coverage and their answers are the dispatcher's; this only selects among them, and a class it does not list is refused | dispatch |
 | `dispatch.notices_linger` | duration, or `0s` | `1h`: the repository's notices workspace, once read, is removed this long after the first tick that finds it read; `0s` removes it at that tick. An unread one is removed once every cause it carries is gone | dispatch |
 | `dispatch.notices_branch` | branch name, with no space | None: every notification for the repository goes to its notices workspace. A branch names the workspace a person watches instead: every notification goes to the workspace on that branch, never to the one joined to the pull request or item. The dispatcher never opens or removes it, and a notification waits, reported, while no workspace on it is open or its comment is a person's. Naming `jig-dispatch-notices`, the notices workspace's own branch, is the same as naming none | dispatch |
 | `dispatch.renotify_after` | duration, or `0s` | `24h`: a notification whose cause still stands this long after it was last sent is sent again, saying since when it has waited, until the cause goes. `0s` sends each one once | dispatch |
@@ -2087,12 +2114,19 @@ since it read it, so a drive's label written for a newer ledger is not
 replaced from the older one the run planned from. A run without `--apply`,
 or for a repository the machine file does not list, writes nothing and
 reports what it would write. A write the forge refuses is reported and
-tried again at the next run; it does not fail the run. With `only_labeled`
+tried again at the next run; it does not fail the run. A write refused for
+a label of the set or a marker label the repository does not have yet
+creates the label as `jig dispatch labels --yes` does and writes again in
+the same run; a create the forge refuses is counted once for the
+repository, keyed by the label (`label create <name>` in the failure
+ledger), so past `failures.notify_after` a person is told once, with the
+command that creates it, and the writes that add it wait while it backs
+off. With `only_labeled`
 off, a drive a person armed by hand on a pull request with no label gets
 its label from the drive itself.
 
-The labels must exist before anything writes them, and no writer creates
-one: setting them up is a one-time step,
+The labels should exist before anything writes them, and only the
+dispatcher's run creates a missing one: setting them up is a one-time step,
 
 ```sh
 jig dispatch labels [--repo <path>]... [--yes]
@@ -2624,6 +2658,7 @@ dispatch:
     bound_patience: 24h
   followup_within: 1h
   followup_stale_after: 24h
+  followup_routine: [local-leftover, person-owed, drafted-items]
   notices_linger: 1h
   notices_branch: jig-dispatch-notices
   renotify_after: 24h
@@ -2936,6 +2971,10 @@ reflection:
   github:
     repository: example/reflections      # owner/name
   journal: .scratch/reflection-journal.jsonl
+  classes:
+    - slug: missing-guard
+      shape: A required check is absent from a reusable workflow.
+  classes_from: ~/.jig/reflection-classes.yaml
   escalate_after: 3
   timeout_sec: 120
   mode: quick

@@ -35,6 +35,7 @@ import {
   CopyX,
   Cpu,
   Flag,
+  FolderOpen,
   Gauge,
   GitBranch,
   GitMerge,
@@ -245,6 +246,7 @@ export const ACCOUNT_ICONS = {
 export const CAUSE_ICONS = {
   parked: is(CirclePause, "parked"),
   stalled: is(TimerOff, "stalled"),
+  "busy-holder": is(FolderOpen, "Inspect the holding worktree"),
   "needs-person": is(UserRound, "needs-person"),
   "stopped-unknown": is(CircleHelp, "stopped-unknown"),
   "followup-failed": is(ListX, "followup-failed"),
