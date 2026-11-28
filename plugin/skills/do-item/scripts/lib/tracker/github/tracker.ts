@@ -58,7 +58,7 @@ import {
   summaryOf,
   wholeLabels,
 } from "./read.ts";
-import { keyOf, repoOf, slug } from "./refs.ts";
+import { keyOf, parseRef, repoOf, sameRepo, slug } from "./refs.ts";
 import { assignerOperations } from "./assigner.ts";
 import { stateChangeOperations } from "./state-change.ts";
 import { claimOperations } from "./claim.ts";
@@ -908,6 +908,11 @@ export function gitHubTracker(client: Client): Tracker {
     dependencyState: (key, signal) =>
       client.dependencyState(client.ref(key), signal),
     listRelations: relations,
+    sharesVisibility(issue, other) {
+      const a = parseRef(issue, home);
+      const b = parseRef(other, home);
+      return a !== null && b !== null && sameRepo(a, b);
+    },
 
     migrateRelations: (opts, signal) => migrateRelations(client, opts, signal),
 
