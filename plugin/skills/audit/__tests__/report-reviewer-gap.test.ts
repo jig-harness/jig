@@ -96,21 +96,40 @@ describe("a repository with no automated reviewer, against Team/Standard", () =>
     expect(survey).toContain(
       "Count only activity timestamped within that 90-day window",
     );
+    expect(survey).toContain("For reporting, distinguish an unchecked channel");
     expect(survey).toContain("historical records the host no longer retains");
     expect(survey).toContain(
-      "judge evidence completeness per criterion against that criterion's scope",
+      "judge evidence completeness per criterion against that criterion's scope for either kind of missing evidence — an unchecked channel or unretained host history",
     );
     expect(survey).toContain("opened by `--examine-all`");
     expect(survey).toContain("stop and report the audit incomplete");
     expect(survey).toContain(
-      "record the settled score and note the unchecked channel in the evidence instead of stopping",
+      "naming the criterion and the unchecked channel or unretained host history",
+    );
+    expect(survey).toContain(
+      "Only where confirmed observations already fix the criterion's exact rung",
+    );
+    expect(survey).toContain(
+      "a confirmed in-scope reviewer is already at `absent`",
+    );
+    expect(survey).not.toContain(
+      "a confirmed reviewer already fails the criterion",
     );
     const skill = readFileSync(`${root}SKILL.md`, "utf8");
     expect(skill).toContain(
-      "preserve the confirmed observations, close the gap yourself",
+      "missing host evidence — an unchecked channel or unretained host history",
     );
     expect(skill).toContain(
-      "where confirmed observations already settle the score, record them with the gap noted instead of stopping",
+      "preserve the confirmed observations, close any unchecked channel yourself",
+    );
+    expect(skill).toContain(
+      "only where confirmed observations already fix the criterion's exact rung",
+    );
+    expect(skill).toContain(
+      "a confirmed in-scope reviewer already at `absent`",
+    );
+    expect(skill).not.toContain(
+      "where confirmed observations already settle the score",
     );
     const criteria = readFileSync(
       `${root}criteria/M7-pr-lifecycle-review.yaml`,
