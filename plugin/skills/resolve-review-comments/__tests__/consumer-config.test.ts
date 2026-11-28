@@ -28,6 +28,7 @@ function runConfig(overlay: string) {
     if (v !== undefined && k !== "JIG_OVERLAY" && !k.startsWith("JIG__"))
       env[k] = v;
   env.JIG_CONSUMER_ROOT = repo;
+  env.JIG_USER_LAYER = "off";
   const r = spawnSync(process.execPath, [SCRIPT], {
     cwd: repo,
     env,

@@ -150,6 +150,14 @@ describe("a transparent follow-up", () => {
     expect(transparent("coderabbitai", ACKNOWLEDGEMENT)).toBe(true);
   });
 
+  test("generated chat prose without an acknowledgement is not transparent", () => {
+    const body = [
+      CODERABBIT_CHAT_MARKER,
+      "The fix misses another call site in the same guard.",
+    ].join("\n");
+    expect(transparent("coderabbitai", body)).toBe(false);
+  });
+
   test("the login matches without regard to case or a [bot] suffix", () => {
     expect(transparent("CodeRabbitAI[bot]", ACKNOWLEDGEMENT)).toBe(true);
   });
