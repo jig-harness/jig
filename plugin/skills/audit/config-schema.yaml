@@ -1098,7 +1098,7 @@ fields:
     nullable: true
     read_by: [do-item]
     repository_only: true
-    since: next
+    since: 0.323.0
   do_item.arm_drive:
     type: enum
     values: [auto, tab, background, print]
