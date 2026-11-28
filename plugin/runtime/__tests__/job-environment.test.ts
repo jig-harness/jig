@@ -16,6 +16,9 @@ import { jobFiles } from "../scheduler.ts";
 
 const managed = new Set(["HOME", "PATH", "JIG_HOME"]);
 
+/** A job file's bytes, as the installed job is read. */
+const utf8 = (text: string) => new TextEncoder().encode(text);
+
 function plist(env: Record<string, string>): string {
   return jobFiles("launchd", {
     command: ["bun", "launcher.ts", "--", "dispatch", "--apply"],
@@ -40,7 +43,7 @@ describe("the variables kept from the installed launchd job", () => {
       JIRA_TOKEN_COMMAND: "broker token --site 'a&b'",
       JIG_NOTIFY_URL: "https://hooks.example/<secret>",
     });
-    expect(carriedEnvironment(installed, managed)).toEqual({
+    expect(carriedEnvironment(utf8(installed), managed)).toEqual({
       ok: true,
       value: {
         JIRA_TOKEN_COMMAND: "broker token --site 'a&b'",
@@ -54,7 +57,7 @@ describe("the variables kept from the installed launchd job", () => {
   });
 
   test("refuse a binary plist rather than reading it as holding none", () => {
-    const refused = carriedEnvironment("bplist00\u0000binary", managed);
+    const refused = carriedEnvironment(utf8("bplist00\u0000binary"), managed);
     expect(refused.ok).toBe(false);
     if (refused.ok) return;
     expect(refused.failure.reason).toContain("plutil -convert xml1");
@@ -62,7 +65,9 @@ describe("the variables kept from the installed launchd job", () => {
 
   test("refuse an entry whose value is not a string", () => {
     const refused = carriedEnvironment(
-      `<?xml version="1.0"?><plist><dict><key>EnvironmentVariables</key><dict><key>RETRIES</key><integer>3</integer><key>TOKEN</key><string>kept-secret</string></dict></dict></plist>`,
+      utf8(
+        `<?xml version="1.0"?><plist><dict><key>EnvironmentVariables</key><dict><key>RETRIES</key><integer>3</integer><key>TOKEN</key><string>kept-secret</string></dict></dict></plist>`,
+      ),
       managed,
     );
     expect(refused.ok).toBe(false);
@@ -73,9 +78,11 @@ describe("the variables kept from the installed launchd job", () => {
 
   test("refuse a kept value with a line break, naming the variable and not the value", () => {
     const refused = carriedEnvironment(
-      plist({ PATH: "/bin" }).replace(
-        "</dict>",
-        "<key>MULTI</key><string>line-one&#10;line-two</string></dict>",
+      utf8(
+        plist({ PATH: "/bin" }).replace(
+          "</dict>",
+          "<key>MULTI</key><string>line-one&#10;line-two</string></dict>",
+        ),
       ),
       managed,
     );
@@ -90,7 +97,7 @@ describe("the variables kept from the installed launchd job", () => {
       "</dict>",
       "<key>EMPTY</key><string/><key>AMP</key><string>a&#38;b&#x3c;c</string></dict>",
     );
-    expect(carriedEnvironment(edited, managed)).toEqual({
+    expect(carriedEnvironment(utf8(edited), managed)).toEqual({
       ok: true,
       value: { EMPTY: "", AMP: "a&b<c" },
     });
@@ -101,7 +108,7 @@ describe("the variables kept from the installed launchd job", () => {
       "</dict>",
       "<key>ONCE</key><string>&#38;lt;</string><key>FAR</key><string>&#1114112;</string></dict>",
     );
-    expect(carriedEnvironment(edited, managed)).toEqual({
+    expect(carriedEnvironment(utf8(edited), managed)).toEqual({
       ok: true,
       value: { ONCE: "&lt;", FAR: "&#1114112;" },
     });
@@ -124,7 +131,7 @@ describe("the variables kept from the installed launchd job", () => {
     expect(parseLaunchdEnvironment(edited)).toEqual(
       ok({ PATH: "/usr/bin", LINEAR_API_KEY: "lin-value" }),
     );
-    expect(carriedEnvironment(edited, managed)).toEqual({
+    expect(carriedEnvironment(utf8(edited), managed)).toEqual({
       ok: true,
       value: { LINEAR_API_KEY: "lin-value" },
     });
@@ -147,12 +154,7 @@ describe("the installed job's bytes, read only as UTF-8", () => {
 
   test("keep a job with a byte order mark and no declared encoding", () => {
     const text = job(`<?xml version="1.0"?>`, "ünï");
-    const bytes = new Uint8Array([
-      0xef,
-      0xbb,
-      0xbf,
-      ...new TextEncoder().encode(text),
-    ]);
+    const bytes = new Uint8Array([0xef, 0xbb, 0xbf, ...utf8(text)]);
     expect(carriedEnvironment(bytes, managed)).toEqual({
       ok: true,
       value: { TOKEN: "ünï" },
@@ -172,9 +174,9 @@ describe("the installed job's bytes, read only as UTF-8", () => {
     expect(refused.failure.reason).not.toContain("zq-hidden");
   });
 
-  test("refuse a decoded job that declares an encoding other than UTF-8", () => {
+  test("refuse a job that declares windows-1252 though its bytes are ASCII", () => {
     const refused = carriedEnvironment(
-      job(`<?xml version='1.0' encoding='windows-1252'?>`, "plain"),
+      utf8(job(`<?xml version='1.0' encoding='windows-1252'?>`, "plain")),
       managed,
     );
     expect(refused.ok).toBe(false);
@@ -194,9 +196,25 @@ describe("the installed job's bytes, read only as UTF-8", () => {
     expect(refused.failure.reason).not.toContain("zq-hidden");
   });
 
+  test("keep a job that declares UTF-8 by its UTF8 alias", () => {
+    const bytes = utf8(job(`<?xml version="1.0" encoding="UTF8"?>`, "ä"));
+    expect(carriedEnvironment(bytes, managed)).toEqual({
+      ok: true,
+      value: { TOKEN: "ä" },
+    });
+  });
+
+  test("refuse a binary plist whose bytes are not UTF-8 as not an XML plist", () => {
+    const bytes = new Uint8Array([...utf8("bplist00"), 0xd1, 0x01, 0x02, 0xff]);
+    const refused = carriedEnvironment(bytes, managed);
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    expect(refused.failure.reason).toContain("not an XML plist");
+  });
+
   test("never repeat a declared encoding that is not an encoding's name", () => {
     const refused = carriedEnvironment(
-      job(`<?xml version="1.0" encoding="secret value"?>`, "plain"),
+      utf8(job(`<?xml version="1.0" encoding="secret value"?>`, "plain")),
       managed,
     );
     expect(refused.ok).toBe(false);
@@ -221,7 +239,7 @@ describe("an environment read whole or not at all", () => {
       "<dict><key>A</key><string><![CDATA[a&b]]></string></dict>",
     );
     expect(parseLaunchdEnvironment(text).ok).toBe(false);
-    expect(carriedEnvironment(text, managed).ok).toBe(false);
+    expect(carriedEnvironment(utf8(text), managed).ok).toBe(false);
   });
 
   test("refuses a non-string entry beside valid ones", () => {
@@ -303,7 +321,7 @@ describe("an environment read whole or not at all", () => {
     const read = parseLaunchdEnvironment(text);
     expect(read.ok).toBe(false);
     expect(JSON.stringify(read)).not.toContain("secret");
-    expect(carriedEnvironment(text, managed).ok).toBe(false);
+    expect(carriedEnvironment(utf8(text), managed).ok).toBe(false);
   });
 
   test("keeps a variable named __proto__ as an own entry", () => {
