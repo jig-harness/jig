@@ -1755,8 +1755,14 @@ its next `jig install dispatch --yes`. `jig install dispatch
 repository turns on and lacks, and those whose description an earlier
 release wrote, and creates or updates them with `--yes`, as
 `jig dispatch labels` does with no job installed. The earlier
-`jig dispatch install [--interval 5m] [--yes] [--uninstall]` keeps working,
-and is the one form that sets an interval other than the machine file's.
+`jig dispatch install [--interval 5m] [--env NAME] [--yes] [--uninstall]`
+keeps working, and is the one form that sets an interval other than the
+machine file's. On macOS, `jig install dispatch --env NAME` (repeatable)
+writes the named variable's value from the installing shell into both
+launchd jobs, for a tracker or notification credential the scheduled tick
+needs, and a reinstall keeps every variable a person added to the installed
+launchd job; the preview names those variables and never shows their
+values ([the scheduled tick's environment](CONFIGURATION.md#the-scheduled-ticks-environment)).
 
 The session runtime it reads and launches in is
 [Orca](https://www.onorca.dev) (`ORCA_CLI_COMMAND`, else the command in
