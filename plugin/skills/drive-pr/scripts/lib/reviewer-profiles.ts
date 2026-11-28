@@ -64,6 +64,11 @@ export function reviewerProfile(app: string): ReviewerProfile | undefined {
     : undefined;
 }
 
+/** The forge login that supplies an app's review evidence. */
+export function reviewerBotLogin(app: string): string {
+  return reviewerProfile(app)?.botLogin ?? `${app}[bot]`;
+}
+
 /**
  * Why a drive could not read the evidence of the reviewer app `app` (`""`
  * for none) with `evidence`, so that it would wait for it until its timeout;

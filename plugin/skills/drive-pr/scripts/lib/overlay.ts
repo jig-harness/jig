@@ -36,6 +36,7 @@ import {
   evidenceProblem,
   REVIEWER_EVIDENCE,
   type ReviewerEvidence,
+  reviewerBotLogin,
   reviewerProfile,
 } from "./reviewer-profiles.ts";
 import { attachedTree } from "./driven-branch.ts";
@@ -306,10 +307,11 @@ export function skipNoticeMarker(): string {
  */
 export function reviewBotEntries(): (string | ReviewBot)[] | undefined {
   const bots = section("review").bots;
-  if (!Array.isArray(bots)) {
+  if (bots === undefined) {
     const profile = reviewerProfile(reviewerApp());
-    return profile ? [profile.botLogin] : undefined;
+    return profile ? [reviewerBotLogin(reviewerApp())] : undefined;
   }
+  if (!Array.isArray(bots)) return undefined;
   return bots.filter(
     (b): b is string | ReviewBot =>
       (typeof b === "string" && b !== "") ||

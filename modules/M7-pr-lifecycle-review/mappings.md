@@ -489,7 +489,7 @@ validated one.
 | [openai/codex-action](https://github.com/openai/codex-action) | An OpenAI-compatible key as a secret | The workflow job | None of its own: the workflow posts the action's final message, and adds the stamp if it wants one | No | None |
 | [anthropics/claude-code-action](https://github.com/anthropics/claude-code-action) with an API key | An Anthropic key as a secret | The workflow job | One sticky comment with `use_sticky_comment`, plus inline comments; no commit stamp by default | No | None |
 | [opencode GitHub Action](https://opencode.ai/docs/github/) | A model key as a secret, any provider | The workflow job | Replies and comments only as its prompt directs; no commit stamp by default | No | None |
-| [CodeRabbit](https://www.coderabbit.ai/) for public repositories | None: a hosted service, free for open-source repositories on its own terms | Its own check run, `CodeRabbit` | None | Yes: each review names its commit | Built in: `review.reviewer_app: coderabbitai` |
+| [CodeRabbit](https://www.coderabbit.ai/) for public repositories | None: a hosted service, free for open-source repositories on its own terms | Its own check run, `CodeRabbit` | None | Yes: each review names its commit | Built in: `review.reviewer_app: coderabbitai`; default bot login `coderabbitai[bot]` |
 | Reference reviewer, `jig-harness/ai-review` (planned, not yet published) | A model key as a secret, an OpenAI-compatible or Anthropic endpoint the team chooses | Yes | One summary comment updated in place, naming the reviewed commit and any skip, plus inline comments | No | None until published and validated |
 
 A row names a reviewer a team can add; it does not rank them. An adopter

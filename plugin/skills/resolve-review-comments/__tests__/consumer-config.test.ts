@@ -47,6 +47,14 @@ test("the gate command alone is a usable configuration", () => {
   );
 });
 
+test("a known reviewer app supplies the effective bot identity", () => {
+  const result = runConfig(
+    "gates:\n  command: make check\nreview:\n  reviewer_app: coderabbitai\n",
+  );
+  expectSpawnExit(result, 0);
+  expect(result.stdout).toContain("review.bots: coderabbitai[bot]\n");
+});
+
 test("a configuration without the gate command is refused", () => {
   const result = runConfig('review:\n  bots: ["example-review[bot]"]\n');
   expectSpawnExit(result, 2);

@@ -1265,6 +1265,21 @@ pull_requests:
     ).toBe("suggestion");
   });
 
+  test("a known app and an explicit empty bot list suppress bot suggestions", () => {
+    const knownApp = online(
+      "repository:\n  base_branch: main\nreview:\n  reviewer_app: coderabbitai\n",
+    );
+    const emptyList = online(
+      "repository:\n  base_branch: main\nreview:\n  bots: []\n",
+    );
+    expect(ids(knownApp)).not.toContain(
+      "suggestion:review.bots:example-review",
+    );
+    expect(ids(emptyList)).not.toContain(
+      "suggestion:review.bots:example-review",
+    );
+  });
+
   test("a suggested reviewer gains [bot] only when the forge says it is a bot, and keeps its login only when the forge says it is not", () => {
     const report = online("repository:\n  base_branch: main\n", {
       "--state merged": pulls(

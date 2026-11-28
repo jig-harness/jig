@@ -788,7 +788,7 @@ async function reviewBotFindings(
   const bots = found.map((bot) =>
     suggest(
       bot,
-      `${bot.evidence.join("; ")}: list it in review.bots so the review skills work its threads`,
+      `${bot.evidence.join("; ")}: list it in review.bots to enable held-reply chat transparency when Jig recognises the bot's finding format`,
       { key: bot.login },
     ),
   );

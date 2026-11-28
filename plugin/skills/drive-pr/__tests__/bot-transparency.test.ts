@@ -93,7 +93,7 @@ function readsOverlay(config: string, script: string): boolean[] {
     );
     const result = spawnSync("bun", ["-e", script], {
       cwd: dir,
-      env: { ...env, JIG_OVERLAY: overlay },
+      env: { ...env, JIG_OVERLAY: overlay, JIG_USER_LAYER: "off" },
       encoding: "utf8",
     });
     expectSpawnExit(
@@ -131,6 +131,20 @@ describe("a transparent follow-up", () => {
       ).toEqual([expected]);
     },
   );
+
+  test("does not default an invalid bot declaration", () => {
+    const script = [
+      `import { isTransparentFollowUp } from ${JSON.stringify(join(SCRIPTS, "lib/bot-confirmation.ts"))};`,
+      `import { qualifyingOutcome } from ${JSON.stringify(join(SCRIPTS, "lib/outcome.ts"))};`,
+      `console.log(JSON.stringify([isTransparentFollowUp({ authorLogin: "coderabbitai[bot]", body: ${JSON.stringify(ACKNOWLEDGEMENT)} }, qualifyingOutcome)]));`,
+    ].join("\n");
+    expect(
+      readsOverlay(
+        "review:\n  reviewer_app: coderabbitai\n  bots: coderabbitai[bot]",
+        script,
+      ),
+    ).toEqual([false]);
+  });
 
   test("a listed bot's chat acknowledgement with no outcome token and no severity line", () => {
     expect(transparent("coderabbitai", ACKNOWLEDGEMENT)).toBe(true);
