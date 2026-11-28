@@ -258,7 +258,7 @@ export function overrideComment(
     ...(override.preflight === undefined
       ? []
       : [
-          `- the repository's preflight check: ${plain(oneLine(override.preflight))}`,
+          `- the repository's preflight check refused the claim on blockers (its message is not recorded)`,
         ]),
     "",
     OVERRIDE_CONSEQUENCE,
@@ -282,9 +282,7 @@ export function markerOverride(override: BlockerOverride | null): {
         key: b.key,
         state: b.sharedVisibility === true ? b.state : null,
       })),
-      ...(override.preflight === undefined
-        ? {}
-        : { preflight: override.preflight }),
+      ...(override.preflight === undefined ? {} : { preflight: "blockers" }),
     },
   };
 }

@@ -924,8 +924,8 @@ implementation. Skip this check for issues about the repository's own code.
    claim. Report `"override": {"comment": {"posted": false}}` or
    `"override": {"label": {"added": false}}` to the person with its
    `status` and `reason`. Never blindly repost an override comment without
-   its marker: when `override.comment.status` is `"not_posted"` or
-   `"indeterminate"`, write `<file>` with a `## Blocker override` heading,
+   its marker: when `override.comment.status` is `"not_posted"` (the write
+   was proven unsent), write `<file>` with a `## Blocker override` heading,
    the person, the reason, each blocker (key alone unless `sharedVisibility`
    is `true`), the consequence, and the exact `override.comment.marker` line
    from the JSON, then run
@@ -933,7 +933,8 @@ implementation. Skip this check for issues about the repository's own code.
    That command checks existing trusted comments for the attempt id before
    posting, skips posting if it already landed, and exits `1` with
    `"status": "indeterminate"` when comments cannot be read or the write
-   cannot be confirmed; on `"indeterminate"`, stop retrying and report the
+   cannot be confirmed; on `"indeterminate"` never run `comment` again: the first write may have landed
+   but not yet be listed. Report the
    indeterminate outcome and attempt id to the person. The pull request
    carries the `## Blocker override` section
    [Pull-request policy](#pull-request-policy) describes. A person
