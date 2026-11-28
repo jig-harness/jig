@@ -9,6 +9,7 @@ import { JIG_TAXONOMY } from "../../do-item/__tests__/github-fixtures.ts";
 import { jira, routes } from "../../do-item/__tests__/jira-fixtures.ts";
 import {
   ANSWER_MS,
+  COUNT_MS,
   facetFindings,
   poolScopeFindings,
 } from "../scripts/lib/tracker-fit.ts";
@@ -308,5 +309,32 @@ describe("the audit's open population scope counts", () => {
       },
     ]);
     expect(await poolScopeFindings({} as Tracker)).toEqual([]);
+  });
+  test("bounds the count by a few seconds, well inside one request's own deadline", () => {
+    expect(COUNT_MS).toBeLessThanOrEqual(5_000);
+    expect(COUNT_MS).toBeLessThan(JIRA_TIMEOUT_MS);
+  });
+  test("reports a count past its bound as unchecked, naming the bound, and waits no longer", async () => {
+    let aborted = false;
+    const t = {
+      // Never answers, and ignores its signal: the bound alone ends the wait.
+      poolScopeCounts: (signal?: AbortSignal) => {
+        signal?.addEventListener("abort", () => {
+          aborted = true;
+        });
+        return new Promise(() => {});
+      },
+    } as unknown as Tracker;
+    const started = performance.now();
+    expect(await poolScopeFindings(t, 50)).toEqual([
+      {
+        id: "unchecked:issue_tracker.pool_scope",
+        severity: "warning",
+        message:
+          "open population counts are unchecked: no answer within 0.05 seconds",
+      },
+    ]);
+    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(aborted).toBe(true);
   });
 });

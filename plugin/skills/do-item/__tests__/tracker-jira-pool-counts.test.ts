@@ -1,12 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  type Call,
-  issue,
-  jira,
-  jqlOf,
-  page,
-  routes,
-} from "./jira-fixtures.ts";
+import { type Call, jira, jqlOf, routes } from "./jira-fixtures.ts";
 
 const TYPES = {
   "GET issue/createmeta/ENG/issuetypes": {
@@ -19,88 +12,59 @@ const TYPES = {
   },
 };
 
+const COUNT = "POST search/approximate-count";
+
 describe("Jira open population counts", () => {
-  test("counts the population the open read keeps, in project and scope", async () => {
+  test("asks Jira for an estimate of the project and the scope, one request each, reading no issue", async () => {
     const { t, calls } = jira(
       routes({
         ...TYPES,
-        "POST search/jql": (c: Call) =>
-          jqlOf(c).includes("issuetype")
-            ? page(issue({ key: "ENG-1" }))
-            : page(
-                issue({ key: "ENG-1" }),
-                issue({ key: "ENG-2" }),
-                issue({ key: "ENG-3", category: "done", status: "Done" }),
-              ),
+        [COUNT]: (c: Call) =>
+          jqlOf(c).includes("issuetype") ? { count: 1200 } : { count: 9800 },
       }),
       { issue_tracker: { jira: { pool_issue_types: ["Task"] } } },
     );
     const signal = new AbortController().signal;
     expect(await t.poolScopeCounts?.(signal)).toEqual({
-      project: 2,
-      pool: 1,
+      project: 9800,
+      pool: 1200,
       scoped: true,
-      approximate: false,
+      approximate: true,
     });
-    const searches = calls.filter((c) => c.route === "POST search/jql");
-    expect(searches.map(jqlOf)).toEqual([
-      "project = ENG AND statusCategory != Done ORDER BY created ASC",
-      "project = ENG AND statusCategory != Done AND issuetype in (10001) ORDER BY created ASC",
+    const counts = calls.filter((c) => c.route === COUNT);
+    expect(counts.map(jqlOf)).toEqual([
+      "project = ENG AND statusCategory != Done",
+      "project = ENG AND statusCategory != Done AND issuetype in (10001)",
     ]);
-    expect(searches.every((c) => c.signal === signal)).toBe(true);
-    expect(
-      searches.every(
-        (c) =>
-          JSON.stringify((c.body as { fields?: unknown }).fields) ===
-          '["status","issuetype","resolution"]',
-      ),
-    ).toBe(true);
-    expect(calls.some((c) => c.route === "POST search/approximate-count")).toBe(
-      false,
-    );
+    expect(counts.every((c) => c.signal === signal)).toBe(true);
+    expect(calls.some((c) => c.route === "POST search/jql")).toBe(false);
   });
-  test("counts a done-category issue the model reads as blocked, and drops a closed one", async () => {
-    const { t } = jira(
-      routes({
-        "POST search/jql": page(
-          issue({
-            key: "ENG-1",
-            type: "Epic",
-            status: "Waiting",
-            category: "done",
-          }),
-          issue({
-            key: "ENG-2",
-            type: "Story",
-            status: "Waiting",
-            category: "done",
-          }),
-          issue({ key: "ENG-3" }),
-        ),
-      }),
-      {
-        issue_tracker: {
-          jira: { states_by_type: { Epic: { blocked: "Waiting" } } },
-        },
+  test("counts the configured blocked status as open, as the open read selects it", async () => {
+    const { t, calls } = jira(routes({ [COUNT]: { count: 3 } }), {
+      issue_tracker: {
+        jira: { states_by_type: { Epic: { blocked: "Waiting" } } },
       },
+    });
+    expect((await t.poolScopeCounts?.())?.project).toBe(3);
+    expect(jqlOf(calls.find((c) => c.route === COUNT) as Call)).toContain(
+      'status = "Waiting"',
     );
-    expect((await t.poolScopeCounts?.())?.project).toBe(2);
   });
-  test("refuses a count over an unreadable status instead of inventing one", async () => {
-    const { t } = jira(
-      routes({ "POST search/jql": page({ key: "ENG-1", fields: {} }) }),
-    );
-    await expect(t.poolScopeCounts?.()).rejects.toThrow();
+  test("refuses an answer without a count instead of inventing one", async () => {
+    for (const answer of [{}, { count: -1 }, { count: 1.5 }, { count: "9" }]) {
+      const { t } = jira(routes({ [COUNT]: answer }));
+      await expect(t.poolScopeCounts?.()).rejects.toThrow(/count/);
+    }
   });
-  test("reads once when unscoped and preserves zero", async () => {
-    const { t, calls } = jira(routes({ "POST search/jql": page() }));
+  test("asks once when unscoped and preserves zero", async () => {
+    const { t, calls } = jira(routes({ [COUNT]: { count: 0 } }));
     expect(await t.poolScopeCounts?.()).toEqual({
       project: 0,
       pool: 0,
       scoped: false,
-      approximate: false,
+      approximate: true,
     });
-    expect(calls.filter((c) => c.route === "POST search/jql")).toHaveLength(1);
+    expect(calls.filter((c) => c.route === COUNT)).toHaveLength(1);
   });
   test("forwards an aborted signal before issuing a request", async () => {
     const { t, calls } = jira(routes({}));

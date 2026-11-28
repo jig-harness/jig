@@ -896,6 +896,35 @@ function nextToken(
 }
 
 /**
+ * Jira's estimate of how many issues a JQL query selects, through
+ * `POST search/approximate-count`: one request, whatever the population, and
+ * no issue read. An answer without a non-negative whole `count` fails the read.
+ */
+export async function approximateCount(
+  transport: JiraTransport,
+  jql: string,
+  where: string,
+  signal?: AbortSignal,
+): Promise<number> {
+  const answer = await transport(
+    {
+      method: "POST",
+      path: "search/approximate-count",
+      body: { jql },
+      idempotent: true,
+    },
+    signal,
+  );
+  const count = (answer as Record<string, unknown> | null)?.count;
+  if (typeof count !== "number" || !Number.isInteger(count) || count < 0)
+    throw shape(
+      where,
+      "the approximate count is missing or not a whole number",
+    );
+  return count;
+}
+
+/**
  * Every issue a JQL query selects, through `POST search/jql`. Pages follow
  * `nextPageToken` until `isLast`; a page without `isLast`, a token seen
  * twice, or a key repeated across pages fails the read.

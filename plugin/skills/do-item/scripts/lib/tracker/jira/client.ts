@@ -34,7 +34,6 @@ import {
   optStr,
   parseIssue,
   record,
-  stateInputOf,
   str,
 } from "./read.ts";
 
@@ -44,6 +43,7 @@ import type { JiraModel } from "./model.ts";
 import type { JiraSettings, LinkedRelation } from "./settings.ts";
 import {
   abortedError,
+  approximateCount,
   JiraApiError,
   JIRA_CREDENTIAL_HELP,
   type JiraTransport,
@@ -108,11 +108,15 @@ export interface Client {
     fields?: ReadonlyArray<string>,
   ): Promise<JiraIssue[]>;
   /**
-   * How many issues a JQL query selects that the model reads as open, from
-   * each issue's status, type and resolution alone: no field or facet is
-   * resolved and no issue parsed. An unreadable status throws.
+   * Jira's estimate of how many issues an unordered JQL query selects, in one
+   * request: no issue is read, so the count is the query's selection, not the
+   * model's reading of each issue's state.
    */
-  countOpen(jql: string, where: string, signal?: AbortSignal): Promise<number>;
+  approximateCount(
+    jql: string,
+    where: string,
+    signal?: AbortSignal,
+  ): Promise<number>;
   /** The issue's children: its sub-tasks, or an Epic's issues. */
   children(
     key: string,
@@ -661,25 +665,13 @@ export function jiraClient(opts: ClientOptions): Client {
       );
     },
 
-    async countOpen(jql, where, signal) {
+    async approximateCount(jql, where, signal) {
       if (signal?.aborted === true) throw abortedError(signal);
       const authenticated = myself();
       await (signal === undefined
         ? authenticated
         : until(authenticated, signal));
-      const read = await searchPages(
-        transport,
-        jql,
-        ["status", "issuetype", "resolution"],
-        where,
-        signal,
-      );
-      return read.filter(
-        (i) =>
-          !["completed", "canceled", "duplicate"].includes(
-            model.read(stateInputOf(i)).state.type,
-          ),
-      ).length;
+      return approximateCount(transport, jql, where, signal);
     },
 
     children(key, open = false, signal) {

@@ -22,17 +22,37 @@ import type { Finding } from "./schema.ts";
  */
 export const ANSWER_MS = JIRA_TIMEOUT_MS + 5_000;
 
-/** `ask`'s answer, or a refusal once it has given none within the time allowed. */
-async function within<T>(ask: (signal: AbortSignal) => Promise<T>): Promise<T> {
+/**
+ * How long the open population counts may take. The counts are information,
+ * not a check the configuration fails, so a tracker slow to estimate them
+ * leaves them unchecked rather than holding the audit for a request's whole
+ * deadline.
+ */
+export const COUNT_MS = 5_000;
+
+/**
+ * `ask`'s answer, or a refusal once it has given none within `ms`. The refusal
+ * ends the wait at the bound even when `ask` does not heed its signal.
+ */
+async function within<T>(
+  ask: (signal: AbortSignal) => Promise<T>,
+  ms = ANSWER_MS,
+): Promise<T> {
   const deadline = new AbortController();
-  const timer = setTimeout(
-    () =>
-      deadline.abort(new Error(`no answer within ${ANSWER_MS / 1000} seconds`)),
-    ANSWER_MS,
-  );
-  timer.unref();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const reason = new Error(`no answer within ${ms / 1000} seconds`);
+      deadline.abort(reason);
+      reject(reason);
+    }, ms);
+    timer.unref();
+  });
+  const answer = ask(deadline.signal);
+  // An answer that settles after the bound is no longer awaited.
+  answer.catch(() => {});
   try {
-    return await ask(deadline.signal);
+    return await Promise.race([answer, expired]);
   } finally {
     clearTimeout(timer);
   }
@@ -122,12 +142,18 @@ export async function facetFindings(tracker: Tracker): Promise<Finding[]> {
   });
 }
 
-/** Open population counts, where the adapter can compare its configured scope. */
-export async function poolScopeFindings(tracker: Tracker): Promise<Finding[]> {
+/**
+ * Open population counts, where the adapter can compare its configured scope,
+ * bounded by `ms` (`COUNT_MS`); a count past it is reported unchecked.
+ */
+export async function poolScopeFindings(
+  tracker: Tracker,
+  ms = COUNT_MS,
+): Promise<Finding[]> {
   const read = tracker.poolScopeCounts?.bind(tracker);
   if (read === undefined) return [];
   try {
-    const counts = await within(read);
+    const counts = await within(read, ms);
     const scope = counts.scoped
       ? `${counts.pool} within the configured pool issue-type scope`
       : "no pool issue-type scope is configured";

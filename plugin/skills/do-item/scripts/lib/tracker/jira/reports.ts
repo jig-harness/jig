@@ -35,6 +35,7 @@ import { type JiraIssue, parseIssue, stateInputOf, record } from "./read.ts";
 import {
   fieldOfLabel,
   inProject,
+  projectFilter,
   labelOrEpicType,
   KEY,
   keyList,
@@ -587,10 +588,12 @@ export function reportOperations(
     async poolScopeCounts(signal) {
       await client.authenticate(signal);
       const clause = await client.poolScope(signal);
+      // Jira's estimate of the open read's selection, one request per count:
+      // paging the population itself costs a request per hundred issues.
       async function count(...clauses: string[]): Promise<number> {
         if (signal?.aborted === true) throw abortedError(signal);
-        return client.countOpen(
-          inProject(project, open, ...clauses),
+        return client.approximateCount(
+          projectFilter(project, open, ...clauses),
           `open issues of ${project}`,
           signal,
         );
@@ -601,7 +604,7 @@ export function reportOperations(
         project: total,
         pool,
         scoped: clause !== null,
-        approximate: false,
+        approximate: true,
       };
     },
 

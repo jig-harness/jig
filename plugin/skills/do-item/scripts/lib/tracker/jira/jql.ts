@@ -46,7 +46,12 @@ export const ORDER = " ORDER BY created ASC";
 
 /** `project = KEY AND <clauses>`, ordered by creation; the key is a team key, safe unquoted. */
 export function inProject(project: string, ...clauses: string[]): string {
-  return `${[`project = ${project}`, ...clauses].join(" AND ")}${ORDER}`;
+  return `${projectFilter(project, ...clauses)}${ORDER}`;
+}
+
+/** The same selection with no ordering, for a request that only counts it. */
+export function projectFilter(project: string, ...clauses: string[]): string {
+  return [`project = ${project}`, ...clauses].join(" AND ");
 }
 
 /**

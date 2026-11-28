@@ -26,8 +26,9 @@ added since, and it does not repeat a recommendation the team declined.
    reached, configured GitHub, Jira or Linear facet stores that cannot be used
    (on Jira, a facet's field missing from the create screen of an issue type
    Jig files),
-   counts of open Jira issues before and after the configured
-   pool issue-type scope, declared values the repository contradicts (`stacking: none` with
+   Jira's estimate of the open issues before and after the configured
+   pool issue-type scope (one request each, given a few seconds before the
+   counts are reported unchecked), declared values the repository contradicts (`stacking: none` with
    stacked pull requests open), tracker labels its label taxonomy does not
    define, a comment-only scheduled sweep missing `--position <file>` (so
    issues past the read cap are never reached), and settings its shape suggests. It also reports what a run
