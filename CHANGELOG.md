@@ -404,6 +404,13 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.324.1] - 2026-11-28
+
+### Fixed
+
+- Filing drafts whose labels require an epic now checks the actual issue type
+  and create screen together, so a field the screen omits can be left blank.
+
 ## [0.324.0] - 2026-11-28
 
 ### Changed
@@ -11733,7 +11740,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.324.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.324.1...HEAD
+[0.324.1]: https://github.com/jig-harness/jig/compare/v0.324.0...v0.324.1
 [0.324.0]: https://github.com/jig-harness/jig/compare/v0.323.3...v0.324.0
 [0.323.3]: https://github.com/jig-harness/jig/compare/v0.323.2...v0.323.3
 [0.323.2]: https://github.com/jig-harness/jig/compare/v0.323.1...v0.323.2
