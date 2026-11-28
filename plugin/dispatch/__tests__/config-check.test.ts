@@ -280,6 +280,12 @@ describe("checkConfiguration reads only what the tick can read", () => {
     expect(checkConfiguration(root).map((f) => f.part)).toEqual(["dispatch"]);
   });
 
+  it("refuses a configuration under a directory link to nothing, rather than reading defaults", () => {
+    const root = dir();
+    symlinkSync(join(root, "nowhere"), join(root, ".config"));
+    expect(checkConfiguration(root).map((f) => f.part)).toEqual(["dispatch"]);
+  });
+
   it("refuses a label taxonomy outside the checkout before the tracker reads it", () => {
     const outside = dir({ "taxonomy.yaml": "SECRET-BYTES: [" });
     const root = dir({

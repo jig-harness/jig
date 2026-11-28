@@ -98,6 +98,33 @@ function leavesCheckout(inside: string): boolean {
 }
 
 /**
+ * The first link among `entry`'s ancestors below `base` that exists but whose
+ * target does not, as a path relative to `base`; `null` when none does. An
+ * entry under such a link is unreadable, not absent.
+ */
+function danglingAncestor(base: string, entry: string): string | null {
+  const parts = relative(base, entry).split(sep).slice(0, -1);
+  let current = base;
+  for (const part of parts) {
+    current = join(current, part);
+    try {
+      lstatSync(current);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+    try {
+      realpathSync(current);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT")
+        return relative(base, current);
+      throw error;
+    }
+  }
+  return null;
+}
+
+/**
  * A file of the checkout as text; `null` only when it is confirmed absent:
  * the entry itself does not exist (ENOENT on the entry, not on a link's
  * target). Any other way the lookup fails, a link whose target is missing,
@@ -114,8 +141,11 @@ function fileText(
     try {
       lstatSync(entry);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-      throw error;
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      const link = danglingAncestor(base, entry);
+      if (link !== null)
+        return { refused: `${link} is a link whose target does not exist` };
+      return null;
     }
     let real: string;
     try {
