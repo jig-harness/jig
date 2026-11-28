@@ -556,11 +556,13 @@ export function startupNext(
   };
 }
 
-/** Persisted startup evidence permits only the follow-up attempt that never began to retry. */
+/** Persisted startup evidence permits only a follow-up that left neither a result nor a question to retry. */
 export function retryableStartup(r: ReadRecord): boolean {
   return (
     r.record.action === "followup" &&
     r.result === null &&
+    questionOf(r.state) === null &&
+    r.report?.report.question === undefined &&
     r.state.kind === "ended" &&
     r.state.exit.startup !== undefined
   );

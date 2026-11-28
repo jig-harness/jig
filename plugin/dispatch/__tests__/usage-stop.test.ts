@@ -9,6 +9,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import type { LineSnapshot } from "../lib/dashboard-contract.ts";
+import { readOutcomes } from "../lib/followup-outcomes.ts";
 import { readRecord, recordResult, readResult } from "../lib/launches.ts";
 import { failedStartup, startupWall } from "../lib/session-startup.ts";
 import { stateDb } from "../lib/state.ts";
@@ -461,4 +462,68 @@ test("a nonzero pass that printed a question or recorded a result still walls on
     said: "Question: Should this release also tag the beta branch?",
   });
   expect(JSON.parse(row2.exit).startup).toBeUndefined();
+}, 60_000);
+
+test("a follow-up or pickup that printed a question with no result before hitting quota still walls its account and keeps the question instead of retrying", async () => {
+  const w = world();
+  current = w;
+  w.setConfig(
+    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\ndispatch:\n  identity: factory-bot\n  followup_command: /followup\n`,
+  );
+  withOrigin(w);
+  w.setIssues([assignedIssue(12, "factory-bot", [])]);
+  w.setAssigner(12, "maintainer", "WRITE");
+  w.setPrs("merged", [mergedPr(9, "feature/done", "2026-10-31T12:00:00Z")]);
+  w.setComments(9, []);
+  const ws = join(w.root, "ws-9");
+  mkdirSync(ws, { recursive: true });
+  w.setWorkspaces([{ branch: "feature/done", linkedPR: 9, path: ws }]);
+  const a = { ...account(w, "a", "a@example.com"), max: 5 };
+  const b = { ...account(w, "b", "b@example.com"), max: 5 };
+  const stages = ["pickup", "followup"] as const;
+  const repo = { followup_since: "2026-10-30T00:00:00Z" };
+  machineFile(w, [a], {}, [...stages], repo);
+  writeFileSync(
+    join(w.dir, "claude-said"),
+    "Question: Which environment should this target?\n",
+  );
+  const launched = (await applyTick(w, false)).repos[0]?.launches.filter(
+    (l) => l.outcome === "launched",
+  );
+  expect(launched?.map(({ action }) => action).sort()).toEqual(
+    [...stages].sort(),
+  );
+  await waitFor("both passes", () => claudeRuns(w).length === 2);
+  const resetMs = weeklyReset();
+  const ids = (launched ?? []).map(({ record }) => String(record));
+  for (const id of ids) {
+    const record = readRecord(id, dispatchState(w));
+    if (record?.sessionId == null) throw new Error(`no session for ${id}`);
+    writeTranscript(
+      record.configDir,
+      record.sessionId,
+      stoppedAtLimit(weeklyNotice(resetMs)),
+    );
+  }
+  writeFileSync(join(w.dir, "claude-exit"), "1");
+  await waitFor("both exits", () => ids.every((id) => exitWritten(w, id)));
+  rmSync(join(w.dir, "claude-exit"));
+
+  // Account is walled until the notice's reset.
+  const wall = wallOf("a", Date.now(), dispatchState(w));
+  expect(wall?.resetAt).toBe(isoFromMs(resetMs));
+
+  // Even with another free account available, neither the follow-up nor the pickup is retried:
+  // the follow-up's outcome records its question, and both keep their questions for a person.
+  machineFile(w, [a, b], {}, [...stages], repo);
+  const after =
+    (await applyTick(w, false)).repos[0]?.launches.filter(
+      (l) => l.outcome === "launched",
+    ) ?? [];
+  expect(after).toEqual([]);
+  const outcome = readOutcomes(SLUG, dispatchState(w)).get(9);
+  expect(outcome).toMatchObject({
+    outcome: "failed",
+    question: "Which environment should this target?",
+  });
 }, 60_000);
