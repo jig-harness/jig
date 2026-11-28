@@ -419,6 +419,38 @@ describe("Jira adapter: fields read as labels", () => {
     expect(writes(calls)).toEqual([]);
   });
 
+  it("keeps a version field read-only: neither a filing nor an update writes its value as a label", async () => {
+    const { t, calls } = jira(
+      routes({
+        "GET field": SITE_FIELDS,
+        "GET issue/ENG-1": issue({
+          key: "ENG-1",
+          labels: ["a"],
+          fields: { fixVersions: [{ id: "10001", name: "2.4" }] },
+        }),
+      }),
+      overlay({ "Fix versions": "fixversion:" }),
+    );
+    const refusal =
+      "label 'fixversion:2.5' is the value of the Jira field 'Fix versions' (issue_tracker.jira.field_labels.Fix versions), which the adapter reads but does not write; set the field in Jira";
+    const filed = await rejection(
+      t.createIssue({
+        title: "New",
+        description: "",
+        labels: ["a", "fixversion:2.5"],
+      }),
+    );
+    expect(filed).toBeInstanceOf(TrackerRequestError);
+    expect((filed as TrackerRequestError).code).toBe("invalid");
+    expect(String(filed)).toContain(refusal);
+    const added = await rejection(
+      t.updateIssue("ENG-1", { addLabels: ["fixversion:2.5"] }),
+    );
+    expect(added).toBeInstanceOf(TrackerRequestError);
+    expect(String(added)).toContain(refusal);
+    expect(writes(calls)).toEqual([]);
+  });
+
   it("removes real labels behind field prefixes without changing the fields", async () => {
     const { t, calls } = jira(
       routes({

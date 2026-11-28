@@ -27,7 +27,10 @@
  * (relative to the repository root), else `label-taxonomy.yaml` at the root.
  * `--check-tracker` also requires every label to name exactly one tracker
  * label, exactly and case included, as the tracker adapter does when it writes.
- * `--json` prints `{ valid, labels, errors, warnings, parsed }`.
+ * `--json` prints `{ valid, labels, fieldOnly, errors, warnings, parsed, missing }`:
+ * `labels` is the set to write, without the labels of a `field_only`
+ * category, which `fieldOnly` lists: their values are set on the tracker
+ * field after filing, and `--check-tracker` looks none of them up.
  *
  * Exit codes: 0 the labels are valid (warnings may be printed), 3 they are
  * not, 1 the taxonomy is missing, unreadable or fails its lint, the tracker

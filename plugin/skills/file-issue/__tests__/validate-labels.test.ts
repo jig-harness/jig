@@ -627,13 +627,14 @@ describe("the command line", () => {
     expect(out.stdout.toString()).toContain("WARNING: no label of category");
   });
 
-  test("--json prints valid, labels, errors, warnings and parsed", () => {
+  test("--json prints valid, labels, fieldOnly, errors, warnings and parsed", () => {
     const out = run(["--json", "--taxonomy", fixture, ...base, "pattern:x"]);
     expectSpawnExit(out, 3);
     const result = JSON.parse(out.stdout.toString());
     expect(Object.keys(result)).toEqual([
       "valid",
       "labels",
+      "fieldOnly",
       "errors",
       "warnings",
       "parsed",

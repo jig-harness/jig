@@ -116,6 +116,12 @@ A taxonomy is a closed vocabulary in families:
   accepts `flaky` and refuses `Foo bar`), can warn above a number of labels or when none is
   present, and can require an umbrella label beside its own: a facet never
   appears without the label it refines.
+  A category marked `field_only: true` holds values the tracker keeps in a
+  field it reads as labels but never writes, such as a Jira field behind
+  `issue_tracker.jira.field_labels` that keeps no issue facet (Fix versions
+  read as `fixversion:2.4`): its values are set on that field after
+  filing, never filed as labels, so a field-only category is never
+  recommended and no `requires` names it or its labels.
 
 ### The lint
 
@@ -124,7 +130,9 @@ names, closed non-empty types and statuses, every flag firing something
 with a scope and a rule for when it applies, every group with labels,
 every category with a prefix that no other prefix begins and with labels
 or an open pattern that compiles, no type, flag or group label inside a
-category's prefix, every `requires` naming a label of the file, every
+category's prefix, every `requires` naming a label of the file and none
+of a field-only category, every `requires_category` naming a category
+that is not field-only, every
 `color` six hex digits written as text (`cfd3d7`, no `#`: the colour the
 label shows in the tracker, recorded so it does not drift), and no unknown
 key (at the top level or in any entry) or repeated key.
@@ -159,13 +167,18 @@ it requires. Given the issue's own tracker type (`--native-type`, or the
 `issue_tracker.labels.epic_types` lists is checked as if it carried the epic
 label, so a `requires` naming that label is met by it. It warns, without
 failing, above a category's `max` and when
-a recommended category is absent. `--check-tracker` also rejects a label
+a recommended category is absent. A label of a field-only category is
+known, not rejected: it warns that the value is set on the tracker field
+after filing, and is left out of the labels to write. `--check-tracker` also rejects a label
 the tracker does not have and a name the tracker has more than one label
 of, matching names exactly, case included, as the tracker scripts do when
 they write. Exit `1` means the taxonomy is missing or fails
 the lint, the tracker could not be read, or, given a type, the label roles
 in `issue_tracker.labels` could not be read; `2` is a usage error. `--json`
-prints `{ valid, labels, errors, warnings, parsed }`.
+prints `{ valid, labels, fieldOnly, errors, warnings, parsed, missing }`:
+`labels` is the set to write, and `fieldOnly` the field-only labels left
+out of it, which `--check-tracker` does not look up among the tracker's
+labels.
 
 ## Labels from the change
 

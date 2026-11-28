@@ -14,12 +14,14 @@
 //   4. every group declares a non-empty `labels:`; `required:` is a boolean;
 //   5. every category declares a non-empty `prefix:`, no prefix begins
 //      another's, and it has `labels:`, an `open:` pattern that compiles, or
-//      both; `max:` is a positive integer and `recommended:` a boolean;
+//      both; `max:` is a positive integer, `recommended:` and `field_only:`
+//      booleans, and a field-only category is never `recommended:`;
 //   6. group and category ids are unique and differ from types, statuses and
 //      flags;
 //   7. every `requires:` (on a flag or a category) names a type, group label,
-//      flag or closed category label of the file, never itself; every
-//      `requires_category:` names a category;
+//      flag or closed category label of the file, never itself, nor a
+//      field-only category's label; every `requires_category:` names a
+//      category that is not field-only;
 //   8. no UNKNOWN top-level keys, and no mapping repeats a key;
 //   9. an entry's `color:`, when present, is six hex digits as a text
 //      (`cfd3d7`, no `#`).

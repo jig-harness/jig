@@ -938,7 +938,10 @@ make, use the entry's term instead.
 - **Label category** — a family of a *label taxonomy* whose labels share a
   prefix (`area:billing`, `area:search`) and of which an issue may carry
   several. An open category accepts any name matching a pattern after the
-  prefix.
+  prefix. A field-only category holds values the tracker keeps in a field
+  it reads as labels but never writes (a Jira version field read as
+  `fixversion:2.4`): they are set on that field after filing, never filed
+  as labels.
 - **Facet** — a label that refines another and means nothing without it,
   such as the stakeholder label beside a human-in-the-loop flag; the
   *label taxonomy* says which label it requires, and the label validator

@@ -75,6 +75,15 @@
 #   recommended  optional, default false; true: an issue with none warns
 #   requires     optional; label names that must all be present whenever a
 #                label of this category is (a facet and its umbrella)
+#   field_only   optional, default false; true: the category's values live in
+#                a tracker field the tracker adapter reads as labels but never
+#                writes (on Jira, an `issue_tracker.jira.field_labels` entry
+#                behind this prefix that keeps no issue facet, such as Fix
+#                versions behind `fixversion:`). The label validator knows its
+#                labels, warns that each is set on the field after filing,
+#                and leaves them out of the labels an issue is filed with. A
+#                field-only category is never `recommended`, and no
+#                `requires` or `requires_category` may name it or its labels
 #
 # Labels carry durable classification only, never mutable operational state.
 # "This item will need a step a person performs outside the code" is a flag:
@@ -165,6 +174,14 @@ categories:
     labels:
       - id: product
       - id: legal
+  # A field-only category, for a Jira project that reads its Fix versions
+  # field as labels (`issue_tracker.jira.field_labels: { "Fix versions":
+  # "fixversion:" }`): set the version on the field after filing.
+  # - id: fixversion
+  #   prefix: "fixversion:"
+  #   field_only: true
+  #   open: "[0-9][0-9.]*"
+  #   notes: the release an item is targeted at, kept in Jira's Fix versions
 
 # ---------------------------------------------------------------------------
 # flags — each FIRES a named process. Zero or more per issue. These are the

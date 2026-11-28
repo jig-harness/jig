@@ -166,6 +166,13 @@ level, which the level itself answers.
 2. **Only taxonomy labels.** A label the taxonomy lacks is a change to the
    taxonomy, not to this issue: say so and leave it off. Never create a
    label in the tracker from here.
+   A label of a category the taxonomy marks `field_only: true` is a value
+   the tracker keeps in a field it reads as labels but never writes (a Jira
+   field behind `issue_tracker.jira.field_labels`, such as Fix versions as
+   `fixversion:2.4`). `validate-labels.ts` lists it under `fieldOnly`, with
+   a `WARNING`, and leaves it out of `labels`: leave it out of the `labels`
+   of the JSON file `tracker.ts create` files (the adapter refuses it), and
+   set the value on the tracker field after filing.
 3. **A gate's flag goes on the item that ships the change.** A flag whose
    `scope` is `shipping-item` goes on the issue (or sub-issue) whose pull
    request makes the change, never on the container above it; a
@@ -396,7 +403,9 @@ It prints `confirm: <level>` or `skip: <level>`, then the filed-by line.
 - **`confirm`** (the `attended` level, and every interactive session unless
   its person chose a level): show the user the plan, each issue's title,
   labels, priority, parent and relations, and each issue's body in full,
-  children's included: the body is what step 10 writes. Write nothing until
+  children's included: the body is what step 10 writes. Name each
+  field-only value (rule 2) apart from the labels, as set on the tracker
+  field after filing. Write nothing until
   the user accepts; apply their changes and validate again.
 - **`skip`** (the `unattended` level a driver pass reads where the repository
   allows it): put the printed filed-by line at the end of each issue's body,
@@ -508,6 +517,7 @@ tracker, then assign it again after the window.
 ## Filed <KEY>: <title>
 
 - Labels: <labels> (warnings: <any, or none>)
+- Set on the tracker field after filing: <each field-only value (rule 2), or none>
 - Priority: <priority> · Category: <category>
 - Parent: <key, or none> · Sub-issues: <keys, or none>
 - Relations: <KEY blocks …, related …, or none>
@@ -575,7 +585,10 @@ bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" update "<KEY>" --input .
 
 with `addLabels` and `removeLabels` rather than a whole label list, and a
 changed type, priority or size in its own field (`"type"`, `"priority"`,
-`"size"`), which takes the old value off wherever it is kept. When a
+`"size"`), which takes the old value off wherever it is kept. A
+field-only value (rule 2) the issue shows among its labels is neither added
+nor removed here: a change to it is made on the tracker field, and the
+report names it. When a
 child cannot be created, stop before the update: the issue keeps its flags,
 so no flag is lost, and report which children exist (with their keys) and
 which do not. Do not retry blindly; ask the user whether to create the rest
