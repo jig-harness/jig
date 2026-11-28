@@ -39,7 +39,8 @@ afterEach(() => {
   current = null;
 });
 
-function fixture(): World {
+/** A merged PR #9 with a follow-up to start; `extra` goes into the machine file. */
+function fixture(extra: Record<string, unknown> = {}): World {
   const w = world();
   current = w;
   w.setConfig(
@@ -54,7 +55,7 @@ function fixture(): World {
   machineFile(
     w,
     [account(w, "a", "a@example.com")],
-    {},
+    extra,
     ["followup", "notify"],
     {
       followup_since: "2026-10-30T00:00:00Z",
@@ -139,6 +140,24 @@ it("runs a follow-up that died again once, past its stale failed marker, and han
   );
   expect(claudeRuns(w)).toHaveLength(2);
 }, 180_000);
+
+it("stamps `failures.rerun_died: 0` on a launched follow-up, and runs its death no more", async () => {
+  const w = fixture({ failures: { rerun_died: 0 } });
+  const id = await dies(w, 143);
+  expect(readRecord(id, dispatchState(w))?.rerunDied).toBe(0);
+
+  const after = await applyTick(w, false);
+  expect(launches(after)).toEqual([]);
+  expect(after.repos[0]?.actions).toContainEqual(
+    expect.objectContaining({
+      stage: "notify",
+      target: "PR #9",
+      cause: "followup-failed",
+    }),
+  );
+  expect(markers(w)).toHaveLength(1);
+  expect(claudeRuns(w)).toHaveLength(1);
+}, 120_000);
 
 /** The marker body of a tick's follow-up under `record`, answered failed. */
 function failedBody(record: string): string {
