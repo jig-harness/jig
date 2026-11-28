@@ -402,21 +402,24 @@ export function placementMayChangeInvalidity(
   );
 }
 
-/** Whether a prospective epic placement can clear every non-facet error. */
+/** Whether epic placement and create-screen exemptions could make the draft valid. */
 function placementCouldChangeInvalidity(
   initial: Validation,
   taxonomy: Taxonomy,
   issue: IssueRead,
 ): boolean {
+  if (issue.filing === undefined || issue.nativeType != null) return false;
   if (!placementMayChangeInvalidity(initial, taxonomy)) return false;
-  if (initial.errors.length === initial.missing.length) return true;
   const labels = parseTrackerLabels(readConfig());
   const nativeType = labels.epicTypes[0];
   if (nativeType === undefined) return false;
-  return validateLabels(issue.labels, taxonomy, issue.facets, {
-    nativeType,
-    epics: labels,
-  }).valid;
+  return validateLabels(
+    issue.labels,
+    taxonomy,
+    issue.facets,
+    { nativeType, epics: labels },
+    FACETS,
+  ).valid;
 }
 
 /** The tracker the check reads, or the stop that says it could not be opened. */
@@ -442,9 +445,9 @@ async function checkTracker(
   taxonomy: Taxonomy,
   initial: Validation,
 ): Promise<Validation> {
-  // Placement can only exempt a missing facet. Other taxonomy errors already
-  // decide the result, except where its native epic type can satisfy a label
-  // rule. In that case validateFiling must get the chance to revalidate it.
+  // A draft's native epic type may satisfy a label rule, and its create
+  // screen may exempt missing facets. Check whether that combination could
+  // resolve all errors before asking the tracker for the actual placement.
   if (!initial.valid && initial.errors.length > initial.missing.length) {
     let placementCanChange: boolean;
     try {
