@@ -212,7 +212,7 @@
       "commandStore": null,
       "deadlineSec": null,
       "deadlineChangedBy": null,
-      "meaning": "Refuses the claim: nothing is written, the claim exits 3 with `\"why\": \"preflight\"`, and the first line of standard output is the reason. Any other failure refuses it too."
+      "meaning": "Refuses the claim: nothing is written, the claim exits 3 with `\"why\": \"preflight\"`, and the first line of standard output is the reason. A command that tells a refusal only for the item's open blockers apart may print `kind: blockers` as the second line: a person's `--override-blockers` on an interactive claim clears that refusal alone, never an untagged one. Any other failure refuses it too, and no override clears it."
     },
     {
       "kind": "command",

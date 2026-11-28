@@ -68,7 +68,8 @@
         },
         "claimant": {
           "type": "string"
-        }
+        },
+        "override": true
       },
       "required": ["session", "branch", "claimant"],
       "additionalProperties": true
