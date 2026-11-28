@@ -114,7 +114,7 @@ the [JSONL](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) format:
 | `change` | Where the finding came from: the repository (its `origin` remote without protocol or `.git`, or, without one, `local/<folder>-<hash>`, the hash taken from the folder's path), the branch, and the pull request and issue when known. The issue is read from the branch name, under the configured tracker's key shape and `pull_requests.branch_name` (`eng-12-retry` names `ENG-12` on Linear, `12-retry` names `#12` on GitHub Issues) |
 | `kind` | `error` (something went wrong or cost time), `opportunity` (something could work better) or `unhelpful-content` ([instruction text that cost context without helping](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) |
 | `severity` | `high`, `medium` or `low`; for an opportunity or unhelpful content, its priority on the same scale |
-| `class` | A short kebab-case name for the failure shape, not the incident: `narrow-fix-per-round`, `instruction-missing-precondition`. Findings of one class are counted together, so a class already in the store is reused when it fits. A [conflict hotspot](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)'s finding takes the cause the merge-conflict history report gave it (`derived`, `structural`, `echo`, `version`, `sequence`, `tally`, `append`, `packed-list`, `adjacent` or `overlap`, as [resolve-conflicts](../resolve-conflicts/SKILL.md#where-past-merges-conflicted-the-history-report) defines them) |
+| `class` | A short kebab-case name for the failure shape, not the incident: `narrow-fix-per-round`, `instruction-missing-precondition`. Findings of one class are counted together. Reuse a class from the store or the [configured vocabulary](../../CONFIGURATION.md#reflection) when it fits. A [conflict hotspot](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)'s finding takes the cause the merge-conflict history report gave it (`derived`, `structural`, `echo`, `version`, `sequence`, `tally`, `append`, `packed-list`, `adjacent` or `overlap`, as [resolve-conflicts](../resolve-conflicts/SKILL.md#where-past-merges-conflicted-the-history-report) defines them) |
 | `target` | What the finding is about: `{"scope":"repository","name":"AGENTS.md"}` for the repository's own scaffolding, `{"scope":"tool","tool":"jig","name":"drive-pr"}` for a shared tool |
 | `title`, `description`, `suggested_fix` | What happened and the concrete change that would have prevented it |
 | `time_cost_minutes` | Optional: the time the problem cost |
@@ -600,7 +600,7 @@ Only when reflection is on; when it is off nothing below happens.
 | Script | What it does |
 |--------|--------------|
 | `scripts/journal.ts` | `note`, `revise`, `drop`, `unsent`, `park`, `path`: capture in the worktree's journal |
-| `scripts/reflect.ts` | `status`, `gather`, `plan`, `contribute`: the script half of the procedure; `hotspots`: conflict hotspots into the journal |
+| `scripts/reflect.ts` | `status`, `gather`, `plan`, `contribute`: the script half of the procedure. `gather` includes seeded classes alongside stored classes. `hotspots` records conflict hotspots in the journal |
 | `scripts/store.ts` | One store operation against the configured store, under its deadline |
 | `scripts/filesystem-store.ts` | The filesystem store, behind the contract |
 | `scripts/notion-store.ts` | The Notion store, behind the contract, with `init` and `repair` |

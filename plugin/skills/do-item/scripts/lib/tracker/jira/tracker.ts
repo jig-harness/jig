@@ -78,6 +78,9 @@ import { JiraApiError, offsetPages } from "./transport.ts";
 /** A label Jira accepts: no whitespace, at most 255 characters. */
 const LABEL = /^\S{1,255}$/;
 
+/** Label names per page of `GET label`: Jira's own default for it. */
+const LABEL_PAGE = 1000;
+
 const same = (a: string, b: string) =>
   a.trim().toLowerCase() === b.trim().toLowerCase();
 
@@ -335,6 +338,14 @@ export function jiraTracker(client: Client): Tracker {
     }
   }
 
+  /**
+   * The site's label names. Jira pages them by offset without a snapshot,
+   * so a label added elsewhere mid-read repeats a name across a page edge:
+   * the repeat is dropped, and the pages are Jira's own default size, which
+   * leaves few page edges for a shift to land on. A label deleted mid-read
+   * shifts the other way and one name can go unread; nothing in the listing
+   * shows it.
+   */
   async function siteLabels(): Promise<string[]> {
     const values = await offsetPages(
       transport,
@@ -344,6 +355,8 @@ export function jiraTracker(client: Client): Tracker {
         idOf: () => undefined,
         where: "labels",
         strings: true,
+        pageSize: LABEL_PAGE,
+        dropRepeats: true,
       },
     );
     return values.map((v) => String(v.name));

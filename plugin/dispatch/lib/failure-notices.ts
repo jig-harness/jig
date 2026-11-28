@@ -27,6 +27,7 @@
  */
 import { resolve } from "node:path";
 import { stateRoot } from "../receipts.ts";
+import { createKey } from "./actions/label-create.ts";
 import {
   type FailureRow,
   type FailureSettings,
@@ -69,12 +70,17 @@ function times(n: number): string {
   return n === 1 ? "once" : `${n} times`;
 }
 
+/** What the key of a label's create starts with (`actions/label-create.ts`). */
+const CREATE = createKey("");
+
 /** What a row's action does, in words, and the record that wants it. */
 function actionOf(row: FailureRow): { what: string; record: RecordName } {
   switch (row.kind) {
     case "label":
       return {
-        what: `Writing the dispatch labels of ${row.target}`,
+        what: row.key.startsWith(CREATE)
+          ? `Creating the dispatch label ${row.key.slice(CREATE.length)} in ${row.target}`
+          : `Writing the dispatch labels of ${row.target}`,
         record: "forge",
       };
     case "notice":

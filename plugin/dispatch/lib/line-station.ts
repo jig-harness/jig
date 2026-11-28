@@ -185,6 +185,7 @@ const FACTS: Partial<
   stalled: stalledFacts,
   "pickup-question": pickupQuestionFacts,
   "pickup-ended": pickupEndedFacts,
+  "busy-holder": (action) => needsPersonFacts(action, null),
   "needs-person": (action) => needsPersonFacts(action, prOf(action.target)),
   "stopped-unknown": (action) => needsPersonFacts(action, prOf(action.target)),
 };
@@ -220,7 +221,13 @@ function needsPersonFacts(
   if (holder !== null && branch !== null)
     return { kind: "checkout", target, branch, path: holder };
   // A held drive moves once its hold is settled: re-arming it would be refused.
-  if (pr === null || text(evidence, "heldSince") !== null) return null;
+  // A follow-up's need is no drive's: it moves once its workspace is settled.
+  if (
+    pr === null ||
+    text(evidence, "heldSince") !== null ||
+    text(evidence, "stage") === "followup"
+  )
+    return null;
   const exit = evidence.exit;
   return {
     kind: "drive",

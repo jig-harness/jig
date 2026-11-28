@@ -229,8 +229,17 @@ describe("the repository query's pull requests", () => {
           pageInfo: { hasNextPage: true },
           nodes: closing,
         },
+      }).closingComplete,
+    ).toBe(false);
+    expect(
+      listed({
+        ...node,
+        closingIssuesReferences: {
+          pageInfo: { hasNextPage: true },
+          nodes: closing,
+        },
       }).closing,
-    ).toBeUndefined();
+    ).toEqual([{ number: 612, repository: "jig-harness/jig" }]);
   });
 
   it("do not read when one has more labels than one page holds", () => {

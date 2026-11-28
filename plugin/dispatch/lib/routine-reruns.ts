@@ -37,6 +37,7 @@ import {
 } from "./followup-outcomes.ts";
 import type { ReadRecord } from "./launches.ts";
 import {
+  offeredClasses,
   ROUTINE_QUESTIONS,
   routineClassOf,
   type StandingAnswer,
@@ -96,7 +97,7 @@ export function routineRerun(
     outcome.routine !== undefined
       ? outcome.routine
       : found?.record.routineTags === true
-        ? routineClassOf(question)
+        ? routineClassOf(question, offeredClasses(found.record))
         : undefined;
   if (routine === null) return null;
   // A failure from before passes tagged their questions keeps no word of whether it was itself a run again unless its row was given that evidence (`keepAsked`) before the marker went; otherwise only its launch record says, so without one it is a person's.
@@ -110,6 +111,7 @@ export function routineRerun(
     record: outcome.record,
     standing: {
       question,
+      // A record with no routine tags names no class and keeps no selection, and `dispatch.followup_routine` is not read here: its run again carries every class's standing answer.
       classes:
         routine === undefined ? ROUTINE_QUESTIONS.map((q) => q.id) : [routine],
     },
