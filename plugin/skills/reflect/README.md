@@ -35,7 +35,8 @@ Contents: [the loop](#the-loop) · [turning it on](#turning-it-on) ·
 2. **Reflect.** At a natural end (a converged drive, an addressed review, the
    end of a session, before a worktree is removed), `reflect` reads the
    journal, adds what the session itself observed, merges duplicates, names
-   each finding's class, and decides what to contribute.
+   each finding's [reflection class](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#reflection-class),
+   and decides what to contribute.
 3. **Store.** The contributed findings go to the shared
    [store](#the-store-contract): a folder, or any other store behind the same
    contract. Every repository on the machine (or in the team) contributes to
@@ -114,7 +115,7 @@ the [JSONL](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) format:
 | `change` | Where the finding came from: the repository (its `origin` remote without protocol or `.git`, or, without one, `local/<folder>-<hash>`, the hash taken from the folder's path), the branch, and the pull request and issue when known. The issue is read from the branch name, under the configured tracker's key shape and `pull_requests.branch_name` (`eng-12-retry` names `ENG-12` on Linear, `12-retry` names `#12` on GitHub Issues) |
 | `kind` | `error` (something went wrong or cost time), `opportunity` (something could work better) or `unhelpful-content` ([instruction text that cost context without helping](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) |
 | `severity` | `high`, `medium` or `low`; for an opportunity or unhelpful content, its priority on the same scale |
-| `class` | A short kebab-case name for the failure shape, not the incident: `narrow-fix-per-round`, `instruction-missing-precondition`. Findings of one class are counted together. Reuse a class from the store or the [configured vocabulary](../../CONFIGURATION.md#reflection) when it fits. A [conflict hotspot](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)'s finding takes the cause the merge-conflict history report gave it (`derived`, `structural`, `echo`, `version`, `sequence`, `tally`, `append`, `packed-list`, `adjacent` or `overlap`, as [resolve-conflicts](../resolve-conflicts/SKILL.md#where-past-merges-conflicted-the-history-report) defines them) |
+| `class` | A short kebab-case name for the failure shape, not the incident: `narrow-fix-per-round`, `instruction-missing-precondition`. Findings of one class are counted together. Reuse a class from the store or the [class vocabulary](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#class-vocabulary) when it fits. A [conflict hotspot](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)'s finding takes the cause the merge-conflict history report gave it (`derived`, `structural`, `echo`, `version`, `sequence`, `tally`, `append`, `packed-list`, `adjacent` or `overlap`, as [resolve-conflicts](../resolve-conflicts/SKILL.md#where-past-merges-conflicted-the-history-report) defines them) |
 | `target` | What the finding is about: `{"scope":"repository","name":"AGENTS.md"}` for the repository's own scaffolding, `{"scope":"tool","tool":"jig","name":"drive-pr"}` for a shared tool |
 | `title`, `description`, `suggested_fix` | What happened and the concrete change that would have prevented it |
 | `time_cost_minutes` | Optional: the time the problem cost |
