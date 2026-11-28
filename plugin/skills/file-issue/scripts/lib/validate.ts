@@ -275,18 +275,22 @@ function facetErrors(
   return { errors, missing };
 }
 
-/** The warning for each field-only category's labels: where their values go instead. */
-function fieldOnlyWarnings(
-  parsed: ParsedLabels,
-  categories: LabelCategory[],
-): string[] {
-  return categories
-    .filter((c) => c.fieldOnly && of(parsed.categories, c.id).length)
-    .map((c) => {
-      const found = of(parsed.categories, c.id);
+/**
+ * The labels of the field-only categories, and a warning for each such
+ * category present saying where its values go instead.
+ */
+function fieldOnlyLabels(parsed: ParsedLabels, categories: LabelCategory[]) {
+  const present = categories
+    .filter((c) => c.fieldOnly)
+    .map((c) => ({ id: c.id, found: of(parsed.categories, c.id) }))
+    .filter((c) => c.found.length);
+  return {
+    labels: present.flatMap((c) => c.found),
+    warnings: present.map(({ id, found }) => {
       const many = found.length > 1;
-      return `${quoted(found)} ${many ? "are values" : "is a value"} of field-only category '${c.id}': set ${many ? "them" : "it"} on the tracker field after filing, not as ${many ? "labels" : "a label"} (left out of the labels to write)`;
-    });
+      return `${quoted(found)} ${many ? "are values" : "is a value"} of field-only category '${id}': set ${many ? "them" : "it"} on the tracker field after filing, not as ${many ? "labels" : "a label"} (left out of the labels to write)`;
+    }),
+  };
 }
 
 /** A category's `requires` beside its labels (errors), `max` and `recommended` (warnings). */
@@ -406,14 +410,12 @@ export function validateLabels(
     warnings.push(...checks.warnings);
   }
   errors.push(...flagErrors(parsed, taxonomy, present));
-  warnings.push(...fieldOnlyWarnings(parsed, taxonomy.categories));
-  const fieldOnly = taxonomy.categories
-    .filter((c) => c.fieldOnly)
-    .flatMap((c) => of(parsed.categories, c.id));
+  const fieldOnly = fieldOnlyLabels(parsed, taxonomy.categories);
+  warnings.push(...fieldOnly.warnings);
   return {
     valid: errors.length === 0,
-    labels: labels.filter((l) => !fieldOnly.includes(l)),
-    fieldOnly,
+    labels: labels.filter((l) => !fieldOnly.labels.includes(l)),
+    fieldOnly: fieldOnly.labels,
     errors,
     warnings,
     parsed,
