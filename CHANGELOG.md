@@ -404,6 +404,18 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.323.1] - 2026-11-28
+
+### Fixed
+
+- A recurring-class finding the dispatcher records in the reflection store
+  now lists up to ten rows it counted: each pull request or item, when, the
+  head commit where a launch record names it, the reason and what the run's
+  closing report concluded, then summarizes any remaining rows. A drive's
+  stall that the once-per-head re-drive followed is that re-drive's to settle:
+  the dashboard and the finding leave it out of the recurrence count, and a
+  stall finding names the stalls it left out with their re-drives.
+
 ## [0.323.0] - 2026-11-28
 
 ### Added
@@ -11693,7 +11705,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.323.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.323.1...HEAD
+[0.323.1]: https://github.com/jig-harness/jig/compare/v0.323.0...v0.323.1
 [0.323.0]: https://github.com/jig-harness/jig/compare/v0.322.0...v0.323.0
 [0.322.0]: https://github.com/jig-harness/jig/compare/v0.321.0...v0.322.0
 [0.321.0]: https://github.com/jig-harness/jig/compare/v0.320.0...v0.321.0
