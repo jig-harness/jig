@@ -109,6 +109,7 @@ import { rowResult } from "./launch-result.ts";
 import { isDrive } from "./launch-kind.ts";
 import type { SessionResult } from "./session-result-types.ts";
 import { type ControlRows, controlRows, EMPTY } from "./launch-control-rows.ts";
+import { settleStewardRequestInTx } from "./steward-requests.ts";
 import { isoOf, parseMs } from "../../shared/time.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
@@ -888,6 +889,7 @@ export function pruneLaunches(
           JSON.stringify(state.process),
           JSON.stringify(state.exit),
         );
+      settleStewardRequestInTx(db, record, state);
       remove.run(record.id);
       removeNudges.run(record.id);
       removeSettled.run(record.id);
@@ -966,7 +968,8 @@ export async function inspectRow(
  */
 export function removeRecordIf(
   id: string,
-  seen: Pick<InspectedRow, "claim" | "exit">,
+  seen: Pick<InspectedRow, "claim" | "exit"> &
+    Partial<Pick<InspectedRow, "record" | "state">>,
   root = stateRoot(),
   keepCancelled = false,
 ): boolean {
@@ -982,6 +985,8 @@ export function removeRecordIf(
       .query("DELETE FROM launches WHERE id = ? AND claim IS ? AND exit IS ?")
       .run(id, seen.claim, seen.exit);
     if (result.changes === 0) return false;
+    if (seen.record != null && seen.state !== undefined)
+      settleStewardRequestInTx(db, seen.record, seen.state);
     db.query("DELETE FROM nudges WHERE record = ?").run(id);
     removeUnwritten(root, [id]);
     return true;

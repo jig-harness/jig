@@ -14,11 +14,19 @@
 import type { Database } from "bun:sqlite";
 import { attempt, type Outcome } from "../../shared/outcome.ts";
 import { currentIso } from "../../shared/time.ts";
-import { holds, type ReadRecord } from "./launches.ts";
+import type { LaunchRecord, LaunchState, ReadRecord } from "./launches.ts";
 import { insertRow, type LogRow } from "./log.ts";
 import { stateDb, statePath } from "./state.ts";
 import { inTransaction } from "../../shared/records/db.ts";
 import { stewardBudgetSpent, type StewardRun } from "./steward.ts";
+
+function holdsState(state: LaunchState): boolean {
+  return (
+    state.kind === "pending" ||
+    state.kind === "alive" ||
+    state.kind === "unknown"
+  );
+}
 
 /** One request: its unique identity, the repository, who sent it and when. */
 export interface StewardRequest {
@@ -53,7 +61,7 @@ export function stewardHeld(
     (r) =>
       r.record.repo.toLowerCase() === repo.toLowerCase() &&
       r.record.action === "steward" &&
-      holds(r.state),
+      holdsState(r.state),
   );
 }
 
@@ -94,13 +102,15 @@ export function stewardRefusal(
 }
 
 /**
- * Whether `read` carries wrapper or execution evidence for `request`: its
- * launch record names `request.id`, and the wrapper has claimed it or
- * recorded an exit (neither a pending reservation, even when the runtime
- * acknowledged it, nor a reservation cancelled before execution).
+ * Whether `read` carries positive wrapper or execution evidence for `request`:
+ * its launch record names `request.id`, and it has a valid wrapper claim
+ * (`pid > 0`), a witnessed live process, or a valid exit (including
+ * `wallUnrecorded`). Pending reservations, reservations cancelled before
+ * execution (`died` with `NO_PROCESS`), and malformed claims with no live
+ * process or valid exit (`unknown` with `NO_PROCESS`) never settle a request.
  */
 export function answersStewardRequest(
-  read: ReadRecord,
+  read: Pick<ReadRecord, "record" | "state">,
   request: StewardRequest,
 ): boolean {
   if (
@@ -109,22 +119,63 @@ export function answersStewardRequest(
     read.record.repo.toLowerCase() !== request.repo
   )
     return false;
-  if (read.state.kind === "pending") return false;
-  if (read.state.kind === "died" && read.state.process.pid === 0) return false;
-  return true;
+  switch (read.state.kind) {
+    case "pending":
+      return false;
+    case "ended":
+    case "alive":
+      return true;
+    case "died":
+      return read.state.process.pid > 0;
+    case "unknown":
+      return (
+        read.state.wallUnrecorded === true ||
+        read.state.liveProcess !== undefined ||
+        read.state.process.pid > 0
+      );
+  }
 }
 
-/** Whether `read` is a still-pending launch reservation selected for `request`. */
+/**
+ * Whether `read` is a launch reservation for `request` still holding the stage
+ * without positive wrapper or execution evidence (pending, or an ambiguous
+ * malformed claim awaiting operator resolution).
+ */
 export function pendingForStewardRequest(
-  read: ReadRecord,
+  read: Pick<ReadRecord, "record" | "state">,
   request: StewardRequest,
 ): boolean {
   return (
     read.record.action === "steward" &&
     read.record.stewardRequest === request.id &&
     read.record.repo.toLowerCase() === request.repo &&
-    read.state.kind === "pending"
+    holdsState(read.state) &&
+    !answersStewardRequest(read, request)
   );
+}
+
+/**
+ * Settle a matching pending steward request inside the caller's open
+ * transaction when a launch carrying its identity and positive wrapper or
+ * execution evidence is being cleared or pruned. An unclaimed or ambiguous
+ * launch leaves the request pending so a fresh pass can still start.
+ */
+export function settleStewardRequestInTx(
+  db: Database,
+  record: LaunchRecord,
+  state: LaunchState,
+): boolean {
+  if (record.action !== "steward" || record.stewardRequest === undefined)
+    return false;
+  const pending = pendingStewardRequest(db, record.repo);
+  if (pending === null || !answersStewardRequest({ record, state }, pending))
+    return false;
+  const deleted = db
+    .query("DELETE FROM steward_requests WHERE repo = ? AND id = ?")
+    .run(pending.repo, pending.id);
+  if (deleted.changes === 0) return false;
+  insertRow(db, requestRow(pending, record.repo, { started: record.id }));
+  return true;
 }
 
 interface RequestRow {
@@ -181,10 +232,10 @@ export function keepStewardRequest(
       const at = currentIso();
       inTransaction(db, () => {
         if (replaceAnswered !== undefined) {
-          db.query(
-            "DELETE FROM steward_requests WHERE repo = ? AND id = ?",
-          ).run(replaceAnswered.request.repo, replaceAnswered.request.id);
-          insertRow(db, replaceAnswered.row);
+          const deleted = db
+            .query("DELETE FROM steward_requests WHERE repo = ? AND id = ?")
+            .run(replaceAnswered.request.repo, replaceAnswered.request.id);
+          if (deleted.changes > 0) insertRow(db, replaceAnswered.row);
         }
         db.query(
           "INSERT INTO steward_requests (repo, id, requested_by, requested_at) VALUES (?, ?, ?, ?) ON CONFLICT (repo) DO NOTHING",
@@ -213,11 +264,10 @@ export function takeStewardRequest(
 ): void {
   const db = stateDb(root);
   inTransaction(db, () => {
-    db.query("DELETE FROM steward_requests WHERE repo = ? AND id = ?").run(
-      request.repo,
-      request.id,
-    );
-    insertRow(db, row);
+    const deleted = db
+      .query("DELETE FROM steward_requests WHERE repo = ? AND id = ?")
+      .run(request.repo, request.id);
+    if (deleted.changes > 0) insertRow(db, row);
   });
 }
 
