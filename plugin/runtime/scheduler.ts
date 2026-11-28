@@ -30,6 +30,7 @@ import {
   hasUnwritableChar,
   HIDDEN_VALUE,
   maskedEnvironment,
+  decodedPlist,
 } from "./job-environment.ts";
 import type { JobSpec } from "./job-spec.ts";
 
@@ -583,6 +584,21 @@ function restoreLauncher(
 function readOptional(path: string): string | null {
   return readOptionalBytes(path)?.toString("utf8") ?? null;
 }
+/**
+ * A launchd job's text, refused (thrown, so the snapshot is unreadable) when
+ * its bytes are not UTF-8 XML: a replacement-decoded copy would be parsed,
+ * rewritten and restored altered.
+ */
+function readLaunchdJob(path: string): string | null {
+  const bytes = readOptionalBytes(path);
+  if (bytes === null) return null;
+  const decoded = decodedPlist(bytes);
+  if (!decoded.ok)
+    throw new GcError(
+      `The installed job ${path} cannot be read: ${decoded.failure.reason}`,
+    );
+  return decoded.value;
+}
 function readOptionalBytes(path: string): Buffer | null {
   try {
     return readFileSync(path);
@@ -744,7 +760,12 @@ async function readSnapshot(
       ? [`${LABEL}.plist`]
       : [`${spec.name}.service`, timerUnit(spec)];
   const files = Object.fromEntries(
-    names.map((name) => [join(dir, name), readOptional(join(dir, name))]),
+    names.map((name) => [
+      join(dir, name),
+      scheduler === "launchd"
+        ? readLaunchdJob(join(dir, name))
+        : readOptional(join(dir, name)),
+    ]),
   );
   if (scheduler === "launchd") {
     const loaded = await launchdLoaded(`gui/${process.getuid?.()}/${LABEL}`);

@@ -161,3 +161,42 @@ test("a first install reads the missing timer as absent and restores to nothing"
   expect(existsSync(join(f.units, "jig-gc.timer"))).toBe(false);
   expect(readFileSync(f.log, "utf8")).not.toMatch(/^--user (enable|start) /m);
 });
+
+test("a launchd job that is not UTF-8 makes the snapshot unreadable, so a refresh never rewrites it", () => {
+  const home = mkdtempSync(join(tmpdir(), "gc-launchd-"));
+  const agents = join(home, "Library/LaunchAgents");
+  mkdirSync(agents, { recursive: true });
+  const driver = join(home, "driver.ts");
+  writeFileSync(
+    driver,
+    `import { snapshotScheduler } from ${JSON.stringify(scheduler)};
+import { gcJobSpec } from ${JSON.stringify(gcJob)};
+const spec = gcJobSpec();
+const read = await snapshotScheduler("launchd", spec);
+console.log(JSON.stringify({ ok: read.ok, reason: read.ok ? "" : read.failure.reason, label: spec.label }));
+`,
+  );
+  const run = () =>
+    Bun.spawnSync([process.execPath, driver], {
+      env: { ...process.env, HOME: home },
+    });
+  // Learn the label from a run with no job: the read is a clean absence.
+  const absent = run();
+  const label = JSON.parse(absent.stdout.toString().trim().split("\n").pop()!)
+    .label as string;
+  writeFileSync(
+    join(agents, `${label}.plist`),
+    Buffer.concat([
+      Buffer.from('<?xml version="1.0"?><plist><dict><key>A</key><string>'),
+      Buffer.from([0xe9]),
+      Buffer.from("</string></dict></plist>"),
+    ]),
+  );
+  const refused = run();
+  expectSpawnExit(refused, 0);
+  const report = JSON.parse(
+    refused.stdout.toString().trim().split("\n").pop()!,
+  );
+  expect(report.ok).toBe(false);
+  expect(report.reason).toContain("not valid UTF-8");
+});

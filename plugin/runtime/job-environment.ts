@@ -586,7 +586,7 @@ function declaredEncodingRefusal(prolog: string): string | null {
  * when they are not valid UTF-8, rather than decoded with replacement
  * characters.
  */
-function decodedPlist(bytes: Uint8Array): Outcome<string, "unreadable"> {
+export function decodedPlist(bytes: Uint8Array): Outcome<string, "unreadable"> {
   const bom = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf;
   // Markup and the declaration are ASCII under every encoding it may name.
   const view = new TextDecoder("latin1").decode(bytes.subarray(bom ? 3 : 0));
