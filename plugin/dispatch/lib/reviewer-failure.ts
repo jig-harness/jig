@@ -9,7 +9,10 @@ import {
 import { lastStopEvent } from "../../skills/drive-pr/scripts/lib/state/events.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { checkPattern } from "../../skills/drive-pr/scripts/lib/merge-ready.ts";
-import { reviewerProfile } from "../../skills/drive-pr/scripts/lib/reviewer-profiles.ts";
+import {
+  reviewerBotLogin,
+  reviewerProfile,
+} from "../../shared/reviewer-profiles.ts";
 import { checkRunsFor } from "../../skills/drive-pr/scripts/lib/status/commit-observations.ts";
 import {
   judgeReviewObject,
@@ -198,7 +201,7 @@ async function recovered(
   // a configured bot cannot prove that an invalid policy is safe to re-arm.
   if (policy.malformedReviewerSetting) return ok(false);
   const app = policy.app;
-  const logins = app === undefined ? policy.bots : [`${app}[bot]`];
+  const logins = app === undefined ? policy.bots : [reviewerBotLogin(app)];
   const mode =
     policy.evidence ?? reviewerProfile(app ?? "")?.evidence ?? "sticky";
   return heldRead(bound, "the reviewer's new evidence was read", async () => {
@@ -245,7 +248,7 @@ async function recovered(
           owner,
           repo,
           String(pr),
-          `${app}[bot]`,
+          reviewerBotLogin(app),
         );
         if (latest === null)
           return failed(

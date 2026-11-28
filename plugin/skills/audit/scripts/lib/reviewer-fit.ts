@@ -11,7 +11,7 @@ import {
   REVIEWER_EVIDENCE,
   type ReviewerEvidence,
   reviewerProfile,
-} from "../../../drive-pr/scripts/lib/reviewer-profiles.ts";
+} from "../../../../shared/reviewer-profiles.ts";
 import { at, type Finding } from "./schema.ts";
 
 type Config = Record<string, unknown>;

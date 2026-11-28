@@ -15,17 +15,21 @@
  *    bot's own comments (`BUILTIN_MARKERS`) applies whether or not
  *    `review.bots` lists the bot, one a `review.bots` entry declares applies
  *    to that bot; or
- *  - its author is listed in `review.bots` (compared by login without regard
- *    to case or a `[bot]` suffix), and it carries that bot's chat marker and
- *    none of the bot's finding shape: no line a severity format for that
- *    login reads as a severity (`lib/severity-formats.ts`), since a chat
- *    reply can embed a fresh finding. Only a recognizer known to be the
- *    bot's can prove that absence: one `review.severity_formats` declares,
- *    or a built-in one. Jig's format is assumed for the configured
- *    reviewer (`review.reviewer_app`, else the `review.bots` logins), and an
- *    assumed recognizer proves nothing, so a bot without a known format has
- *    no transparent chat follow-ups, and neither has a bot the list leaves
- *    out.
+ *  - its author is in the effective `review.bots` list (compared by login
+ *    without regard to case or a `[bot]` suffix), and it carries that bot's
+ *    chat marker and none of the bot's finding shape: no line a severity
+ *    format for that login reads as a severity (`lib/severity-formats.ts`).
+ *    CodeRabbit's generated-chat marker additionally needs prose made only of
+ *    acknowledgement sentences, including a bounded no-further-work
+ *    acknowledgement, because it can also appear on prose that reports a new
+ *    finding. Only a recognizer known
+ *    to be the bot's can prove that absence: one `review.severity_formats`
+ *    declares, or a built-in one.
+ *    Jig's format is assumed for the configured reviewer
+ *    (`review.reviewer_app`, else the `review.bots` logins), and an assumed
+ *    recognizer proves nothing, so a bot without a known format has no
+ *    transparent chat follow-ups, and neither has a bot the effective list
+ *    leaves out.
  *
  * Authorship is by login: an association check cannot tell a bot from a
  * person (both read `NONE`), and logins are unique across users and bots.
@@ -82,6 +86,8 @@ export interface BotMarkers {
   login: string;
   confirmationMarker: string | null;
   chatMarker: string | null;
+  /** CodeRabbit's generated marker also appears on findings. */
+  chatNeedsAcknowledgement: boolean;
 }
 
 /**
@@ -108,6 +114,7 @@ function markerOf(
  */
 export function botMarkers(
   entries: readonly (string | ReviewBot)[] | undefined,
+  allowChatMarkers = true,
 ): BotMarkers[] {
   const listed = botEntries(entries ?? []).map((e) => {
     const builtin = BUILTIN_MARKERS[normalizeLogin(e.login)];
@@ -117,7 +124,10 @@ export function botMarkers(
         e.confirmation_marker,
         builtin?.confirmation_marker,
       ),
-      chatMarker: markerOf(e.chat_marker, builtin?.chat_marker),
+      chatMarker: allowChatMarkers
+        ? markerOf(e.chat_marker, builtin?.chat_marker)
+        : null,
+      chatNeedsAcknowledgement: builtin !== undefined,
     };
   });
   const unlisted = Object.entries(BUILTIN_MARKERS)
@@ -126,6 +136,7 @@ export function botMarkers(
       login,
       confirmationMarker: m.confirmation_marker,
       chatMarker: null,
+      chatNeedsAcknowledgement: true,
     }));
   return [...listed, ...unlisted];
 }
@@ -166,6 +177,42 @@ export function carriesFindingShape(
 }
 
 /**
+ * Whether a generated chat reply positively says this thread needs no more
+ * work. Its generated marker alone is deliberately insufficient: CodeRabbit
+ * uses it for findings as well as acknowledgements.
+ */
+export function carriesAcknowledgement(body: string): boolean {
+  const prose = body
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(
+      (line) =>
+        line !== "" && !line.startsWith(">") && !/^<!--.*-->$/u.test(line),
+    )
+    .map((line) => line.replace(/`[^`]*`/gu, "").trim());
+  const acknowledgement = prose.join(" ");
+  if (acknowledgement === "") return false;
+
+  const noFurther =
+    "(?:nothing further|no further (?:action|changes?|feedback|work))(?:\\s+is)?\\s+(?:requested|needed|required)(?:\\s+on\\s+(?:this|the)\\s+thread)?";
+  const sentences = acknowledgement.match(/[^.!?]+[.!?]?/gu) ?? [];
+  const acknowledgementSentence = new RegExp(
+    `^(?:${noFurther}|(?:acknowledged?|confirm(?:ed|ing)?|noted|thanks?|thank you|understood)(?:\\s+(?:for|on)\\s+(?:the\\s+)?(?:update|fix|reply|confirmation))?(?:[:,]\\s*(?:the\\s+)?(?:fix|change|reply)\\s+is\\s+(?:noted|acknowledged))?(?:\\s*(?:,|and)\\s*)?${noFurther}|(?:acknowledged?|confirm(?:ed|ing)?|noted|thanks?|thank you|understood)(?:\\s+(?:for|on)\\s+(?:the\\s+)?(?:update|fix|reply|confirmation))?)[.!?]?$`,
+    "iu",
+  );
+
+  return (
+    acknowledgement.length <= 280 &&
+    new RegExp(`\\b${noFurther}\\b`, "iu").test(acknowledgement) &&
+    !new RegExp(`\\b(?:not|never)\\b[^.!?]*\\b${noFurther}\\b`, "iu").test(
+      acknowledgement,
+    ) &&
+    sentences.length > 0 &&
+    sentences.every((sentence) => acknowledgementSentence.test(sentence.trim()))
+  );
+}
+
+/**
  * Is this comment, landing after a held reply, transparent to it? See the
  * module header. `bots` defaults to the configuration's; `formats` to the
  * severity formats in force.
@@ -187,6 +234,7 @@ export function isTransparentFollowUp(
   return (
     bot.chatMarker !== null &&
     body.includes(bot.chatMarker) &&
+    (!bot.chatNeedsAcknowledgement || carriesAcknowledgement(body)) &&
     hasSeverityFormat(author, formats) &&
     !carriesFindingShape(body, author, formats)
   );

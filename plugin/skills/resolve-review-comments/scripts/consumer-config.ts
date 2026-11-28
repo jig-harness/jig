@@ -23,6 +23,7 @@ import {
   withSource,
 } from "../../../shared/consumer.ts";
 import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
+import { reviewerProfile } from "../../../shared/reviewer-profiles.ts";
 
 function text(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value : undefined;
@@ -32,6 +33,17 @@ function section(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function effectiveBotLogins(
+  review: ReturnType<typeof reviewConfig>,
+  app: unknown,
+): string[] {
+  if (review.bots?.length)
+    return botEntries(review.bots).map((bot) => bot.login);
+  if (review.bots !== undefined) return [];
+  const login = reviewerProfile(text(app) ?? "")?.botLogin;
+  return login === undefined ? [] : [login];
 }
 
 async function main(): Promise<number> {
@@ -45,6 +57,10 @@ async function main(): Promise<number> {
   }
   const gates = text(section(overlay.gates).command);
   const tracker = section(overlay.issue_tracker);
+  const effectiveBots = effectiveBotLogins(
+    review,
+    section(overlay.review).reviewer_app,
+  );
   // The only value the procedure cannot run without: a fix is pushed only
   // after the repository's checks pass. Threads are worked whoever wrote
   // them, and the deferral team is read only when a finding is deferred.
@@ -78,10 +94,8 @@ async function main(): Promise<number> {
     ["gates.command", gates ?? ""],
     [
       "review.bots",
-      review.bots?.length
-        ? botEntries(review.bots)
-            .map((b) => b.login)
-            .join(", ")
+      effectiveBots.length
+        ? effectiveBots.join(", ")
         : "(not set: any reviewer)",
     ],
     [

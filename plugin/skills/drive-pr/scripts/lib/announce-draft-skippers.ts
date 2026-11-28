@@ -27,7 +27,10 @@ import {
 import { checkPattern } from "./merge-ready.ts";
 import { draftSkippingReviewers } from "./overlay.ts";
 import { readTimeline } from "./pr-timeline.ts";
-import { runTitleSays, reviewerProfile } from "./reviewer-profiles.ts";
+import {
+  runTitleSays,
+  reviewerProfile,
+} from "../../../../shared/reviewer-profiles.ts";
 import { type CheckRun, checkRunsFor } from "./status/evidence.ts";
 import { parseMs } from "../../../../shared/time.ts";
 

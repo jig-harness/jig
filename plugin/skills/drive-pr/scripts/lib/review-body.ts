@@ -20,7 +20,7 @@
  */
 import type { SummaryFinding, SummaryReport } from "../summary-findings.ts";
 import { fingerprintOf } from "./finding-fingerprint.ts";
-import type { ReviewBodyFormat } from "./reviewer-profiles.ts";
+import type { ReviewBodyFormat } from "../../../../shared/reviewer-profiles.ts";
 import { severityOf } from "./severity-formats.ts";
 import type { ReviewObject } from "./status/review-object.ts";
 

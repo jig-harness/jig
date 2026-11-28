@@ -36,8 +36,9 @@ import {
   evidenceProblem,
   REVIEWER_EVIDENCE,
   type ReviewerEvidence,
+  reviewerBotLogin,
   reviewerProfile,
-} from "./reviewer-profiles.ts";
+} from "../../../../shared/reviewer-profiles.ts";
 import { attachedTree } from "./driven-branch.ts";
 import { codexPassArgsProblem } from "./codex-pass-args.ts";
 import { ghCall, git, gitCallTimeoutSeconds } from "./proc.ts";
@@ -301,11 +302,15 @@ export function skipNoticeMarker(): string {
 
 /**
  * `review.bots` as entries, each a login or `{login, …markers}`; `undefined`
- * when the field is not a list. Entries of another shape are dropped, as
- * this best-effort reader always has.
+ * when neither a list nor a known reviewer app supplies entries. An explicit
+ * list replaces the app default. Entries of another shape are dropped.
  */
 export function reviewBotEntries(): (string | ReviewBot)[] | undefined {
   const bots = section("review").bots;
+  if (bots === undefined) {
+    const profile = reviewerProfile(reviewerApp());
+    return profile ? [reviewerBotLogin(reviewerApp())] : undefined;
+  }
   if (!Array.isArray(bots)) return undefined;
   return bots.filter(
     (b): b is string | ReviewBot =>
@@ -315,6 +320,11 @@ export function reviewBotEntries(): (string | ReviewBot)[] | undefined {
         typeof (b as { login?: unknown }).login === "string" &&
         (b as { login: string }).login !== ""),
   );
+}
+
+/** Whether the consumer explicitly configured a bot list. */
+export function hasConfiguredReviewBots(): boolean {
+  return section("review").bots !== undefined;
 }
 
 /** `review.bots`: the logins the review skill treats as reviewers. */
