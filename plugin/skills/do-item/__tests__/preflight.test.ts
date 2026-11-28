@@ -85,6 +85,21 @@ describe("runPreflight", () => {
     });
   });
 
+  it("tags an exit 3 whose second line is kind: blockers, trimmed, as a refusal for blockers alone", async () => {
+    expect(await runPreflight(ROOT, fixture("refuse-blockers"), ISSUE)).toEqual(
+      {
+        outcome: "refused",
+        kind: "refused",
+        reason: "waits on #3",
+        blockers: true,
+      },
+    );
+    for (const mode of ["refuse", "refuse-tagged-otherwise"])
+      expect(await runPreflight(ROOT, fixture(mode), ISSUE)).not.toHaveProperty(
+        "blockers",
+      );
+  });
+
   it("refuses on exit 3 without output, saying it gave no reason", async () => {
     const answer = await runPreflight(ROOT, fixture("refuse-silent"), ISSUE);
     expect(answer).toMatchObject({ outcome: "refused", kind: "refused" });
@@ -159,5 +174,30 @@ describe("preflightClaim", () => {
         JSON.parse(ISSUE),
       ),
     ).toBeNull();
+  });
+
+  it("lets a blocker-only refusal through as overridden only when the person overrides blockers", async () => {
+    const read = async () => JSON.parse(ISSUE);
+    expect(
+      await preflightClaim(ROOT, fixture("refuse-blockers"), "#5", read),
+    ).toMatchObject({
+      outcome: "refused",
+      why: "preflight",
+      overridable: true,
+    });
+    expect(
+      await preflightClaim(ROOT, fixture("refuse-blockers"), "#5", read, true),
+    ).toEqual({ outcome: "overridden", issue: "#5", reason: "waits on #3" });
+    for (const mode of ["refuse", "refuse-tagged-otherwise", "fail"]) {
+      const refused = await preflightClaim(
+        ROOT,
+        fixture(mode),
+        "#5",
+        read,
+        true,
+      );
+      expect(refused).toMatchObject({ outcome: "refused", why: "preflight" });
+      expect(refused).not.toHaveProperty("overridable");
+    }
   });
 });

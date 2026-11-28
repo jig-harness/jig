@@ -280,18 +280,26 @@ describe("the registry", () => {
     expect(recordKind("no-such-kind")).toBeUndefined();
   });
 
-  it("states the versions the code writes", () => {
+  it("states the ledger versions the writer emits", () => {
     const stopped = ledger();
     stopped.driver.personStop = { at: AT, reason: "maintenance" };
-    const rendered = renderLedger(stopped);
-    expect("body" in rendered).toBe(true);
-    if ("body" in rendered)
-      expect(dataOf(rendered.body)).toMatchObject({
-        v: recordKind(LEDGER_KIND)?.version,
-      });
-    expect(recordKind(LEDGER_KIND)?.version ?? 0).toBeGreaterThanOrEqual(
-      LEDGER_VERSION,
-    );
+    expect(renderedVersion(stopped)).toBe(2);
+    const managed = ledger({
+      parked: [
+        {
+          key: "t1",
+          kind: "thread",
+          reason: "why",
+          round: 1,
+          person: "mona_acme",
+        },
+      ],
+    } as Partial<Ledger>);
+    expect(renderedVersion(managed)).toBe(recordKind(LEDGER_KIND)?.version);
+    expect(recordKind(LEDGER_KIND)?.version).toBe(LEDGER_VERSION);
+  });
+
+  it("states the versions the code writes", () => {
     expect(recordKind(FOLLOWUP_KIND)?.version).toBe(FOLLOWUP_VERSION);
     expect(recordKind(ADMISSION_KIND)?.version).toBe(ADMISSION_VERSION);
     for (const kind of [LAUNCH_KIND, HEARTBEAT_KIND])
@@ -303,6 +311,12 @@ describe("the registry", () => {
     for (const kind of tables) expect(kind.version).toBe(SCHEMA_VERSION);
   });
 });
+
+function renderedVersion(l: Ledger): unknown {
+  const rendered = renderLedger(l);
+  if (!("body" in rendered)) throw new Error("the ledger did not render");
+  return (dataOf(rendered.body) as { v?: unknown }).v;
+}
 
 function ledger(over: Partial<Ledger> = {}): Ledger {
   return {
@@ -379,9 +393,9 @@ describe("the drive ledger carries the envelope", () => {
   it("reads a newer envelope version as a ledger it does not read, and a foreign key as damage", () => {
     const rendered = renderLedger(ledger());
     if ("error" in rendered) throw new Error(rendered.error);
-    expect(parseLedger(rendered.body.replace('"v":1', '"v":3'))).toEqual({
+    expect(parseLedger(rendered.body.replace('"v":1', '"v":4'))).toEqual({
       kind: "unknown-version",
-      version: 3,
+      version: 4,
     });
     expect(parseLedger(rendered.body.replace('"v":1', '"v":2'))?.kind).toBe(
       "malformed",

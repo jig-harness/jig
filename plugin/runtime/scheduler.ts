@@ -8,6 +8,7 @@ import { jigHome } from "../shared/config-layers.ts";
 import { fixtureRegistryLimit } from "../shared/fixture-registry-index.ts";
 import { GcError } from "../shared/gc-error.ts";
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -24,6 +25,12 @@ import { run } from "../shared/proc.ts";
 import { MAX_TIMEOUT_SECONDS } from "../shared/resource-lock.ts";
 import { installedEntry, outsideCheckout } from "./launcher.ts";
 import { directoryVariables } from "../shared/agent-harness/index.ts";
+import {
+  carriedEnvironment,
+  hasUnwritableChar,
+  HIDDEN_VALUE,
+  maskedEnvironment,
+} from "./job-environment.ts";
 import type { JobSpec } from "./job-spec.ts";
 
 function cronMarker(spec: JobSpec): string {
@@ -88,10 +95,16 @@ export function jobFiles(
   const label = spec.label;
   if (
     [...command, ...Object.values(job.env)].some((value) =>
-      /[\r\n\0]/.test(value),
+      scheduler === "launchd"
+        ? hasUnwritableChar(value)
+        : /[\r\n\0]/.test(value),
     )
   )
-    throw new GcError("Scheduler values cannot contain line breaks or NUL");
+    throw new GcError(
+      scheduler === "launchd"
+        ? "Scheduler values cannot contain line breaks, NUL or XML 1.0 forbidden characters"
+        : "Scheduler values cannot contain line breaks or NUL",
+    );
   if (scheduler === "launchd")
     return {
       [`${label}.plist`]: `<?xml version="1.0" encoding="UTF-8"?>
@@ -245,13 +258,14 @@ function lockTimeout(value: string): string {
     );
   return value;
 }
-/** What the job's own spec adds to its environment. */
+/** What the job's own spec adds to its environment, the variables `--env` captured last. */
 function specEnvironment(spec: JobSpec): Record<string, string> {
   return {
     ...(spec.deadlineSec === undefined
       ? {}
       : { JIG_LAUNCHER_DEADLINE_SEC: String(spec.deadlineSec) }),
     ...spec.env,
+    ...spec.capturedEnv,
   };
 }
 /**
@@ -305,11 +319,72 @@ function fixtureLimitEnvironment(): Record<string, string> {
     ? { JIG_TEST_FIXTURE_REGISTRY_LIMIT: configured }
     : {};
 }
-/** The job to write; a removal names it only, so a bad value cannot block it. */
-function installedJob(spec: JobSpec, removing = false): Job {
+/**
+ * The variables `installedJob` writes, whether or not each is set now: an
+ * install writes each afresh, and a reinstall never carries one forward from
+ * the installed job. Keep it in step with `installedJob`.
+ */
+export function managedEnvironment(spec: JobSpec): Set<string> {
+  return new Set([
+    "HOME",
+    "PATH",
+    "JIG_HOME",
+    "TMPDIR",
+    "LOCK_ROOT",
+    "LOCK_NAME",
+    "LOCK_TIMEOUT",
+    "JIG_TEST_FIXTURE_REGISTRY_LIMIT",
+    ...directoryVariables(),
+    "DRIVE_PR_STATE_DIR",
+    "JIG_LAUNCHER_DEADLINE_SEC",
+    ...Object.keys(spec.env ?? {}),
+    ...(spec.managedEnv ?? []),
+  ]);
+}
+/**
+ * What the installed job holds beyond `managedEnvironment` and the variables
+ * `--env` captured, which a reinstall keeps: read from a launchd job only,
+ * since a systemd job keeps a person's variables in drop-ins a reinstall
+ * leaves alone.
+ */
+function carriedFromInstalled(
+  scheduler: Scheduler,
+  spec: JobSpec,
+): Record<string, string> {
+  if (scheduler !== "launchd") return {};
+  const managed = managedEnvironment(spec);
+  for (const name of Object.keys(spec.capturedEnv ?? {})) managed.add(name);
+  const path = join(jobDirectory("launchd"), `${spec.label}.plist`);
+  const carried = carriedEnvironment(readOptional(path), managed);
+  if (!carried.ok)
+    throw new GcError(
+      `The installed job ${path} cannot be kept: ${carried.failure.reason}`,
+    );
+  return carried.value;
+}
+/**
+ * Writes a job file only the user can read: `mode` on a write applies only
+ * to a file it creates, so an existing file is narrowed too.
+ */
+function writePrivate(path: string, text: string): void {
+  // Narrow before writing, so the old permissions never cover the new text.
+  if (existsSync(path)) chmodSync(path, 0o600);
+  writeFileSync(path, text, { mode: 0o600 });
+  chmodSync(path, 0o600);
+}
+/**
+ * The job to write; a removal names it only, so a bad value cannot block it.
+ * `carried` comes first, so every variable Jig writes wins over it.
+ */
+function installedJob(
+  spec: JobSpec,
+  removing = false,
+  carried: Record<string, string> = {},
+): Job {
   return {
     command: [...launcherCommand(launcherDirectory(spec)), ...spec.args],
     env: {
+      ...carried,
       HOME: homedir(),
       PATH: process.env.PATH ?? "/usr/bin:/bin",
       JIG_HOME: jigHome(),
@@ -355,7 +430,7 @@ async function updateLaunchd(
     await execute(["launchctl", "bootout", `${domain}/${LABEL}`]);
   if (remove) rmSync(path, { force: true });
   else {
-    writeFileSync(path, files[`${LABEL}.plist`] as string, { mode: 0o600 });
+    writePrivate(path, files[`${LABEL}.plist`] as string);
     await execute(["launchctl", "bootstrap", domain, path]);
   }
   return path;
@@ -373,7 +448,7 @@ async function updateSystemd(
   for (const [name, text] of Object.entries(files)) {
     const path = join(dir, name);
     if (remove) rmSync(path, { force: true });
-    else writeFileSync(path, text, { mode: 0o600 });
+    else writePrivate(path, text);
   }
   await execute(["systemctl", "--user", "daemon-reload"]);
   if (!remove) await execute(["systemctl", "--user", "enable", "--now", timer]);
@@ -411,7 +486,11 @@ export async function updateJob(
   try {
     // A removal names the job only: the cadence it would have is not rendered.
     const named = remove ? { ...spec, schedule: { hour: 0 } } : spec;
-    const files = jobFiles(scheduler.value, installedJob(named, remove));
+    const carried = remove ? {} : carriedFromInstalled(scheduler.value, spec);
+    const files = jobFiles(
+      scheduler.value,
+      installedJob(named, remove, carried),
+    );
     mkdirSync(spec.stateRoot, { recursive: true, mode: 0o700 });
     // In place before the job that runs it, and gone only after that job is.
     if (!remove) installLauncher(launcherDirectory(spec));
@@ -730,7 +809,7 @@ async function restore(snapshot: SchedulerSnapshot): Promise<void> {
   await stopReplacement(snapshot.scheduler === "launchd", snapshot.spec);
   for (const [path, text] of Object.entries(snapshot.files))
     if (text === null) rmSync(path, { force: true });
-    else writeFileSync(path, text, { mode: 0o600 });
+    else writePrivate(path, text);
   await startPrevious(snapshot);
 }
 /** Whether `files` (from `jobFiles`) differ from the job the snapshot saw. */
@@ -790,7 +869,7 @@ async function rewrite(
   const dir = jobDirectory(scheduler);
   if (scheduler === "systemd") {
     for (const [name, text] of Object.entries(files))
-      writeFileSync(join(dir, name), text, { mode: 0o600 });
+      writePrivate(join(dir, name), text);
     await execute(
       ["systemctl", "--user", "daemon-reload"],
       undefined,
@@ -806,9 +885,7 @@ async function rewrite(
       undefined,
       announce,
     );
-  writeFileSync(path, files[`${spec.label}.plist`] as string, {
-    mode: 0o600,
-  });
+  writePrivate(path, files[`${spec.label}.plist`] as string);
   if (snapshot.active)
     await execute(
       ["launchctl", "bootstrap", domain, path],
@@ -816,19 +893,56 @@ async function rewrite(
       announce,
     );
 }
-/** The concrete job `spec` names, as a confirmed install would write it. */
-export function jobPreview(spec: JobSpec, remove: boolean): string {
+
+/**
+ * The concrete job `spec` names, as a confirmed install would write it, with
+ * the values of the variables kept from the installed job and those `--env`
+ * captured shown as `HIDDEN_VALUE`, and those variables named. A job file the
+ * install would refuse is a failure, so a caller's preview exits
+ * unsuccessfully.
+ */
+export function jobPreviewOutcome(
+  spec: JobSpec,
+  remove: boolean,
+): Outcome<string, "unreadable"> {
   const detected = detectScheduler();
   if (!detected.ok)
-    return `Scheduler preview unavailable: ${detected.failure.reason}`;
+    return ok(`Scheduler preview unavailable: ${detected.failure.reason}`);
   const scheduler = detected.value;
   if (remove)
-    return `Scheduler preview (${scheduler}): the ${spec.name} job is removed`;
-  const files = jobFiles(scheduler, installedJob(spec));
-  return [
-    `Scheduler preview (${scheduler}):`,
-    ...Object.entries(files).map(([name, text]) => `--- ${name}\n${text}`),
-  ].join("\n");
+    return ok(
+      `Scheduler preview (${scheduler}): the ${spec.name} job is removed`,
+    );
+  let carried: Record<string, string>;
+  try {
+    carried = carriedFromInstalled(scheduler, spec);
+  } catch (error) {
+    return failed(
+      "unreadable",
+      `Scheduler preview unavailable for the ${spec.name} job: ${reasonOf(error)}`,
+    );
+  }
+  const job = installedJob(spec, false, carried);
+  const captured = Object.keys(spec.capturedEnv ?? {});
+  const hidden = new Set([...Object.keys(carried), ...captured]);
+  // Written once with the values, so a value the job cannot carry is refused here too.
+  jobFiles(scheduler, job);
+  const files = jobFiles(scheduler, {
+    ...job,
+    env: maskedEnvironment(job.env, hidden),
+  });
+  const named = (names: string[], what: string) =>
+    names.length === 0
+      ? []
+      : [`${what}, values shown as ${HIDDEN_VALUE}: ${names.join(", ")}`];
+  return ok(
+    [
+      `Scheduler preview (${scheduler}):`,
+      ...Object.entries(files).map(([name, text]) => `--- ${name}\n${text}`),
+      ...named(Object.keys(carried), "Kept from the installed job"),
+      ...named(captured, "Captured from this shell with --env"),
+    ].join("\n"),
+  );
 }
 export function installedScript(script: string): boolean {
   return outsideCheckout(script);

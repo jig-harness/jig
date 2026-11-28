@@ -36,7 +36,7 @@ import {
   checkLauncherResolves,
   detectScheduler,
   installedScript,
-  jobPreview,
+  jobPreviewOutcome,
   restoreScheduler,
   snapshotScheduler,
   updateJob,
@@ -291,7 +291,12 @@ export async function installHub(
     return 1;
   }
   const runtime = probes.runtime();
-  console.log(jobPreview(spec, false));
+  const preview = jobPreviewOutcome(spec, false);
+  if (!preview.ok) {
+    console.error(preview.failure.reason);
+    return 1;
+  }
+  console.log(preview.value);
   console.log(
     runtime === null
       ? "No podman or docker on PATH: the job runs jig hub serve directly."
@@ -388,7 +393,12 @@ async function uninstallHub(
     console.log("No hub job or install record here: nothing to remove.");
     return 0;
   }
-  console.log(jobPreview(spec, true));
+  const preview = jobPreviewOutcome(spec, true);
+  if (!preview.ok) {
+    console.error(preview.failure.reason);
+    return 1;
+  }
+  console.log(preview.value);
   if (!request.confirm) {
     console.log(
       "Preview only; add --yes to apply. The running hub stops; the database stays.",

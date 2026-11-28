@@ -21,6 +21,8 @@ export interface InstallRequest {
   confirm: boolean;
   /** The running `jig.ts`. Writing a job requires the installed plugin copy. */
   script: string;
+  /** `--env`: the variables to capture from the installing shell into the job; only the dispatcher's install takes them. */
+  env?: readonly string[];
 }
 
 /** What `jig uninstall` passes each component it removes. */

@@ -55,6 +55,7 @@ describe("claimSettingsOf", () => {
       expect(claimSettingsOf(overlay)).toEqual({
         claimFrom: null,
         claimMarker: false,
+        overrideLabel: null,
       });
   });
 
@@ -63,7 +64,11 @@ describe("claimSettingsOf", () => {
       claimSettingsOf({
         do_item: { claim_from: ["todo", "backlog"], claim_marker: true },
       }),
-    ).toEqual({ claimFrom: ["todo", "backlog"], claimMarker: true });
+    ).toEqual({
+      claimFrom: ["todo", "backlog"],
+      claimMarker: true,
+      overrideLabel: null,
+    });
   });
 
   it("refuses a claim_from the claim cannot use", () => {
@@ -89,6 +94,38 @@ describe("claimSettingsOf", () => {
   });
 });
 
+describe("do_item.override_label", () => {
+  it("is unset by default and read as the label's name", () => {
+    expect(claimSettingsOf({ do_item: {} }).overrideLabel).toBeNull();
+    expect(
+      claimSettingsOf({ do_item: { override_label: "started-early" } })
+        .overrideLabel,
+    ).toBe("started-early");
+  });
+
+  it("refuses a value that is not a label's name", () => {
+    for (const value of ["", "  ", 3, ["a"]])
+      expect(() =>
+        claimSettingsOf({ do_item: { override_label: value } }),
+      ).toThrow("do_item.override_label");
+  });
+
+  it("is read from the default branch, never the working tree", async () => {
+    const dir = clone("do_item:\n  override_label: started-early\n");
+    expect(
+      await claimSettingsFromDefaultBranch(dir, {
+        do_item: { override_label: "other" },
+      }),
+    ).toMatchObject({ ok: true, value: { overrideLabel: "started-early" } });
+    const unset = clone("do_item:\n  claim_marker: true\n");
+    expect(
+      await claimSettingsFromDefaultBranch(unset, {
+        do_item: { override_label: "other" },
+      }),
+    ).toMatchObject({ ok: true, value: { overrideLabel: null } });
+  });
+});
+
 describe("claimSettingsFromDefaultBranch", () => {
   it("keeps the restriction the default branch sets, whatever the working tree sets", async () => {
     const dir = clone("do_item:\n  claim_from: [todo]\n");
@@ -97,7 +134,7 @@ describe("claimSettingsFromDefaultBranch", () => {
     });
     expect(out).toEqual({
       ok: true,
-      value: { claimFrom: ["todo"], claimMarker: false },
+      value: { claimFrom: ["todo"], claimMarker: false, overrideLabel: null },
     });
   });
 
@@ -105,7 +142,7 @@ describe("claimSettingsFromDefaultBranch", () => {
     const unset = clone("do_item:\n  claim_from: [todo]\n");
     expect(await claimSettingsFromDefaultBranch(unset, null)).toEqual({
       ok: true,
-      value: { claimFrom: ["todo"], claimMarker: false },
+      value: { claimFrom: ["todo"], claimMarker: false, overrideLabel: null },
     });
     const bad = clone("do_item:\n  claim_from: [todo]\n  claim_marker: 3\n");
     await expect(claimSettingsFromDefaultBranch(bad, null)).rejects.toThrow(
@@ -115,7 +152,11 @@ describe("claimSettingsFromDefaultBranch", () => {
 
   it("refuses a working tree that sets either field when the default branch cannot be read", async () => {
     const dir = clone("do_item: [unclosed\n");
-    for (const section of [{ claim_from: ["todo"] }, { claim_marker: true }]) {
+    for (const section of [
+      { claim_from: ["todo"] },
+      { claim_marker: true },
+      { override_label: "started-early" },
+    ]) {
       const out = await claimSettingsFromDefaultBranch(dir, {
         do_item: section,
       });
@@ -123,7 +164,7 @@ describe("claimSettingsFromDefaultBranch", () => {
     }
     expect(await claimSettingsFromDefaultBranch(dir, null)).toEqual({
       ok: true,
-      value: { claimFrom: null, claimMarker: false },
+      value: { claimFrom: null, claimMarker: false, overrideLabel: null },
     });
   });
 });

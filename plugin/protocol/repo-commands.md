@@ -94,7 +94,7 @@ command runs as long as the step that runs it lets it.
 | Setting | Exit | Meaning |
 | --- | --- | --- |
 | `ci.log_command` | 3 | The log is gone (the build was deleted or its log rotated away); the first line of standard output is the reason. |
-| `do_item.preflight_command` | 3 | Refuses the claim: nothing is written, the claim exits 3 with `"why": "preflight"`, and the first line of standard output is the reason. Any other failure refuses it too. |
+| `do_item.preflight_command` | 3 | Refuses the claim: nothing is written, the claim exits 3 with `"why": "preflight"`, and the first line of standard output is the reason. A command that tells a refusal only for the item's open blockers apart may print `kind: blockers` as the second line: a person's `--override-blockers` on an interactive claim clears that refusal alone, never an untagged one. Any other failure refuses it too, and no override clears it. |
 | `reflection.command` | 3 | The store is unavailable (unreachable, or not signed in): reflect keeps the findings in its journal rather than failing. A run past its deadline, or one that cannot start, is read the same way. |
 
 <!-- /protocol:generated -->

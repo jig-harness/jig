@@ -22,7 +22,7 @@ import {
   checkLauncherResolves,
   detectScheduler,
   installedScript,
-  jobPreview,
+  jobPreviewOutcome,
   restoreScheduler,
   type SchedulerSnapshot,
   snapshotScheduler,
@@ -62,27 +62,13 @@ export async function install(options: InstallOptions): Promise<number> {
     repositoryValues.repository,
   );
   if (!repositories.ok) return stopped(repositories.failure);
-  // Machine-wide removal withdraws every machine kind's authority, the
-  // terminal kind's included: reinstalling a repository must not revive it.
-  const next: MachineConfig = {
-    ...machine,
-    repositories: repositories.value,
-    ...(options.machine ? { receipts: false } : {}),
-  };
-  if (options.machine) delete next.orca;
-  const terminals =
-    next.orca !== undefined && !next.disabled.includes("orca-terminals");
-  const noEntries =
-    next.repositories.length === 0 && !next.receipts && !terminals;
+  const next = nextMachineConfig(options, machine, repositories.value);
+  const noEntries = machineHasNoEntries(next);
   // The job names no repository: removing one while others remain changes
   // only the machine entry, and keeps the job and the programs it recorded.
   const keepJob = options.uninstall && !noEntries;
   console.log(`Machine entry preview (${machinePath}):\n${dump({ gc: next })}`);
-  console.log(
-    keepJob
-      ? "Scheduler preview: the jig-gc job is unchanged"
-      : jobPreview(gcJobSpec(next.hour), noEntries),
-  );
+  if (!printJobPreview(keepJob, next.hour, noEntries)) return 1;
   if (!options.confirm) {
     console.log(
       "Preview only. Repeat with --yes to confirm these bounds and update the scheduler.",
@@ -112,6 +98,47 @@ export async function install(options: InstallOptions): Promise<number> {
       noEntries,
     }),
   );
+}
+
+/**
+ * The machine entry after this install or removal. Machine-wide removal
+ * withdraws every machine kind's authority, the terminal kind's included:
+ * reinstalling a repository must not revive it.
+ */
+function nextMachineConfig(
+  options: InstallOptions,
+  machine: MachineConfig,
+  repositories: MachineConfig["repositories"],
+): MachineConfig {
+  const next: MachineConfig = {
+    ...machine,
+    repositories,
+    ...(options.machine ? { receipts: false } : {}),
+  };
+  if (options.machine) delete next.orca;
+  return next;
+}
+
+function machineHasNoEntries(machine: MachineConfig): boolean {
+  const terminals =
+    machine.orca !== undefined && !machine.disabled.includes("orca-terminals");
+  return machine.repositories.length === 0 && !machine.receipts && !terminals;
+}
+
+function printJobPreview(
+  keepJob: boolean,
+  hour: number,
+  noEntries: boolean,
+): boolean {
+  const preview = keepJob
+    ? ok("Scheduler preview: the jig-gc job is unchanged")
+    : jobPreviewOutcome(gcJobSpec(hour), noEntries);
+  if (!preview.ok) {
+    console.error(preview.failure.reason);
+    return false;
+  }
+  console.log(preview.value);
+  return true;
 }
 /**
  * The clone install acts for. Machine-wide removal names no clone, so it

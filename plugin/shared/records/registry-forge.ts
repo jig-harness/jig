@@ -50,7 +50,7 @@ export const FORGE: RecordKind[] = [
     owner: `${STATE}ledger-mirror.ts`,
     at: "one comment on the pull request",
     markers: ["drive-pr-ledger", "drive-pr-ledger-data"],
-    version: 2,
+    version: 3,
     key: PR_NUMBER,
     meaning:
       "The drive's resumable state, mirrored onto the pull request at each round boundary, park and takeover: who drives it, its round, what is parked and how the drive stands, so a drive started in another clone or on another machine resumes where the last one left off. Only a driver writes it; of two ledgers the earliest trusted comment is the ledger.",
@@ -291,6 +291,16 @@ export const TRACKER: RecordKind[] = [
       "The issue that collects one pull request's deferred findings of one type, found by its key so that each finding is appended to it rather than filed alone; of two with one key the oldest wins.",
   },
   {
+    name: "tracker-blocker-override",
+    medium: "tracker",
+    owner: "skills/do-item/scripts/lib/blocker-override.ts",
+    at: "a comment on an item a person started ahead of its open blockers",
+    markers: ["jig:blocker-override"],
+    version: 0,
+    meaning:
+      "Identifies one blocker-override comment by its attempt id, so a retry checks trusted comments before posting and never duplicates a comment whose response was lost.",
+  },
+  {
     name: "tracker-claim-marker",
     medium: "tracker",
     owner: "skills/do-item/scripts/lib/claim-marker.ts",
@@ -299,7 +309,7 @@ export const TRACKER: RecordKind[] = [
     version: 1,
     key: CLAIM_MARKER_KEY,
     meaning:
-      "The token a claim posts on an item before it writes the item, naming the claim's attempt, its session, its branch and the claimant, so another tool sees which session holds the item, and of two hosts claiming it at once the earliest marker wins; beside it, each attempt records once how it ended (claimed, released or unresolved), and a marker whose attempt recorded released or unresolved holds nothing.",
+      "The token a claim posts on an item before it writes the item, naming the claim's attempt, its session, its branch and the claimant, so another tool sees which session holds the item, and of two hosts claiming it at once the earliest marker wins; a claim a person started ahead of the item's open blockers adds an override naming their reason, the person and each blocker's key and state, which never decides who holds the item; beside it, each attempt records once how it ended (claimed, released or unresolved), and a marker whose attempt recorded released or unresolved holds nothing.",
   },
   {
     name: "tracker-related",

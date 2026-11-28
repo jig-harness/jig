@@ -25,7 +25,7 @@ export interface IssueRef extends Repo {
 
 export const slug = (r: Repo) => `${r.owner}/${r.name}`;
 
-const sameRepo = (a: Repo, b: Repo) =>
+export const sameRepo = (a: Repo, b: Repo) =>
   a.owner.toLowerCase() === b.owner.toLowerCase() &&
   a.name.toLowerCase() === b.name.toLowerCase();
 

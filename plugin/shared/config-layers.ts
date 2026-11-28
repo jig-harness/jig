@@ -169,6 +169,7 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "do_item.preflight_command",
   "do_item.claim_from",
   "do_item.claim_marker",
+  "do_item.override_label",
 ];
 
 /**

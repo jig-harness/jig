@@ -4,6 +4,9 @@
  * argv walk every entry script shares.
  */
 
+/** Input the caller got wrong: reported as usage (exit 2), not a failure. */
+export class UsageError extends Error {}
+
 /**
  * Run an entry script's `main` and set the exit code it returns. A rejection
  * is printed with its stack and exits 1, the same status an unhandled

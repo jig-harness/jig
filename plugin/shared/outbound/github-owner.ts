@@ -62,6 +62,7 @@ import {
 } from "./budget.ts";
 import { recordCall } from "./ledger.ts";
 import { errnoCode, swallow } from "../errors.ts";
+import { isGithubLogin } from "../forge-logins.ts";
 import { isRecord } from "../guards.ts";
 import { failureOf, type OutboundFailure, outboundFailure } from "./failure.ts";
 import { type GhRun, ghRunFailure } from "./github.ts";
@@ -224,8 +225,7 @@ export function userOf(body: string): GithubUser | null {
     return typeof id === "number" &&
       Number.isSafeInteger(id) &&
       id > 0 &&
-      typeof login === "string" &&
-      /^[A-Za-z0-9-]+(\[bot\])?$/.test(login)
+      isGithubLogin(login, { bot: true })
       ? { id, login }
       : null;
   } catch (error) {

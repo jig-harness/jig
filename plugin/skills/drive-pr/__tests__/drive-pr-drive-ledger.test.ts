@@ -167,7 +167,7 @@ describe("drive.ts seeds its state from the ledger", () => {
 
   it("refuses a ledgerVersion it does not read, naming it", async () => {
     const v9 = body(ledger(4, 3)).replace(
-      '"ledgerVersion":1',
+      /"ledgerVersion":\d+/,
       '"ledgerVersion":9',
     );
     const { dir, stateDir, tree } = withComments(
