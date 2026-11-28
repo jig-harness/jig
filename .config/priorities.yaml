@@ -1,0 +1,16 @@
+# Jig repository priorities record (`priorities/v1`).
+# Read from `main` by the owner host's `jig dispatch` and validated against
+# plugin/CONFIGURATION.md#the-priorities-record.
+format: priorities/v1
+level: repository
+scope: jig-harness/jig
+revision: 1
+objectives:
+  - id: upstream-issues
+    class: core
+    purpose: Prioritize issues reported from consumer repositories (labeled source:upstream) by default so real field friction is resolved first
+    endState: Open source:upstream issues are picked up and resolved ahead of non-upstream backlog items
+    owner: jig maintainers
+    epics:
+      - scope: jig-harness/jig
+        labels: ["source:upstream"]
