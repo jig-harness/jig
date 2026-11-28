@@ -37,3 +37,14 @@ export function lineNeeds(ctx: AskContext): LineNeed[] {
 export function lineQueue(ctx: AskContext): LineQueued[] {
   return (lineOf(ctx)?.queue ?? []).filter((q) => q.repo === ctx.address.repo);
 }
+
+/** The newest tick's busy-holder need about this pull request: a checkout the runtime does not list holds its branch and is in use. */
+export function busyHolderNeed(
+  ctx: AskContext,
+  pr: number,
+): LineNeed | undefined {
+  return lineNeeds(ctx).find(
+    (n) =>
+      n.cause === "busy-holder" && (n.pr === pr || n.target === `PR #${pr}`),
+  );
+}

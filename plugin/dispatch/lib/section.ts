@@ -24,6 +24,7 @@ import {
   DEFAULT_REVIEWER_FAILURES_BEFORE_ESCALATION,
   reviewerFailurePolicy,
 } from "./reviewer-failure.ts";
+import { followupRoutine } from "./routine-questions.ts";
 import type {
   AdoptRule,
   DispatchSection,
@@ -65,6 +66,7 @@ const KEYS = [
   "pickup_deadline",
   "followup_within",
   "followup_stale_after",
+  "followup_routine",
   "notices_linger",
   "notices_branch",
   "renotify_after",
@@ -362,6 +364,7 @@ type Timings = Omit<
   | "pickupDeadlineMs"
   | "retiredEpicWidth"
   | "overlap"
+  | "followupRoutine"
 >;
 
 /** `stalled_scope`: `claimed` unless the section says `assigned`. */
@@ -447,13 +450,16 @@ function timings(section: Record<string, unknown>): Checked<Timings> {
   });
 }
 
-/** What bounds and gates a launch: its deadline, what a priority-less item does, and the providers it may run on. */
+/** What bounds and gates a launch: its deadline, what a priority-less item does, the providers it may run on, and the routine classes a follow-up settles unattended. */
 function launchPolicy(
   section: Record<string, unknown>,
 ): Checked<
   Pick<
     DispatchSection,
-    "pickupDeadlineMs" | "missingPriority" | "allowedProviders"
+    | "pickupDeadlineMs"
+    | "missingPriority"
+    | "allowedProviders"
+    | "followupRoutine"
   >
 > {
   const pickupDeadlineMs = wait(
@@ -466,10 +472,13 @@ function launchPolicy(
   if (!unranked.ok) return unranked;
   const providers = allowedProviders(section.allowed_providers);
   if (!providers.ok) return providers;
+  const routine = followupRoutine(section.followup_routine);
+  if (!routine.ok) return routine;
   return ok({
     pickupDeadlineMs: pickupDeadlineMs.value,
     missingPriority: unranked.value,
     ...(providers.value === null ? {} : { allowedProviders: providers.value }),
+    followupRoutine: routine.value,
   });
 }
 

@@ -391,6 +391,36 @@ export function unreportedNotice(
 }
 
 /**
+ * A merged pull request's follow-up the dispatcher holds back because a
+ * workspace joined to it has terminals whose agents the runtime cannot
+ * report: an idle shell or an editor reads the same as an agent it cannot
+ * see, so a person settles it. Keyed by the workspace, so it is sent once
+ * per workspace that holds it.
+ */
+export function followupUnreportedNotice(
+  slug: string,
+  pr: { number: number; url: string },
+  command: string,
+  workspace: string,
+  reason: string,
+  replay = false,
+): Notice {
+  const shown = workspaceLabel(workspace);
+  // A replay is the dispatcher's own pending claim: a manual follow-up run
+  // cannot take that claim over, so it only asks for the terminals to be settled.
+  const remedy = replay
+    ? `Close the terminals in ${shown} that run no agent (an idle shell, an editor), and the next tick replays the pending follow-up under its existing claim, once the claim, hold label, account and deadline allow it.`
+    : `Close the terminals in ${shown} that run no agent (an idle shell, an editor), and the next tick starts the follow-up; or run \`${command} ${pr.number}\` there yourself.`;
+  return notice(
+    `${slug} PR #${pr.number} follow-up waits on workspace ${workspaceKey(workspace)} unreportable`,
+    [
+      `The follow-up of merged PR #${pr.number} waits: ${compact(reason, 300)}, so the dispatcher cannot tell whether an agent still works there and starts nothing.`,
+    ],
+    [remedy, pr.url],
+  );
+}
+
+/**
  * A stopped-pickup need carrying that a terminal the runtime cannot report
  * sits in a workspace joined to the item: its text says an agent may already
  * work there, and its key names the workspace so a change of workspace is

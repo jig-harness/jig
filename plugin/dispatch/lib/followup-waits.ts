@@ -173,6 +173,9 @@ function questionWait(r: ReadRecord): string | null {
     return null;
   const question = questionOf(r.state) ?? r.report?.report.question ?? null;
   if (question === null || !RATE_LIMIT.test(question)) return null;
+  // A tag is still a routine question when the current policy excludes its
+  // standing answer.  It must wait for a person rather than being mistaken
+  // for a generic rate-limit question and replayed unattended.
   if (routineClassOf(question) !== null) return null;
   const ended = parseMs(r.state.exit.at);
   return Number.isFinite(ended) ? isoFromMs(ended + QUESTION_WAIT_MS) : null;

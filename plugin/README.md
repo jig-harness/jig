@@ -965,6 +965,12 @@ within the same budget, with the class's standing answer in its prompt:
 | `person-owed` | who takes, authorizes or scopes a step only a person can: a live check, a rollout to another repository, an organization's setting, an operational action, a failed release gate | take none of it; report it as owed and file one item for it in this repository's tracker |
 | `drafted-items` | whether to file the follow-up items the pass drafted itself | file them as drafted |
 
+A repository chooses which of these classes its follow-ups settle unattended
+with `dispatch.followup_routine` (every class by default): a class it leaves
+out is not offered to the pass, and a question of that class is a person's
+like any other, so a repository whose filing goes to a shared tracker can
+turn `drafted-items` off.
+
 Each answer ends with finishing the other arms and recording done. A step
 only a person can take is no reason to stop in the first place: the pass
 reports it as owed, files it, and counts the arm settled; unlike a death's run again, it has no 6-hour age limit. A follow-up
@@ -1222,8 +1228,12 @@ names, which is the host's own identity. The dispatcher never removes `automatio
 or an `automation:` label, and never puts either on a person's pull
 request. With `only_labeled`, the dispatcher reads only the pull requests
 that carry a label of the set, which includes one a drive armed by hand
-has labelled `jig:driving`; `jig:hold` keeps such a pull request out. The labels must exist first, and no writer
-creates one: `jig dispatch labels [--repo <path>] [--yes]` lists the missing
+has labelled `jig:driving`; `jig:hold` keeps such a pull request out. The labels must exist first. A drive or a
+follow-up never creates one; the dispatcher's `--apply` run creates a
+missing label of the set or a missing marker label when a write it makes
+is refused for it, writes again in the same run, and when the signed-in
+account may not create labels, tells a person once for the repository,
+naming the label, rather than once per pull request. `jig dispatch labels [--repo <path>] [--yes]` lists the missing
 ones, the marker labels with them, and the labels of the set whose
 description or color is not the one this release gives them, with no job
 installed, and with `--yes` names each it created or updated (only what
@@ -1819,7 +1829,7 @@ whose configuration names the tracker.
 | --- | --- |
 | `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, whether its process is alive, dead or unknown, why, and when its launch began (`since`); the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
 | `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](protocol/drive-exits.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `held` (a person's pickup hold on the dispatching host, shown even when the item already has a holder or an open need, which stay in `holder` and `waitsOn`), `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
-| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential`, `sign in to the account again`, `investigate the account's startup failures`, `inspect the quota spending`, `inspect Jig state storage`, `inspect the failing caller`, `settle the launch that holds the drive` or `release the pickup hold`; and `needAct`, what the person does as the dispatch dashboard groups it, one of [the acts](protocol/needs-and-answers.md#what-a-need-asks-of-a-person) (a park's comes from its decision class) |
+| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `inspect the holding worktree`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential`, `sign in to the account again`, `investigate the account's startup failures`, `inspect the quota spending`, `inspect Jig state storage`, `inspect the failing caller`, `settle the launch that holds the drive` or `release the pickup hold`; and `needAct`, what the person does as the dispatch dashboard groups it, one of [the acts](protocol/needs-and-answers.md#what-a-need-asks-of-a-person) (a park's comes from its decision class) |
 | `overlap`, `footprint` | for a pick-up still assigned, when the newest tick found it so: why it waits on [overlap](https://github.com/jig-harness/jig/blob/main/design/overlap-aware-admission.md#the-reason-a-person-sees) with the work in flight (the relation, `waits on overlap` or `waits on the overlap bound`; each pull request or pickup it waits on with its state and link; how many; and the sentence its `waitsOn` repeats), and the note on a footprint unknown or derived from area labels alone (`footprint unknown: …`). The dispatcher uses these tiers to order its pickup attempts |
 | `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim; from the outcome log, its stage and its [closing report](#the-closing-report) (`last.report`: who wrote it, what it concluded, the next step it suggests and its cause, and for a run that left none the path of its transcript's copy, `transcript`), which the text prints as `last.run`: the stage, when it ended, what it concluded and the suggested next step, or that it ended without a report, naming the copy |
 | `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |

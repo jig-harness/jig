@@ -73,7 +73,7 @@ import {
 } from "../../reflect/scripts/lib/events.ts";
 import {
   type ReflectionSettings,
-  reflectionSettings,
+  whenReflectionOn,
 } from "../../reflect/scripts/lib/settings.ts";
 import {
   EXIT,
@@ -550,12 +550,7 @@ const OPERATIONS: Record<string, OperationShape & { run: Run }> = {
 
 export async function main(argv: string[]): Promise<number> {
   const { operation, args } = chooseOperation(argv, OPERATIONS, USAGE);
-  const settings = reflectionSettings();
-  if (!settings.on) {
-    print({ on: false });
-    return 0;
-  }
-  return operation.run(settings, args);
+  return whenReflectionOn((settings) => operation.run(settings, args));
 }
 
 if (import.meta.main) runMain("review.ts", () => main(process.argv.slice(2)));

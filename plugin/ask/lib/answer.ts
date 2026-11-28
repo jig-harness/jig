@@ -46,6 +46,7 @@ export interface Holder {
 export const PERSON_ACTS = [
   "answer",
   "re-arm",
+  "inspect the holding worktree",
   "release the CI hold",
   "merge",
   "approve",
@@ -81,6 +82,7 @@ export type PersonAct = (typeof PERSON_ACTS)[number];
 const ACT_OF_PERSON: Record<PersonAct, NeedAct> = {
   answer: "Decide",
   "re-arm": "Investigate",
+  "inspect the holding worktree": "Investigate",
   "release the CI hold": "Authorize",
   merge: "Merge",
   approve: "Authorize",

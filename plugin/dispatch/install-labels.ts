@@ -1,8 +1,9 @@
 /**
  * The one-time setup of the pull request state labels: `jig dispatch labels
  * [--repo <path>]... [--yes]`, which installs no job, and the labels part of
- * `jig install dispatch --repo <path> [--yes]`. Drives, follow-ups and the
- * dispatcher write the labels and never create them. For each repository
+ * `jig install dispatch --repo <path> [--yes]`. Drives and follow-ups write the
+ * labels and never create them; the dispatcher's tick creates one a write
+ * misses (`lib/actions/label-create.ts`). For each repository
  * whose `dispatch` section (read from its default branch, as the tick reads
  * it) turns the labels on, the labels of the set it does not have yet are
  * listed, with the marker labels the tick keeps beside them (the
@@ -118,7 +119,8 @@ async function writeEach<L extends LabelSpec>(
       refused.push({ label, why: failureText(error) });
       continue;
     }
-    if (written.ok) console.log(`${slug}: ${done} ${label.name}`);
+    if (written.ok || written.failure.code === "exists")
+      console.log(`${slug}: ${done} ${label.name}`);
     else refused.push({ label, why: written.failure.reason });
   }
   return refused;

@@ -89,10 +89,11 @@ import { pendingRearm } from "./rearm-state.ts";
 import { pickupClaims } from "./pickup-claim-table.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { stateRoot } from "../receipts.ts";
+import { upsertLaunchRecord } from "./launch-record-write.ts";
 import { existingStateDb, inTransaction, stateDb, statePath } from "./state.ts";
 import type { StaleCause } from "./types.ts";
 import { cancelledBeforeExecution } from "./cancellation.ts";
-import type { StandingAnswer } from "./routine-questions.ts";
+import type { RoutineFields, StandingAnswer } from "./routine-questions.ts";
 export { cancelledBeforeExecution } from "./cancellation.ts";
 export { UNARMED_FACTS } from "./launch-keep.ts";
 import {
@@ -134,7 +135,7 @@ export interface LaunchAttempt {
   detail: string;
 }
 /** The tick's part of a record. */
-export interface LaunchRecord {
+export interface LaunchRecord extends RoutineFields {
   /** The last attributable test-lock wait this host observed, retained after it ends. */
   testLockWait?: import("./test-lock-waits.ts").TestLockWait;
   stewardResume?: string;
@@ -255,8 +256,6 @@ export interface LaunchRecord {
   rerunDied?: number;
   /** For a follow-up: the repository's `dispatch.followup_within` when the record was written, the longest its follow-up may wait on an arm still pending (`followup-waits.ts`); absent on a record written before it was kept, read as the field's default. */
   followupWithinMs?: number;
-  /** For a follow-up: its prompt offered the routine question tags (`routine-questions.ts`), so its question's class is read from its tag. Absent on a record written before passes tagged their questions. */
-  routineTags?: boolean;
   /** For a follow-up's routine run again: the question the earlier pass stopped on and the classes whose standing answers its prompt gives; absent on any other record. */
   standing?: StandingAnswer | null;
   /** The answer a person gave the decision an earlier session of this target stopped on, which this session is handed (`station-answer-store.ts`). */
@@ -406,19 +405,9 @@ export function writeRecord(record: LaunchRecord, root = stateRoot()): void {
     const release = kept ?? (stored === null ? releaseOf() : undefined);
     if (release !== undefined) tick.release = release;
   }
-  db.query(
-    `INSERT INTO launches (id, repo, action, pr, item, created_at, record)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (id) DO UPDATE SET record = excluded.record`,
-  ).run(
-    record.id,
-    record.repo,
-    record.action,
-    record.pr,
-    record.item,
-    record.createdAt,
-    JSON.stringify(tick),
-  );
+  const text = JSON.stringify(tick);
+  const reads = isLaunchRecord(JSON.parse(text)) ? 1 : 0;
+  upsertLaunchRecord(db, record, text, reads);
 }
 
 /** A column's JSON, `undefined` when the column is empty, `null` when it does not parse. */
