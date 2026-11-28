@@ -128,6 +128,14 @@ make, use the entry's term instead.
   conditional create for a comment, so the token narrows a race between
   hosts and does not exclude it
   ([plugin/RECORDS.md](plugin/RECORDS.md)).
+- **Blocker override** — a person's recorded decision to start a tracker
+  item before the items it is blocked by are finished. A claim refuses an
+  item with an open blocker; in an interactive session the person may claim
+  it anyway with a reason (`tracker.ts claim --override-blockers`), which
+  clears that refusal alone. The claim states what starting early risks,
+  then records who decided, why and which blockers were open, on the item
+  and in its pull request. An agent never decides one on its own
+  ([do-item](plugin/skills/do-item/README.md#starting-ahead-of-open-blockers)).
 - **Tracker namespace** — the stable name of the tracker collection whose
   served assignments a repository reads: `linear:<team>` for Linear, or
   `jira:<site>:<project>` for Jira, where the site is its `https://` address. The adapter and, for Jira, its site keep

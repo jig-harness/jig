@@ -14,6 +14,20 @@ if (mode === "refuse") {
   console.log("more");
   process.exit(3);
 }
+if (mode === "refuse-blockers") {
+  // A refusal for open blockers alone, tagged on its second line.
+  process.stdout.write("waits on #3\r\n kind: blockers \n");
+  process.exit(3);
+}
+if (mode === "refuse-blockers-control") {
+  process.stdout.write("waits on \u001b[2J#3\nkind: blockers\n");
+  process.exit(3);
+}
+if (mode === "refuse-tagged-otherwise") {
+  console.log("waits on legal");
+  console.log("kind: blockers, and legal");
+  process.exit(3);
+}
 if (mode === "refuse-silent") process.exit(3);
 if (mode === "refuse-long") {
   console.log("a".repeat(1000));
