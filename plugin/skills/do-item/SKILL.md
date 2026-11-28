@@ -875,14 +875,19 @@ implementation. Skip this check for issues about the repository's own code.
 
    **Blocker override.** A person who knowingly decides to start the item
    ahead of its open blockers may clear an `"overridable": true` refusal by
-   claiming again with their reason:
+   writing the person's exact words to a file with the file-writing tool
+   (never interpolating them into shell source, so apostrophes, quotes, `$()`
+   and leading `--` pass as literal data in both Bash and PowerShell), then
+   claiming again:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" claim "<KEY>" --override-blockers '<the person's reason>'
+   bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" claim "<KEY>" --override-blockers-file "<reason-file>"
    ```
 
-   Here `<the person's reason>` denotes one literal argument supplied by the
-   caller; it is not text to interpolate into shell source.
+   For a short plain-text reason passed directly on the command line,
+   `--override-blockers=<reason>` also works; always use
+   `--override-blockers-file` whenever the reason comes from a person's free
+   text (including apostrophes or shell characters).
 
    Pass `--override-blockers` only when the person explicitly asks for it or
    confirms it in this interactive session, after you showed them the
@@ -899,26 +904,38 @@ implementation. Skip this check for issues about the repository's own code.
    user as [Asking the user](#asking-the-user) says, with not starting the
    item as the default, and take the reason in their words; with nobody
    there to answer, stop and report the refusal. An empty reason is a usage
-   error; write `--override-blockers=<reason>` for a reason that begins with
-   `--`. Keep a person's words in one literal argument, as the example does;
-   never interpolate them into shell source.
+   error; `--override-blockers-file` (and `--override-blockers=<reason>`)
+   also handles a reason that begins with `--`.
    The override clears only those refusals: the item's state, its
    assignment, the `blocked` state, `do_item.claim_from`, another claim's
    marker and every other preflight refusal still refuse. Before it writes,
    the claim prints the open blockers (key, title, state, assignee) and one
    consequence statement on stderr; show both to the person. Once the claim
-   lands it posts one comment recording the override, adds the label
-   `do_item.override_label` names where the repository sets one (Jig never
-   removes it), carries the override in the claim marker with
+   lands it posts one comment recording the override with a stable attempt
+   marker (`<!-- jig:blocker-override {"attempt":"<id>"} -->`), adds the
+   label `do_item.override_label` names where the repository sets one (Jig
+   never removes it), carries the override in the claim marker with
    `do_item.claim_marker`, and prints it as `"override"` in its JSON (the
-   reason, the person, the blockers, and whether the comment and label were
-   written). Neither failure undoes the claim. Report
-   `"override": {"comment": {"posted": false}}` or
+   attempt id, the reason, the person, the blockers, and whether the comment
+   and label were written). Persistent records (the override comment and the
+   claim marker) include a blocker's title, state and assignee only when the
+   tracker adapter verifies shared visibility (`sharedVisibility: true`);
+   otherwise they record only the blocker's key. Neither failure undoes the
+   claim. Report `"override": {"comment": {"posted": false}}` or
    `"override": {"label": {"added": false}}` to the person with its
-   `reason`; for an unposted comment, post the record again with
-   `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" comment "<KEY>" --body-file <file>`: a `## Blocker override`
-   heading, the person, the reason, each blocker and the consequence, as the
-   stderr statement gave them. The pull request carries the `## Blocker override` section
+   `status` and `reason`. Never blindly repost an override comment without
+   its marker: when `override.comment.status` is `"not_posted"` or
+   `"indeterminate"`, write `<file>` with a `## Blocker override` heading,
+   the person, the reason, each blocker (key alone unless `sharedVisibility`
+   is `true`), the consequence, and the exact `override.comment.marker` line
+   from the JSON, then run
+   `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" comment "<KEY>" --body-file <file>`.
+   That command checks existing trusted comments for the attempt id before
+   posting, skips posting if it already landed, and exits `1` with
+   `"status": "indeterminate"` when comments cannot be read or the write
+   cannot be confirmed; on `"indeterminate"`, stop retrying and report the
+   indeterminate outcome and attempt id to the person. The pull request
+   carries the `## Blocker override` section
    [Pull-request policy](#pull-request-policy) describes. A person
    resuming their own interrupted pickup of an `in_progress` item tells you
    so, and you go on from here without the claim. Exit `5` is the tracker's

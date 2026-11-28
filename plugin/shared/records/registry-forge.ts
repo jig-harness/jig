@@ -291,6 +291,16 @@ export const TRACKER: RecordKind[] = [
       "The issue that collects one pull request's deferred findings of one type, found by its key so that each finding is appended to it rather than filed alone; of two with one key the oldest wins.",
   },
   {
+    name: "tracker-blocker-override",
+    medium: "tracker",
+    owner: "skills/do-item/scripts/lib/blocker-override.ts",
+    at: "a comment on an item a person started ahead of its open blockers",
+    markers: ["jig:blocker-override"],
+    version: 0,
+    meaning:
+      "Identifies one blocker-override comment by its attempt id, so a retry checks trusted comments before posting and never duplicates a comment whose response was lost.",
+  },
+  {
     name: "tracker-claim-marker",
     medium: "tracker",
     owner: "skills/do-item/scripts/lib/claim-marker.ts",

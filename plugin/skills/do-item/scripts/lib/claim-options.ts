@@ -15,11 +15,13 @@
  * started (`JIG_LAUNCH` set), with a served or factory claim's options, and
  * in a work-batch claim.
  */
+import { readFile } from "node:fs/promises";
 import { launchOf } from "../../../../shared/launched-session.ts";
 import { UsageError } from "./cli.ts";
 
 /** The text the durable override record can display. */
-const displayReason = (value: string) => value.replace(/\p{Cc}+/gu, " ").trim();
+const displayReason = (value: string) =>
+  value.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, " ").trim();
 
 /** The options a claim takes a value for, written `--flag value` or `--flag=value`. */
 const VALUED = [
@@ -28,6 +30,7 @@ const VALUED = [
   "--blocking",
   "--factory-ancestor",
   "--override-blockers",
+  "--override-blockers-file",
 ] as const;
 
 /** Each valued option with its value, as the generic flag check admits it. */
@@ -46,6 +49,8 @@ export interface ClaimOptions {
   factoryAncestor?: string | undefined;
   /** The person's reason for starting ahead of open blockers. */
   overrideBlockers?: string | undefined;
+  /** File holding the person's literal reason, avoiding shell quoting. */
+  overrideBlockersFile?: string | undefined;
   /** A work-batch member's claim (`--work-batch`). */
   workBatch?: boolean;
 }
@@ -53,7 +58,9 @@ export interface ClaimOptions {
 const needs = (flag: string) =>
   flag === "--override-blockers"
     ? "--override-blockers requires a reason (write --override-blockers=<reason> for one that begins with --)"
-    : `${flag} requires an identity or issue key`;
+    : flag === "--override-blockers-file"
+      ? "--override-blockers-file requires a path"
+      : `${flag} requires an identity or issue key`;
 
 /** Join each valued option to its value before generic positional and flag validation. */
 export function normalizeClaimOptions(rest: string[]): void {
@@ -79,6 +86,7 @@ const MISUSE: Record<(typeof VALUED)[number], string> = {
   "--blocking": SERVED_MISUSE,
   "--factory-ancestor": "claim accepts one nonempty --factory-ancestor=ISSUE",
   "--override-blockers": needs("--override-blockers"),
+  "--override-blockers-file": needs("--override-blockers-file"),
 };
 
 /** The one value of `flag`, `undefined` when absent; a usage error for an empty or repeated one. */
@@ -101,9 +109,15 @@ export function overrideRefusal(
   workBatch: boolean,
   env: Record<string, string | undefined> = process.env,
 ): string | null {
-  if (options.overrideBlockers === undefined) return null;
-  if (displayReason(options.overrideBlockers) === "")
+  const hasInline = options.overrideBlockers !== undefined;
+  const hasFile = options.overrideBlockersFile !== undefined;
+  if (!hasInline && !hasFile) return null;
+  if (hasInline && hasFile)
+    return "--override-blockers and --override-blockers-file cannot be combined";
+  if (hasInline && displayReason(options.overrideBlockers as string) === "")
     return needs("--override-blockers");
+  if (hasFile && (options.overrideBlockersFile as string).trim() === "")
+    return needs("--override-blockers-file");
   if (launchOf(env) !== null)
     return "--override-blockers is a person's decision in an interactive session; a session the line started (JIG_LAUNCH is set) cannot take it";
   if (options.person !== undefined || options.factoryAncestor !== undefined)
@@ -125,6 +139,7 @@ export function claimOptions(
     blocking: read("--blocking"),
     factoryAncestor: read("--factory-ancestor"),
     overrideBlockers: read("--override-blockers"),
+    overrideBlockersFile: read("--override-blockers-file"),
     workBatch: flags.has(WORK_BATCH_FLAG),
   };
   const served =
@@ -143,4 +158,24 @@ export function claimOptions(
   const refused = overrideRefusal(options, options.workBatch === true, env);
   if (refused !== null) throw new UsageError(refused);
   return options;
+}
+
+/** Resolve `--override-blockers-file` into `overrideBlockers` after authorization checks pass. */
+export async function resolveClaimOptions(
+  flags: Set<string>,
+  env: Record<string, string | undefined> = process.env,
+): Promise<ClaimOptions> {
+  const options = claimOptions(flags, env);
+  if (options.overrideBlockersFile === undefined) return options;
+  let text: string;
+  try {
+    text = await readFile(options.overrideBlockersFile, "utf8");
+  } catch (error) {
+    throw new UsageError(
+      `could not read --override-blockers-file '${options.overrideBlockersFile}': ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (displayReason(text) === "")
+    throw new UsageError(needs("--override-blockers"));
+  return { ...options, overrideBlockers: text };
 }

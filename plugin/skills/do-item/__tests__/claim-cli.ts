@@ -48,6 +48,7 @@ function defaultBranch(dir: string, config: string): void {
 
 /** An issue #5 is blocked by, on the fake GitHub; one with no `state` cannot be read. */
 export interface Blocker {
+  repo?: string;
   number: number;
   state?: "OPEN" | "CLOSED";
   title?: string;
@@ -58,7 +59,7 @@ export interface Blocker {
 function relationsOf(blockers: Blocker[]): Record<string, unknown> {
   const ref = (b: Blocker) => ({
     number: b.number,
-    repository: { nameWithOwner: "acme/app" },
+    repository: { nameWithOwner: b.repo ?? "acme/app" },
   });
   return {
     blockedBy: conn(blockers.map(ref)),
@@ -70,10 +71,19 @@ function relationsOf(blockers: Blocker[]): Record<string, unknown> {
 }
 
 /** A blocker's issue node, `null` for one that cannot be read. */
-function blockerNode(blockers: Blocker[], number: number) {
-  const b = blockers.find((x) => x.number === number);
+function blockerNode(
+  blockers: Blocker[],
+  owner: string,
+  name: string,
+  number: number,
+) {
+  const slug = `${owner}/${name}`.toLowerCase();
+  const b = blockers.find(
+    (x) => x.number === number && (x.repo ?? "acme/app").toLowerCase() === slug,
+  );
   if (b?.state === undefined) return null;
   return issueNode({
+    repo: b.repo ?? "acme/app",
     number,
     state: b.state,
     ...(b.state === "CLOSED" ? { stateReason: "COMPLETED" } : {}),
@@ -83,7 +93,7 @@ function blockerNode(blockers: Blocker[], number: number) {
   });
 }
 
-/** Run `tracker.ts claim #5` against a GraphQL endpoint answering as `world` does. */
+/** Run `tracker.ts claim #5` (or `comment #5`) against a GraphQL endpoint answering as `world` does. */
 export async function cli(
   labels: string[],
   logins: string[],
@@ -99,10 +109,20 @@ export async function cli(
     comments?: Array<Record<string, unknown>>;
     /** Fail the claim's comment post. */
     failComment?: boolean;
+    /** Commit the comment before failing its response (lost response). */
+    failCommentAfterWrite?: boolean;
+    /** Fail TrackerComments reads. */
+    failCommentsRead?: boolean;
     /** The issues #5 is blocked by; one with no state cannot be read. */
     blockers?: Blocker[];
-    /** Arguments after `claim #5`. */
+    /** Sub-issues on #5, making it an epic. */
+    subIssues?: Array<{ number: number; state?: "OPEN" | "CLOSED" }>;
+    /** Arguments after `claim #5` (or command args when `command` is set). */
     args?: string[];
+    /** Command to run instead of `claim`: e.g. `comment`. */
+    command?: "claim" | "comment";
+    /** Stdin text for `comment`. */
+    stdin?: string;
     /** The repository's labels besides `In Progress`. */
     repoLabels?: string[];
   } = {},
@@ -136,17 +156,29 @@ export async function cli(
         };
       if (op === "TrackerIssue")
         data = oneIssue(
-          variables.number === 5
+          variables.number === 5 &&
+            String(variables.owner ?? "acme").toLowerCase() === "acme" &&
+            String(variables.name ?? "app").toLowerCase() === "app"
             ? issueNode({
                 number: 5,
                 labels: state.labels,
                 assignee: state.logins[0] ?? null,
                 extra: {
-                  subIssues: conn([]),
+                  subIssues: conn(
+                    (extra.subIssues ?? []).map((s) => ({
+                      id: `I_${s.number}`,
+                      state: s.state ?? "OPEN",
+                    })),
+                  ),
                   ...relationsOf(extra.blockers ?? []),
                 },
               })
-            : blockerNode(extra.blockers ?? [], Number(variables.number)),
+            : blockerNode(
+                extra.blockers ?? [],
+                String(variables.owner ?? "acme"),
+                String(variables.name ?? "app"),
+                Number(variables.number),
+              ),
         );
       if (op === "TrackerLabels")
         data = {
@@ -169,18 +201,29 @@ export async function cli(
       if (op === "TrackerAddLabels")
         writeOps.push(others.length === 0 ? op : `${op} ${others.join(",")}`);
       if (op !== undefined) extra.seen?.push(op);
-      if (op === "TrackerComment" && extra.failComment !== true) {
-        writeOps.push(`${op} ${String(variables.body)}`);
-        comments.push({
-          id: `IC_${comments.length + 1}`,
-          body: String(variables.body),
-          createdAt: currentIso(),
-          authorAssociation: "NONE",
-          viewerDidAuthor: true,
-        });
-        data = { addComment: { clientMutationId: null } };
+      if (op === "TrackerComment") {
+        if (extra.failCommentAfterWrite === true) {
+          writeOps.push(`${op} ${String(variables.body)}`);
+          comments.push({
+            id: `IC_${comments.length + 1}`,
+            body: String(variables.body),
+            createdAt: currentIso(),
+            authorAssociation: "NONE",
+            viewerDidAuthor: true,
+          });
+        } else if (extra.failComment !== true) {
+          writeOps.push(`${op} ${String(variables.body)}`);
+          comments.push({
+            id: `IC_${comments.length + 1}`,
+            body: String(variables.body),
+            createdAt: currentIso(),
+            authorAssociation: "NONE",
+            viewerDidAuthor: true,
+          });
+          data = { addComment: { clientMutationId: null } };
+        }
       }
-      if (op === "TrackerComments")
+      if (op === "TrackerComments" && extra.failCommentsRead !== true)
         data = {
           repository: { issue: { id: "I_5", comments: conn(comments) } },
         };
@@ -227,7 +270,7 @@ export async function cli(
       [
         process.execPath,
         join(import.meta.dir, "../scripts/tracker.ts"),
-        "claim",
+        extra.command ?? "claim",
         "#5",
         ...(extra.args ?? []),
       ],
@@ -241,6 +284,9 @@ export async function cli(
           GH_TOKEN: "test-token",
           ...extra.env,
         },
+        ...(extra.stdin === undefined
+          ? {}
+          : { stdin: new Response(extra.stdin) }),
         stdout: "pipe",
         stderr: "pipe",
       },

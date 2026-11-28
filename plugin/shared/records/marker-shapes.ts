@@ -4,11 +4,13 @@ import { s } from "../shapes.ts";
 export const CLAIM_OUTCOMES = ["claimed", "released", "unresolved"] as const;
 /**
  * A claim a person started ahead of the item's open blockers: their reason,
- * the identity the claim acted as, and each open blocker's key and state as
- * the claim read them (`null` for one it could not read); `preflight` is the
+ * the identity the claim acted as, the override's attempt id, and each open
+ * blocker's key and state as the claim read them (`null` for one it could
+ * not read or whose shared visibility is unverified); `preflight` is the
  * repository's preflight refusal for blockers it cleared.
  */
 export const CLAIM_OVERRIDE_SHAPE = s.object({
+  attempt: s.optional(s.string()),
   reason: s.string(),
   person: s.string(),
   blockers: s.array(

@@ -10,7 +10,10 @@ release: minor
   `do_item.preflight_command` whose second output line is `kind: blockers`,
   and nothing else. Before it writes, the claim prints the open blockers and
   what starting early risks; once it lands, it posts one comment recording
-  the person, the reason and the blockers, carries them in the claim marker
+  the person, the reason, the blockers (keeping only a blocker's key when
+  shared visibility is unverified) and a stable attempt marker so retries
+  check trusted comments before posting and report an indeterminate outcome
+  instead of duplicating a comment, carries them in the claim marker
   (`do_item.claim_marker`) and prints them as `"override"` in its JSON. The
   pull request it leads to carries a `## Blocker override` section naming
   what to merge after, as advice. A dispatched or driven session

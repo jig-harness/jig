@@ -5,11 +5,17 @@
  * anyway, recording the override, while every other refusal still stands.
  */
 import { describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { decodeMarker } from "../../../shared/records/envelope.ts";
 import { currentIso, currentMs, isoFromMs } from "../../../shared/time.ts";
-import { OVERRIDE_CONSEQUENCE } from "../scripts/lib/blocker-override.ts";
+import {
+  OVERRIDE_CONSEQUENCE,
+  overrideAttemptsIn,
+  overrideMarkerLine,
+} from "../scripts/lib/blocker-override.ts";
 import {
   claimMarkerBody,
   readClaimMarker,
@@ -67,7 +73,13 @@ describe("a plain claim and the item's open blockers", () => {
       overridable: true,
       reason: expect.stringContaining("#5 waits on #3 (Todo)"),
       blockers: [
-        { key: "#3", title: "Ship the API", state: "Todo", assignee: "dana" },
+        {
+          key: "#3",
+          title: "Ship the API",
+          state: "Todo",
+          assignee: "dana",
+          sharedVisibility: true,
+        },
       ],
       consequence: OVERRIDE_CONSEQUENCE,
     });
@@ -148,13 +160,30 @@ describe("--override-blockers", () => {
     expect(result).toMatchObject({
       outcome: "claimed",
       override: {
+        attempt: expect.any(String),
         reason: REASON,
         person: "factory",
         blockers: [
-          { key: "#3", title: "Ship the API", state: "Todo", assignee: "dana" },
-          { key: "#4", title: null, state: null, assignee: null },
+          {
+            key: "#3",
+            title: "Ship the API",
+            state: "Todo",
+            assignee: "dana",
+            sharedVisibility: true,
+          },
+          {
+            key: "#4",
+            title: null,
+            state: null,
+            assignee: null,
+            sharedVisibility: true,
+          },
         ],
-        comment: { posted: true },
+        comment: {
+          status: "posted",
+          posted: true,
+          attempt: expect.any(String),
+        },
       },
     });
     expect(result.override.label).toBeUndefined();
@@ -194,16 +223,133 @@ describe("--override-blockers", () => {
     });
   });
 
-  it("keeps the claim and reports a comment it could not post", async () => {
+  it("keeps the claim and reports an indeterminate comment when posting fails ambiguously", async () => {
     const out = await overriding([OPEN], { failComment: true });
     expectSpawnExit(out, 0);
     const result = JSON.parse(out.stdout);
     expect(result.outcome).toBe("claimed");
-    expect(result.override.comment).toMatchObject({ posted: false });
+    expect(result.override.comment).toMatchObject({
+      status: "indeterminate",
+      posted: false,
+      attempt: result.override.attempt,
+      marker: overrideMarkerLine(result.override.attempt),
+    });
     expect(result.override.comment.reason).toBeTruthy();
     expect(out.stderr).toContain(
-      "the override of #5's blockers was not recorded in a comment",
+      `the override comment for #5 (attempt ${result.override.attempt}) could not be confirmed`,
     );
+  });
+
+  it("reconciles a lost comment response as posted when the comment actually landed", async () => {
+    const out = await overriding([OPEN], { failCommentAfterWrite: true });
+    expectSpawnExit(out, 0);
+    const result = JSON.parse(out.stdout);
+    expect(result.outcome).toBe("claimed");
+    expect(result.override.comment).toEqual({
+      status: "posted",
+      posted: true,
+      attempt: result.override.attempt,
+      alreadyPresent: true,
+    });
+    expect(comments(out.writes)).toHaveLength(1);
+  });
+
+  it("redacts cross-repository blocker titles, states and assignees in persistent GitHub comments and claim markers", async () => {
+    const crossRepo: Blocker = {
+      repo: "acme/private",
+      number: 9,
+      state: "OPEN",
+      title: "Confidential fix",
+      assignee: "alice",
+    };
+    const out = await overriding([OPEN, crossRepo], {
+      committed: "do_item:\n  claim_marker: true\n",
+    });
+    expectSpawnExit(out, 0);
+    // Interactive stderr shows the claimant what they are overriding.
+    expect(out.stderr).toContain(
+      'acme/private#9 "Confidential fix": Todo, assigned to alice',
+    );
+    const [marker, , record] = comments(out.writes);
+    // Persistent override comment keeps metadata for same-repo #3, redacts cross-repo acme/private#9 to key only.
+    expect(record).toContain('- #3 "Ship the API": Todo, assigned to dana');
+    expect(record).toContain("- acme/private#9\n");
+    expect(record).not.toContain("Confidential fix");
+    expect(record).not.toContain("alice");
+    // Persistent claim marker keeps state for #3 and redacts state to null for cross-repo acme/private#9.
+    const read = decodeMarker(
+      marker as string,
+      "jig-claim-data",
+      "tracker-claim-marker",
+    );
+    expect(read.ok && read.value.payload.override).toMatchObject({
+      blockers: [
+        { key: "#3", state: "Todo" },
+        { key: "acme/private#9", state: null },
+      ],
+    });
+  });
+
+  it("checks existing trusted comments before reposting via tracker.ts comment and reports indeterminate when unreadable", async () => {
+    const marker = overrideMarkerLine("retry-attempt-1");
+    const body = `## Blocker override\n\nfactory started #5 ahead of its open blockers: ${REASON}\n\n- #3\n\n${OVERRIDE_CONSEQUENCE}\n\n${marker}\n`;
+    const skipped = await cli([], [], undefined, {
+      command: "comment",
+      stdin: body,
+      comments: [
+        {
+          id: "IC_existing",
+          body,
+          createdAt: currentIso(),
+          authorAssociation: "MEMBER",
+          viewerDidAuthor: false,
+        },
+      ],
+    });
+    expectSpawnExit(skipped, 0);
+    expect(JSON.parse(skipped.stdout)).toEqual({
+      issue: "#5",
+      commented: true,
+      status: "posted",
+      posted: true,
+      attempt: "retry-attempt-1",
+      alreadyPresent: true,
+    });
+    expect(comments(skipped.writes)).toEqual([]);
+
+    const unreadable = await cli([], [], undefined, {
+      command: "comment",
+      stdin: body,
+      failCommentsRead: true,
+    });
+    expectSpawnExit(unreadable, 1);
+    expect(JSON.parse(unreadable.stdout)).toMatchObject({
+      issue: "#5",
+      commented: false,
+      status: "indeterminate",
+      posted: false,
+      attempt: "retry-attempt-1",
+      marker,
+    });
+    expect(comments(unreadable.writes)).toEqual([]);
+  });
+
+  it("reads a literal reason containing apostrophes and shell characters from --override-blockers-file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "jig-override-file-"));
+    try {
+      const reasonFile = join(dir, "reason.txt");
+      const literal = "It's safe to start ahead of #3: $(not expanded)";
+      writeFileSync(reasonFile, `${literal}\n`);
+      const out = await claim([OPEN], {
+        args: ["--override-blockers-file", reasonFile],
+      });
+      expectSpawnExit(out, 0);
+      const result = JSON.parse(out.stdout);
+      expect(result.override.reason).toBe(literal);
+      expect(comments(out.writes)[0]).toContain(literal);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("keeps the person's whole reason in the comment, control characters made spaces", async () => {
@@ -257,6 +403,7 @@ describe("--override-blockers", () => {
       "tracker-claim-marker",
     );
     expect(read.ok && read.value.payload.override).toEqual({
+      attempt: JSON.parse(out.stdout).override.attempt,
       reason: REASON,
       person: "factory",
       blockers: [
@@ -266,6 +413,9 @@ describe("--override-blockers", () => {
     });
     expect(readClaimMarker(marker as string)?.override?.reason).toBe(REASON);
     expect(record).toStartWith("## Blocker override");
+    expect(overrideAttemptsIn(record as string)).toEqual([
+      JSON.parse(out.stdout).override.attempt,
+    ]);
   });
 
   it("goes on as any claim, recording nothing, when there is nothing to override", async () => {
@@ -390,6 +540,19 @@ describe("--override-blockers and the repository's preflight command", () => {
 });
 
 describe("--override-blockers leaves every other refusal standing", () => {
+  it("still refuses an epic with open blockers even with --override-blockers", async () => {
+    const refused = await claim([OPEN], { subIssues: [{ number: 10 }] });
+    expectSpawnExit(refused, 3);
+    expect(JSON.parse(refused.stdout).why).toBe("epic");
+    expect(JSON.parse(refused.stdout).overridable).toBeUndefined();
+    const overridden = await overriding([OPEN], {
+      subIssues: [{ number: 10 }],
+    });
+    expectSpawnExit(overridden, 3);
+    expect(JSON.parse(overridden.stdout).why).toBe("epic");
+    expect(overridden.writes).toEqual([]);
+  });
+
   it("still refuses an item in progress or assigned to someone else", async () => {
     const inProgress = await overriding(
       [OPEN],

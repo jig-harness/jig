@@ -161,6 +161,7 @@ import {
   type BlockerGate,
   blockerGate,
   markerOverride,
+  postCommentChecked,
   preflightRefusal,
   withOverrideRecorded,
 } from "./lib/blocker-override.ts";
@@ -168,8 +169,8 @@ import {
   CLAIM_VALUED_OPTION,
   type ClaimOptions,
   WORK_BATCH_FLAG,
-  claimOptions,
   normalizeClaimOptions,
+  resolveClaimOptions,
 } from "./lib/claim-options.ts";
 import { getIssue } from "./get_issue.ts";
 import {
@@ -759,7 +760,8 @@ const OPERATIONS: Record<string, Operation> = {
     arity: 1,
     takes: "one issue key",
     flags: [WORK_BATCH_FLAG],
-    run: async ([key], flags) => claim(key as string, claimOptions(flags)),
+    run: async ([key], flags) =>
+      claim(key as string, await resolveClaimOptions(flags)),
     exitOf: (out) => {
       const result = out as Awaited<ReturnType<typeof claimIssue>>;
       if (result.outcome !== "claimed") console.error(result.reason);
@@ -774,8 +776,12 @@ const OPERATIONS: Record<string, Operation> = {
       const body =
         input === undefined ? await readStdin() : await readFile(input, "utf8");
       if (body.trim() === "") throw new UsageError("the comment body is empty");
-      await openTracker().postComment(key as string, body);
-      return { issue: key, commented: true };
+      return postCommentChecked(openTracker(), key as string, body);
+    },
+    exitOf: (out) => {
+      const result = out as { commented: boolean; reason?: string };
+      if (!result.commented && result.reason) console.error(result.reason);
+      return result.commented ? 0 : 1;
     },
   },
   create: {

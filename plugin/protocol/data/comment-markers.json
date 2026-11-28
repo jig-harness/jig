@@ -369,6 +369,19 @@
     },
     {
       "kind": "active",
+      "name": "tracker-blocker-override",
+      "part": "marker",
+      "marker": "jig:blocker-override",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "Identifies one blocker-override comment by its attempt id, so a retry checks trusted comments before posting and never duplicates a comment whose response was lost."
+    },
+    {
+      "kind": "active",
       "name": "tracker-claim-marker",
       "part": "marker",
       "marker": "jig-claim",

@@ -213,8 +213,13 @@ command marks as one for blockers alone, and nothing else. Before it
 writes, the claim prints the open blockers and what starting early risks:
 the work may depend on changes that do not exist yet or may still change,
 may need rework when they land, and may not be safe to merge before them.
-Once the claim lands, a comment on the item records the person, the reason
-and the blockers; the label `do_item.override_label` names is added where
+Once the claim lands, a comment on the item records the person, the reason,
+each blocker (keeping only the blocker's key unless the tracker adapter
+proves shared visibility with the claimed item, so cross-visibility titles
+and assignees are redacted) and an attempt marker (`jig:blocker-override`)
+so retries check existing trusted comments before posting and report an
+indeterminate outcome rather than posting duplicates; the label
+`do_item.override_label` names is added where
 the repository sets one; the claim marker carries the same facts; and the
 pull request gets a `## Blocker override` section saying what to merge
 after (advice, not a merge gate). The override is a person's decision
